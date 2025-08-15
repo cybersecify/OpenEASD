@@ -1,0 +1,95 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments (just in case someone creates them locally)
+venv/
+ENV/
+env/
+.env
+.venv
+virtualenv/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+.spyderproject
+.spyproject
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.nbconvert
+
+# pyenv
+.python-version
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+.envrc
+
+# Logs and databases
+logs/
+*.log
+*.db
+*.sqlite3
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Documentation builds
+docs/_build/
+site/
+
+# Temporary files
+*.tmp
+*.temp
+*~
+.cache/
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Configuration (local environment setup)
+.devenv.conf
+
+# Large data files (add specific patterns as needed)
+# *.csv
+# *.parquet
+# data/
+# models/
