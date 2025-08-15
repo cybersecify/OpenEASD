@@ -88,8 +88,41 @@ Thumbs.db
 # Configuration (local environment setup)
 .devenv.conf
 
-# Large data files (add specific patterns as needed)
-# *.csv
-# *.parquet
-# data/
-# models/
+# OpenEASD specific
+# Data directories  
+data/*.db
+data/backups/
+data/temp/
+data/*.sqlite
+data/*.sqlite3
+
+# Report files
+reports/
+output/
+
+# Configuration files with secrets
+config/*_config.yaml
+config/.env*
+config/secrets.yaml
+config/production.yaml
+
+# Security tool outputs
+nuclei-templates/
+subfinder-config/
+*.json.tmp
+
+# API keys and credentials
+*.key
+*.pem
+*.p12
+*.crt
+*.csr
+credentials.json
+service-account.json
+
+# Large files
+*.zip
+*.tar.gz
+*.tar.xz
+*.rar
+*.7z

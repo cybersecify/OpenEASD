@@ -1,0 +1,64 @@
+# Docker Compose Override for Development
+# This file is automatically loaded by docker-compose for local development
+
+
+services:
+  openeasd:
+    # Override build for development
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    
+    # Development-specific environment variables
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - PYTHONPATH=/app/src:/app
+      - PREFECT_LOGGING_LEVEL=DEBUG
+    
+    # Mount source code for live development
+    volumes:
+      - ../src:/app/src:ro
+      - ../prefect_flows:/app/prefect_flows:ro
+      - ../config:/app/config:ro
+      - ../main.py:/app/main.py:ro
+      - ../data:/app/data
+      - ../logs:/app/logs
+      - ../reports:/app/reports
+    
+    # Enable hot reload
+    command: >
+      sh -c "
+        pip install watchdog &&
+        python -m watchdog.watchmedo auto-restart 
+        --directory=/app/src 
+        --pattern='*.py' 
+        --recursive 
+        -- python main.py
+      "
+    
+    # Development ports
+    ports:
+      - "8000:8000"   # OpenEASD API
+      - "4200:4200"   # Prefect UI
+      - "8001:8001"   # Development server (if needed)
+    
+    # Development dependencies
+    depends_on:
+      - prefect-server
+
+  prefect-server:
+    # Development environment for Prefect
+    environment:
+      - PREFECT_LOGGING_LEVEL=DEBUG
+      - PREFECT_API_DATABASE_CONNECTION_URL=sqlite+aiosqlite:////prefect/data/prefect.db
+
+
+# Development network configuration
+networks:
+  openeasd-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

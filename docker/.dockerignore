@@ -1,0 +1,113 @@
+# OpenEASD Docker Ignore
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Data directories (mounted as volumes)
+data/
+reports/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+README.md
+docs/
+CLAUDE.md
+
+# Tests (copied separately if needed)
+tests/
+
+# Configuration secrets
+.env
+.env.local
+.env.production
+*.key
+*.pem
+*.p12
+
+# Backup files
+*.bak
+*.backup
+
+# Node modules (if any)
+node_modules/
+
+# Coverage reports
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Jupyter notebooks
+*.ipynb_checkpoints/
+
+# MacOS
+.AppleDouble
+.LSOverride
+
+# Windows
+ehthumbs.db
+Desktop.ini
+
+# Large files that shouldn't be in container
+*.zip
+*.tar.gz
+*.tar.xz
+*.rar
+
+# Security tool databases (will be downloaded in container)
+nuclei-templates/
+subfinder-config/

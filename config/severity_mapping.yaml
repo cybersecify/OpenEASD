@@ -1,0 +1,334 @@
+# Severity Mapping Configuration for OpenEASD
+# Defines how different vulnerability types map to severity levels
+
+# Severity level definitions
+severity_levels:
+  critical:
+    score_range: [9.0, 10.0]
+    color: "#FF0000"
+    priority: 1
+    sla_hours: 4  # Must be addressed within 4 hours
+    description: "Vulnerabilities that pose immediate risk to business operations"
+    
+  high:
+    score_range: [7.0, 8.9] 
+    color: "#FF6600"
+    priority: 2
+    sla_hours: 24  # Must be addressed within 24 hours
+    description: "Vulnerabilities that pose significant risk and should be prioritized"
+    
+  medium:
+    score_range: [4.0, 6.9]
+    color: "#FFAA00" 
+    priority: 3
+    sla_hours: 168  # Must be addressed within 1 week
+    description: "Vulnerabilities that pose moderate risk"
+    
+  low:
+    score_range: [0.1, 3.9]
+    color: "#00AA00"
+    priority: 4
+    sla_hours: 720  # Must be addressed within 1 month
+    description: "Vulnerabilities that pose minimal risk"
+    
+  info:
+    score_range: [0.0, 0.0]
+    color: "#0066CC"
+    priority: 5
+    sla_hours: null  # No SLA requirement
+    description: "Informational findings that require no immediate action"
+
+# Critical severity vulnerabilities
+critical_vulnerabilities:
+  # Database exposures
+  - "exposed_database"
+  - "mongodb_exposure" 
+  - "elasticsearch_exposure"
+  - "redis_exposure"
+  - "mysql_exposure"
+  - "postgresql_exposure"
+  
+  # Authentication bypasses
+  - "authentication_bypass"
+  - "admin_panel_no_auth"
+  - "default_admin_credentials"
+  
+  # Remote code execution
+  - "remote_code_execution"
+  - "rce"
+  - "command_injection"
+  - "deserialization"
+  
+  # Recent CVEs (2024)
+  - "cve_2024"
+  - "zero_day"
+  
+  # Critical misconfigurations
+  - "aws_s3_public_write"
+  - "kubernetes_api_exposure"
+  - "docker_api_exposure"
+
+# High severity vulnerabilities  
+high_vulnerabilities:
+  # Email security issues
+  - "missing_spf_record"
+  - "missing_dmarc_record"
+  - "weak_dmarc_policy"
+  
+  # SSL/TLS issues
+  - "expired_ssl_certificate"
+  - "weak_ssl_configuration"
+  - "ssl_certificate_mismatch"
+  
+  # Service exposures
+  - "insecure_ftp_service"
+  - "telnet_service_exposed"
+  - "ssh_weak_config"
+  - "rdp_exposed"
+  - "vnc_exposed"
+  
+  # SQL injection
+  - "sql_injection"
+  - "blind_sqli"
+  - "time_based_sqli"
+  
+  # File inclusion
+  - "local_file_inclusion"
+  - "remote_file_inclusion"
+  
+  # Directory traversal
+  - "directory_traversal"
+  - "path_traversal"
+  
+  # CVEs from 2023
+  - "cve_2023"
+  
+  # Cloud misconfigurations
+  - "aws_s3_public_read"
+  - "azure_blob_public"
+  - "gcp_bucket_public"
+
+# Medium severity vulnerabilities
+medium_vulnerabilities:
+  # Web security headers
+  - "missing_security_headers"
+  - "missing_hsts_header"
+  - "missing_csp_header"
+  - "missing_xframe_options"
+  - "missing_xss_protection"
+  
+  # XSS vulnerabilities
+  - "reflected_xss"
+  - "stored_xss"
+  - "dom_xss"
+  
+  # CSRF vulnerabilities  
+  - "csrf_vulnerability"
+  - "missing_csrf_protection"
+  
+  # Information disclosure
+  - "information_disclosure"
+  - "server_banner_disclosure"
+  - "version_disclosure"
+  - "debug_info_exposure"
+  
+  # Weak configurations
+  - "weak_ssl_ciphers"
+  - "ssl_deprecated_protocols"
+  - "http_methods_allowed"
+  
+  # Domain security
+  - "cybersquatting_domains"
+  - "subdomain_takeover_risk"
+  
+  # Backup exposures
+  - "backup_files_exposed"
+  - "git_exposure"
+  - "svn_exposure"
+
+# Low severity vulnerabilities
+low_vulnerabilities:
+  # Informational findings
+  - "technology_disclosure"
+  - "cms_version_disclosure"
+  - "server_info_disclosure"
+  
+  # Deprecated protocols
+  - "deprecated_protocols"
+  - "legacy_services"
+  
+  # Minor misconfigurations  
+  - "directory_listing"
+  - "robots_txt_disclosure"
+  - "sitemap_exposure"
+  
+  # Weak recommendations
+  - "weak_password_policy"
+  - "session_timeout_long"
+  
+  # DNS issues (non-critical)
+  - "dns_misconfiguration"
+  - "txt_record_issues"
+
+# Service-based severity mapping
+service_severity_mapping:
+  # Critical services
+  database:
+    mysql: "high"
+    postgresql: "high" 
+    mongodb: "critical"
+    redis: "high"
+    elasticsearch: "critical"
+    
+  remote_access:
+    ssh: "medium"
+    rdp: "high"
+    vnc: "high"
+    telnet: "high"
+    ftp: "high"
+    
+  web_services:
+    http: "low"
+    https: "low"
+    apache: "low"
+    nginx: "low"
+    iis: "low"
+    
+  email_services:
+    smtp: "medium"
+    pop3: "medium"
+    imap: "medium"
+
+# Port-based severity mapping
+port_severity_mapping:
+  # Critical ports
+  critical_ports:
+    - 1433  # MSSQL
+    - 3306  # MySQL
+    - 5432  # PostgreSQL
+    - 6379  # Redis
+    - 9200  # Elasticsearch
+    - 27017 # MongoDB
+    
+  # High risk ports  
+  high_risk_ports:
+    - 21    # FTP
+    - 23    # Telnet
+    - 135   # RPC
+    - 139   # NetBIOS
+    - 445   # SMB
+    - 3389  # RDP
+    - 5900  # VNC
+    
+  # Medium risk ports
+  medium_risk_ports:
+    - 22    # SSH
+    - 25    # SMTP
+    - 53    # DNS
+    - 110   # POP3
+    - 143   # IMAP
+    - 993   # IMAPS
+    - 995   # POP3S
+
+# CVE year-based severity escalation
+cve_severity_escalation:
+  2024: "+1"  # Increase severity by 1 level
+  2023: "+0"  # Keep original severity
+  2022: "-0"  # Keep original severity
+  2021: "-0"  # Keep original severity
+  older: "-1" # Decrease severity by 1 level (unless already critical)
+
+# MITRE ATT&CK technique severity mapping
+mitre_technique_severity:
+  # Initial Access (Critical/High)
+  "T1190": "high"     # Exploit Public-Facing Application
+  "T1133": "high"     # External Remote Services
+  "T1566": "medium"   # Phishing
+  
+  # Execution (High/Medium)
+  "T1059": "medium"   # Command and Scripting Interpreter
+  "T1203": "high"     # Exploitation for Client Execution
+  
+  # Persistence (High/Medium) 
+  "T1078": "high"     # Valid Accounts
+  "T1053": "medium"   # Scheduled Task/Job
+  
+  # Discovery (Medium/Low)
+  "T1046": "medium"   # Network Service Scanning
+  "T1083": "low"      # File and Directory Discovery
+  
+  # Reconnaissance (Low/Info)
+  "T1595": "low"      # Active Scanning
+  "T1590": "info"     # Gather Victim Network Information
+
+# Custom severity rules for Amnic domains
+custom_severity_rules:
+  amnic.com:
+    # Escalate severity for production domain
+    escalation_rules:
+      - condition: "domain == 'amnic.com'"
+        action: "escalate_one_level"
+        max_level: "critical"
+        
+      - condition: "service_type == 'database' AND domain == 'amnic.com'"
+        action: "set_severity"
+        severity: "critical"
+        
+  amnic.dev:
+    # Standard severity for development domain
+    escalation_rules:
+      - condition: "vulnerability_type == 'information_disclosure'"
+        action: "reduce_one_level"
+        min_level: "low"
+
+# Severity calculation weights
+severity_weights:
+  base_score: 0.4          # Base CVSS/vulnerability score
+  exposure_factor: 0.3     # How exposed the service is
+  business_impact: 0.2     # Impact on business operations
+  exploit_availability: 0.1 # Known exploits available
+
+# Alert thresholds by severity
+alert_thresholds:
+  critical:
+    immediate: true
+    slack: true
+    email: true
+    webhook: true
+    
+  high:
+    immediate: true
+    slack: true
+    email: true
+    webhook: false
+    
+  medium:
+    immediate: false
+    slack: true
+    email: false  
+    webhook: false
+    
+  low:
+    immediate: false
+    slack: false
+    email: false
+    webhook: false
+
+# SLA tracking
+sla_tracking:
+  enabled: true
+  business_hours_only: false
+  timezone: "UTC"
+  
+  escalation_schedule:
+    critical:
+      - after_hours: 2
+        action: "escalate_to_manager"
+      - after_hours: 4 
+        action: "escalate_to_ciso"
+        
+    high:
+      - after_hours: 12
+        action: "escalate_to_manager"
+      - after_hours: 24
+        action: "escalate_to_ciso"

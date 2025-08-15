@@ -1,0 +1,118 @@
+# OpenEASD Docker Compose - ARM64 optimized for Mac M1/M2
+
+services:
+  openeasd:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    platform: linux/arm64
+    container_name: openeasd-main
+    restart: unless-stopped
+    ports:
+      - "8000:8000"  # OpenEASD API
+      - "4200:4200"  # Prefect UI
+    environment:
+      - DATABASE_URL=sqlite:///app/data/openeasd.db
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - EMAIL_SMTP_SERVER=${EMAIL_SMTP_SERVER:-}
+      - EMAIL_USERNAME=${EMAIL_USERNAME:-}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD:-}
+      - WEBHOOK_URL=${WEBHOOK_URL:-}
+      - WEBHOOK_TOKEN=${WEBHOOK_TOKEN:-}
+      - PREFECT_API_URL=http://localhost:4200/api
+      - PYTHONPATH=/app/src
+    volumes:
+      - ../data:/app/data
+      - ../config:/app/config
+      - ../logs:/app/logs
+      - ../reports:/app/reports
+    networks:
+      - openeasd-network
+    depends_on:
+      - prefect-server
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  prefect-server:
+    image: prefecthq/prefect:2.14-python3.11
+    platform: linux/arm64
+    container_name: openeasd-prefect-server
+    restart: unless-stopped
+    ports:
+      - "4201:4200"  # Prefect server UI (mapped to avoid conflict)
+    environment:
+      - PREFECT_API_URL=http://0.0.0.0:4200/api
+      - PREFECT_SERVER_API_HOST=0.0.0.0
+      - PREFECT_API_DATABASE_CONNECTION_URL=sqlite+aiosqlite:////prefect/data/prefect.db
+    volumes:
+      - prefect-data:/prefect/data
+    networks:
+      - openeasd-network
+    command: prefect server start --host 0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4200/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Standalone security tools (can be used independently)
+  subfinder:
+    image: projectdiscovery/subfinder:latest
+    platform: linux/arm64
+    container_name: openeasd-subfinder
+    volumes:
+      - ../data:/app/data
+    networks:
+      - openeasd-network
+    profiles:
+      - tools
+    
+  naabu:
+    image: projectdiscovery/naabu:latest
+    platform: linux/arm64
+    container_name: openeasd-naabu
+    volumes:
+      - ../data:/app/data
+    networks:
+      - openeasd-network
+    profiles:
+      - tools
+    
+  nmap:
+    image: instrumentisto/nmap:latest
+    platform: linux/arm64
+    container_name: openeasd-nmap
+    volumes:
+      - ../data:/app/data
+    networks:
+      - openeasd-network
+    profiles:
+      - tools
+    
+  nuclei:
+    image: projectdiscovery/nuclei:latest
+    platform: linux/arm64
+    container_name: openeasd-nuclei
+    volumes:
+      - ../data:/app/data
+    networks:
+      - openeasd-network
+    profiles:
+      - tools
+
+
+volumes:
+  prefect-data:
+    driver: local
+
+networks:
+  openeasd-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

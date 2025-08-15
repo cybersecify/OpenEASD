@@ -1,0 +1,213 @@
+# Nuclei Template Configuration for OpenEASD
+# Customized template selection for Amnic.com organization
+
+# Default template categories to use
+default_templates:
+  - "cves"
+  - "misconfigurations"
+  - "default-logins" 
+  - "exposures"
+  - "vulnerabilities"
+  - "technologies"
+
+# High priority templates for critical findings
+high_priority_templates:
+  - "cves/2023"
+  - "cves/2024" 
+  - "exposures/configs"
+  - "exposures/logs"
+  - "exposures/backups"
+  - "default-logins/web"
+  - "default-logins/db"
+  - "misconfiguration/security-headers"
+  - "misconfiguration/ssl-tls"
+
+# Web application specific templates
+web_application_templates:
+  - "vulnerabilities/xss"
+  - "vulnerabilities/sqli"
+  - "vulnerabilities/lfi"
+  - "vulnerabilities/rfi" 
+  - "vulnerabilities/ssrf"
+  - "vulnerabilities/csrf"
+  - "vulnerabilities/xxe"
+  - "misconfiguration/cors"
+  - "misconfiguration/headers"
+
+# Infrastructure templates
+infrastructure_templates:
+  - "exposures/apis"
+  - "exposures/panels"
+  - "exposures/tokens"
+  - "misconfiguration/docker"
+  - "misconfiguration/kubernetes"
+  - "misconfiguration/apache"
+  - "misconfiguration/nginx"
+  - "misconfiguration/iis"
+
+# Database and service templates
+database_service_templates:
+  - "exposures/databases"
+  - "default-logins/mysql"
+  - "default-logins/postgresql" 
+  - "default-logins/mongodb"
+  - "default-logins/redis"
+  - "default-logins/elasticsearch"
+  - "misconfiguration/elasticsearch"
+  - "misconfiguration/mongodb"
+
+# Cloud service templates
+cloud_templates:
+  - "exposures/cloud"
+  - "misconfiguration/aws"
+  - "misconfiguration/azure"
+  - "misconfiguration/gcp"
+  - "exposures/buckets"
+
+# Severity-based template filtering
+severity_based:
+  critical:
+    - "cves/2024"
+    - "cves/2023"
+    - "exposures/databases"
+    - "exposures/configs"
+    - "default-logins/web"
+    
+  high:
+    - "vulnerabilities/sqli"
+    - "vulnerabilities/rce"
+    - "exposures/panels"
+    - "exposures/apis"
+    - "default-logins/db"
+    
+  medium:
+    - "vulnerabilities/xss"
+    - "vulnerabilities/lfi"
+    - "misconfiguration/headers"
+    - "misconfiguration/ssl-tls"
+    - "exposures/logs"
+    
+  low:
+    - "technologies"
+    - "misconfiguration/generic"
+    - "exposures/files"
+
+# Custom template configurations for specific scan types
+scan_type_templates:
+  quick_scan:
+    - "cves/2024"
+    - "exposures/configs"
+    - "default-logins/web"
+    - "misconfiguration/headers"
+    
+  comprehensive_scan:
+    - "cves"
+    - "vulnerabilities"
+    - "exposures"
+    - "default-logins"
+    - "misconfiguration"
+    - "technologies"
+    
+  web_focused:
+    - "vulnerabilities/xss"
+    - "vulnerabilities/sqli"
+    - "vulnerabilities/lfi"
+    - "misconfiguration/headers"
+    - "misconfiguration/cors"
+    - "exposures/panels"
+    
+  infrastructure_focused:
+    - "exposures/databases"
+    - "exposures/apis"
+    - "default-logins/db"
+    - "misconfiguration/docker"
+    - "misconfiguration/apache"
+    - "misconfiguration/nginx"
+
+# Domain-specific template overrides
+domain_specific:
+  "amnic.com":
+    include:
+      - "cves"
+      - "vulnerabilities"
+      - "exposures"
+      - "default-logins"
+      - "misconfiguration"
+    exclude:
+      - "fuzzing"  # Avoid aggressive fuzzing on production
+      
+  "amnic.dev":
+    include:
+      - "cves"
+      - "vulnerabilities" 
+      - "exposures"
+      - "default-logins"
+      - "misconfiguration"
+      - "technologies"  # More detailed tech detection for dev
+    exclude: []
+
+# Template execution settings
+execution_settings:
+  rate_limit: 150  # requests per second
+  timeout: 30      # seconds per template
+  retries: 2
+  concurrency: 25
+  
+  # Template-specific timeouts
+  template_timeouts:
+    "cves": 45
+    "vulnerabilities/sqli": 60
+    "exposures/databases": 30
+    "fuzzing": 120
+    
+# Custom templates (if any)
+custom_templates:
+  amnic_specific:
+    - "custom/amnic-specific-checks.yaml"
+    - "custom/amnic-tech-stack.yaml"
+    
+# Exclusions
+exclusions:
+  # Templates to never run
+  never_run:
+    - "dos"  # Denial of Service templates
+    - "intrusive"  # Intrusive templates that might cause issues
+    
+  # File extensions to skip
+  skip_extensions:
+    - ".pdf"
+    - ".jpg"
+    - ".png"
+    - ".gif"
+    - ".css"
+    - ".js"  # Skip unless specifically testing for JS vulnerabilities
+    
+  # URLs to skip
+  skip_urls:
+    - "/logout"
+    - "/admin/delete"
+    - "/api/delete"
+    
+# Output configuration
+output:
+  format: "json"
+  include_request: true
+  include_response: false  # Set to true for debugging
+  max_response_size: "1KB"
+  
+# Integration with OpenEASD
+openeasd_integration:
+  map_to_mitre: true
+  severity_mapping:
+    info: "low"
+    low: "low" 
+    medium: "medium"
+    high: "high"
+    critical: "critical"
+    
+  # Custom severity overrides for specific templates
+  severity_overrides:
+    "exposures/databases": "critical"
+    "exposures/configs": "high"
+    "default-logins/web": "high"
+    "cves/2024": "critical"

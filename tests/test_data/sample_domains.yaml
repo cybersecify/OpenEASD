@@ -1,0 +1,192 @@
+# Sample domain data for testing OpenEASD
+
+# Test domains for different scenarios
+test_domains:
+  primary:
+    domain: "amnic.com"
+    expected_subdomains:
+      - "www.amnic.com"
+      - "mail.amnic.com"
+      - "api.amnic.com"
+    expected_services:
+      - host: "amnic.com"
+        port: 80
+        service: "http"
+      - host: "amnic.com"
+        port: 443
+        service: "https"
+      - host: "mail.amnic.com"
+        port: 25
+        service: "smtp"
+    
+  secondary:
+    domain: "amnic.dev"
+    expected_subdomains:
+      - "www.amnic.dev"
+      - "staging.amnic.dev"
+      - "dev.amnic.dev"
+    expected_services:
+      - host: "amnic.dev"
+        port: 80
+        service: "http"
+      - host: "amnic.dev"
+        port: 443
+        service: "https"
+
+  # Test domain with known vulnerabilities for testing
+  vulnerable_test:
+    domain: "test.example.com"
+    expected_vulnerabilities:
+      - type: "missing_security_headers"
+        severity: "medium"
+        host: "test.example.com"
+      - type: "ssl_certificate_expired"
+        severity: "high"
+        host: "test.example.com"
+      - type: "exposed_database"
+        severity: "critical"
+        host: "db.test.example.com"
+
+# Mock DNS responses for testing
+mock_dns_responses:
+  "amnic.com":
+    A:
+      - "192.168.1.100"
+    AAAA:
+      - "2001:db8::1"
+    MX:
+      - "10 mail.amnic.com"
+    NS:
+      - "ns1.amnic.com"
+      - "ns2.amnic.com"
+    TXT:
+      - "v=spf1 include:_spf.google.com ~all"
+      - "v=DMARC1; p=quarantine; rua=mailto:dmarc@amnic.com"
+
+  "amnic.dev":
+    A:
+      - "192.168.1.101"
+    MX:
+      - "10 mail.amnic.dev"
+    TXT:
+      - "v=spf1 include:_spf.google.com ~all"
+
+# Sample scan results for testing parsers
+sample_scan_results:
+  subfinder_output: |
+    {"host":"www.amnic.com","source":"crtsh"}
+    {"host":"mail.amnic.com","source":"virustotal"}
+    {"host":"api.amnic.com","source":"securitytrails"}
+    
+  naabu_output: |
+    {"host":"amnic.com","port":80,"protocol":"tcp"}
+    {"host":"amnic.com","port":443,"protocol":"tcp"}
+    {"host":"mail.amnic.com","port":25,"protocol":"tcp"}
+    
+  nuclei_output: |
+    {"templateID":"missing-hsts","info":{"name":"Missing HSTS Header","severity":"medium"},"host":"http://amnic.com","matched-at":"http://amnic.com"}
+    {"templateID":"ssl-issuer","info":{"name":"SSL Certificate Issuer","severity":"info"},"host":"https://amnic.com","matched-at":"https://amnic.com"}
+
+# Expected parsed results
+expected_parsed_results:
+  subdomains:
+    - subdomain: "www.amnic.com"
+      source: "crtsh"
+      tool: "subfinder"
+    - subdomain: "mail.amnic.com"
+      source: "virustotal"
+      tool: "subfinder"
+    - subdomain: "api.amnic.com"  
+      source: "securitytrails"
+      tool: "subfinder"
+      
+  services:
+    - host: "amnic.com"
+      port: 80
+      protocol: "tcp"
+      tool: "naabu"
+    - host: "amnic.com"
+      port: 443
+      protocol: "tcp"  
+      tool: "naabu"
+    - host: "mail.amnic.com"
+      port: 25
+      protocol: "tcp"
+      tool: "naabu"
+      
+  vulnerabilities:
+    - host: "amnic.com"
+      vulnerability_type: "missing-hsts"
+      severity: "medium"
+      title: "Missing HSTS Header"
+      tool: "nuclei"
+    - host: "amnic.com"
+      vulnerability_type: "ssl-issuer"
+      severity: "low"  # Mapped from "info"
+      title: "SSL Certificate Issuer"
+      tool: "nuclei"
+
+# MITRE ATT&CK mapping test data
+mitre_test_mappings:
+  vulnerabilities:
+    - vulnerability_type: "exposed_database"
+      expected_technique: "T1190"
+      expected_tactic: "initial-access"
+    - vulnerability_type: "missing_spf_record"  
+      expected_technique: "T1566.001"
+      expected_tactic: "initial-access"
+    - vulnerability_type: "sql_injection"
+      expected_technique: "T1190"
+      expected_tactic: "initial-access"
+    - vulnerability_type: "directory_traversal"
+      expected_technique: "T1083"
+      expected_tactic: "discovery"
+
+# Severity mapping test cases
+severity_test_cases:
+  critical:
+    - "exposed_database"
+    - "remote_code_execution"
+    - "admin_panel_no_auth"
+    
+  high:
+    - "missing_spf_record"
+    - "expired_ssl_certificate"
+    - "sql_injection"
+    
+  medium:
+    - "missing_security_headers"
+    - "weak_ssl_configuration"
+    - "information_disclosure"
+    
+  low:
+    - "technology_disclosure"
+    - "directory_listing"
+    - "deprecated_protocols"
+
+# Performance test parameters
+performance_test_config:
+  max_subdomains: 100
+  max_ports_per_host: 50
+  max_vulnerabilities: 200
+  scan_timeout: 300  # 5 minutes
+  
+# Integration test scenarios
+integration_test_scenarios:
+  full_scan:
+    domain: "test.amnic.com"
+    expected_phases:
+      - "apex_domain_security"
+      - "service_detection"
+      - "web_security"
+      - "alert_processing"
+    expected_duration_max: 600  # 10 minutes
+    
+  incremental_scan:
+    domain: "test.amnic.com"
+    expected_phases:
+      - "apex_domain_security"
+      - "service_detection" 
+      - "delta_detection"
+      - "alert_processing"
+    expected_duration_max: 300  # 5 minutes
