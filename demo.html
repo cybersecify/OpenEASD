@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenEASD Viva Demo - Complete Security Scan</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .slide {
+            width: 95%;
+            max-width: 1400px;
+            height: 90vh;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(15px);
+            border-radius: 15px;
+            padding: 30px;
+            display: none;
+            flex-direction: column;
+            justify-content: flex-start;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.2);
+            overflow-y: auto;
+        }
+
+        .slide.active {
+            display: flex;
+            animation: slideIn 0.8s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(50px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .slide h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            text-align: center;
+            background: linear-gradient(45deg, #fff, #a8dadc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .slide h2 {
+            font-size: 2.2rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            text-align: center;
+            color: #fff;
+        }
+
+        .slide h3 {
+            font-size: 1.5rem;
+            font-weight: 500;
+            margin: 1rem 0;
+            color: #a8dadc;
+        }
+
+        .slide p {
+            font-size: 1.1rem;
+            line-height: 1.5;
+            margin-bottom: 0.8rem;
+            text-align: center;
+        }
+
+        .company-demo-info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .terminal {
+            background: #0d1117;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            margin: 15px 0;
+            border: 1px solid #30363d;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .terminal-header {
+            background: #21262d;
+            padding: 8px 15px;
+            border-radius: 8px 8px 0 0;
+            margin: -15px -15px 15px -15px;
+            color: #7d8590;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+        }
+
+        .terminal-dots {
+            display: flex;
+            gap: 6px;
+            margin-right: 15px;
+        }
+
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .dot.red { background: #ff5f56; }
+        .dot.yellow { background: #ffbd2e; }
+        .dot.green { background: #27ca3f; }
+
+        .command {
+            color: #58a6ff;
+            margin: 8px 0;
+            display: none;
+        }
+
+        .command::before {
+            content: "$ ";
+            color: #7c3aed;
+        }
+
+        .command.show {
+            display: block;
+            animation: typewriter 1.5s steps(40) forwards;
+        }
+
+        @keyframes typewriter {
+            from { width: 0; }
+            to { width: 100%; }
+        }
+
+        .output {
+            color: #e6edf3;
+            margin: 3px 0;
+            padding-left: 15px;
+            display: none;
+        }
+
+        .output.show {
+            display: block;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        .output.success { color: #3fb950; }
+        .output.warning { color: #d29922; }
+        .output.error { color: #f85149; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .json-output {
+            background: #0d1117;
+            border: 1px solid #21262d;
+            border-left: 4px solid #58a6ff;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 6px;
+            color: #e6edf3;
+            font-family: 'Consolas', Monaco, monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            display: none;
+        }
+
+        .json-output.show {
+            display: block;
+            animation: slideUp 0.8s ease-out;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .scan-progress {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .progress-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 5px;
+        }
+
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .status-completed { background: #3fb950; color: white; }
+        .status-running { background: #d29922; color: white; }
+        .status-pending { background: #656d76; color: white; }
+
+        .vulnerability-card {
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid;
+            animation: slideIn 0.6s ease-out;
+        }
+
+        .vuln-critical {
+            background: linear-gradient(135deg, #da1e37, #a4161a);
+            border-left-color: #ffccd5;
+        }
+
+        .vuln-high {
+            background: linear-gradient(135deg, #f77f00, #d62d20);
+            border-left-color: #ffb3ba;
+        }
+
+        .vuln-medium {
+            background: linear-gradient(135deg, #fcbf49, #f77f00);
+            border-left-color: #ffdfba;
+        }
+
+        .vuln-low {
+            background: linear-gradient(135deg, #06ffa5, #2a9d8f);
+            border-left-color: #baffc9;
+        }
+
+        .vuln-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .vuln-details {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .metrics-dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .metric-card {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #58a6ff;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .metric-label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .timer {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-family: 'Consolas', Monaco, monospace;
+            font-size: 16px;
+            color: #58a6ff;
+            border: 1px solid rgba(88, 166, 255, 0.3);
+        }
+
+        .slide-indicator {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+        }
+
+        .slide-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .slide-dot.active {
+            background: #58a6ff;
+            transform: scale(1.2);
+        }
+
+        .controls {
+            position: fixed;
+            bottom: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 1000;
+        }
+
+        .control-btn {
+            background: rgba(88, 166, 255, 0.2);
+            border: 1px solid rgba(88, 166, 255, 0.4);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .control-btn:hover {
+            background: rgba(88, 166, 255, 0.4);
+        }
+
+        .slack-notification {
+            background: #4a154b;
+            border: 2px solid #ecb22e;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 15px 0;
+            font-family: 'Segoe UI', sans-serif;
+            animation: slideIn 1s ease-out;
+        }
+
+        .slack-header {
+            color: #ecb22e;
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-bottom: 10px;
+        }
+
+        .slack-content {
+            color: #ffffff;
+            line-height: 1.4;
+        }
+
+        .demo-company {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            text-align: center;
+        }
+
+        .auto-advance {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: #58a6ff;
+            border: 1px solid rgba(88, 166, 255, 0.3);
+        }
+
+        .findings-summary {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .finding-count {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .count-number {
+            font-size: 2rem;
+            font-weight: 700;
+            display: block;
+        }
+
+        .count-critical { color: #f85149; }
+        .count-high { color: #d29922; }
+        .count-medium { color: #58a6ff; }
+        .count-low { color: #3fb950; }
+    </style>
+</head>
+<body>
+    <div class="timer" id="timer">3:00</div>
+    <div class="auto-advance" id="autoAdvance">Auto-advancing...</div>
+    
+    <div class="slide-indicator" id="slideIndicator"></div>
+    
+    <div class="controls">
+        <button class="control-btn" onclick="pauseDemo()">⏸️ Pause</button>
+        <button class="control-btn" onclick="resumeDemo()">▶️ Play</button>
+        <button class="control-btn" onclick="restartDemo()">🔄 Restart</button>
+        <button class="control-btn" onclick="nextSlide()">⏭️ Next</button>
+    </div>
+
+    <div class="container">
+        <!-- Slide 1: Title & Introduction (25 seconds) -->
+        <div class="slide active" id="slide1">
+            <h1>OpenEASD</h1>
+            <p style="font-size: 1.5rem; margin: 20px 0;">Automated External Attack Surface Detection</p>
+            <div class="company-demo-info">
+                <h3>🏢 Demo Target: TechFlow Solutions Pvt Ltd</h3>
+                <p><strong>Primary Domain:</strong> techflow-solutions.com</p>
+                <p><strong>Business:</strong> E-commerce & Digital Marketing Platform</p>
+                <p><strong>Infrastructure:</strong> 15 subdomains, 8 public services</p>
+            </div>
+            <p style="margin-top: 30px; font-size: 1.2rem;">
+                <strong>Developed by:</strong> Cybersecify | Rathnakara G N<br>
+                Enterprise-grade security scanning for startups
+            </p>
+        </div>
+
+        <!-- Slide 2: System Architecture (20 seconds) -->
+        <div class="slide" id="slide2">
+            <h2>🏗️ OpenEASD Architecture</h2>
+            <div class="metrics-dashboard">
+                <div class="metric-card">
+                    <div class="metric-value">🔍</div>
+                    <div class="metric-label">Subfinder<br>Subdomain Discovery</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">🔎</div>
+                    <div class="metric-label">Naabu<br>Port Scanning</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">🎯</div>
+                    <div class="metric-label">Nmap<br>Service Detection</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">⚡</div>
+                    <div class="metric-label">Nuclei<br>Vulnerability Scanning</div>
+                </div>
+            </div>
+            <div class="scan-progress">
+                <h3>🔄 Workflow Architecture</h3>
+                <div class="progress-item">
+                    <span>FastAPI REST Server</span>
+                    <span class="status-badge status-completed">RUNNING</span>
+                </div>
+                <div class="progress-item">
+                    <span>Prefect Orchestration Engine</span>
+                    <span class="status-badge status-completed">ACTIVE</span>
+                </div>
+                <div class="progress-item">
+                    <span>SQLite Database</span>
+                    <span class="status-badge status-completed">CONNECTED</span>
+                </div>
+                <div class="progress-item">
+                    <span>Docker Security Tools</span>
+                    <span class="status-badge status-completed">READY</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 3: System Startup Demo (25 seconds) -->
+        <div class="slide" id="slide3">
+            <h2>🚀 System Initialization</h2>
+            <div class="terminal">
+                <div class="terminal-header">
+                    <div class="terminal-dots">
+                        <div class="dot red"></div>
+                        <div class="dot yellow"></div>
+                        <div class="dot green"></div>
+                    </div>
+                    OpenEASD Command Terminal
+                </div>
+                <div class="command" id="cmd1">docker-compose up -d</div>
+                <div class="output success" id="out1">✓ Container openeasd-main           Started</div>
+                <div class="output success" id="out2">✓ Container openeasd-prefect        Started</div>
+                <div class="output success" id="out3">✓ Network openeasd-network          Created</div>
+                
+                <div class="command" id="cmd2">curl http://localhost:8000/health</div>
+                <div class="output" id="out4">HTTP/1.1 200 OK</div>
+                
+                <div class="command" id="cmd3">curl -X POST "/scan/start?domain=techflow-solutions.com&scan_type=full"</div>
+            </div>
+            
+            <div class="json-output" id="healthJson">
+{
+  "status": "healthy",
+  "service": "OpenEASD v1.0.0",
+  "database": "connected",
+  "tools_ready": ["subfinder", "naabu", "nmap", "nuclei"],
+  "company": "Cybersecify",
+  "author": "Rathnakara G N"
+}
+            </div>
+        </div>
+
+        <!-- Slide 4: Live Security Scan Execution (30 seconds) -->
+        <div class="slide" id="slide4">
+            <h2>🔍 Live Security Scan: TechFlow Solutions</h2>
+            <div class="json-output show">
+{
+  "message": "Full security scan initiated",
+  "target": "techflow-solutions.com", 
+  "session_id": 1001,
+  "scan_type": "comprehensive",
+  "estimated_duration": "45-60 minutes",
+  "timestamp": "2024-08-16T10:30:22Z"
+}
+            </div>
+            
+            <div class="scan-progress">
+                <h3>🔄 Real-time Scan Progress</h3>
+                <div class="progress-item">
+                    <span>🌐 Apex Domain Security Analysis</span>
+                    <span class="status-badge status-completed">COMPLETED</span>
+                </div>
+                <div class="progress-item">
+                    <span>🔍 Subdomain Discovery (Subfinder)</span>
+                    <span class="status-badge status-completed">COMPLETED</span>
+                </div>
+                <div class="progress-item">
+                    <span>🔎 Port Scanning (Naabu)</span>
+                    <span class="status-badge status-running">RUNNING</span>
+                </div>
+                <div class="progress-item">
+                    <span>🎯 Service Detection (Nmap)</span>
+                    <span class="status-badge status-pending">PENDING</span>
+                </div>
+                <div class="progress-item">
+                    <span>⚡ Vulnerability Assessment (Nuclei)</span>
+                    <span class="status-badge status-pending">PENDING</span>
+                </div>
+            </div>
+
+            <div class="demo-company">
+                <strong>📊 Discovery Progress:</strong> 12 subdomains found, 28 open ports detected
+            </div>
+        </div>
+
+        <!-- Slide 5: Critical Security Findings (35 seconds) -->
+        <div class="slide" id="slide5">
+            <h2>🚨 Critical Security Findings</h2>
+            
+            <div class="findings-summary">
+                <div class="finding-count">
+                    <span class="count-number count-critical">3</span>
+                    <div>Critical</div>
+                </div>
+                <div class="finding-count">
+                    <span class="count-number count-high">5</span>
+                    <div>High</div>
+                </div>
+                <div class="finding-count">
+                    <span class="count-number count-medium">8</span>
+                    <div>Medium</div>
+                </div>
+                <div class="finding-count">
+                    <span class="count-number count-low">4</span>
+                    <div>Low</div>
+                </div>
+            </div>
+
+            <div class="vulnerability-card vuln-critical">
+                <div class="vuln-title">🚨 CRITICAL: SQL Injection Vulnerability</div>
+                <div class="vuln-details">
+                    <strong>Location:</strong> admin.techflow-solutions.com/login.php<br>
+                    <strong>MITRE ATT&CK:</strong> T1190 (Exploit Public-Facing Application)<br>
+                    <strong>Impact:</strong> Database compromise, data theft<br>
+                    <strong>Recommendation:</strong> Implement parameterized queries immediately
+                </div>
+            </div>
+
+            <div class="vulnerability-card vuln-critical">
+                <div class="vuln-title">🚨 CRITICAL: Admin Panel Exposed</div>
+                <div class="vuln-details">
+                    <strong>Location:</strong> techflow-solutions.com/admin/<br>
+                    <strong>Issue:</strong> No authentication required<br>
+                    <strong>Risk:</strong> Complete system compromise
+                </div>
+            </div>
+
+            <div class="vulnerability-card vuln-high">
+                <div class="vuln-title">⚠️ HIGH: Outdated Apache Server</div>
+                <div class="vuln-details">
+                    <strong>Version:</strong> Apache/2.4.29 (Ubuntu)<br>
+                    <strong>CVE:</strong> CVE-2021-44228 (Log4Shell)<br>
+                    <strong>Ports:</strong> 80, 443
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 6: Real-time Slack Alerts (20 seconds) -->
+        <div class="slide" id="slide6">
+            <h2>📱 Real-time Security Alerts</h2>
+            
+            <div class="slack-notification">
+                <div class="slack-header">🚨 OpenEASD CRITICAL ALERT - Cybersecify</div>
+                <div class="slack-content">
+                    <strong>Company:</strong> TechFlow Solutions Pvt Ltd<br>
+                    <strong>Domain:</strong> techflow-solutions.com<br>
+                    <strong>Severity:</strong> CRITICAL<br><br>
+                    
+                    <strong>🎯 Finding:</strong> SQL Injection vulnerability detected<br>
+                    <strong>📍 Location:</strong> /admin/login.php<br>
+                    <strong>🔍 Method:</strong> POST parameter 'username'<br><br>
+                    
+                    <strong>⚡ IMMEDIATE ACTION REQUIRED:</strong><br>
+                    • Disable affected endpoint<br>
+                    • Implement input validation<br>
+                    • Deploy WAF rules<br><br>
+                    
+                    <strong>🕐 Detection Time:</strong> 2024-08-16 10:45:33<br>
+                    <strong>📊 Scan ID:</strong> 1001<br><br>
+                    
+                    <em>Powered by OpenEASD | Cybersecify | Rathnakara G N</em>
+                </div>
+            </div>
+
+            <div class="demo-company">
+                <strong>📧 Alert Delivery:</strong> Slack, Email, Webhook - All delivered in &lt;3 seconds
+            </div>
+        </div>
+
+        <!-- Slide 7: Additional Slack Alerts & Notifications (30 seconds) -->
+        <div class="slide" id="slide7">
+            <h2>📱 Comprehensive Alert System</h2>
+            
+            <div class="slack-notification">
+                <div class="slack-header">⚠️ OpenEASD HIGH PRIORITY ALERT - Cybersecify</div>
+                <div class="slack-content">
+                    <strong>Company:</strong> TechFlow Solutions Pvt Ltd<br>
+                    <strong>Domain:</strong> api.techflow-solutions.com<br>
+                    <strong>Severity:</strong> HIGH<br><br>
+                    
+                    <strong>🎯 Finding:</strong> Outdated Apache Server with known CVEs<br>
+                    <strong>📍 Service:</strong> Apache/2.4.29 (Ubuntu)<br>
+                    <strong>🔍 CVE:</strong> CVE-2021-44228 (Log4Shell)<br>
+                    <strong>🌐 Ports:</strong> 80, 443<br><br>
+                    
+                    <strong>⚡ RECOMMENDED ACTIONS:</strong><br>
+                    • Update Apache to latest version<br>
+                    • Apply security patches<br>
+                    • Monitor for exploitation attempts<br><br>
+                    
+                    <strong>🕐 Detection Time:</strong> 2024-08-16 10:47:15<br>
+                    <strong>📊 Scan ID:</strong> 1001<br><br>
+                    
+                    <em>Powered by OpenEASD | Cybersecify | Rathnakara G N</em>
+                </div>
+            </div>
+
+            <div class="slack-notification">
+                <div class="slack-header">🔵 OpenEASD MEDIUM ALERT - Cybersecify</div>
+                <div class="slack-content">
+                    <strong>Company:</strong> TechFlow Solutions Pvt Ltd<br>
+                    <strong>Domain:</strong> www.techflow-solutions.com<br>
+                    <strong>Severity:</strong> MEDIUM<br><br>
+                    
+                    <strong>🎯 Finding:</strong> Missing Security Headers<br>
+                    <strong>📍 Headers Missing:</strong> HSTS, CSP, X-Frame-Options<br>
+                    <strong>🔍 Security Score:</strong> D (40/100)<br><br>
+                    
+                    <strong>⚡ IMPACT:</strong><br>
+                    • Clickjacking vulnerability<br>
+                    • XSS attack potential<br>
+                    • Man-in-the-middle risks<br><br>
+                    
+                    <strong>🕐 Detection Time:</strong> 2024-08-16 10:48:33<br>
+                    <strong>📊 Scan ID:</strong> 1001<br><br>
+                    
+                    <em>Powered by OpenEASD | Cybersecify | Rathnakara G N</em>
+                </div>
+            </div>
+
+            <div class="demo-company">
+                <strong>📧 Multi-Channel Alerts:</strong> Slack ✓ | Email ✓ | Webhook ✓ | SMS ✓<br>
+                <strong>⚡ Delivery Speed:</strong> All alerts delivered in &lt;3 seconds
+            </div>
+        </div>
+
+        <!-- Slide 8: Conclusion & Thank You (15 seconds) -->
+        <div class="slide" id="slide8">
+            <h1>OpenEASD Demo Complete</h1>
+            <div class="company-demo-info">
+                <h3>Thank you for watching!</h3>
+                <p><strong>Project:</strong> OpenEASD - Automated External Attack Surface Detection</p>
+                <p><strong>Company:</strong> Cybersecify</p>
+                <p><strong>Developer:</strong> Rathnakara G N</p>
+            </div>
+            
+            <div class="metrics-dashboard">
+                <div class="metric-card">
+                    <div class="metric-value">✅</div>
+                    <div class="metric-label">Demo Complete<br>All Features Shown</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">🚀</div>
+                    <div class="metric-label">Production Ready<br>Scalable Solution</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">🏆</div>
+                    <div class="metric-label">Enterprise Grade<br>Security Platform</div>
+                </div>
+            </div>
+
+            <p style="margin-top: 30px; font-size: 1.1rem; text-align: center;">
+                <strong>Contact:</strong> contact@cybersecify.com<br>
+                <strong>Repository:</strong> github.com/cybersecify/openeasd
+            </p>
+        </div>
+    </div>
+
+    <script>
+        let currentSlide = 0;
+        let totalSlides = 8;
+        let slideInterval;
+        let timeRemaining = 180; // 3 minutes
+        let timerInterval;
+        let isPaused = false;
+
+        // Slide durations in seconds
+        const slideDurations = [25, 20, 25, 30, 35, 20, 30, 15];
+
+        function createSlideIndicator() {
+            const indicator = document.getElementById('slideIndicator');
+            for (let i = 0; i < totalSlides; i++) {
+                const dot = document.createElement('div');
+                dot.className = 'slide-dot';
+                if (i === 0) dot.classList.add('active');
+                indicator.appendChild(dot);
+            }
+        }
+
+        function updateSlideIndicator() {
+            const dots = document.querySelectorAll('.slide-dot');
+            dots.forEach((dot, index) => {
+                dot.classList.toggle('active', index === currentSlide);
+            });
+        }
+
+        function showSlide(n) {
+            const slides = document.querySelectorAll('.slide');
+            slides.forEach(slide => slide.classList.remove('active'));
+            if (slides[n]) {
+                slides[n].classList.add('active');
+                updateSlideIndicator();
+                triggerSlideAnimations(n);
+            }
+        }
+
+        function triggerSlideAnimations(slideIndex) {
+            switch(slideIndex) {
+                case 2: // Terminal slide
+                    setTimeout(() => animateTerminal(), 500);
+                    break;
+                case 3: // Scan progress
+                    setTimeout(() => animateScanProgress(), 1000);
+                    break;
+                case 4: // Vulnerabilities
+                    setTimeout(() => animateVulnerabilities(), 1000);
+                    break;
+            }
+        }
+
+        function animateTerminal() {
+            const commands = ['cmd1', 'cmd2', 'cmd3'];
+            const outputs = ['out1', 'out2', 'out3', 'out4'];
+            
+            commands.forEach((cmdId, index) => {
+                setTimeout(() => {
+                    const cmd = document.getElementById(cmdId);
+                    if (cmd) {
+                        cmd.classList.add('show');
+                    }
+                }, index * 2000);
+            });
+            
+            outputs.forEach((outId, index) => {
+                setTimeout(() => {
+                    const out = document.getElementById(outId);
+                    if (out) {
+                        out.classList.add('show');
+                    }
+                }, (index + 1) * 1500);
+            });
+
+            setTimeout(() => {
+                const json = document.getElementById('healthJson');
+                if (json) json.classList.add('show');
+            }, 4000);
+        }
+
+        function animateScanProgress() {
+            const progressItems = document.querySelectorAll('#slide4 .progress-item');
+            progressItems.forEach((item, index) => {
+                setTimeout(() => {
+                    item.style.animation = 'slideIn 0.6s ease-out';
+                }, index * 500);
+            });
+        }
+
+        function animateVulnerabilities() {
+            const vulnCards = document.querySelectorAll('.vulnerability-card');
+            vulnCards.forEach((card, index) => {
+                setTimeout(() => {
+                    card.style.opacity = '1';
+                    card.style.animation = 'slideIn 0.8s ease-out';
+                }, index * 800);
+            });
+        }
+
+        function nextSlide() {
+            if (currentSlide < totalSlides - 1) {
+                currentSlide++;
+                showSlide(currentSlide);
+                scheduleNextSlide();
+            } else {
+                // Demo completed
+                document.getElementById('autoAdvance').textContent = 'Demo Complete!';
+                setTimeout(() => {
+                    if (confirm('Demo completed! Restart?')) {
+                        restartDemo();
+                    }
+                }, 2000);
+            }
+        }
+
+        function scheduleNextSlide() {
+            if (!isPaused) {
+                const duration = slideDurations[currentSlide] * 1000;
+                slideInterval = setTimeout(nextSlide, duration);
+                document.getElementById('autoAdvance').textContent = 
+                    `Auto-advancing in ${slideDurations[currentSlide]}s...`;
+            }
+        }
+
+        function updateTimer() {
+            if (!isPaused && timeRemaining > 0) {
+                timeRemaining--;
+                const minutes = Math.floor(timeRemaining / 60);
+                const seconds = timeRemaining % 60;
+                document.getElementById('timer').textContent = 
+                    `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }
+
+        function pauseDemo() {
+            isPaused = true;
+            clearTimeout(slideInterval);
+            clearInterval(timerInterval);
+            document.getElementById('autoAdvance').textContent = 'Demo Paused';
+        }
+
+        function resumeDemo() {
+            isPaused = false;
+            scheduleNextSlide();
+            timerInterval = setInterval(updateTimer, 1000);
+            document.getElementById('autoAdvance').textContent = 'Demo Resuming...';
+        }
+
+        function restartDemo() {
+            currentSlide = 0;
+            timeRemaining = 180;
+            isPaused = false;
+            clearTimeout(slideInterval);
+            clearInterval(timerInterval);
+            showSlide(0);
+            scheduleNextSlide();
+            timerInterval = setInterval(updateTimer, 1000);
+        }
+
+        // Initialize demo
+        document.addEventListener('DOMContentLoaded', function() {
+            createSlideIndicator();
+            showSlide(0);
+            scheduleNextSlide();
+            timerInterval = setInterval(updateTimer, 1000);
+            
+            // Keyboard controls
+            document.addEventListener('keydown', function(e) {
+                switch(e.code) {
+                    case 'Space':
+                        e.preventDefault();
+                        if (isPaused) resumeDemo();
+                        else pauseDemo();
+                        break;
+                    case 'KeyR':
+                        e.preventDefault();
+                        restartDemo();
+                        break;
+                    case 'ArrowRight':
+                        e.preventDefault();
+                        nextSlide();
+                        break;
+                    case 'ArrowLeft':
+                        e.preventDefault();
+                        if (currentSlide > 0) {
+                            currentSlide--;
+                            showSlide(currentSlide);
+                        }
+                        break;
+                }
+            });
+        });
+    </script>
+</body>
+</html>
