@@ -1,37 +1,75 @@
 {% extends "base.html" %}
 
-{% block title %}New Scan{% endblock %}
+{% block title %}Start Scan{% endblock %}
 
 {% block content %}
 <div class="max-w-lg mx-auto">
-  <h1 class="text-2xl font-bold text-gray-900 mb-6">Start New Scan</h1>
+  <h1 class="text-2xl font-bold text-gray-900 mb-6">Start Scan</h1>
 
   <div class="bg-white rounded-lg shadow p-6">
     <form method="post">
       {% csrf_token %}
-      <div class="mb-4">
-        <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ form.domain.id_for_label }}">
-          Domain
-        </label>
+
+      <!-- Domain -->
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Domain</label>
+        {% if prefilled_domain %}
+        <div class="w-full border border-gray-200 bg-gray-50 rounded-md px-3 py-2 text-sm font-mono text-gray-700">
+          {{ prefilled_domain }}
+        </div>
+        <input type="hidden" name="domain" value="{{ prefilled_domain }}">
+        {% else %}
         {{ form.domain }}
         {% if form.domain.errors %}
-          <p class="text-red-500 text-xs mt-1">{{ form.domain.errors.0 }}</p>
+        <p class="text-red-500 text-xs mt-1">{{ form.domain.errors.0 }}</p>
+        {% endif %}
         {% endif %}
       </div>
 
-      <div class="mb-4">
-        <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ form.scan_type.id_for_label }}">
-          Scan Type
-        </label>
-        {{ form.scan_type }}
+      <!-- Schedule Type -->
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700 mb-2">When to run</label>
+        <div class="flex flex-col gap-2">
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input type="radio" name="schedule_type" value="now" class="h-4 w-4 text-indigo-600" checked
+                   onchange="showSchedule(this.value)">
+            <span class="text-sm text-gray-700">Run now</span>
+          </label>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input type="radio" name="schedule_type" value="once" class="h-4 w-4 text-indigo-600"
+                   onchange="showSchedule(this.value)">
+            <span class="text-sm text-gray-700">Schedule once</span>
+          </label>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input type="radio" name="schedule_type" value="recurring" class="h-4 w-4 text-indigo-600"
+                   onchange="showSchedule(this.value)">
+            <span class="text-sm text-gray-700">Recurring</span>
+          </label>
+        </div>
       </div>
 
-      <div class="mb-6">
-        <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ form.workflow.id_for_label }}">
-          Workflow
-        </label>
-        {{ form.workflow }}
-        <p class="text-xs text-gray-400 mt-1">Select a workflow to control which tools run. Leave blank to use the default pipeline.</p>
+      <!-- Schedule Once: date + time -->
+      <div id="section-once" class="mb-6 hidden">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Date &amp; Time</label>
+        {{ form.scheduled_at }}
+        {% if form.scheduled_at.errors %}
+        <p class="text-red-500 text-xs mt-1">{{ form.scheduled_at.errors.0 }}</p>
+        {% endif %}
+      </div>
+
+      <!-- Recurring: frequency + time -->
+      <div id="section-recurring" class="mb-6 hidden">
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Frequency</label>
+          {{ form.recurrence }}
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Time (UTC)</label>
+          {{ form.recurrence_time }}
+          {% if form.recurrence_time.errors %}
+          <p class="text-red-500 text-xs mt-1">{{ form.recurrence_time.errors.0 }}</p>
+          {% endif %}
+        </div>
       </div>
 
       <button type="submit" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 font-medium">
@@ -40,4 +78,20 @@
     </form>
   </div>
 </div>
+
+<script>
+  function showSchedule(value) {
+    document.getElementById('section-once').classList.add('hidden');
+    document.getElementById('section-recurring').classList.add('hidden');
+    if (value === 'once') {
+      document.getElementById('section-once').classList.remove('hidden');
+    } else if (value === 'recurring') {
+      document.getElementById('section-recurring').classList.remove('hidden');
+    }
+  }
+
+  // Restore state on validation error
+  const selected = document.querySelector('input[name="schedule_type"]:checked');
+  if (selected) showSchedule(selected.value);
+</script>
 {% endblock %}

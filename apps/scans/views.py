@@ -6,6 +6,12 @@ import threading
 from django.db.models import Q
 from django.shortcuts import render, get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
+from django.contrib.auth.decorators import login_required
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
+from django_apscheduler.jobstores import DjangoJobStore
 
 from .forms import StartScanForm
 from .models import ScanSession
@@ -30,24 +36,93 @@ def _get_vuln_counts(session):
     return counts
 
 
+def _get_scheduler():
+    scheduler = BackgroundScheduler(timezone="UTC")
+    scheduler.add_jobstore(DjangoJobStore(), "default")
+    return scheduler
+
+
+def _schedule_once(domain, scheduled_at):
+    """Schedule a one-time scan at a specific datetime."""
+    def _run():
+        session = ScanSession.objects.create(domain=domain, scan_type="full")
+        run_scan(session.id)
+
+    scheduler = _get_scheduler()
+    scheduler.start()
+    job_id = f"once_{domain}_{scheduled_at.strftime('%Y%m%d%H%M')}"
+    scheduler.add_job(
+        _run,
+        trigger=DateTrigger(run_date=scheduled_at),
+        id=job_id,
+        name=f"One-time scan: {domain}",
+        jobstore="default",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    logger.info(f"One-time scan scheduled: domain={domain} at={scheduled_at}")
+
+
+def _schedule_recurring(domain, recurrence, recurrence_time):
+    """Add or replace a recurring scan job for a domain."""
+    def _run():
+        session = ScanSession.objects.create(domain=domain, scan_type="full")
+        run_scan(session.id)
+
+    if recurrence == "weekly":
+        trigger = CronTrigger(day_of_week="mon", hour=recurrence_time.hour, minute=recurrence_time.minute)
+    else:
+        trigger = CronTrigger(hour=recurrence_time.hour, minute=recurrence_time.minute)
+
+    scheduler = _get_scheduler()
+    scheduler.start()
+    job_id = f"recurring_{domain}"
+    scheduler.add_job(
+        _run,
+        trigger=trigger,
+        id=job_id,
+        name=f"Recurring {recurrence} scan: {domain}",
+        jobstore="default",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    logger.info(f"Recurring scan scheduled: domain={domain} recurrence={recurrence} time={recurrence_time}")
+
+
+@login_required
 @require_http_methods(["GET", "POST"])
 def scan_start(request):
     if request.method == "POST":
+        prefilled_domain = request.POST.get("domain", "").strip()
         form = StartScanForm(request.POST)
         if form.is_valid():
             domain = form.cleaned_data["domain"].strip()
-            scan_type = form.cleaned_data["scan_type"]
-            workflow_id = form.cleaned_data.get("workflow") or None
-            session = ScanSession.objects.create(domain=domain, scan_type=scan_type, workflow_id=workflow_id)
-            threading.Thread(target=run_scan, args=[session.id], daemon=True).start()
-            logger.info(f"Scan started: session={session.id} domain={domain}")
-            return redirect("scan-detail", session_id=session.id)
+            schedule_type = form.cleaned_data["schedule_type"]
+
+            if schedule_type == "now":
+                session = ScanSession.objects.create(domain=domain, scan_type="full")
+                threading.Thread(target=run_scan, args=[session.id], daemon=True).start()
+                logger.info(f"Scan started: session={session.id} domain={domain}")
+                return redirect("scan-detail", session_id=session.id)
+
+            elif schedule_type == "once":
+                scheduled_at = form.cleaned_data["scheduled_at"]
+                _schedule_once(domain, scheduled_at)
+                return redirect("domain-list")
+
+            elif schedule_type == "recurring":
+                recurrence = form.cleaned_data["recurrence"]
+                recurrence_time = form.cleaned_data["recurrence_time"]
+                _schedule_recurring(domain, recurrence, recurrence_time)
+                return redirect("domain-list")
     else:
-        form = StartScanForm()
+        prefilled_domain = request.GET.get("domain", "").strip()
+        form = StartScanForm(initial={"domain": prefilled_domain})
 
-    return render(request, "scans/start.html", {"form": form})
+    return render(request, "scans/start.html", {"form": form, "prefilled_domain": prefilled_domain})
 
 
+@login_required
 def scan_list(request):
     qs = ScanSession.objects.all()
 
@@ -71,6 +146,7 @@ def scan_list(request):
     })
 
 
+@login_required
 def scan_detail(request, session_id):
     session = get_object_or_404(ScanSession, id=session_id)
     vuln_counts = _get_vuln_counts(session)
@@ -81,6 +157,7 @@ def scan_detail(request, session_id):
     })
 
 
+@login_required
 def scan_status_fragment(request, session_id):
     session = get_object_or_404(ScanSession, id=session_id)
     vuln_counts = _get_vuln_counts(session)
@@ -96,6 +173,7 @@ def scan_status_fragment(request, session_id):
     return response
 
 
+@login_required
 def vulnerability_list(request):
     """Aggregate view across all finding types (severity >= medium by default)."""
     from apps.nuclei.models import NucleiFinding

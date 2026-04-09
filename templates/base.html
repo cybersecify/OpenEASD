@@ -14,11 +14,12 @@
       <a href="{% url 'dashboard' %}" class="font-bold text-lg tracking-tight">OpenEASD</a>
       <div class="flex gap-6 text-sm font-medium">
         <a href="{% url 'dashboard' %}" class="hover:text-indigo-200">Dashboard</a>
-        <a href="{% url 'scan-list' %}" class="hover:text-indigo-200">Scans</a>
-        <a href="{% url 'vulnerability-list' %}" class="hover:text-indigo-200">Vulnerabilities</a>
-        <a href="{% url 'workflow-list' %}" class="hover:text-indigo-200">Workflows</a>
-        <a href="{% url 'scan-start' %}" class="bg-white text-indigo-700 px-3 py-1 rounded hover:bg-indigo-50">New Scan</a>
-        <a href="/admin/" class="hover:text-indigo-200">Admin</a>
+        <a href="{% url 'insights' %}" class="hover:text-indigo-200">Insights</a>
+        <a href="{% url 'domain-list' %}" class="hover:text-indigo-200">Domains</a>
+        <form method="post" action="{% url 'logout' %}" class="inline">
+          {% csrf_token %}
+          <button type="submit" class="hover:text-indigo-200 text-sm font-medium">Logout</button>
+        </form>
       </div>
     </div>
   </nav>

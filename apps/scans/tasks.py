@@ -187,28 +187,28 @@ def _run_via_workflow(session):
 # ---------------------------------------------------------------------------
 
 def daily_scan():
-    from apps.core.models import ScanConfiguration
+    from apps.domains.models import Domain
 
-    active_configs = ScanConfiguration.objects.filter(is_active=True)
-    if not active_configs.exists():
-        logger.info("[daily_scan] No active domain configurations found")
+    active_domains = Domain.objects.filter(is_active=True)
+    if not active_domains.exists():
+        logger.info("[daily_scan] No active domains found")
         return
 
-    for cfg in active_configs:
-        session = ScanSession.objects.create(domain=cfg.domain, scan_type="incremental")
+    for domain in active_domains:
+        session = ScanSession.objects.create(domain=domain.name, scan_type="full")
         threading.Thread(target=run_scan, args=[session.id], daemon=True).start()
-        logger.info(f"[daily_scan] Launched scan for {cfg.domain} (session {session.id})")
+        logger.info(f"[daily_scan] Launched scan for {domain.name} (session {session.id})")
 
 
 def weekly_scan():
-    from apps.core.models import ScanConfiguration
+    from apps.domains.models import Domain
 
-    active_configs = ScanConfiguration.objects.filter(is_active=True)
-    if not active_configs.exists():
-        logger.info("[weekly_scan] No active domain configurations found")
+    active_domains = Domain.objects.filter(is_active=True)
+    if not active_domains.exists():
+        logger.info("[weekly_scan] No active domains found")
         return
 
-    for cfg in active_configs:
-        session = ScanSession.objects.create(domain=cfg.domain, scan_type="full")
+    for domain in active_domains:
+        session = ScanSession.objects.create(domain=domain.name, scan_type="full")
         threading.Thread(target=run_scan, args=[session.id], daemon=True).start()
-        logger.info(f"[weekly_scan] Launched full scan for {cfg.domain} (session {session.id})")
+        logger.info(f"[weekly_scan] Launched full scan for {domain.name} (session {session.id})")

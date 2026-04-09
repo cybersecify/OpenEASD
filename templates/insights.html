@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}Insights{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+  <h1 class="text-2xl font-bold text-gray-900">Insights</h1>
+  <p class="text-gray-500 text-sm mt-1">Attack surface trends and historical analysis</p>
+</div>
+
+{% if not scan_trend %}
+<div class="bg-white rounded-lg shadow px-6 py-16 text-center text-gray-400">
+  <p class="text-lg font-medium">No completed scans yet.</p>
+  <p class="text-sm mt-1">Run a scan to start seeing insights.</p>
+  <a href="{% url 'scan-start' %}" class="mt-4 inline-block bg-indigo-600 text-white px-4 py-2 rounded-md text-sm hover:bg-indigo-700">Start a Scan</a>
+</div>
+{% else %}
+
+<!-- Finding Trend -->
+<div class="bg-white rounded-lg shadow mb-6">
+  <div class="px-6 py-4 border-b border-gray-200">
+    <h2 class="font-semibold text-gray-700">Finding Trend — Last {{ scan_trend|length }} Scans</h2>
+    <p class="text-xs text-gray-400 mt-0.5">Critical and high severity findings per scan</p>
+  </div>
+  <div class="px-6 py-4 overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead>
+        <tr class="text-left text-xs text-gray-500 uppercase">
+          <th class="pb-3 pr-6">Scan</th>
+          <th class="pb-3 pr-6">Critical</th>
+          <th class="pb-3 pr-6">High</th>
+          <th class="pb-3 w-full">Distribution</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for row in scan_trend %}
+        <tr>
+          <td class="py-2 pr-6 text-gray-700 whitespace-nowrap">{{ row.label }}</td>
+          <td class="py-2 pr-6">
+            <span class="font-semibold {% if row.critical > 0 %}text-red-600{% else %}text-gray-400{% endif %}">
+              {{ row.critical }}
+            </span>
+          </td>
+          <td class="py-2 pr-6">
+            <span class="font-semibold {% if row.high > 0 %}text-orange-500{% else %}text-gray-400{% endif %}">
+              {{ row.high }}
+            </span>
+          </td>
+          <td class="py-2">
+            <div class="flex gap-1 items-center">
+              {% if row.critical > 0 %}
+              <div class="h-4 bg-red-500 rounded" style="width: {{ row.critical }}rem; max-width: 12rem;" title="{{ row.critical }} critical"></div>
+              {% endif %}
+              {% if row.high > 0 %}
+              <div class="h-4 bg-orange-400 rounded" style="width: {{ row.high }}rem; max-width: 12rem;" title="{{ row.high }} high"></div>
+              {% endif %}
+              {% if row.critical == 0 and row.high == 0 %}
+              <span class="text-xs text-gray-400">No critical/high findings</span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="flex gap-4 mt-3 text-xs text-gray-500">
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 bg-red-500 rounded"></span> Critical</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 bg-orange-400 rounded"></span> High</span>
+    </div>
+  </div>
+</div>
+
+<!-- Delta Trend + Top Hosts -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+
+  <!-- Delta Trend -->
+  <div class="bg-white rounded-lg shadow">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-700">New vs Removed Exposures</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Delta changes detected per scan</p>
+    </div>
+    <div class="px-6 py-4">
+      {% if delta_trend %}
+      <table class="min-w-full text-sm">
+        <thead>
+          <tr class="text-left text-xs text-gray-500 uppercase">
+            <th class="pb-3 pr-4">Scan</th>
+            <th class="pb-3 pr-4 text-green-600">New</th>
+            <th class="pb-3 text-gray-500">Removed</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for row in delta_trend %}
+          <tr>
+            <td class="py-2 pr-4 text-gray-700 whitespace-nowrap text-xs">{{ row.label }}</td>
+            <td class="py-2 pr-4">
+              <span class="{% if row.new > 0 %}text-red-600 font-semibold{% else %}text-gray-400{% endif %}">
+                +{{ row.new }}
+              </span>
+            </td>
+            <td class="py-2">
+              <span class="{% if row.removed > 0 %}text-green-600 font-semibold{% else %}text-gray-400{% endif %}">
+                -{{ row.removed }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-gray-400 text-sm">No delta data yet.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Top Vulnerable Hosts -->
+  <div class="bg-white rounded-lg shadow">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-700">Top Vulnerable Hosts</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Hosts with the most nuclei findings</p>
+    </div>
+    <div class="px-6 py-4">
+      {% if top_hosts %}
+      <ul class="divide-y divide-gray-100">
+        {% for host in top_hosts %}
+        <li class="py-2 flex items-center justify-between text-sm">
+          <span class="text-gray-800 font-mono truncate max-w-xs">{{ host.host }}</span>
+          <span class="ml-4 bg-red-100 text-red-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+            {{ host.count }} finding{{ host.count|pluralize }}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="text-gray-400 text-sm">No findings recorded yet.</p>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<!-- Most Common Finding Types + SSL Expiry -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+
+  <!-- Most Common Finding Types -->
+  <div class="bg-white rounded-lg shadow">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-700">Most Common Finding Types</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Recurring vulnerabilities across all scans</p>
+    </div>
+    <div class="px-6 py-4">
+      {% if top_finding_types %}
+      <ul class="divide-y divide-gray-100">
+        {% for f in top_finding_types %}
+        <li class="py-2 flex items-center justify-between text-sm">
+          <span class="text-gray-800 truncate max-w-xs">{{ f.template_name|default:"Unknown" }}</span>
+          <div class="flex items-center gap-2 ml-4 shrink-0">
+            {% include "partials/severity_badge.html" with severity=f.severity %}
+            <span class="text-xs text-gray-500">×{{ f.count }}</span>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="text-gray-400 text-sm">No findings recorded yet.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- SSL Expiry -->
+  <div class="bg-white rounded-lg shadow">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-700">SSL Certificates Expiring Soon</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Certificates expiring within 30 days</p>
+    </div>
+    <div class="px-6 py-4">
+      {% if expiring_ssl %}
+      <ul class="divide-y divide-gray-100">
+        {% for ssl in expiring_ssl %}
+        <li class="py-2 flex items-center justify-between text-sm">
+          <span class="text-gray-800 font-mono truncate max-w-xs">{{ ssl.domain }}</span>
+          <span class="ml-4 text-xs {% if ssl.expiry_date %}text-red-600 font-semibold{% else %}text-gray-400{% endif %}">
+            {% if ssl.expiry_date %}Expires {{ ssl.expiry_date|date:"M d, Y" }}{% else %}Unknown{% endif %}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="text-green-600 text-sm font-medium">No certificates expiring in the next 30 days.</p>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+{% endif %}
+{% endblock %}

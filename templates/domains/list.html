@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Domains{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+  <h1 class="text-2xl font-bold text-gray-900">Domains</h1>
+  <p class="text-gray-500 text-sm mt-1">Apex domains registered for continuous monitoring</p>
+</div>
+
+<!-- Add Domain Form -->
+<div class="bg-white rounded-lg shadow mb-6">
+  <div class="px-6 py-4 border-b border-gray-200">
+    <h2 class="font-semibold text-gray-700">Add Domain</h2>
+  </div>
+  <form method="post" class="px-6 py-4">
+    {% csrf_token %}
+    <div class="flex flex-col sm:flex-row gap-3 items-start">
+      <div class="flex-1">
+        {{ form.name }}
+        {% if form.name.errors %}
+        <p class="text-red-500 text-xs mt-1">{{ form.name.errors.0 }}</p>
+        {% endif %}
+      </div>
+<div class="flex items-center gap-2 pt-2 sm:pt-0 shrink-0">
+        {{ form.is_primary }}
+        <label class="text-sm text-gray-600">Primary</label>
+      </div>
+      <div class="shrink-0">
+        <button type="submit" class="w-full sm:w-auto bg-indigo-600 text-white px-5 py-2 rounded-md text-sm font-medium hover:bg-indigo-700">
+          Add Domain
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- Domain List -->
+<div class="bg-white rounded-lg shadow">
+  <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+    <h2 class="font-semibold text-gray-700">Registered Domains</h2>
+    <span class="text-xs text-gray-400">{{ domains|length }} domain{{ domains|length|pluralize }}</span>
+  </div>
+
+  {% if domains %}
+  <table class="min-w-full divide-y divide-gray-100">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Added</th>
+        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for domain in domains %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-6 py-4 text-sm font-mono font-medium text-gray-900">{{ domain.name }}</td>
+        <td class="px-6 py-4 text-sm">
+          {% if domain.is_primary %}
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">Primary</span>
+          {% else %}
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Related</span>
+          {% endif %}
+        </td>
+<td class="px-6 py-4 text-sm">
+          {% if domain.is_active %}
+          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+            <span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span> Active
+          </span>
+          {% else %}
+          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+            <span class="w-1.5 h-1.5 bg-gray-400 rounded-full"></span> Paused
+          </span>
+          {% endif %}
+        </td>
+        <td class="px-6 py-4 text-sm text-gray-500">{{ domain.added_at|date:"M d, Y" }}</td>
+        <td class="px-6 py-4 text-right flex items-center justify-end gap-3">
+          <a href="{% url 'scan-start' %}?domain={{ domain.name }}" class="text-indigo-600 hover:underline text-sm">Scan</a>
+          <form method="post" action="{% url 'domain-toggle' domain.pk %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="text-gray-500 hover:text-gray-700 text-sm">
+              {% if domain.is_active %}Pause{% else %}Resume{% endif %}
+            </button>
+          </form>
+          <form method="post" action="{% url 'domain-delete' domain.pk %}" class="inline"
+                onsubmit="return confirm('Delete {{ domain.name }}?')">
+            {% csrf_token %}
+            <button type="submit" class="text-red-500 hover:text-red-700 text-sm">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="px-6 py-12 text-center text-gray-400">
+    <p class="text-lg">No domains registered yet.</p>
+    <p class="text-sm mt-1">Add your first apex domain above to start monitoring.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
