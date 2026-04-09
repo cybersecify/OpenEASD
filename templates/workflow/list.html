@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Workflows{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold text-gray-900">Workflows</h1>
+  <a href="{% url 'workflow-create' %}" class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm hover:bg-indigo-700">+ New Workflow</a>
+</div>
+
+{% if workflows %}
+<div class="space-y-4">
+  {% for wf in workflows %}
+  <div class="bg-white rounded-lg shadow px-6 py-5 flex items-center justify-between">
+    <div>
+      <div class="flex items-center gap-3">
+        <a href="{% url 'workflow-detail' wf.pk %}" class="font-semibold text-gray-900 hover:text-indigo-600">{{ wf.name }}</a>
+        {% if wf.is_default %}<span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">Default</span>{% endif %}
+      </div>
+      {% if wf.description %}<p class="text-sm text-gray-500 mt-1">{{ wf.description }}</p>{% endif %}
+      <div class="flex gap-2 mt-2 flex-wrap">
+        {% for step in wf.steps.all %}
+        <span class="text-xs px-2 py-0.5 rounded {% if step.enabled %}bg-green-100 text-green-700{% else %}bg-gray-100 text-gray-400 line-through{% endif %}">
+          {{ step.get_tool_display }}
+        </span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="text-sm text-gray-400">
+      {{ wf.runs.count }} run{{ wf.runs.count|pluralize }}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="bg-white rounded-lg shadow px-6 py-12 text-center text-gray-400">
+  <p class="mb-4">No workflows yet.</p>
+  <a href="{% url 'workflow-create' %}" class="text-indigo-600 hover:underline">Create your first workflow</a>
+</div>
+{% endif %}
+{% endblock %}

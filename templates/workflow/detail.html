@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}{{ workflow.name }}{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-start justify-between">
+  <div>
+    <a href="{% url 'workflow-list' %}" class="text-indigo-600 text-sm hover:underline">&larr; Workflows</a>
+    <h1 class="text-2xl font-bold text-gray-900 mt-2">
+      {{ workflow.name }}
+      {% if workflow.is_default %}<span class="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full align-middle">Default</span>{% endif %}
+    </h1>
+    {% if workflow.description %}<p class="text-gray-500 text-sm mt-1">{{ workflow.description }}</p>{% endif %}
+  </div>
+  <form method="post" action="{% url 'workflow-delete' workflow.pk %}"
+        onsubmit="return confirm('Delete this workflow?')">
+    {% csrf_token %}
+    <button class="text-sm text-red-600 hover:underline">Delete</button>
+  </form>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+  <!-- Steps -->
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-700">Steps</h2>
+    </div>
+    <ul class="divide-y divide-gray-100">
+      {% for tool_key, tool_label in tool_choices %}
+      {% with step=workflow.steps.all %}
+      <li class="px-6 py-3 flex items-center justify-between">
+        <span class="text-sm text-gray-700">{{ tool_label }}</span>
+        <form method="post" action="{% url 'workflow-toggle-step' workflow.pk tool_key %}">
+          {% csrf_token %}
+          {% for s in workflow.steps.all %}{% if s.tool == tool_key %}
+          <button type="submit"
+                  class="text-xs px-3 py-1 rounded {% if s.enabled %}bg-green-100 text-green-700 hover:bg-green-200{% else %}bg-gray-100 text-gray-500 hover:bg-gray-200{% endif %}">
+            {% if s.enabled %}Enabled{% else %}Disabled{% endif %}
+          </button>
+          {% endif %}{% endfor %}
+          {% if not workflow.steps.all|length %}
+          <button type="submit" class="text-xs px-3 py-1 rounded bg-gray-100 text-gray-500 hover:bg-gray-200">
+            Disabled
+          </button>
+          {% endif %}
+        </form>
+      </li>
+      {% endwith %}
+      {% endfor %}
+    </ul>
+  </div>
+
+  <!-- Recent runs -->
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-700">Recent Runs</h2>
+    </div>
+    {% if recent_runs %}
+    <ul class="divide-y divide-gray-100">
+      {% for run in recent_runs %}
+      <li class="px-6 py-4">
+        <div class="flex items-center justify-between mb-2">
+          <a href="{% url 'scan-detail' run.session.id %}" class="text-sm font-medium text-indigo-600 hover:underline">
+            #{{ run.session.id }} — {{ run.session.domain }}
+          </a>
+          <span class="text-xs px-2 py-0.5 rounded
+            {% if run.status == 'completed' %}bg-green-100 text-green-700
+            {% elif run.status == 'failed' %}bg-red-100 text-red-700
+            {% elif run.status == 'running' %}bg-yellow-100 text-yellow-700
+            {% else %}bg-gray-100 text-gray-500{% endif %}">
+            {{ run.status|upper }}
+          </span>
+        </div>
+        <div class="flex gap-2 flex-wrap">
+          {% for sr in run.step_results.all %}
+          <span class="text-xs px-2 py-0.5 rounded
+            {% if sr.status == 'completed' %}bg-green-50 text-green-600
+            {% elif sr.status == 'failed' %}bg-red-50 text-red-600
+            {% elif sr.status == 'running' %}bg-yellow-50 text-yellow-600
+            {% else %}bg-gray-50 text-gray-400{% endif %}">
+            {{ sr.tool }} {% if sr.findings_count %}({{ sr.findings_count }}){% endif %}
+          </span>
+          {% endfor %}
+        </div>
+        {% if run.started_at %}<p class="text-xs text-gray-400 mt-1">{{ run.started_at|date:"M d H:i" }}</p>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="px-6 py-8 text-center text-gray-400 text-sm">No runs yet.</p>
+    {% endif %}
+  </div>
+
+</div>
+
+<div class="mt-6">
+  <a href="{% url 'scan-start' %}?workflow={{ workflow.pk }}"
+     class="bg-indigo-600 text-white px-5 py-2 rounded-md text-sm hover:bg-indigo-700">
+    Run this Workflow
+  </a>
+</div>
+{% endblock %}

@@ -21,8 +21,17 @@
 - Guard prevents double-start in dev server (checks `RUN_MAIN` env var)
 
 ## Project structure
-- `apps/core/` — dashboard and health check views
-- `apps/scans/` — scan management views, models, tasks, forms
+- `apps/core/` — dashboard, health check, APScheduler startup
+- `apps/scans/` — ScanSession + ScanDelta models, orchestrator (`tasks.py`), views, forms
+- `apps/subfinder/` — Subdomain model + subfinder binary scanner
+- `apps/naabu/` — PortResult model + naabu binary scanner
+- `apps/nmap/` — ServiceResult model + nmap binary scanner
+- `apps/nuclei/` — NucleiFinding model + nuclei binary scanner
+- `apps/dns_analyzer/` — DNSFinding model + DNS analysis scanner
+- `apps/ssl_checker/` — SSLFinding model + SSL certificate scanner
+- `apps/email_security/` — EmailFinding model + SPF/DMARC scanner
+- `apps/alerts/` — Alert model + Slack dispatcher
+- `apps/workflow/` — Workflow + WorkflowStep models, runner, views (configurable tool pipelines)
 - `templates/` — all HTML templates (base, pages, partials)
 - `src/` — scanning engine (tool wrappers, modules, parsers)
 
@@ -33,5 +42,6 @@
 - `/scans/<id>/` → scan detail with live HTMX polling
 - `/scans/<id>/status/` → HTMX polling fragment (returns partial HTML)
 - `/scans/vulnerabilities/` → vulnerability list
+- `/workflows/` → workflow list/create/detail
 - `/health/` → health check
 - `/admin/` → Django admin

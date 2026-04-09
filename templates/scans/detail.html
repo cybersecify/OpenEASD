@@ -21,10 +21,11 @@
 {% if session.status != "running" %}
 <div class="mt-8 space-y-6">
 
-  {% if session.subdomains.all %}
+  {% with subdomains=session.subdomains.all %}
+  {% if subdomains %}
   <div class="bg-white rounded-lg shadow overflow-hidden">
     <div class="px-6 py-4 border-b border-gray-200">
-      <h2 class="font-semibold text-gray-700">Subdomains ({{ session.subdomains.count }})</h2>
+      <h2 class="font-semibold text-gray-700">Subdomains ({{ subdomains.count }})</h2>
     </div>
     <table class="min-w-full divide-y divide-gray-200">
       <thead class="bg-gray-50">
@@ -35,7 +36,7 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-200">
-        {% for sub in session.subdomains.all %}
+        {% for sub in subdomains %}
         <tr>
           <td class="px-6 py-3 text-sm font-mono text-gray-900">{{ sub.subdomain }}</td>
           <td class="px-6 py-3 text-sm text-gray-500">{{ sub.ip_address|default:"—" }}</td>
@@ -46,11 +47,13 @@
     </table>
   </div>
   {% endif %}
+  {% endwith %}
 
-  {% if session.services.all %}
+  {% with services=session.services.all %}
+  {% if services %}
   <div class="bg-white rounded-lg shadow overflow-hidden">
     <div class="px-6 py-4 border-b border-gray-200">
-      <h2 class="font-semibold text-gray-700">Services ({{ session.services.count }})</h2>
+      <h2 class="font-semibold text-gray-700">Services ({{ services.count }})</h2>
     </div>
     <table class="min-w-full divide-y divide-gray-200">
       <thead class="bg-gray-50">
@@ -62,7 +65,7 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-200">
-        {% for svc in session.services.all %}
+        {% for svc in services %}
         <tr>
           <td class="px-6 py-3 text-sm font-mono text-gray-900">{{ svc.host }}</td>
           <td class="px-6 py-3 text-sm text-gray-900">{{ svc.port }}/{{ svc.protocol }}</td>
@@ -76,11 +79,13 @@
     </table>
   </div>
   {% endif %}
+  {% endwith %}
 
-  {% if session.vulnerabilities.all %}
+  {% with nuclei=session.nuclei_findings.all dns=session.dns_findings.all ssl=session.ssl_findings.all email=session.email_findings.all %}
+  {% if nuclei or dns or ssl or email %}
   <div class="bg-white rounded-lg shadow overflow-hidden">
     <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-      <h2 class="font-semibold text-gray-700">Vulnerabilities ({{ session.vulnerabilities.count }})</h2>
+      <h2 class="font-semibold text-gray-700">Findings</h2>
       <a href="{% url 'vulnerability-list' %}?session_id={{ session.id }}" class="text-indigo-600 text-sm hover:underline">View all</a>
     </div>
     <table class="min-w-full divide-y divide-gray-200">
@@ -89,24 +94,47 @@
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Host</th>
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Severity</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">CVE</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-200">
-        {% for vuln in session.vulnerabilities.all %}
+        {% for f in nuclei %}
         <tr>
-          <td class="px-6 py-3 text-sm text-gray-900">{{ vuln.title|default:vuln.vulnerability_type }}</td>
-          <td class="px-6 py-3 text-sm font-mono text-gray-500">{{ vuln.host }}</td>
-          <td class="px-6 py-3 text-sm">
-            {% include "partials/severity_badge.html" with severity=vuln.severity %}
-          </td>
-          <td class="px-6 py-3 text-sm text-gray-500">{{ vuln.cve_id|default:"—" }}</td>
+          <td class="px-6 py-3 text-sm text-gray-900">{{ f.template_name|default:f.template_id }}</td>
+          <td class="px-6 py-3 text-sm font-mono text-gray-500">{{ f.host }}</td>
+          <td class="px-6 py-3 text-sm">{% include "partials/severity_badge.html" with severity=f.severity %}</td>
+          <td class="px-6 py-3 text-sm text-gray-400">nuclei</td>
+        </tr>
+        {% endfor %}
+        {% for f in dns %}
+        <tr>
+          <td class="px-6 py-3 text-sm text-gray-900">{{ f.title }}</td>
+          <td class="px-6 py-3 text-sm font-mono text-gray-500">{{ f.domain }}</td>
+          <td class="px-6 py-3 text-sm">{% include "partials/severity_badge.html" with severity=f.severity %}</td>
+          <td class="px-6 py-3 text-sm text-gray-400">dns</td>
+        </tr>
+        {% endfor %}
+        {% for f in ssl %}
+        <tr>
+          <td class="px-6 py-3 text-sm text-gray-900">{{ f.title }}</td>
+          <td class="px-6 py-3 text-sm font-mono text-gray-500">{{ f.domain }}</td>
+          <td class="px-6 py-3 text-sm">{% include "partials/severity_badge.html" with severity=f.severity %}</td>
+          <td class="px-6 py-3 text-sm text-gray-400">ssl</td>
+        </tr>
+        {% endfor %}
+        {% for f in email %}
+        <tr>
+          <td class="px-6 py-3 text-sm text-gray-900">{{ f.title }}</td>
+          <td class="px-6 py-3 text-sm font-mono text-gray-500">{{ f.domain }}</td>
+          <td class="px-6 py-3 text-sm">{% include "partials/severity_badge.html" with severity=f.severity %}</td>
+          <td class="px-6 py-3 text-sm text-gray-400">email</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% endif %}
+  {% endwith %}
 
 </div>
 {% endif %}
