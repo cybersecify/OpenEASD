@@ -6,9 +6,9 @@
 - Always use `uv run pytest` for running tests
 
 ## Stack
-- Django 5+ with plain Django views (no DRF)
+- Django 5+ with plain Django views (no DRF, no Celery, no Redis)
 - HTMX for dynamic frontend interactions
-- Celery + Redis for background tasks
+- `threading.Thread` for background scan execution
 - SQLite database (dev), configurable via `DB_NAME` env var
 - Tailwind CSS via CDN (no build step)
 

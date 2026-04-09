@@ -11,10 +11,6 @@ dependencies = [
     # Web framework
     "django>=5.0",
     "django-htmx>=1.17",
-    # Task queue (replaces Prefect)
-    "celery>=5.3",
-    "django-celery-beat>=2.5",
-    "django-celery-results>=2.5",
     # Configuration
     "python-decouple>=3.8",
     "pyyaml>=6.0",

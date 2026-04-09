@@ -1,9 +1,9 @@
 """Django views for OpenEASD scan management."""
 
 import logging
+import threading
 
 from django.shortcuts import render, get_object_or_404, redirect
-from django.http import HttpResponse
 from django.views.decorators.http import require_http_methods
 
 from .forms import StartScanForm
@@ -21,7 +21,7 @@ def scan_start(request):
             domain = form.cleaned_data["domain"].strip()
             scan_type = form.cleaned_data["scan_type"]
             session = ScanSession.objects.create(domain=domain, scan_type=scan_type)
-            run_scan.delay(session.id)
+            threading.Thread(target=run_scan, args=[session.id], daemon=True).start()
             logger.info(f"Scan started: session={session.id} domain={domain}")
             return redirect("scan-detail", session_id=session.id)
     else:
