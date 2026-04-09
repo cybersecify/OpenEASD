@@ -1,5 +1,8 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
+
+from apps.scans.models import ScanSession
+from apps.insights.models import ScanSummary
 from .models import Domain
 from .forms import DomainForm
 
@@ -30,5 +33,9 @@ def domain_toggle(request, pk):
 def domain_delete(request, pk):
     domain = get_object_or_404(Domain, pk=pk)
     if request.method == "POST":
+        domain_name = domain.name
+        # Delete all scan data for this domain (ScanSession cascades to findings)
+        ScanSession.objects.filter(domain=domain_name).delete()
+        ScanSummary.objects.filter(domain=domain_name).delete()
         domain.delete()
     return redirect("domain-list")

@@ -4,209 +4,102 @@
 
 {% block content %}
 
-<!-- Header -->
 <div class="mb-8">
   <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
-  <p class="text-gray-500 text-sm mt-1">External attack surface at a glance</p>
+  <p class="text-gray-500 text-sm mt-1">Current state of your external attack surface</p>
 </div>
 
-<!-- Severity Breakdown -->
+<!-- Current State Cards -->
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
   <div class="bg-red-50 border border-red-200 rounded-lg px-5 py-4">
-    <p class="text-xs font-medium text-red-500 uppercase tracking-wide">Critical</p>
-    <p class="text-3xl font-bold text-red-700 mt-1">{{ severity_counts.critical }}</p>
-    <p class="text-xs text-red-400 mt-1">findings</p>
+    <p class="text-xs font-medium text-red-500 uppercase tracking-wide">Critical Now</p>
+    <p class="text-3xl font-bold text-red-700 mt-1">{{ current_critical }}</p>
+    <p class="text-xs text-red-400 mt-1">active findings</p>
   </div>
   <div class="bg-orange-50 border border-orange-200 rounded-lg px-5 py-4">
-    <p class="text-xs font-medium text-orange-500 uppercase tracking-wide">High</p>
-    <p class="text-3xl font-bold text-orange-600 mt-1">{{ severity_counts.high }}</p>
-    <p class="text-xs text-orange-400 mt-1">findings</p>
-  </div>
-  <div class="bg-yellow-50 border border-yellow-200 rounded-lg px-5 py-4">
-    <p class="text-xs font-medium text-yellow-600 uppercase tracking-wide">Medium</p>
-    <p class="text-3xl font-bold text-yellow-700 mt-1">{{ severity_counts.medium }}</p>
-    <p class="text-xs text-yellow-400 mt-1">findings</p>
-  </div>
-  <div class="bg-green-50 border border-green-200 rounded-lg px-5 py-4">
-    <p class="text-xs font-medium text-green-600 uppercase tracking-wide">Low</p>
-    <p class="text-3xl font-bold text-green-700 mt-1">{{ severity_counts.low }}</p>
-    <p class="text-xs text-green-400 mt-1">findings</p>
-  </div>
-</div>
-
-<!-- Attack Surface Totals -->
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
-    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Subdomains</p>
-    <p class="text-3xl font-bold text-gray-900 mt-1">{{ total_subdomains }}</p>
-    <p class="text-xs text-gray-400 mt-1">discovered</p>
+    <p class="text-xs font-medium text-orange-500 uppercase tracking-wide">High Now</p>
+    <p class="text-3xl font-bold text-orange-600 mt-1">{{ current_high }}</p>
+    <p class="text-xs text-orange-400 mt-1">active findings</p>
   </div>
   <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
-    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Open Ports</p>
-    <p class="text-3xl font-bold text-gray-900 mt-1">{{ total_open_ports }}</p>
-    <p class="text-xs text-gray-400 mt-1">exposed</p>
+    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Domains</p>
+    <p class="text-3xl font-bold text-gray-900 mt-1">{{ active_domain_count }}</p>
+    <p class="text-xs text-gray-400 mt-1">monitored</p>
   </div>
   <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
-    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Services</p>
-    <p class="text-3xl font-bold text-gray-900 mt-1">{{ total_services }}</p>
-    <p class="text-xs text-gray-400 mt-1">detected</p>
-  </div>
-  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
-    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Scans</p>
-    <p class="text-3xl font-bold text-gray-900 mt-1">{{ total_scans }}</p>
-    <p class="text-xs text-gray-400 mt-1">all time</p>
-  </div>
-</div>
-
-<!-- New Exposures + Scan Health -->
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-
-  <!-- New Exposures (Delta) -->
-  <div class="bg-white rounded-lg shadow">
-    <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-      <div>
-        <h2 class="font-semibold text-gray-700">New Exposures</h2>
-        <p class="text-xs text-gray-400 mt-0.5">Assets newly detected since last scan</p>
-      </div>
-    </div>
-    <div class="px-6 py-4">
-      {% if new_exposures %}
-      <ul class="divide-y divide-gray-100">
-        {% for delta in new_exposures %}
-        <li class="py-2 flex items-start justify-between text-sm gap-3">
-          <div class="min-w-0">
-            <p class="text-gray-800 truncate font-mono text-xs">{{ delta.item_identifier }}</p>
-            <p class="text-gray-400 text-xs mt-0.5">{{ delta.session.domain }} · {{ delta.change_category }}</p>
-          </div>
-          <span class="shrink-0 inline-block bg-red-100 text-red-700 text-xs font-medium px-2 py-0.5 rounded-full">new</span>
-        </li>
-        {% endfor %}
-      </ul>
+    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Scans Running</p>
+    <p class="text-3xl font-bold text-gray-900 mt-1">{{ running_count }}</p>
+    <p class="text-xs text-gray-400 mt-1">
+      {% if running_count > 0 %}
+      <span class="inline-flex items-center gap-1">
+        <span class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse inline-block"></span>in progress
+      </span>
       {% else %}
-      <p class="text-gray-400 text-sm py-4 text-center">No new exposures detected.</p>
+      idle
       {% endif %}
-    </div>
+    </p>
   </div>
-
-  <!-- Scan Health -->
-  <div class="bg-white rounded-lg shadow">
-    <div class="px-6 py-4 border-b border-gray-200">
-      <h2 class="font-semibold text-gray-700">Scan Health</h2>
-      <p class="text-xs text-gray-400 mt-0.5">Current scan status</p>
-    </div>
-    <div class="px-6 py-4 space-y-4">
-      <!-- Running -->
-      <div class="flex items-center justify-between text-sm">
-        <span class="text-gray-500">Running now</span>
-        {% if running_count > 0 %}
-        <span class="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full">
-          <span class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
-          {{ running_count }} scan{{ running_count|pluralize }} in progress
-        </span>
-        {% else %}
-        <span class="text-gray-400 text-xs">No active scans</span>
-        {% endif %}
-      </div>
-      <!-- Last completed -->
-      <div class="flex items-center justify-between text-sm">
-        <span class="text-gray-500">Last completed scan</span>
-        {% if last_completed %}
-        <div class="text-right">
-          <p class="text-gray-800 font-medium text-xs">{{ last_completed.domain }}</p>
-          <p class="text-gray-400 text-xs">{{ last_completed.end_time|date:"M d, Y H:i" }}</p>
-        </div>
-        {% else %}
-        <span class="text-gray-400 text-xs">None yet</span>
-        {% endif %}
-      </div>
-      <!-- Total findings last scan -->
-      {% if last_completed %}
-      <div class="flex items-center justify-between text-sm">
-        <span class="text-gray-500">Findings in last scan</span>
-        <span class="text-gray-800 font-semibold">{{ last_completed.total_findings }}</span>
-      </div>
-      <div class="flex items-center justify-between text-sm">
-        <span class="text-gray-500">Scan type</span>
-        <span class="capitalize text-gray-700 text-xs">{{ last_completed.scan_type }}</span>
-      </div>
-      {% endif %}
-      <div class="pt-2 border-t border-gray-100">
-        <a href="{% url 'domain-list' %}" class="w-full block text-center bg-indigo-600 text-white text-sm px-4 py-2 rounded-md hover:bg-indigo-700">
-          Manage Domains
-        </a>
-      </div>
-    </div>
-  </div>
-
 </div>
 
-<!-- Urgent Findings -->
-{% if urgent_findings %}
+<!-- Domain Status -->
 <div class="bg-white rounded-lg shadow mb-6">
   <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
     <div>
-      <h2 class="font-semibold text-gray-700">Urgent Findings</h2>
-      <p class="text-xs text-gray-400 mt-0.5">Critical and high severity — require action within 48 hours</p>
+      <h2 class="font-semibold text-gray-700">Domain Status</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Latest scan results per domain</p>
     </div>
-    <a href="{% url 'vulnerability-list' %}" class="text-indigo-600 text-sm hover:underline">View all</a>
+    <a href="{% url 'domain-list' %}" class="text-indigo-600 text-sm hover:underline">Manage domains</a>
   </div>
-  <table class="min-w-full divide-y divide-gray-100">
-    <thead class="bg-gray-50">
-      <tr>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Finding</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Host</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Severity</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Detected</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-gray-100">
-      {% for f in urgent_findings %}
-      <tr class="hover:bg-gray-50">
-        <td class="px-6 py-3 text-sm text-gray-800 max-w-xs truncate">{{ f.template_name|default:f.template_id }}</td>
-        <td class="px-6 py-3 text-sm font-mono text-gray-600 truncate max-w-xs">{{ f.host }}</td>
-        <td class="px-6 py-3 text-sm">
-          {% include "partials/severity_badge.html" with severity=f.severity %}
-        </td>
-        <td class="px-6 py-3 text-sm text-gray-500">{{ f.discovered_at|date:"M d, H:i" }}</td>
-        <td class="px-6 py-3 text-sm text-gray-500">{{ f.session.domain }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
 
-<!-- Recent Scans -->
-<div class="bg-white rounded-lg shadow">
-  <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-    <h2 class="font-semibold text-gray-700">Recent Scans</h2>
-    <a href="{% url 'scan-list' %}" class="text-indigo-600 text-sm hover:underline">View all</a>
-  </div>
-  {% if recent_scans %}
+  {% if domain_status %}
   <table class="min-w-full divide-y divide-gray-100">
     <thead class="bg-gray-50">
       <tr>
         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Scan</th>
+        <th class="px-6 py-3 text-center text-xs font-medium text-red-500 uppercase">Crit</th>
+        <th class="px-6 py-3 text-center text-xs font-medium text-orange-500 uppercase">High</th>
+        <th class="px-6 py-3 text-center text-xs font-medium text-yellow-600 uppercase">Med</th>
+        <th class="px-6 py-3 text-center text-xs font-medium text-blue-500 uppercase">Low</th>
         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Findings</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Started</th>
         <th class="px-6 py-3"></th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-100">
-      {% for scan in recent_scans %}
+      {% for item in domain_status %}
       <tr class="hover:bg-gray-50">
-        <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ scan.domain }}</td>
-        <td class="px-6 py-3 text-sm text-gray-500 capitalize">{{ scan.scan_type }}</td>
-        <td class="px-6 py-3 text-sm">
-          {% include "partials/status_badge.html" with status=scan.status %}
+        <td class="px-6 py-3 text-sm font-medium text-gray-900 font-mono">{{ item.domain.name }}</td>
+        <td class="px-6 py-3 text-xs text-gray-500">
+          {% if item.summary %}
+            {{ item.summary.scan_date|date:"M d, H:i" }}
+          {% else %}
+            <span class="text-gray-300">Never scanned</span>
+          {% endif %}
         </td>
-        <td class="px-6 py-3 text-sm text-gray-900">{{ scan.total_findings }}</td>
-        <td class="px-6 py-3 text-sm text-gray-500">{{ scan.start_time|date:"M d, Y H:i" }}</td>
+        <td class="px-6 py-3 text-center text-sm font-semibold {% if item.summary.critical_count > 0 %}text-red-600{% else %}text-gray-300{% endif %}">
+          {{ item.summary.critical_count|default:"—" }}
+        </td>
+        <td class="px-6 py-3 text-center text-sm font-semibold {% if item.summary.high_count > 0 %}text-orange-500{% else %}text-gray-300{% endif %}">
+          {{ item.summary.high_count|default:"—" }}
+        </td>
+        <td class="px-6 py-3 text-center text-sm font-semibold {% if item.summary.medium_count > 0 %}text-yellow-600{% else %}text-gray-300{% endif %}">
+          {{ item.summary.medium_count|default:"—" }}
+        </td>
+        <td class="px-6 py-3 text-center text-sm font-semibold {% if item.summary.low_count > 0 %}text-blue-500{% else %}text-gray-300{% endif %}">
+          {{ item.summary.low_count|default:"—" }}
+        </td>
+        <td class="px-6 py-3 text-sm">
+          {% if item.latest_session %}
+            {% include "partials/status_badge.html" with status=item.latest_session.status %}
+          {% else %}
+            <span class="text-gray-300 text-xs">—</span>
+          {% endif %}
+        </td>
         <td class="px-6 py-3 text-right">
-          <a href="{% url 'scan-detail' scan.id %}" class="text-indigo-600 hover:underline text-sm">View</a>
+          <a href="{% url 'scan-start' %}?domain={{ item.domain.name }}"
+             class="text-xs bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-700">
+            Scan
+          </a>
         </td>
       </tr>
       {% endfor %}
@@ -214,10 +107,47 @@
   </table>
   {% else %}
   <div class="px-6 py-12 text-center text-gray-400">
-    <p class="text-lg">No scans yet.</p>
-    <a href="{% url 'domain-list' %}" class="mt-3 inline-block text-indigo-600 hover:underline text-sm">Add a domain to get started</a>
+    <p class="text-lg">No domains added yet.</p>
+    <a href="{% url 'domain-list' %}" class="mt-3 inline-block text-indigo-600 hover:underline text-sm">
+      Add your first domain to get started
+    </a>
   </div>
   {% endif %}
 </div>
+
+<!-- Urgent Findings -->
+{% if urgent_findings %}
+<div class="bg-white rounded-lg shadow">
+  <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+    <div>
+      <h2 class="font-semibold text-gray-700">Urgent Findings</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Critical and high — from latest scan per domain</p>
+    </div>
+    <a href="{% url 'vulnerability-list' %}" class="text-indigo-600 text-sm hover:underline">View all</a>
+  </div>
+  <table class="min-w-full divide-y divide-gray-100">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Finding</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Severity</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Detected</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for f in urgent_findings %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-6 py-3 text-sm text-gray-800 max-w-xs truncate">{{ f.title }}</td>
+        <td class="px-6 py-3 text-sm font-mono text-gray-600">{{ f.domain }}</td>
+        <td class="px-6 py-3 text-xs text-gray-500 uppercase">{{ f.check_type }}</td>
+        <td class="px-6 py-3">{% include "partials/severity_badge.html" with severity=f.severity %}</td>
+        <td class="px-6 py-3 text-sm text-gray-500">{{ f.discovered_at|date:"M d, H:i" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 
 {% endblock %}

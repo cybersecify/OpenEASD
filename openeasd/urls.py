@@ -9,5 +9,6 @@ urlpatterns = [
     path("domains/", include("apps.domains.urls")),
     path("scans/", include("apps.scans.urls")),
     path("workflows/", include("apps.workflow.urls")),
+    path("insights/", include("apps.insights.urls")),
     path("", include("apps.core.urls")),
 ]

@@ -30,16 +30,10 @@ INSTALLED_APPS = [
     # Local apps
     "apps.core",
     "apps.scans",
-    "apps.subfinder",
-    "apps.naabu",
-    "apps.nmap",
-    "apps.nuclei",
-    "apps.dns_analyzer",
-    "apps.ssl_checker",
-    "apps.email_security",
-    "apps.alerts",
+    "apps.domain_security",
     "apps.workflow",
     "apps.domains",
+    "apps.insights",
 ]
 
 MIDDLEWARE = [

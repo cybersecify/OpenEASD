@@ -23,14 +23,11 @@ SEVERITY_LEVELS = ["critical", "high", "medium", "low"]
 
 
 def _get_vuln_counts(session):
-    """Aggregate finding counts by severity across all tool apps."""
+    """Aggregate finding counts by severity."""
     counts = {sev: 0 for sev in SEVERITY_LEVELS}
     try:
         for sev in SEVERITY_LEVELS:
-            counts[sev] += session.nuclei_findings.filter(severity=sev).count()
-            counts[sev] += session.dns_findings.filter(severity=sev).count()
-            counts[sev] += session.ssl_findings.filter(severity=sev).count()
-            counts[sev] += session.email_findings.filter(severity=sev).count()
+            counts[sev] = session.domain_findings.filter(severity=sev).count()
     except Exception:
         pass
     return counts
@@ -103,7 +100,7 @@ def scan_start(request):
                 session = ScanSession.objects.create(domain=domain, scan_type="full")
                 threading.Thread(target=run_scan, args=[session.id], daemon=True).start()
                 logger.info(f"Scan started: session={session.id} domain={domain}")
-                return redirect("scan-detail", session_id=session.id)
+                return redirect("scan-detail", session_uuid=session.uuid)
 
             elif schedule_type == "once":
                 scheduled_at = form.cleaned_data["scheduled_at"]
@@ -147,8 +144,8 @@ def scan_list(request):
 
 
 @login_required
-def scan_detail(request, session_id):
-    session = get_object_or_404(ScanSession, id=session_id)
+def scan_detail(request, session_uuid):
+    session = get_object_or_404(ScanSession, uuid=session_uuid)
     vuln_counts = _get_vuln_counts(session)
 
     return render(request, "scans/detail.html", {
@@ -158,8 +155,8 @@ def scan_detail(request, session_id):
 
 
 @login_required
-def scan_status_fragment(request, session_id):
-    session = get_object_or_404(ScanSession, id=session_id)
+def scan_status_fragment(request, session_uuid):
+    session = get_object_or_404(ScanSession, uuid=session_uuid)
     vuln_counts = _get_vuln_counts(session)
 
     response = render(request, "partials/scan_status.html", {
@@ -175,43 +172,27 @@ def scan_status_fragment(request, session_id):
 
 @login_required
 def vulnerability_list(request):
-    """Aggregate view across all finding types (severity >= medium by default)."""
-    from apps.nuclei.models import NucleiFinding
-    from apps.dns_analyzer.models import DNSFinding
-    from apps.ssl_checker.models import SSLFinding
-    from apps.email_security.models import EmailFinding
+    """Aggregate view across all finding types."""
+    from apps.domain_security.models import DomainFinding
 
     severity = request.GET.get("severity", "").strip()
     session_id = request.GET.get("session_id", "").strip()
     domain = request.GET.get("domain", "").strip()
 
-    def _filter(qs, sev_field="severity"):
+    def _filter(qs):
         if severity:
-            qs = qs.filter(**{sev_field: severity})
+            qs = qs.filter(severity=severity)
         if session_id:
             qs = qs.filter(session_id=session_id)
         if domain:
             qs = qs.filter(session__domain__icontains=domain)
         return qs
 
-    nuclei = list(_filter(NucleiFinding.objects.select_related("session"))[:50])
-    dns = list(_filter(DNSFinding.objects.select_related("session"))[:50])
-    ssl = list(_filter(SSLFinding.objects.select_related("session"))[:50])
-    email = list(_filter(EmailFinding.objects.select_related("session"))[:50])
+    domain_findings = list(_filter(DomainFinding.objects.select_related("session"))[:50])
 
-    # Combine into unified list with a source tag
     vulns = []
-    for f in nuclei:
-        vulns.append({"source": "nuclei", "severity": f.severity, "title": f.template_name or f.template_id,
-                      "host": f.host, "session": f.session, "obj": f})
-    for f in dns:
-        vulns.append({"source": "dns", "severity": f.severity, "title": f.title,
-                      "host": f.domain, "session": f.session, "obj": f})
-    for f in ssl:
-        vulns.append({"source": "ssl", "severity": f.severity, "title": f.title,
-                      "host": f.domain, "session": f.session, "obj": f})
-    for f in email:
-        vulns.append({"source": "email", "severity": f.severity, "title": f.title,
+    for f in domain_findings:
+        vulns.append({"source": f.check_type, "severity": f.severity, "title": f.title,
                       "host": f.domain, "session": f.session, "obj": f})
 
     sev_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}

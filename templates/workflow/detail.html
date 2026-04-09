@@ -61,8 +61,8 @@
       {% for run in recent_runs %}
       <li class="px-6 py-4">
         <div class="flex items-center justify-between mb-2">
-          <a href="{% url 'scan-detail' run.session.id %}" class="text-sm font-medium text-indigo-600 hover:underline">
-            #{{ run.session.id }} — {{ run.session.domain }}
+          <a href="{% url 'scan-detail' run.session.uuid %}" class="text-sm font-medium text-indigo-600 hover:underline">
+            {{ run.session.domain }}
           </a>
           <span class="text-xs px-2 py-0.5 rounded
             {% if run.status == 'completed' %}bg-green-100 text-green-700

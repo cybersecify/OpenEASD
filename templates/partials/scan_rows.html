@@ -8,7 +8,7 @@
   <td class="px-6 py-4 text-sm text-gray-900">{{ scan.total_findings }}</td>
   <td class="px-6 py-4 text-sm text-gray-500">{{ scan.start_time|date:"M d, Y H:i" }}</td>
   <td class="px-6 py-4 text-right">
-    <a href="{% url 'scan-detail' scan.id %}" class="text-indigo-600 hover:underline text-sm">View</a>
+    <a href="{% url 'scan-detail' scan.uuid %}" class="text-indigo-600 hover:underline text-sm">View</a>
   </td>
 </tr>
 {% empty %}

@@ -22,21 +22,7 @@ def _get_all_findings(session, threshold_level: int) -> list:
         pass
 
     try:
-        for f in session.dns_findings.all():
-            if SEVERITY_ORDER.get(f.severity, 0) >= threshold_level:
-                findings.append({"severity": f.severity, "title": f.title, "host": f.domain})
-    except Exception:
-        pass
-
-    try:
-        for f in session.ssl_findings.all():
-            if SEVERITY_ORDER.get(f.severity, 0) >= threshold_level:
-                findings.append({"severity": f.severity, "title": f.title, "host": f.domain})
-    except Exception:
-        pass
-
-    try:
-        for f in session.email_findings.all():
+        for f in session.domain_findings.all():
             if SEVERITY_ORDER.get(f.severity, 0) >= threshold_level:
                 findings.append({"severity": f.severity, "title": f.title, "host": f.domain})
     except Exception:

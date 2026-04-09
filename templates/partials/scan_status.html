@@ -1,6 +1,6 @@
 <div id="scan-status-panel"
      {% if session.status == "running" %}
-     hx-get="{% url 'scan-status-fragment' session.id %}"
+     hx-get="{% url 'scan-status-fragment' session.uuid %}"
      hx-trigger="every 3s"
      hx-swap="outerHTML"
      {% endif %}

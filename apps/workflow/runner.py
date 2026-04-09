@@ -13,9 +13,7 @@ logger = logging.getLogger(__name__)
 
 # Maps tool name → (runner function, result counter)
 _TOOL_RUNNERS = {
-    "dns_analyzer": ("apps.dns_analyzer.scanner", "run_dns_analysis"),
-    "ssl_checker": ("apps.ssl_checker.scanner", "run_ssl_check"),
-    "email_security": ("apps.email_security.scanner", "run_email_check"),
+    "domain_security": ("apps.domain_security.scanner", "run_domain_security"),
     "subfinder": ("apps.subfinder.scanner", "run_subfinder"),
     "naabu": ("apps.naabu.scanner", "run_naabu"),
     "nmap": ("apps.nmap.scanner", "run_nmap"),
@@ -25,7 +23,7 @@ _TOOL_RUNNERS = {
 # Tools that need a 'targets' list (built from subfinder output)
 _NEEDS_TARGETS = {"naabu", "nuclei"}
 # Tools that only need domain
-_DOMAIN_ONLY = {"dns_analyzer", "ssl_checker", "email_security", "nmap"}
+_DOMAIN_ONLY = {"domain_security", "nmap"}
 
 
 def run_workflow(workflow_run_id: int):

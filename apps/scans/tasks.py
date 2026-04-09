@@ -2,12 +2,9 @@
 Scan orchestration for OpenEASD.
 
 Phases:
-  1. Apex domain security (DNS, SSL, email)
-  2. Service detection (subfinder → naabu → nmap)
-  3. Vulnerability assessment (nuclei)
-  4. Update session totals
-  5. Delta detection
-  6. Alert dispatch
+  1. Apex domain security (DNS, email, RDAP)
+  2. Update session totals
+  3. Delta detection
 """
 
 import logging
@@ -34,60 +31,28 @@ def _detect_deltas(session):
     if not previous:
         return
 
-    # Subdomain deltas
-    current_subs = set(session.subdomains.values_list("subdomain", flat=True))
-    prev_subs = set(previous.subdomains.values_list("subdomain", flat=True))
-    for sub in current_subs - prev_subs:
-        ScanDelta.objects.create(session=session, previous_session=previous,
-                                 change_type="new", change_category="subdomain", item_identifier=sub)
-    for sub in prev_subs - current_subs:
-        ScanDelta.objects.create(session=session, previous_session=previous,
-                                 change_type="removed", change_category="subdomain", item_identifier=sub)
-
-    # Port deltas
-    current_ports = set(session.port_results.values_list("host", "port", "protocol"))
-    prev_ports = set(previous.port_results.values_list("host", "port", "protocol"))
-    for host, port, proto in current_ports - prev_ports:
-        ScanDelta.objects.create(session=session, previous_session=previous,
-                                 change_type="new", change_category="port",
-                                 item_identifier=f"{host}:{port}/{proto}")
-    for host, port, proto in prev_ports - current_ports:
-        ScanDelta.objects.create(session=session, previous_session=previous,
-                                 change_type="removed", change_category="port",
-                                 item_identifier=f"{host}:{port}/{proto}")
-
-    # Nuclei vulnerability deltas
-    prev_nuclei_keys = {
-        f"{v.host}:{v.template_id}" for v in previous.nuclei_findings.all()
+    # Domain finding deltas
+    current_keys = {
+        f"{f.check_type}:{f.title}" for f in session.domain_findings.all()
     }
-    for v in session.nuclei_findings.all():
-        key = f"{v.host}:{v.template_id}"
-        if key not in prev_nuclei_keys:
-            ScanDelta.objects.create(session=session, previous_session=previous,
-                                     change_type="new", change_category="vulnerability",
-                                     item_identifier=key,
-                                     change_details={"severity": v.severity, "title": v.template_name})
+    prev_keys = {
+        f"{f.check_type}:{f.title}" for f in previous.domain_findings.all()
+    }
+    for key in current_keys - prev_keys:
+        ScanDelta.objects.create(session=session, previous_session=previous,
+                                 change_type="new", change_category="domain_finding",
+                                 item_identifier=key)
+    for key in prev_keys - current_keys:
+        ScanDelta.objects.create(session=session, previous_session=previous,
+                                 change_type="removed", change_category="domain_finding",
+                                 item_identifier=key)
 
 
 def _count_all_findings(session) -> int:
-    total = 0
     try:
-        total += session.nuclei_findings.count()
+        return session.domain_findings.count()
     except Exception:
-        pass
-    try:
-        total += session.dns_findings.count()
-    except Exception:
-        pass
-    try:
-        total += session.ssl_findings.count()
-    except Exception:
-        pass
-    try:
-        total += session.email_findings.count()
-    except Exception:
-        pass
-    return total
+        return 0
 
 
 # ---------------------------------------------------------------------------
@@ -108,29 +73,10 @@ def run_scan(session_id: int):
     try:
         # Phase 1: Apex domain security
         logger.info(f"[scan:{session_id}] Phase 1: Apex domain security")
-        from apps.dns_analyzer.scanner import run_dns_analysis
-        from apps.ssl_checker.scanner import run_ssl_check
-        from apps.email_security.scanner import run_email_check
-        run_dns_analysis(session)
-        run_ssl_check(session)
-        run_email_check(session)
+        from apps.domain_security.scanner import run_domain_security
+        run_domain_security(session)
 
-        # Phase 2: Service detection
-        logger.info(f"[scan:{session_id}] Phase 2: Service detection")
-        from apps.subfinder.scanner import run_subfinder
-        from apps.naabu.scanner import run_naabu
-        from apps.nmap.scanner import run_nmap
-        subdomains = run_subfinder(session)
-        targets = [domain] + [s.subdomain for s in subdomains]
-        run_naabu(session, targets)
-        run_nmap(session, domain)
-
-        # Phase 3: Vulnerability assessment
-        logger.info(f"[scan:{session_id}] Phase 3: Vulnerability scanning")
-        from apps.nuclei.scanner import run_nuclei
-        run_nuclei(session, targets)
-
-        # Phase 4: Update session totals
+        # Phase 2: Update session totals
         total = _count_all_findings(session)
         session.total_findings = total
         session.status = "completed"
@@ -138,14 +84,14 @@ def run_scan(session_id: int):
         session.save(update_fields=["total_findings", "status", "end_time"])
         logger.info(f"[scan:{session_id}] Completed with {total} total findings")
 
-        # Phase 5: Delta detection
-        logger.info(f"[scan:{session_id}] Phase 5: Delta detection")
+        # Phase 3: Delta detection
+        logger.info(f"[scan:{session_id}] Phase 3: Delta detection")
         _detect_deltas(session)
 
-        # Phase 6: Alert dispatch
-        logger.info(f"[scan:{session_id}] Phase 6: Alert dispatch")
-        from apps.alerts.dispatcher import dispatch_alerts
-        dispatch_alerts(session_id)
+        # Phase 4: Build insights
+        logger.info(f"[scan:{session_id}] Phase 4: Building insights")
+        from apps.insights.builder import build_insights
+        build_insights(session)
 
     except Exception as exc:
         logger.error(f"[scan:{session_id}] Scan failed: {exc}", exc_info=True)
@@ -172,8 +118,8 @@ def _run_via_workflow(session):
 
         if session.status == "completed":
             _detect_deltas(session)
-            from apps.alerts.dispatcher import dispatch_alerts
-            dispatch_alerts(session_id)
+            from apps.insights.builder import build_insights
+            build_insights(session)
 
     except Exception as exc:
         logger.error(f"[scan:{session_id}] Workflow run failed: {exc}", exc_info=True)

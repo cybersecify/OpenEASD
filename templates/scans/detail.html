@@ -11,7 +11,7 @@
 
 <div id="scan-status-panel"
      {% if session.status == "running" %}
-     hx-get="{% url 'scan-status-fragment' session.id %}"
+     hx-get="{% url 'scan-status-fragment' session.uuid %}"
      hx-trigger="every 3s"
      hx-swap="outerHTML"
      {% endif %}>
@@ -87,6 +87,7 @@
     <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
       <h2 class="font-semibold text-gray-700">Findings</h2>
       <a href="{% url 'vulnerability-list' %}?session_id={{ session.id }}" class="text-indigo-600 text-sm hover:underline">View all</a>
+
     </div>
     <table class="min-w-full divide-y divide-gray-200">
       <thead class="bg-gray-50">

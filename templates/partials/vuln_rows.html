@@ -8,7 +8,7 @@
   <td class="px-6 py-4 text-sm text-gray-500">{{ vuln.source|upper }}</td>
   <td class="px-6 py-4 text-sm text-gray-500">{{ vuln.session.domain }}</td>
   <td class="px-6 py-4 text-sm">
-    <a href="{% url 'scan-detail' vuln.session.id %}" class="text-indigo-600 hover:underline">#{{ vuln.session.id }}</a>
+    <a href="{% url 'scan-detail' vuln.session.uuid %}" class="text-indigo-600 hover:underline">View Scan</a>
   </td>
 </tr>
 {% empty %}

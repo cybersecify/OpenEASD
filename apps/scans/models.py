@@ -2,6 +2,7 @@
 Django models for OpenEASD scan sessions.
 """
 
+import uuid
 from django.db import models
 
 
@@ -15,6 +16,7 @@ class ScanSession(models.Model):
         ("failed", "Failed"),
     ]
 
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     domain = models.CharField(max_length=255, db_index=True)
     scan_type = models.CharField(max_length=20, choices=SCAN_TYPE_CHOICES)
     workflow = models.ForeignKey(
