@@ -1,0 +1,62 @@
+[project]
+name = "openeasd-django"
+version = "1.0.0"
+description = "OpenEASD - Automated External Attack Surface Detection (Django edition)"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    {name = "Rathnakara G N", email = "contact@cybersecify.com"},
+]
+dependencies = [
+    # Web framework
+    "django>=5.0",
+    "djangorestframework>=3.14",
+    # Task queue (replaces Prefect)
+    "celery>=5.3",
+    "django-celery-beat>=2.5",
+    "django-celery-results>=2.5",
+    # Configuration
+    "python-decouple>=3.8",
+    "pyyaml>=6.0",
+    # DNS / SSL / network
+    "dnspython>=2.4",
+    "cryptography>=42.0",
+    "pyopenssl>=23.0",
+    "requests>=2.31",
+    "aiohttp>=3.9",
+    "httpx>=0.25",
+    # Alerts
+    "slack-sdk>=3.26",
+    # Parsing
+    "lxml>=4.9",
+    "beautifulsoup4>=4.12",
+    # Data
+    "pandas>=2.1",
+    "numpy>=1.26",
+    # Utilities
+    "python-dateutil>=2.8",
+    "tenacity>=8.2",
+    "cachetools>=5.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-django>=4.7",
+    "black>=23.11",
+    "flake8>=6.1",
+    "mypy>=1.7",
+    "isort>=5.12",
+]
+prod = [
+    "gunicorn>=21.2",
+]
+
+[project.scripts]
+openeasd = "apps.scans.management.commands.run_scan:Command"
+openeasd-daily = "apps.scans.management.commands.run_daily_scan:Command"
+openeasd-weekly = "apps.scans.management.commands.run_weekly_scan:Command"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
