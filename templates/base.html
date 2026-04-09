@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}OpenEASD{% endblock %} — Attack Surface Detection</title>
+  <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+
+  <nav class="bg-indigo-700 text-white shadow">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+      <a href="{% url 'dashboard' %}" class="font-bold text-lg tracking-tight">OpenEASD</a>
+      <div class="flex gap-6 text-sm font-medium">
+        <a href="{% url 'dashboard' %}" class="hover:text-indigo-200">Dashboard</a>
+        <a href="{% url 'scan-list' %}" class="hover:text-indigo-200">Scans</a>
+        <a href="{% url 'vulnerability-list' %}" class="hover:text-indigo-200">Vulnerabilities</a>
+        <a href="{% url 'scan-start' %}" class="bg-white text-indigo-700 px-3 py-1 rounded hover:bg-indigo-50">New Scan</a>
+        <a href="/admin/" class="hover:text-indigo-200">Admin</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-7xl mx-auto px-4 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+</body>
+</html>

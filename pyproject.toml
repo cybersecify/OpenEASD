@@ -10,7 +10,7 @@ authors = [
 dependencies = [
     # Web framework
     "django>=5.0",
-    "djangorestframework>=3.14",
+    "django-htmx>=1.17",
     # Task queue (replaces Prefect)
     "celery>=5.3",
     "django-celery-beat>=2.5",
@@ -58,5 +58,5 @@ openeasd-daily = "apps.scans.management.commands.run_daily_scan:Command"
 openeasd-weekly = "apps.scans.management.commands.run_weekly_scan:Command"
 
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.backends.legacy:build"
+requires = ["setuptools>=68", "setuptools-scm"]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}New Scan{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto">
+  <h1 class="text-2xl font-bold text-gray-900 mb-6">Start New Scan</h1>
+
+  <div class="bg-white rounded-lg shadow p-6">
+    <form method="post">
+      {% csrf_token %}
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ form.domain.id_for_label }}">
+          Domain
+        </label>
+        {{ form.domain }}
+        {% if form.domain.errors %}
+          <p class="text-red-500 text-xs mt-1">{{ form.domain.errors.0 }}</p>
+        {% endif %}
+      </div>
+
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ form.scan_type.id_for_label }}">
+          Scan Type
+        </label>
+        {{ form.scan_type }}
+      </div>
+
+      <button type="submit" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 font-medium">
+        Start Scan
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

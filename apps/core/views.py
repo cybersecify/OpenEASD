@@ -1,35 +1,26 @@
-"""Core views: health check and root endpoint."""
+"""Core app views."""
 
+from django.shortcuts import render
 from django.db import connection
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
+from django.db.utils import OperationalError
+
+from apps.scans.models import ScanSession
 
 
-@api_view(["GET"])
+def dashboard(request):
+    recent_scans = ScanSession.objects.all()[:10]
+    return render(request, "dashboard.html", {"scans": recent_scans})
+
+
 def health_check(request):
-    """Health check endpoint."""
-    db_status = "connected"
     try:
         connection.ensure_connection()
-    except Exception:
+        db_status = "connected"
+    except OperationalError:
         db_status = "disconnected"
 
-    return Response({
-        "status": "healthy",
+    return render(request, "health.html", {
+        "db_status": db_status,
         "service": "OpenEASD",
         "version": "1.0.0",
-        "database": db_status,
-    })
-
-
-@api_view(["GET"])
-def root(request):
-    """Root endpoint."""
-    return Response({
-        "message": "Welcome to OpenEASD - Automated External Attack Surface Detection",
-        "company": "Cybersecify",
-        "author": "Rathnakara G N",
-        "version": "1.0.0",
-        "docs": "/api/",
-        "health": "/health",
     })

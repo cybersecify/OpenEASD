@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="mb-8 flex items-center justify-between">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
+    <p class="text-gray-500 text-sm mt-1">Automated External Attack Surface Detection</p>
+  </div>
+  <a href="{% url 'scan-start' %}" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 text-sm font-medium">
+    + New Scan
+  </a>
+</div>
+
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+    <h2 class="font-semibold text-gray-700">Recent Scans</h2>
+    <a href="{% url 'scan-list' %}" class="text-indigo-600 text-sm hover:underline">View all</a>
+  </div>
+
+  {% if scans %}
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Findings</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Started</th>
+        <th class="px-6 py-3"></th>
+      </tr>
+    </thead>
+    <tbody class="bg-white divide-y divide-gray-200">
+      {% for scan in scans %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-6 py-4 text-sm font-medium text-gray-900">{{ scan.domain }}</td>
+        <td class="px-6 py-4 text-sm text-gray-500 capitalize">{{ scan.scan_type }}</td>
+        <td class="px-6 py-4 text-sm">
+          {% include "partials/status_badge.html" with status=scan.status %}
+        </td>
+        <td class="px-6 py-4 text-sm text-gray-900">{{ scan.total_findings }}</td>
+        <td class="px-6 py-4 text-sm text-gray-500">{{ scan.start_time|date:"M d, Y H:i" }}</td>
+        <td class="px-6 py-4 text-right">
+          <a href="{% url 'scan-detail' scan.id %}" class="text-indigo-600 hover:underline text-sm">View</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="px-6 py-12 text-center text-gray-400">
+    <p class="text-lg">No scans yet.</p>
+    <a href="{% url 'scan-start' %}" class="mt-3 inline-block text-indigo-600 hover:underline text-sm">Start your first scan</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

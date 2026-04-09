@@ -4,9 +4,9 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    path("scan/start/", views.start_scan, name="scan-start"),
-    path("scan/<int:session_id>/status/", views.scan_status, name="scan-status"),
-    path("scan/<int:session_id>/results/", views.scan_results, name="scan-results"),
-    path("scans/", views.list_scans, name="scan-list"),
+    path("start/", views.scan_start, name="scan-start"),
+    path("", views.scan_list, name="scan-list"),
+    path("<int:session_id>/", views.scan_detail, name="scan-detail"),
+    path("<int:session_id>/status/", views.scan_status_fragment, name="scan-status-fragment"),
     path("vulnerabilities/", views.vulnerability_list, name="vulnerability-list"),
 ]

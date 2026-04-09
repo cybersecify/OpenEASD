@@ -1,0 +1,18 @@
+{% for scan in scans %}
+<tr class="hover:bg-gray-50">
+  <td class="px-6 py-4 text-sm font-medium text-gray-900">{{ scan.domain }}</td>
+  <td class="px-6 py-4 text-sm text-gray-500 capitalize">{{ scan.scan_type }}</td>
+  <td class="px-6 py-4 text-sm">
+    {% include "partials/status_badge.html" with status=scan.status %}
+  </td>
+  <td class="px-6 py-4 text-sm text-gray-900">{{ scan.total_findings }}</td>
+  <td class="px-6 py-4 text-sm text-gray-500">{{ scan.start_time|date:"M d, Y H:i" }}</td>
+  <td class="px-6 py-4 text-right">
+    <a href="{% url 'scan-detail' scan.id %}" class="text-indigo-600 hover:underline text-sm">View</a>
+  </td>
+</tr>
+{% empty %}
+<tr>
+  <td colspan="6" class="px-6 py-8 text-center text-gray-400 text-sm">No scans found.</td>
+</tr>
+{% endfor %}

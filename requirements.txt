@@ -2,7 +2,7 @@
 
 # Web framework (replaces FastAPI + Uvicorn)
 django>=5.0
-djangorestframework>=3.14
+django-htmx>=1.17
 gunicorn>=21.2
 
 # Task queue (replaces Prefect)
