@@ -171,20 +171,21 @@ def run_scan(session_id: int):
         targets = [domain]
         try:
             from src.utils.tool_wrapper import SubfinderWrapper, NaabuWrapper, NmapWrapper
-            from src.utils.result_parser import ResultParser
 
-            parser = ResultParser()
             subfinder_result = SubfinderWrapper().enumerate_subdomains(domain)
-            parsed_subs = parser.parse_subfinder_output(subfinder_result.get("raw_output", ""), domain)
+            parsed_subs = subfinder_result.get("subdomains", [])
             all_subdomains.extend(parsed_subs)
-            targets = [domain] + [s.get("subdomain", "") for s in parsed_subs if s.get("subdomain")]
+            targets = [domain] + [s["subdomain"] for s in parsed_subs if s.get("subdomain")]
+            logger.info(f"[scan:{session_id}] Subfinder found {len(parsed_subs)} subdomains")
 
             naabu_result = NaabuWrapper().scan_ports(targets)
-            parser.parse_naabu_output(naabu_result.get("raw_output", ""))
+            open_ports = naabu_result.get("open_ports", [])
+            all_services.extend(open_ports)
+            logger.info(f"[scan:{session_id}] Naabu found {len(open_ports)} open ports")
 
             nmap_result = NmapWrapper().service_scan(domain)
-            parsed_services = parser.parse_nmap_xml(nmap_result.get("raw_output", ""))
-            all_services.extend(parsed_services)
+            nmap_services = nmap_result.get("services", [])
+            all_services.extend(nmap_services)
         except Exception as e:
             logger.warning(f"[scan:{session_id}] Service detection partial failure: {e}")
 
@@ -192,12 +193,19 @@ def run_scan(session_id: int):
         logger.info(f"[scan:{session_id}] Phase 3: Vulnerability scanning")
         try:
             from src.utils.tool_wrapper import NucleiWrapper
-            from src.utils.result_parser import ResultParser
 
-            parser = ResultParser()
             nuclei_result = NucleiWrapper().vulnerability_scan(targets)
-            parsed_vulns = parser.parse_nuclei_output(nuclei_result.get("raw_output", ""))
-            all_vulns.extend(parsed_vulns)
+            nuclei_vulns = nuclei_result.get("vulnerabilities", [])
+            # Normalise nuclei output to match Vulnerability model fields
+            for v in nuclei_vulns:
+                all_vulns.append({
+                    "host": v.get("host", ""),
+                    "vulnerability_type": v.get("template_id", "nuclei"),
+                    "severity": v.get("severity", "low"),
+                    "title": v.get("template_name", ""),
+                    "description": v.get("description", ""),
+                })
+            logger.info(f"[scan:{session_id}] Nuclei found {len(nuclei_vulns)} vulnerabilities")
         except Exception as e:
             logger.warning(f"[scan:{session_id}] Nuclei scanning partial failure: {e}")
 
