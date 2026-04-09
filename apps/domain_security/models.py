@@ -10,7 +10,6 @@ SEVERITY_CHOICES = [
 
 CHECK_TYPE_CHOICES = [
     ("dns", "DNS"),
-    ("ssl", "SSL/TLS"),
     ("email", "Email Security"),
     ("rdap", "RDAP/Domain"),
 ]

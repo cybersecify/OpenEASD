@@ -39,7 +39,7 @@ def dashboard(request):
         if latest_session and latest_session.status == "completed":
             latest_session_ids.append(latest_session.id)
 
-    running_count = ScanSession.objects.filter(status="running").count()
+    running_count = ScanSession.objects.filter(status__in=["pending", "running"]).count()
 
     # Urgent findings from the latest completed scan per domain only
     urgent_findings = DomainFinding.objects.filter(

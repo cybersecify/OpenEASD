@@ -9,8 +9,8 @@ from django.db import models
 class ScanSession(models.Model):
     """Represents a single scan run against a domain."""
 
-    SCAN_TYPE_CHOICES = [("full", "Full"), ("incremental", "Incremental")]
     STATUS_CHOICES = [
+        ("pending", "Pending"),
         ("running", "Running"),
         ("completed", "Completed"),
         ("failed", "Failed"),
@@ -18,16 +18,14 @@ class ScanSession(models.Model):
 
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     domain = models.CharField(max_length=255, db_index=True)
-    scan_type = models.CharField(max_length=20, choices=SCAN_TYPE_CHOICES)
+    scan_type = models.CharField(max_length=20, default="full")
     workflow = models.ForeignKey(
         "workflow.Workflow", on_delete=models.SET_NULL, null=True, blank=True, related_name="sessions"
     )
     start_time = models.DateTimeField(auto_now_add=True)
     end_time = models.DateTimeField(null=True, blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="running", db_index=True)
-    config_hash = models.CharField(max_length=64, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", db_index=True)
     total_findings = models.IntegerField(default=0)
-    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-start_time"]
@@ -42,16 +40,9 @@ class ScanDelta(models.Model):
     CHANGE_TYPE_CHOICES = [
         ("new", "New"),
         ("removed", "Removed"),
-        ("modified", "Modified"),
     ]
     CHANGE_CATEGORY_CHOICES = [
-        ("subdomain", "Subdomain"),
-        ("service", "Service"),
-        ("vulnerability", "Vulnerability"),
-        ("port", "Port"),
-        ("dns", "DNS"),
-        ("ssl", "SSL"),
-        ("email", "Email"),
+        ("domain_finding", "Domain Finding"),
     ]
 
     session = models.ForeignKey(ScanSession, on_delete=models.CASCADE, related_name="deltas")

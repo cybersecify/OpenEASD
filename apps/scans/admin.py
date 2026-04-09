@@ -8,12 +8,12 @@ from .models import ScanSession, ScanDelta
 @admin.register(ScanSession)
 class ScanSessionAdmin(admin.ModelAdmin):
     list_display = ["id", "domain", "scan_type", "status_badge", "total_findings", "start_time", "end_time"]
-    list_filter = ["status", "scan_type", "domain"]
+    list_filter = ["status", "domain"]
     search_fields = ["domain"]
-    readonly_fields = ["start_time", "end_time", "created_at", "config_hash"]
+    readonly_fields = ["start_time", "end_time"]
 
     def status_badge(self, obj):
-        colors = {"running": "orange", "completed": "green", "failed": "red"}
+        colors = {"pending": "gray", "running": "orange", "completed": "green", "failed": "red"}
         color = colors.get(obj.status, "gray")
         return format_html('<span style="color:{}">{}</span>', color, obj.status.upper())
     status_badge.short_description = "Status"

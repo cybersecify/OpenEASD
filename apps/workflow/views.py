@@ -1,5 +1,6 @@
 import logging
 
+from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
 
@@ -11,11 +12,13 @@ logger = logging.getLogger(__name__)
 _DEFAULT_ORDER = {tool: i for i, (tool, _) in enumerate(TOOL_CHOICES, start=1)}
 
 
+@login_required
 def workflow_list(request):
     workflows = Workflow.objects.prefetch_related("steps")
     return render(request, "workflow/list.html", {"workflows": workflows})
 
 
+@login_required
 def workflow_detail(request, pk):
     workflow = get_object_or_404(Workflow.objects.prefetch_related("steps", "runs__step_results"), pk=pk)
     recent_runs = workflow.runs.select_related("session").order_by("-started_at")[:10]
@@ -26,6 +29,7 @@ def workflow_detail(request, pk):
     })
 
 
+@login_required
 @require_http_methods(["GET", "POST"])
 def workflow_create(request):
     if request.method == "POST":
@@ -58,6 +62,7 @@ def workflow_create(request):
     return render(request, "workflow/create.html", {"tool_choices": TOOL_CHOICES})
 
 
+@login_required
 @require_http_methods(["POST"])
 def workflow_toggle_step(request, pk, tool):
     workflow = get_object_or_404(Workflow, pk=pk)
@@ -71,6 +76,7 @@ def workflow_toggle_step(request, pk, tool):
     return redirect("workflow-detail", pk=pk)
 
 
+@login_required
 @require_http_methods(["POST"])
 def workflow_delete(request, pk):
     workflow = get_object_or_404(Workflow, pk=pk)

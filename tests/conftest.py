@@ -1,103 +1,73 @@
-"""Pytest configuration and shared fixtures for OpenEASD tests."""
+"""Shared fixtures for OpenEASD Django tests."""
 
 import pytest
-import tempfile
-import os
-import sys
-from pathlib import Path
-
-# Add src directory to Python path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from core.database import DatabaseManager
-from core.config_manager import ConfigManager
+from django.contrib.auth.models import User
+from django.utils import timezone
 
 
 @pytest.fixture
-def temp_db():
-    """Create a temporary database for testing."""
-    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
-        db_path = tmp.name
-
-    db = DatabaseManager(db_path)
-    yield db
-
-    # Cleanup
-    if os.path.exists(db_path):
-        os.unlink(db_path)
+def user(db):
+    return User.objects.create_user(username="testuser", password="testpass123")
 
 
 @pytest.fixture
-def test_config():
-    """Create test configuration."""
-    config_data = {
-        'target': {
-            'primary_domain': 'test.com',
-            'excluded_subdomains': [],
-            'scan_depth': 2
-        },
-        'tools': {
-            'subfinder': {'enabled': True, 'timeout': 60},
-            'naabu': {'enabled': True, 'timeout': 60},
-            'nmap': {'enabled': True, 'timeout': 60},
-            'nuclei': {'enabled': True, 'timeout': 60}
-        },
-        'alerts': {
-            'slack': {'enabled': False},
-            'email': {'enabled': False}
-        }
-    }
-
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as tmp:
-        import yaml
-        yaml.dump(config_data, tmp)
-        config_path = tmp.name
-
-    config = ConfigManager(config_path)
-    yield config
-
-    # Cleanup
-    if os.path.exists(config_path):
-        os.unlink(config_path)
+def auth_client(client, user):
+    client.login(username="testuser", password="testpass123")
+    return client
 
 
 @pytest.fixture
-def sample_vulnerability():
-    """Sample vulnerability data for testing."""
-    return {
-        'host': 'test.com',
-        'port': 80,
-        'vulnerability_type': 'missing_security_headers',
-        'severity': 'medium',
-        'title': 'Missing Security Headers',
-        'description': 'Security headers not properly configured',
-        'remediation': 'Configure security headers',
-        'discovered_at': '2024-01-01T00:00:00',
-        'tool': 'nuclei'
-    }
+def domain(db):
+    from apps.domains.models import Domain
+    return Domain.objects.create(name="example.com", is_primary=True, is_active=True)
 
 
 @pytest.fixture
-def sample_service():
-    """Sample service data for testing."""
-    return {
-        'host': 'test.com',
-        'port': 80,
-        'service_name': 'http',
-        'version': 'nginx/1.18.0',
-        'protocol': 'tcp',
-        'state': 'open',
-        'discovered_at': '2024-01-01T00:00:00',
-        'tool': 'nmap'
-    }
+def scan_session(db):
+    from apps.scans.models import ScanSession
+    return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
 
 
 @pytest.fixture
-def sample_subdomain():
-    """Sample subdomain data for testing."""
-    return {
-        'subdomain': 'www.test.com',
-        'ip_address': '192.168.1.1',
-        'discovered_at': '2024-01-01T00:00:00',
-        'tool': 'subfinder'
-    }
+def completed_session(db):
+    from apps.scans.models import ScanSession
+    session = ScanSession.objects.create(
+        domain="example.com",
+        scan_type="full",
+        status="completed",
+        total_findings=3,
+        end_time=timezone.now(),
+    )
+    return session
+
+
+@pytest.fixture
+def domain_finding(db, completed_session):
+    from apps.domain_security.models import DomainFinding
+    return DomainFinding.objects.create(
+        session=completed_session,
+        domain="example.com",
+        check_type="dns",
+        severity="high",
+        title="No MX records found",
+        description="Domain has no mail exchange records.",
+        remediation="Add MX records.",
+    )
+
+
+@pytest.fixture
+def scan_summary(db, completed_session):
+    from apps.insights.models import ScanSummary
+    return ScanSummary.objects.create(
+        session=completed_session,
+        domain="example.com",
+        scan_date=completed_session.end_time,
+        critical_count=0,
+        high_count=1,
+        medium_count=2,
+        low_count=0,
+        total_findings=3,
+        new_exposures=3,
+        removed_exposures=0,
+        tool_breakdown={"domain_security": 3},
+    )

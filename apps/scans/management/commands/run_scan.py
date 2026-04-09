@@ -10,18 +10,14 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--domain", required=True, help="Target domain")
-        parser.add_argument("--scan-type", default="full", choices=["full", "incremental"])
 
     def handle(self, *args, **options):
         domain = options["domain"]
-        scan_type = options["scan_type"]
-
-        self.stdout.write(f"Starting {scan_type} scan for {domain}...")
-        session = ScanSession.objects.create(domain=domain, scan_type=scan_type)
-        self.stdout.write(f"Session ID: {session.id}")
-
-        # Run synchronously (no Celery broker needed for CLI)
-        result = run_scan(session.id)
+        self.stdout.write(f"Starting scan for {domain}...")
+        session = ScanSession.objects.create(domain=domain, scan_type="full", status="pending")
+        self.stdout.write(f"Session ID: {session.id} (UUID: {session.uuid})")
+        run_scan(session.id)
+        session.refresh_from_db()
         self.stdout.write(self.style.SUCCESS(
-            f"Scan complete: {result}"
+            f"Scan {session.status} — {session.total_findings} finding(s)"
         ))

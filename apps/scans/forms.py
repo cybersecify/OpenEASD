@@ -2,11 +2,6 @@
 
 from django import forms
 
-SCAN_TYPE_CHOICES = [
-    ("full", "Full Scan"),
-    ("incremental", "Incremental Scan"),
-]
-
 SCHEDULE_TYPE_CHOICES = [
     ("now", "Run now"),
     ("once", "Schedule once"),

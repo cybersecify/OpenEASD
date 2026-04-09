@@ -2,9 +2,8 @@ from django.db import models
 
 
 TOOL_CHOICES = [
-    ("dns_analyzer", "DNS Analyzer"),
+    ("domain_security", "Domain Security"),
     ("ssl_checker", "SSL Checker"),
-    ("email_security", "Email Security"),
     ("subfinder", "Subfinder"),
     ("naabu", "Naabu (Port Scan)"),
     ("nmap", "Nmap (Service Scan)"),
@@ -13,9 +12,8 @@ TOOL_CHOICES = [
 
 # Execution order within a phase — enforced by runner
 TOOL_PHASE = {
-    "dns_analyzer": 1,
+    "domain_security": 1,
     "ssl_checker": 1,
-    "email_security": 1,
     "subfinder": 2,
     "naabu": 3,
     "nmap": 3,

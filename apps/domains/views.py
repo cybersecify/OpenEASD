@@ -34,7 +34,17 @@ def domain_delete(request, pk):
     domain = get_object_or_404(Domain, pk=pk)
     if request.method == "POST":
         domain_name = domain.name
-        # Delete all scan data for this domain (ScanSession cascades to findings)
+        active = ScanSession.objects.filter(
+            domain=domain_name, status__in=["pending", "running"]
+        ).exists()
+        if active:
+            domains = Domain.objects.all()
+            form = DomainForm()
+            return render(request, "domains/list.html", {
+                "domains": domains,
+                "form": form,
+                "delete_error": f"Cannot delete '{domain_name}' — a scan is currently active. Wait for it to finish.",
+            })
         ScanSession.objects.filter(domain=domain_name).delete()
         ScanSummary.objects.filter(domain=domain_name).delete()
         domain.delete()

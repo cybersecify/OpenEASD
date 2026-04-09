@@ -24,6 +24,7 @@
       <label class="block text-xs font-medium text-gray-500 mb-1">Status</label>
       <select name="status" class="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
         <option value="">All</option>
+        <option value="pending" {% if status_filter == "pending" %}selected{% endif %}>Pending</option>
         <option value="running" {% if status_filter == "running" %}selected{% endif %}>Running</option>
         <option value="completed" {% if status_filter == "completed" %}selected{% endif %}>Completed</option>
         <option value="failed" {% if status_filter == "failed" %}selected{% endif %}>Failed</option>
@@ -48,5 +49,6 @@
       {% include "partials/scan_rows.html" %}
     </tbody>
   </table>
+  {% with page_obj=scans %}{% include "partials/pagination.html" %}{% endwith %}
 </div>
 {% endblock %}

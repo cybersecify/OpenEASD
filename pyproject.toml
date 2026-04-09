@@ -13,27 +13,15 @@ dependencies = [
     "django-htmx>=1.17",
     # Configuration
     "python-decouple>=3.8",
-    "pyyaml>=6.0",
-    # DNS / SSL / network
+    # DNS / network
     "dnspython>=2.4",
+    "requests>=2.31",
+    "httpx>=0.25",
+    # Scheduler
+    "django-apscheduler>=0.7.0",
+    # SSL / crypto (ssl_checker — enable when ready)
     "cryptography>=42.0",
     "pyopenssl>=23.0",
-    "requests>=2.31",
-    "aiohttp>=3.9",
-    "httpx>=0.25",
-    # Alerts
-    "slack-sdk>=3.26",
-    # Parsing
-    "lxml>=4.9",
-    "beautifulsoup4>=4.12",
-    # Data
-    "pandas>=2.1",
-    "numpy>=1.26",
-    # Utilities
-    "python-dateutil>=2.8",
-    "tenacity>=8.2",
-    "cachetools>=5.3",
-    "django-apscheduler>=0.7.0",
 ]
 
 [project.optional-dependencies]
@@ -54,6 +42,16 @@ openeasd = "apps.scans.management.commands.run_scan:Command"
 openeasd-daily = "apps.scans.management.commands.run_daily_scan:Command"
 openeasd-weekly = "apps.scans.management.commands.run_weekly_scan:Command"
 
+[tool.setuptools.packages.find]
+include = ["apps*", "openeasd*"]
+
 [build-system]
-requires = ["setuptools>=68", "setuptools-scm"]
+requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "openeasd.settings"
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+testpaths = ["tests"]

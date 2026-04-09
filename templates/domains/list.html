@@ -8,6 +8,12 @@
   <p class="text-gray-500 text-sm mt-1">Apex domains registered for continuous monitoring</p>
 </div>
 
+{% if delete_error %}
+<div class="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+  {{ delete_error }}
+</div>
+{% endif %}
+
 <!-- Add Domain Form -->
 <div class="bg-white rounded-lg shadow mb-6">
   <div class="px-6 py-4 border-b border-gray-200">

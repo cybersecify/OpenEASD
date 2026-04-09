@@ -3,15 +3,15 @@
 import logging
 import threading
 
+from django.db import models
 from django.db.models import Q
+from django.core.paginator import Paginator
 from django.shortcuts import render, get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required
 
-from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
-from django_apscheduler.jobstores import DjangoJobStore
 
 from .forms import StartScanForm
 from .models import ScanSession
@@ -23,32 +23,33 @@ SEVERITY_LEVELS = ["critical", "high", "medium", "low"]
 
 
 def _get_vuln_counts(session):
-    """Aggregate finding counts by severity."""
+    """Aggregate finding counts by severity — single query."""
+    from django.db.models import Count
     counts = {sev: 0 for sev in SEVERITY_LEVELS}
     try:
-        for sev in SEVERITY_LEVELS:
-            counts[sev] = session.domain_findings.filter(severity=sev).count()
+        rows = (
+            session.domain_findings
+            .values("severity")
+            .annotate(total=Count("id"))
+        )
+        for row in rows:
+            if row["severity"] in counts:
+                counts[row["severity"]] = row["total"]
     except Exception:
         pass
     return counts
 
 
-def _get_scheduler():
-    scheduler = BackgroundScheduler(timezone="UTC")
-    scheduler.add_jobstore(DjangoJobStore(), "default")
-    return scheduler
-
-
 def _schedule_once(domain, scheduled_at):
-    """Schedule a one-time scan at a specific datetime."""
+    """Schedule a one-time scan using the shared persistent scheduler."""
+    from apps.core.scheduler import get_scheduler
+
     def _run():
         session = ScanSession.objects.create(domain=domain, scan_type="full")
         run_scan(session.id)
 
-    scheduler = _get_scheduler()
-    scheduler.start()
     job_id = f"once_{domain}_{scheduled_at.strftime('%Y%m%d%H%M')}"
-    scheduler.add_job(
+    get_scheduler().add_job(
         _run,
         trigger=DateTrigger(run_date=scheduled_at),
         id=job_id,
@@ -61,7 +62,9 @@ def _schedule_once(domain, scheduled_at):
 
 
 def _schedule_recurring(domain, recurrence, recurrence_time):
-    """Add or replace a recurring scan job for a domain."""
+    """Add or replace a recurring scan job using the shared persistent scheduler."""
+    from apps.core.scheduler import get_scheduler
+
     def _run():
         session = ScanSession.objects.create(domain=domain, scan_type="full")
         run_scan(session.id)
@@ -71,10 +74,8 @@ def _schedule_recurring(domain, recurrence, recurrence_time):
     else:
         trigger = CronTrigger(hour=recurrence_time.hour, minute=recurrence_time.minute)
 
-    scheduler = _get_scheduler()
-    scheduler.start()
     job_id = f"recurring_{domain}"
-    scheduler.add_job(
+    get_scheduler().add_job(
         _run,
         trigger=trigger,
         id=job_id,
@@ -97,10 +98,14 @@ def scan_start(request):
             schedule_type = form.cleaned_data["schedule_type"]
 
             if schedule_type == "now":
-                session = ScanSession.objects.create(domain=domain, scan_type="full")
-                threading.Thread(target=run_scan, args=[session.id], daemon=True).start()
-                logger.info(f"Scan started: session={session.id} domain={domain}")
-                return redirect("scan-detail", session_uuid=session.uuid)
+                from .tasks import _is_scan_active
+                if _is_scan_active(domain):
+                    form.add_error("domain", f"A scan for {domain} is already running. Please wait for it to finish.")
+                else:
+                    session = ScanSession.objects.create(domain=domain, scan_type="full", status="pending")
+                    threading.Thread(target=run_scan, args=[session.id], daemon=True).start()
+                    logger.info(f"Scan started: session={session.id} domain={domain}")
+                    return redirect("scan-detail", session_uuid=session.uuid)
 
             elif schedule_type == "once":
                 scheduled_at = form.cleaned_data["scheduled_at"]
@@ -131,13 +136,14 @@ def scan_list(request):
     if status_filter:
         qs = qs.filter(status=status_filter)
 
-    scans = qs[:50]
+    paginator = Paginator(qs, 25)
+    page = paginator.get_page(request.GET.get("page"))
 
     if request.htmx:
-        return render(request, "partials/scan_rows.html", {"scans": scans})
+        return render(request, "partials/scan_rows.html", {"scans": page})
 
     return render(request, "scans/list.html", {
-        "scans": scans,
+        "scans": page,
         "domain": domain,
         "status_filter": status_filter,
     })
@@ -188,21 +194,38 @@ def vulnerability_list(request):
             qs = qs.filter(session__domain__icontains=domain)
         return qs
 
-    domain_findings = list(_filter(DomainFinding.objects.select_related("session"))[:50])
+    qs = _filter(
+        DomainFinding.objects
+        .select_related("session")
+        .order_by(
+            # severity desc via CASE ordering
+            models.Case(
+                models.When(severity="critical", then=0),
+                models.When(severity="high", then=1),
+                models.When(severity="medium", then=2),
+                models.When(severity="low", then=3),
+                default=4,
+                output_field=models.IntegerField(),
+            ),
+            "-discovered_at",
+        )
+    )
 
-    vulns = []
-    for f in domain_findings:
-        vulns.append({"source": f.check_type, "severity": f.severity, "title": f.title,
-                      "host": f.domain, "session": f.session, "obj": f})
+    paginator = Paginator(qs, 25)
+    page = paginator.get_page(request.GET.get("page"))
 
-    sev_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
-    vulns.sort(key=lambda x: sev_order.get(x["severity"], 0), reverse=True)
+    vulns = [
+        {"source": f.check_type, "severity": f.severity, "title": f.title,
+         "host": f.domain, "session": f.session, "obj": f}
+        for f in page
+    ]
 
     if request.htmx:
         return render(request, "partials/vuln_rows.html", {"vulns": vulns})
 
     return render(request, "vulnerabilities/list.html", {
         "vulns": vulns,
+        "page_obj": page,
         "severity": severity,
         "session_id": session_id,
         "domain": domain,

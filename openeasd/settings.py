@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     "apps.workflow",
     "apps.domains",
     "apps.insights",
+    "apps.alerts",
 ]
 
 MIDDLEWARE = [
@@ -107,12 +108,15 @@ OPENEASD_CONFIG_DIR = BASE_DIR / "config"
 OPENEASD_DATA_DIR = BASE_DIR / "data"
 OPENEASD_LOGS_DIR = BASE_DIR / "logs"
 
-# Slack notifications
-SLACK_WEBHOOK_URL = config("SLACK_WEBHOOK_URL", default="")
-SLACK_BOT_TOKEN = config("SLACK_BOT_TOKEN", default="")
-SLACK_CHANNEL = config("SLACK_CHANNEL", default="#security-alerts")
+# Ensure required directories exist at startup
+for _dir in [OPENEASD_DATA_DIR, OPENEASD_LOGS_DIR]:
+    _dir.mkdir(parents=True, exist_ok=True)
 
-# Alert thresholds
+# Alert channels — set either or both in .env to enable
+SLACK_WEBHOOK_URL = config("SLACK_WEBHOOK_URL", default="")
+MS_TEAMS_WEBHOOK_URL = config("MS_TEAMS_WEBHOOK_URL", default="")
+
+# Minimum severity to trigger an alert: critical / high / medium / low
 ALERT_SEVERITY_THRESHOLD = config("ALERT_SEVERITY_THRESHOLD", default="high")
 
 # Tool paths (Docker-based by default)
