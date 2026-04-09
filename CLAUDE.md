@@ -9,8 +9,16 @@
 - Django 5+ with plain Django views (no DRF, no Celery, no Redis)
 - HTMX for dynamic frontend interactions
 - `threading.Thread` for background scan execution
+- `django-apscheduler` for daily automated scans (starts in `CoreConfig.ready()`)
 - SQLite database (dev), configurable via `DB_NAME` env var
 - Tailwind CSS via CDN (no build step)
+
+## Scheduler
+- Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` UTC (default 02:00)
+- Configured via env vars: `SCAN_DAILY_HOUR`, `SCAN_DAILY_MINUTE`
+- Job history visible in Django admin under "Django APScheduler"
+- Scheduler starts in `apps/core/apps.py` → `CoreConfig.ready()`
+- Guard prevents double-start in dev server (checks `RUN_MAIN` env var)
 
 ## Project structure
 - `apps/core/` — dashboard and health check views

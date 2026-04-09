@@ -5,6 +5,9 @@ django>=5.0
 django-htmx>=1.17
 gunicorn>=21.2
 
+# Scheduler
+django-apscheduler>=0.6
+
 # Configuration
 python-decouple>=3.8
 pyyaml>=6.0

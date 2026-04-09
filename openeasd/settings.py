@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third party
     "django_htmx",
+    "django_apscheduler",
     # Local apps
     "apps.core",
     "apps.scans",
@@ -88,6 +89,14 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# APScheduler
+APSCHEDULER_DATETIME_FORMAT = "N j, Y, f:s a"
+APSCHEDULER_RUN_NOW_TIMEOUT = 25  # seconds
+
+# Scan schedule (24h clock, UTC)
+SCAN_DAILY_HOUR = config("SCAN_DAILY_HOUR", default=2, cast=int)
+SCAN_DAILY_MINUTE = config("SCAN_DAILY_MINUTE", default=0, cast=int)
 
 # OpenEASD Configuration
 OPENEASD_CONFIG_DIR = BASE_DIR / "config"
