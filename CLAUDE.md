@@ -9,39 +9,66 @@
 - Django 5+ with plain Django views (no DRF, no Celery, no Redis)
 - HTMX for dynamic frontend interactions
 - `threading.Thread` for background scan execution
-- `django-apscheduler` for daily automated scans (starts in `CoreConfig.ready()`)
+- `django-apscheduler` for daily automated scans (starts in `DashboardConfig.ready()`)
 - SQLite database (dev), configurable via `DB_NAME` env var
 - Tailwind CSS via CDN (no build step)
 
 ## Scheduler
-- Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` UTC (default 02:00)
+- Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (uses `TIME_ZONE` in settings, default 02:00)
 - Configured via env vars: `SCAN_DAILY_HOUR`, `SCAN_DAILY_MINUTE`
+- Disable on extra workers via `SCHEDULER_ENABLED=False` (for multi-worker gunicorn)
 - Job history visible in Django admin under "Django APScheduler"
-- Scheduler starts in `apps/core/apps.py` → `CoreConfig.ready()`
+- Scheduler code lives in `apps/core/scheduler/scheduler.py`
+- Started by `apps/core/dashboard/apps.py` → `DashboardConfig.ready()`
 - Guard prevents double-start in dev server (checks `RUN_MAIN` env var)
 
 ## Project structure
-- `apps/core/` — dashboard, health check, APScheduler startup
-- `apps/scans/` — ScanSession + ScanDelta models, orchestrator (`tasks.py`), views, forms
+
+### Core infrastructure — `apps/core/` namespace
+- `apps/core/dashboard/` — dashboard, health check, scheduler startup (`label=core`)
+- `apps/core/assets/` — shared asset models (Subdomain, IPAddress, Port, URL, Technology, Certificate)
+- `apps/core/scans/` — ScanSession + ScanDelta models, orchestrator (`tasks.py`), views, forms
+- `apps/core/domains/` — Domain model, CRUD views
+- `apps/core/workflows/` — Workflow + WorkflowStep models, runner, views (`label=workflow`)
+- `apps/core/scheduler/` — APScheduler setup (`get_scheduler`, `start_scheduler`)
+- `apps/core/notifications/` — Alert model, Slack/Teams dispatcher (`label=alerts`)
+- `apps/core/insights/` — ScanSummary, FindingTypeSummary, builder
+- `apps/core/reports/` — placeholder for future PDF/CSV export
+
+**Note on `label`:** Moved apps keep their original `app_label` (e.g. `scans`, `alerts`, `workflow`, `core`) so existing migrations and ForeignKey string references stay valid.
+
+### Tool apps
+
+#### Active (Pattern 1 — custom Python scripts)
+- `apps/domain_security/` — DNS, email, RDAP checks (scanner.py + checks/ subpackage)
+
+#### Disabled (Pattern 2 — OSS binary tools)
+These apps exist in the repo but are commented out in `settings.INSTALLED_APPS`, `apps/core/workflows/models.py` TOOL_CHOICES, and `apps/core/workflows/runner.py` _TOOL_RUNNERS. Uncomment all three to re-enable.
 - `apps/subfinder/` — Subdomain model + subfinder binary scanner
 - `apps/naabu/` — PortResult model + naabu binary scanner
 - `apps/nmap/` — ServiceResult model + nmap binary scanner
 - `apps/nuclei/` — NucleiFinding model + nuclei binary scanner
-- `apps/dns_analyzer/` — DNSFinding model + DNS analysis scanner
 - `apps/ssl_checker/` — SSLFinding model + SSL certificate scanner
-- `apps/email_security/` — EmailFinding model + SPF/DMARC scanner
-- `apps/alerts/` — Alert model + Slack dispatcher
-- `apps/workflow/` — Workflow + WorkflowStep models, runner, views (configurable tool pipelines)
-- `templates/` — all HTML templates (base, pages, partials)
-- `src/` — scanning engine (tool wrappers, modules, parsers)
+
+### Tool app structure (Pattern 2)
+```
+apps/<tool>/
+    models.py       — Finding model
+    scanner.py      — thin orchestrator: collect → analyze → bulk_create
+    collector.py    — runs binary, returns raw data (no DB)
+    analyzer.py     — parses raw data, builds model objects (no DB)
+```
 
 ## URL layout
 - `/` → dashboard
-- `/scans/` → scan list
-- `/scans/start/` → start new scan
-- `/scans/<id>/` → scan detail with live HTMX polling
-- `/scans/<id>/status/` → HTMX polling fragment (returns partial HTML)
-- `/scans/vulnerabilities/` → vulnerability list
-- `/workflows/` → workflow list/create/detail
 - `/health/` → health check
+- `/domains/` → domain CRUD
+- `/scans/` → scan list
+- `/scans/start/` → start new scan (now / once / recurring)
+- `/scans/<uuid>/` → scan detail with live HTMX polling
+- `/scans/<uuid>/status/` → HTMX polling fragment
+- `/scans/vulnerabilities/` → finding list
+- `/scans/scheduled/` → scheduled jobs list
+- `/workflows/` → workflow list/create/detail
+- `/insights/` → trends and summaries
 - `/admin/` → Django admin
