@@ -1,0 +1,64 @@
+# OpenEASD Django Requirements
+
+# Web framework (replaces FastAPI + Uvicorn)
+django>=5.0
+django-htmx>=1.17
+gunicorn>=21.2
+
+# Scheduler
+django-apscheduler>=0.6
+
+# Configuration
+python-decouple>=3.8
+pyyaml>=6.0
+python-dotenv>=1.0
+
+# DNS and network
+dnspython>=2.4
+requests>=2.31
+urllib3>=2.0
+aiohttp>=3.9
+aiofiles>=23.2
+httpx>=0.25
+
+# SSL/TLS
+cryptography>=42.0
+pyopenssl>=23.0
+certifi>=2023.11
+
+# Security scanning
+python-nmap>=0.7.1
+docker>=6.1
+
+# Alerts and notifications
+slack-sdk>=3.26
+
+# Data processing
+pandas>=2.1
+numpy>=1.26
+lxml>=4.9
+beautifulsoup4>=4.12
+
+# Utilities
+python-dateutil>=2.8
+tenacity>=8.2
+cachetools>=5.3
+psutil>=5.9
+rich>=13.7
+tqdm>=4.66
+
+# Reporting
+reportlab>=4.0
+jinja2>=3.1
+
+# Testing
+pytest>=7.4
+pytest-django>=4.7
+pytest-asyncio>=0.21
+pytest-cov>=4.1
+
+# Code quality
+black>=23.11
+flake8>=6.1
+mypy>=1.7
+isort>=5.12

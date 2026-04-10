@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Scans{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-gray-900">Scans</h1>
+  <p class="text-gray-500 text-sm mt-1">Scan history and scheduled jobs</p>
+</div>
+
+<!-- Scheduled Jobs (shown only if any exist) -->
+{% if scheduled %}
+<div class="bg-white rounded-lg shadow mb-6">
+  <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+    <div>
+      <h2 class="font-semibold text-gray-700">Scheduled Jobs</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Pending one-time and recurring scans</p>
+    </div>
+  </div>
+  <table class="min-w-full divide-y divide-gray-100">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Next Run (IST)</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Frequency</th>
+        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for job in scheduled %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-6 py-3 text-sm font-mono font-medium text-gray-900">{{ job.domain }}</td>
+        <td class="px-6 py-3 text-sm">
+          {% if job.job_type == "recurring" %}
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">Recurring</span>
+          {% else %}
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">One-time</span>
+          {% endif %}
+        </td>
+        <td class="px-6 py-3 text-sm text-gray-500">
+          {% if job.next_run_time %}{{ job.next_run_time|date:"M d, Y H:i" }}{% else %}<span class="text-gray-300 italic">—</span>{% endif %}
+        </td>
+        <td class="px-6 py-3 text-sm text-gray-500">{{ job.frequency }}</td>
+        <td class="px-6 py-3 text-right">
+          <form method="post" action="{% url 'cancel-scheduled-job' job.job_id %}"
+                onsubmit="return confirm('Cancel scheduled scan for {{ job.domain }}?')">
+            {% csrf_token %}
+            <button type="submit" class="text-red-500 hover:text-red-700 text-sm">Cancel</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- Filters -->
+<div class="bg-white rounded-lg shadow mb-4 px-6 py-4">
+  <form class="flex gap-4 items-end"
+        hx-get="{% url 'scan-list' %}"
+        hx-target="#scan-table-body"
+        hx-trigger="change, input delay:400ms from:[name=domain]">
+    <div class="flex-1">
+      <label class="block text-xs font-medium text-gray-500 mb-1">Domain</label>
+      <input type="text" name="domain" value="{{ domain }}" placeholder="Filter by domain"
+             class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Status</label>
+      <select name="status" class="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <option value="">All</option>
+        <option value="pending" {% if status_filter == "pending" %}selected{% endif %}>Pending</option>
+        <option value="running" {% if status_filter == "running" %}selected{% endif %}>Running</option>
+        <option value="completed" {% if status_filter == "completed" %}selected{% endif %}>Completed</option>
+        <option value="failed" {% if status_filter == "failed" %}selected{% endif %}>Failed</option>
+      </select>
+    </div>
+  </form>
+</div>
+
+<!-- Scan History -->
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <div class="px-6 py-4 border-b border-gray-200">
+    <h2 class="font-semibold text-gray-700">Scan History</h2>
+  </div>
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Findings</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Started</th>
+        <th class="px-6 py-3"></th>
+      </tr>
+    </thead>
+    <tbody id="scan-table-body" class="bg-white divide-y divide-gray-200">
+      {% include "partials/scan_rows.html" %}
+    </tbody>
+  </table>
+  {% with page_obj=scans %}{% include "partials/pagination.html" %}{% endwith %}
+</div>
+{% endblock %}

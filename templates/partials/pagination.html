@@ -1,0 +1,25 @@
+{% if page_obj.has_other_pages %}
+<div class="flex items-center justify-between px-6 py-3 border-t border-gray-200 bg-white">
+  <p class="text-sm text-gray-500">
+    Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}
+  </p>
+  <div class="flex gap-1">
+    {% if page_obj.has_previous %}
+    <a href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.previous_page_number }}"
+       class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">Prev</a>
+    {% endif %}
+    {% for num in page_obj.paginator.page_range %}
+      {% if page_obj.number == num %}
+        <span class="px-3 py-1 text-sm bg-indigo-600 text-white rounded">{{ num }}</span>
+      {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+        <a href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ num }}"
+           class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">{{ num }}</a>
+      {% endif %}
+    {% endfor %}
+    {% if page_obj.has_next %}
+    <a href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.next_page_number }}"
+       class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">Next</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

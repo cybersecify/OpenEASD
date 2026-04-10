@@ -1,0 +1,57 @@
+[project]
+name = "openeasd-django"
+version = "1.0.0"
+description = "OpenEASD - Automated External Attack Surface Detection (Django edition)"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    {name = "Rathnakara G N", email = "contact@cybersecify.com"},
+]
+dependencies = [
+    # Web framework
+    "django>=5.0",
+    "django-htmx>=1.17",
+    # Configuration
+    "python-decouple>=3.8",
+    # DNS / network
+    "dnspython>=2.4",
+    "requests>=2.31",
+    "httpx>=0.25",
+    # Scheduler
+    "django-apscheduler>=0.7.0",
+    # SSL / crypto (ssl_checker — enable when ready)
+    "cryptography>=42.0",
+    "pyopenssl>=23.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-django>=4.7",
+    "black>=23.11",
+    "flake8>=6.1",
+    "mypy>=1.7",
+    "isort>=5.12",
+]
+prod = [
+    "gunicorn>=21.2",
+]
+
+[project.scripts]
+openeasd = "apps.scans.management.commands.run_scan:Command"
+openeasd-daily = "apps.scans.management.commands.run_daily_scan:Command"
+openeasd-weekly = "apps.scans.management.commands.run_weekly_scan:Command"
+
+[tool.setuptools.packages.find]
+include = ["apps*", "openeasd*"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "openeasd.settings"
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+testpaths = ["tests"]

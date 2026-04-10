@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+
+{% block title %}Domains{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+  <h1 class="text-2xl font-bold text-gray-900">Domains</h1>
+  <p class="text-gray-500 text-sm mt-1">Apex domains registered for continuous monitoring</p>
+</div>
+
+{% if delete_error %}
+<div class="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+  {{ delete_error }}
+</div>
+{% endif %}
+
+<!-- Add Domain Form -->
+<div class="bg-white rounded-lg shadow mb-6">
+  <div class="px-6 py-4 border-b border-gray-200">
+    <h2 class="font-semibold text-gray-700">Add Domain</h2>
+  </div>
+  <form method="post" class="px-6 py-4">
+    {% csrf_token %}
+    <div class="flex flex-col sm:flex-row gap-3 items-start">
+      <div class="flex-1">
+        {{ form.name }}
+        {% if form.name.errors %}
+        <p class="text-red-500 text-xs mt-1">{{ form.name.errors.0 }}</p>
+        {% endif %}
+      </div>
+      <div class="flex items-center gap-2 pt-2 sm:pt-0 shrink-0">
+        {{ form.is_primary }}
+        <label class="text-sm text-gray-600">Primary</label>
+      </div>
+      <div class="shrink-0">
+        <button type="submit" class="w-full sm:w-auto bg-indigo-600 text-white px-5 py-2 rounded-md text-sm font-medium hover:bg-indigo-700">
+          Add Domain
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- Domain List -->
+<div class="bg-white rounded-lg shadow">
+  <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+    <h2 class="font-semibold text-gray-700">Registered Domains</h2>
+    <span class="text-xs text-gray-400">{{ domains|length }} domain{{ domains|length|pluralize }}</span>
+  </div>
+
+  {% if domains %}
+  <table class="min-w-full divide-y divide-gray-100">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Added</th>
+        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for domain in domains %}
+      <!-- Normal row -->
+      <tr id="row-{{ domain.pk }}" class="hover:bg-gray-50">
+        <td class="px-6 py-4 text-sm font-mono font-medium text-gray-900">
+          {{ domain.name }}
+          {% if domain.name in recurring_domains %}
+          <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-violet-100 text-violet-700">scheduled</span>
+          {% endif %}
+        </td>
+        <td class="px-6 py-4 text-sm">
+          {% if domain.is_primary %}
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">Primary</span>
+          {% else %}
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Related</span>
+          {% endif %}
+        </td>
+        <td class="px-6 py-4 text-sm">
+          {% if domain.is_active %}
+          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+            <span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span> Active
+          </span>
+          {% else %}
+          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+            <span class="w-1.5 h-1.5 bg-gray-400 rounded-full"></span> Paused
+          </span>
+          {% endif %}
+        </td>
+        <td class="px-6 py-4 text-sm text-gray-500">{{ domain.added_at|date:"M d, Y" }}</td>
+        <td class="px-6 py-4 text-right">
+          <div class="flex items-center justify-end gap-3">
+            <a href="{% url 'scan-start' %}?domain={{ domain.name }}" class="text-indigo-600 hover:underline text-sm">Scan</a>
+            <form method="post" action="{% url 'domain-toggle' domain.pk %}" class="inline">
+              {% csrf_token %}
+              <button type="submit" class="text-gray-500 hover:text-gray-700 text-sm">
+                {% if domain.is_active %}Pause{% else %}Resume{% endif %}
+              </button>
+            </form>
+            <button onclick="showConfirm({{ domain.pk }})" class="text-red-500 hover:text-red-700 text-sm">
+              Delete
+            </button>
+          </div>
+        </td>
+      </tr>
+      <!-- Inline confirm row (hidden by default) -->
+      <tr id="confirm-{{ domain.pk }}" class="hidden bg-red-50">
+        <td colspan="5" class="px-6 py-3">
+          <div class="flex items-center justify-between">
+            <p class="text-sm text-red-700">
+              Delete <span class="font-mono font-semibold">{{ domain.name }}</span>?
+              This will remove all scan history and findings for this domain.
+            </p>
+            <div class="flex items-center gap-3 shrink-0 ml-6">
+              <button onclick="hideConfirm({{ domain.pk }})" class="text-sm text-gray-500 hover:text-gray-700">
+                Cancel
+              </button>
+              <form method="post" action="{% url 'domain-delete' domain.pk %}" class="inline">
+                {% csrf_token %}
+                <button type="submit" class="bg-red-600 text-white text-sm px-4 py-1.5 rounded hover:bg-red-700">
+                  Yes, delete
+                </button>
+              </form>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="px-6 py-12 text-center text-gray-400">
+    <p class="text-lg">No domains registered yet.</p>
+    <p class="text-sm mt-1">Add your first apex domain above to start monitoring.</p>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  function showConfirm(pk) {
+    document.getElementById('row-' + pk).classList.add('opacity-50');
+    document.getElementById('confirm-' + pk).classList.remove('hidden');
+  }
+  function hideConfirm(pk) {
+    document.getElementById('row-' + pk).classList.remove('opacity-50');
+    document.getElementById('confirm-' + pk).classList.add('hidden');
+  }
+</script>
+{% endblock %}
