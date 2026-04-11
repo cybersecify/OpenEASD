@@ -9,42 +9,15 @@
   <p class="text-gray-500 text-sm">Scan #{{ session.id }} &middot; {{ session.start_time|date:"M d, Y H:i" }} IST</p>
 </div>
 
-<div id="scan-status-panel"
-     {% if session.status == "pending" or session.status == "running" %}
-     hx-get="{% url 'scan-status-fragment' session.uuid %}"
-     hx-trigger="every 3s"
-     hx-swap="outerHTML"
-     {% endif %}>
-  {% include "partials/scan_status.html" %}
-</div>
+{% include "partials/scan_status.html" %}
+
+<!-- Listen for HTMX scanComplete event to reload the page so completed sections appear -->
+<script>
+  document.body.addEventListener('scanComplete', () => setTimeout(() => location.reload(), 500));
+</script>
 
 {% if session.status == "completed" %}
-<div class="mt-8 space-y-6">
-
-  <!-- Discovery summary cards (clickable - scroll to sections below) -->
-  <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
-    <a href="#subdomains" class="bg-white rounded-lg shadow px-4 py-3 hover:bg-gray-50 transition-colors block">
-      <div class="text-xs text-gray-500 uppercase">Subdomains</div>
-      <div class="text-2xl font-bold text-gray-900">{{ asset_counts.subdomains_total }}</div>
-      <div class="text-xs text-green-600">{{ asset_counts.subdomains_active }} active</div>
-    </a>
-    <a href="#ports" class="bg-white rounded-lg shadow px-4 py-3 hover:bg-gray-50 transition-colors block">
-      <div class="text-xs text-gray-500 uppercase">Public IPs</div>
-      <div class="text-2xl font-bold text-gray-900">{{ asset_counts.ips }}</div>
-    </a>
-    <a href="#ports" class="bg-white rounded-lg shadow px-4 py-3 hover:bg-gray-50 transition-colors block">
-      <div class="text-xs text-gray-500 uppercase">Open Ports</div>
-      <div class="text-2xl font-bold text-gray-900">{{ asset_counts.ports }}</div>
-    </a>
-    <a href="#urls" class="bg-white rounded-lg shadow px-4 py-3 hover:bg-gray-50 transition-colors block">
-      <div class="text-xs text-gray-500 uppercase">Web URLs</div>
-      <div class="text-2xl font-bold text-gray-900">{{ asset_counts.urls }}</div>
-    </a>
-    <a href="#cves" class="bg-white rounded-lg shadow px-4 py-3 hover:bg-gray-50 transition-colors block">
-      <div class="text-xs text-gray-500 uppercase">CVE Findings</div>
-      <div class="text-2xl font-bold text-red-600">{{ asset_counts.nmap_findings }}</div>
-    </a>
-  </div>
+<div class="space-y-6">
 
   {% with findings=domain_findings %}
   {% if findings %}

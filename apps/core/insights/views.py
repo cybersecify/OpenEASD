@@ -97,22 +97,32 @@ def insights(request):
     severity_distribution = {row["severity"]: row["count"] for row in severity_dist}
 
     # ----- Top vulnerable services (group by service+version) -----
-    top_services_qs = (
-        Finding.objects
-        .filter(session_id__in=latest_session_ids, source="nmap")
-        .values("extra__service", "extra__version")
-        .annotate(cve_count=Count("id"), max_cvss=Max("extra__cvss_score"))
-        .order_by("-cve_count")[:5]
-    )
-    top_services = [
-        {
-            "service": row.get("extra__service", ""),
-            "version": row.get("extra__version", ""),
-            "cve_count": row["cve_count"],
-            "max_cvss": row["max_cvss"],
-        }
-        for row in top_services_qs
-    ]
+    # Fetch raw findings and group in Python — Django's JSONField + SQLite
+    # don't support Max() on json-extracted fields reliably.
+    nmap_findings = Finding.objects.filter(
+        session_id__in=latest_session_ids, source="nmap"
+    ).only("extra")
+
+    services_agg: dict[tuple[str, str], dict] = {}
+    for f in nmap_findings:
+        service = (f.extra or {}).get("service", "") or ""
+        version = (f.extra or {}).get("version", "") or ""
+        cvss = (f.extra or {}).get("cvss_score") or 0
+        try:
+            cvss = float(cvss)
+        except (TypeError, ValueError):
+            cvss = 0.0
+        key = (service, version)
+        agg = services_agg.setdefault(key, {"service": service, "version": version, "cve_count": 0, "max_cvss": 0.0})
+        agg["cve_count"] += 1
+        if cvss > agg["max_cvss"]:
+            agg["max_cvss"] = cvss
+
+    top_services = sorted(
+        services_agg.values(),
+        key=lambda r: r["cve_count"],
+        reverse=True,
+    )[:5]
 
     # Chart data passed to template — Django's json_script filter encodes safely
     chart_data = {

@@ -194,6 +194,7 @@ def scan_detail(request, session_uuid):
     return render(request, "scans/detail.html", {
         "session": session,
         "vuln_counts": vuln_counts,
+        "live_total": sum(vuln_counts.values()),
         "subdomains": subdomains,
         "ips": ips,
         "ports": ports,
@@ -216,12 +217,26 @@ def scan_status_fragment(request, session_uuid):
     session = get_object_or_404(ScanSession, uuid=session_uuid)
     vuln_counts = _get_vuln_counts(session)
 
+    from apps.core.assets.models import Subdomain, IPAddress, Port, URL
+    from apps.core.findings.models import Finding
+
+    asset_counts = {
+        "subdomains_total":  Subdomain.objects.filter(session=session).count(),
+        "subdomains_active": Subdomain.objects.filter(session=session, is_active=True).count(),
+        "ips":               IPAddress.objects.filter(session=session).count(),
+        "ports":             Port.objects.filter(session=session).count(),
+        "urls":              URL.objects.filter(session=session).count(),
+        "nmap_findings":     Finding.objects.filter(session=session, source="nmap").count(),
+    }
+
     response = render(request, "partials/scan_status.html", {
+        "live_total": sum(vuln_counts.values()),
         "session": session,
         "vuln_counts": vuln_counts,
+        "asset_counts": asset_counts,
     })
 
-    if session.status != "running":
+    if session.status not in ("running", "pending"):
         response["HX-Trigger"] = "scanComplete"
 
     return response

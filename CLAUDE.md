@@ -1,9 +1,14 @@
 # CLAUDE.md — OpenEASD Django Project
 
+External Attack Surface Detection platform. Built around a 6-phase scan
+pipeline that produces shared assets and unified findings.
+
 ## Commands
 - Always use `uv run python` instead of `python` or `python3`
 - Always use `uv run manage.py` for Django management commands (e.g. `uv run manage.py check`)
 - Always use `uv run pytest` for running tests
+- The slow `tests/unit/test_domain_security.py` (41 tests) makes real DNS/RDAP calls — exclude it for fast CI runs:
+  `uv run pytest tests/ --ignore=tests/unit/test_domain_security.py`
 
 ## Stack
 - Django 5+ with plain Django views (no DRF, no Celery, no Redis)
@@ -29,53 +34,149 @@
 - Started by `apps/core/dashboard/apps.py` → `DashboardConfig.ready()`
 - Guard prevents double-start in dev server (checks `RUN_MAIN` env var)
 
+## External binary tools
+
+ProjectDiscovery tools installed via `pdtm` at `~/.pdtm/go/bin/`:
+- `subfinder`, `dnsx`, `naabu`, `httpx`
+
+System binary:
+- `nmap` (Homebrew at `/opt/homebrew/bin/nmap`)
+
+Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_NMAP` env vars. Defaults to pdtm path.
+
 ## Project structure
 
-### Core infrastructure — `apps/core/` namespace
-- `apps/core/dashboard/` — dashboard, health check, scheduler startup (`label=core`)
-- `apps/core/assets/` — shared asset models (Subdomain, IPAddress, Port, URL, Technology, Certificate)
-- `apps/core/scans/` — ScanSession + ScanDelta models, orchestrator (`tasks.py`), views, forms
-- `apps/core/domains/` — Domain model, CRUD views
-- `apps/core/workflows/` — Workflow + WorkflowStep models, runner, views (`label=workflow`)
-- `apps/core/scheduler/` — APScheduler setup (`get_scheduler`, `start_scheduler`)
-- `apps/core/notifications/` — Alert model, Slack/Teams dispatcher (`label=alerts`)
-- `apps/core/insights/` — ScanSummary, FindingTypeSummary, builder
-- `apps/core/reports/` — placeholder for future PDF/CSV export
+### Core infrastructure — `apps/core/` namespace (10 sub-apps)
+
+| App | Label | Purpose |
+|---|---|---|
+| `dashboard/` | `core` | Dashboard, health check, scheduler startup |
+| `assets/` | `assets` | Shared asset models (Subdomain, IPAddress, Port, URL, Technology, Certificate) — every tool writes here |
+| `findings/` | `findings` | **Unified Finding model** — every tool writes findings here, no per-tool finding models |
+| `scans/` | `scans` | ScanSession, ScanDelta, scan orchestrator (`tasks.py`) |
+| `domains/` | `domains` | Domain model, CRUD views |
+| `workflows/` | `workflow` | Workflow + WorkflowStep models, runner, views |
+| `scheduler/` | `scheduler` | APScheduler setup (`get_scheduler`, `start_scheduler`) |
+| `notifications/` | `alerts` | Alert model, Slack/Teams dispatcher |
+| `insights/` | `insights` | ScanSummary, FindingTypeSummary, builder |
+| `reports/` | `reports` | Placeholder for future PDF/CSV export |
 
 **Note on `label`:** Moved apps keep their original `app_label` (e.g. `scans`, `alerts`, `workflow`, `core`) so existing migrations and ForeignKey string references stay valid.
 
-### Tool apps
+### Tool apps (one per scanner)
 
-#### Active (Pattern 1 — custom Python scripts)
-- `apps/domain_security/` — DNS, email, RDAP checks (scanner.py + checks/ subpackage)
+| App | Type | Status | Phase |
+|---|---|---|---|
+| `apps/domain_security/` | Pattern 1 (custom Python) | ✅ Active | 1 |
+| `apps/subfinder/` | Pattern 2 (OSS binary) | ✅ Active | 2 |
+| `apps/dnsx/` | Pattern 2 (OSS binary) | ✅ Active | 3 |
+| `apps/naabu/` | Pattern 2 (OSS binary) | ✅ Active | 4 |
+| `apps/httpx/` | Pattern 2 (OSS binary) | ✅ Active | 5 |
+| `apps/nmap/` | Pattern 2 (OSS binary) | ✅ Active | 6 |
+| `apps/nuclei/` | Pattern 2 (OSS binary) | ❌ Disabled | future web workflow |
+| `apps/ssl_checker/` | Pattern 2 (OSS binary) | ❌ Disabled | future |
 
-#### Disabled (Pattern 2 — OSS binary tools)
-These apps exist in the repo but are commented out in `settings.INSTALLED_APPS`, `apps/core/workflows/models.py` TOOL_CHOICES, and `apps/core/workflows/runner.py` _TOOL_RUNNERS. Uncomment all three to re-enable.
-- `apps/subfinder/` — Subdomain model + subfinder binary scanner
-- `apps/naabu/` — PortResult model + naabu binary scanner
-- `apps/nmap/` — ServiceResult model + nmap binary scanner
-- `apps/nuclei/` — NucleiFinding model + nuclei binary scanner
-- `apps/ssl_checker/` — SSLFinding model + SSL certificate scanner
+To re-enable a disabled tool, uncomment it in:
+1. `settings.INSTALLED_APPS`
+2. `apps/core/workflows/models.py` `TOOL_CHOICES` and `TOOL_PHASE`
+3. `apps/core/workflows/runner.py` `_TOOL_RUNNERS`
 
-### Tool app structure (Pattern 2)
+### Tool app structure (Pattern 2 — OSS binary)
 ```
 apps/<tool>/
-    models.py       — Finding model
-    scanner.py      — thin orchestrator: collect → analyze → bulk_create
+    models.py       — empty (writes to apps/core/assets/ and apps/core/findings/)
+    scanner.py      — thin orchestrator: collect → analyze → save
     collector.py    — runs binary, returns raw data (no DB)
-    analyzer.py     — parses raw data, builds model objects (no DB)
+    analyzer.py     — parses raw data, builds shared Asset/Finding objects
 ```
+
+### Tool app structure (Pattern 1 — custom Python)
+```
+apps/domain_security/
+    scanner.py      — orchestrator + 28 inline check functions
+    checks/         — dead code from a refactor attempt; do not import
+        dns.py
+        email.py
+        rdap.py
+```
+Note: `domain_security/scanner.py` still has all checks inline because tests
+patch private helpers like `apps.domain_security.scanner._resolve`. Do not
+move logic into `checks/` without updating the tests' patch targets.
+
+## The 6-phase scan pipeline
+
+```
+Phase 1  domain_security  → Finding (source="domain_security", DNS/email/RDAP)
+Phase 2  subfinder        → assets.Subdomain (passive subdomain enumeration)
+Phase 3  dnsx             → assets.IPAddress (public-only filter, marks Subdomain.is_active)
+Phase 4  naabu            → assets.Port (top 100 TCP scan against IPs)
+Phase 5  httpx            → assets.URL (probes HTTP/HTTPS via subdomain hostname for CDN support)
+Phase 6  nmap NSE vulners → Finding (source="nmap", check_type="cve") on non-web ports only
+```
+
+### Key design rules
+1. **Tools never import from each other.** All shared data goes through `apps/core/assets/` and `apps/core/findings/`.
+2. **dnsx filters to public IPs only.** Private/loopback/link-local/AWS metadata IPs (169.254.169.254) are dropped.
+3. **httpx feeds subdomain:port pairs, not IP:port pairs.** Cloudflare/CDN-fronted services need SNI matching the hostname.
+4. **Web vs non-web classification** is in `apps/nmap/scanner.py:_web_pairs_for_session()`. A port is "web" if any URL exists for any IP behind the same hostname (handles 1-hostname → multiple-IPs CDN case).
+5. **nmap only scans non-web ports** (those without a matching URL record). Web ports are reserved for the future web workflow with nuclei.
+6. **Asset deletion cascades** through Subdomain → IPAddress → Port → URL. Deleting a Domain wipes all session data.
+
+## Unified Finding model
+
+`apps/core/findings/Finding` replaces per-tool models. All tools write to it:
+
+```python
+class Finding(models.Model):
+    session     = FK(ScanSession)
+    source      = "domain_security" | "nmap" | "nuclei" | "ssl_checker"
+    check_type  = "dns" | "email" | "rdap" | "cve" | ...
+    severity    = "critical" | "high" | "medium" | "low" | "info"
+    title       = CharField()
+    description = TextField()
+    remediation = TextField()
+    target      = CharField()  # hostname or address
+    subdomain   = FK(Subdomain, null=True)
+    ip_address  = FK(IPAddress, null=True)
+    port        = FK(Port, null=True)
+    url         = FK(URL, null=True)
+    extra       = JSONField()  # tool-specific: cve, cvss_score, service, version, etc.
+```
+
+Backward-compat `@property` accessors on Finding (`cve`, `cvss_score`, `service`, `version`, `port_number`, `address`) so templates work without `extra__cve` lookups.
+
+**SQLite quirk:** Don't use `Max("extra__cvss_score")` or other aggregations on JSON-extracted fields — Django/SQLite will fail with `the JSON object must be str, bytes or bytearray, not float`. Group in Python after fetching the rows. See `apps/core/insights/views.py` for the pattern.
 
 ## URL layout
 - `/` → dashboard
 - `/health/` → health check
 - `/domains/` → domain CRUD
 - `/scans/` → scan list
-- `/scans/start/` → start new scan (now / once / recurring)
-- `/scans/<uuid>/` → scan detail with live HTMX polling
-- `/scans/<uuid>/status/` → HTMX polling fragment
-- `/scans/vulnerabilities/` → finding list
-- `/scans/scheduled/` → scheduled jobs list
+- `/scans/start/` → start new scan (now / once / recurring) — Alpine.js form
+- `/scans/<uuid>/` → scan detail with live HTMX polling of severity + asset cards
+- `/scans/<uuid>/status/` → HTMX fragment (severity + asset counts, polled every 3s)
+- `/scans/findings/` → unified finding list (filters: ?severity= ?session_id= ?domain=)
+- `/scans/scheduled/` → scheduled jobs list (one-time + recurring)
 - `/workflows/` → workflow list/create/detail
-- `/insights/` → trends and summaries
+- `/insights/` → trends, charts (Chart.js), tool breakdown, top vulnerable services
 - `/admin/` → Django admin
+
+## Tests
+
+| File | Tests | Notes |
+|---|---|---|
+| `tests/unit/test_alerts.py` | 7 | Slack/Teams dispatcher |
+| `tests/unit/test_assets.py` | 13 | Shared asset model constraints, FK chains, cascade delete |
+| `tests/unit/test_core.py` | 10 | Dashboard view |
+| `tests/unit/test_dnsx.py` | 20 | Public IP filter, analyzer, scanner |
+| `tests/unit/test_domain_security.py` | 41 | DNS/email/RDAP — **slow, real network** |
+| `tests/unit/test_domains.py` | 15 | Domain CRUD |
+| `tests/unit/test_httpx.py` | 11 | JSON parser, host_ip → Port lookup, hostname → Subdomain link |
+| `tests/unit/test_insights.py` | 11 | Insights builder + view |
+| `tests/unit/test_naabu.py` | 9 | JSON parser, FK to IPAddress |
+| `tests/unit/test_nmap.py` | 24 | Severity mapping, vulners XML parser, web/non-web exclusion |
+| `tests/unit/test_scans.py` | 55 | ScanSession, scheduling, scan_start views |
+| `tests/unit/test_subfinder.py` | 11 | JSON parser, dedup, hostname normalization |
+| `tests/integration/test_scan_flow.py` | 13 | Domain security flow + full pipeline (mocked) + delete cascade |
+
+**Total: 240 tests** (199 fast + 41 slow domain_security)
