@@ -1,13 +1,14 @@
 """Nmap scanner — orchestrator: collect → analyze → save NmapFindings.
 
 Reads non-web ports from apps.core.assets.Port (those with NO matching URL
-record from httpx), runs nmap with vulners NSE, stores findings linked
-back to the Port asset.
+record from httpx, accounting for CDN-fronted hostnames that resolve to
+multiple IPs), runs nmap with vulners NSE, stores findings linked back
+to the Port asset.
 """
 
 import logging
 
-from apps.core.assets.models import Port
+from apps.core.assets.models import IPAddress, Port, URL
 from .models import NmapFinding
 from .collector import collect, group_ports_by_ip
 from .analyzer import analyze
@@ -15,11 +16,37 @@ from .analyzer import analyze
 logger = logging.getLogger(__name__)
 
 
+def _web_pairs_for_session(session) -> set[tuple[str, int]]:
+    """Return the set of (ip_address, port_number) pairs confirmed as web.
+
+    A pair is considered web if ANY URL record exists for any IP that the
+    URL's parent subdomain resolves to. This handles CDN-fronted hostnames
+    where one Cloudflare hostname maps to multiple A records — httpx probes
+    the hostname once but ALL IPs behind it should be classified as web.
+    """
+    web_pairs: set[tuple[str, int]] = set()
+
+    urls = URL.objects.filter(session=session, port_number__isnull=False).select_related("subdomain")
+    for url in urls:
+        if url.subdomain:
+            ips = IPAddress.objects.filter(session=session, subdomain=url.subdomain).values_list("address", flat=True)
+            for ip in ips:
+                web_pairs.add((ip, url.port_number))
+        # Also pair the URL's own host (in case host was a raw IP, no subdomain)
+        if url.host:
+            web_pairs.add((url.host, url.port_number))
+
+    return web_pairs
+
+
 def run_nmap(session) -> list[NmapFinding]:
-    """Run nmap NSE vulners against non-web ports (Ports without a URL record)."""
-    # Non-web = open Port with no URL record (httpx couldn't probe it as web)
-    ports_qs = Port.objects.filter(session=session, state="open", urls__isnull=True).distinct()
-    if not ports_qs.exists():
+    """Run nmap NSE vulners against non-web ports."""
+    web_pairs = _web_pairs_for_session(session)
+
+    all_open = Port.objects.filter(session=session, state="open")
+    ports_qs = [p for p in all_open if (p.address, p.port) not in web_pairs]
+
+    if not ports_qs:
         logger.info(f"[nmap:{session.id}] No non-web ports to scan")
         return []
 

@@ -202,7 +202,7 @@
           <td class="px-6 py-3 text-sm font-mono text-gray-900">{{ p.port }}</td>
           <td class="px-6 py-3 text-sm text-gray-500 uppercase">{{ p.protocol }}</td>
           <td class="px-6 py-3 text-sm">
-            {% if p.urls.all %}
+            {% if p.is_web %}
             <span class="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">web</span>
             {% else %}
             <span class="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">non-web</span>

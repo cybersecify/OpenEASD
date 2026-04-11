@@ -22,7 +22,8 @@
     </a>
   </div>
   {% else %}
-  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+       x-data="scanStartForm()" x-init="init()">
     <form method="post">
       {% csrf_token %}
 
@@ -40,25 +41,28 @@
         <label class="block text-sm font-semibold text-gray-700 mb-2">When to run</label>
         <div class="grid grid-cols-3 gap-3">
 
-          <label id="card-now" onclick="selectSchedule('now')"
-                 class="schedule-card cursor-pointer rounded-lg border-2 border-indigo-500 bg-indigo-50 px-4 py-3 text-center transition-all">
-            <input type="radio" name="schedule_type" value="now" class="sr-only" checked>
+          <label @click="schedule = 'now'"
+                 :class="schedule === 'now' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white hover:border-gray-300'"
+                 class="cursor-pointer rounded-lg border-2 px-4 py-3 text-center transition-all">
+            <input type="radio" name="schedule_type" value="now" class="sr-only" x-model="schedule">
             <div class="text-lg mb-1">⚡</div>
             <div class="text-xs font-semibold text-gray-800">Run now</div>
             <div class="text-xs text-gray-400 mt-0.5">Immediately</div>
           </label>
 
-          <label id="card-once" onclick="selectSchedule('once')"
-                 class="schedule-card cursor-pointer rounded-lg border-2 border-gray-200 bg-white px-4 py-3 text-center transition-all hover:border-gray-300">
-            <input type="radio" name="schedule_type" value="once" class="sr-only">
+          <label @click="schedule = 'once'"
+                 :class="schedule === 'once' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white hover:border-gray-300'"
+                 class="cursor-pointer rounded-lg border-2 px-4 py-3 text-center transition-all">
+            <input type="radio" name="schedule_type" value="once" class="sr-only" x-model="schedule">
             <div class="text-lg mb-1">📅</div>
             <div class="text-xs font-semibold text-gray-800">Schedule once</div>
             <div class="text-xs text-gray-400 mt-0.5">Pick a date</div>
           </label>
 
-          <label id="card-recurring" onclick="selectSchedule('recurring')"
-                 class="schedule-card cursor-pointer rounded-lg border-2 border-gray-200 bg-white px-4 py-3 text-center transition-all hover:border-gray-300">
-            <input type="radio" name="schedule_type" value="recurring" class="sr-only">
+          <label @click="schedule = 'recurring'"
+                 :class="schedule === 'recurring' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white hover:border-gray-300'"
+                 class="cursor-pointer rounded-lg border-2 px-4 py-3 text-center transition-all">
+            <input type="radio" name="schedule_type" value="recurring" class="sr-only" x-model="schedule">
             <div class="text-lg mb-1">🔄</div>
             <div class="text-xs font-semibold text-gray-800">Recurring</div>
             <div class="text-xs text-gray-400 mt-0.5">On a schedule</div>
@@ -68,26 +72,24 @@
       </div>
 
       <!-- Schedule Once -->
-      <div id="section-once" class="mb-6 hidden">
+      <div class="mb-6" x-show="schedule === 'once'" x-cloak>
         <div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
           <label class="block text-sm font-semibold text-gray-700 mb-2">Date &amp; Time
             <span class="ml-1 text-xs font-normal text-gray-400">(IST, 24h)</span>
           </label>
           <div class="flex gap-2">
-            <!-- Date -->
-            <input type="date" id="once_date"
+            <input type="date" x-model="onceDate"
                    class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
-            <!-- Hour -->
-            <select id="once_hour"
+            <select x-model="onceHour"
                     class="w-20 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+              <template x-for="h in hours" :key="h"><option :value="h" x-text="h"></option></template>
             </select>
             <span class="flex items-center text-gray-400 font-bold">:</span>
-            <!-- Minute -->
-            <select id="once_min"
+            <select x-model="onceMin"
                     class="w-20 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+              <template x-for="m in minutes" :key="m"><option :value="m" x-text="m"></option></template>
             </select>
           </div>
-          <!-- Hidden field Django reads -->
           {{ form.scheduled_at }}
           {% if form.scheduled_at.errors %}
           <p class="text-red-500 text-xs mt-1.5">{{ form.scheduled_at.errors.0 }}</p>
@@ -96,24 +98,26 @@
       </div>
 
       <!-- Recurring -->
-      <div id="section-recurring" class="mb-6 hidden">
+      <div class="mb-6" x-show="schedule === 'recurring'" x-cloak>
         <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4">
 
           <!-- Frequency toggle -->
           <div>
             <label class="block text-sm font-semibold text-gray-700 mb-2">Frequency</label>
             <div class="flex rounded-lg border border-gray-300 overflow-hidden bg-white w-fit">
-              <button type="button" id="freq-daily" onclick="setFrequency('daily')"
-                      class="px-6 py-2 text-sm font-medium bg-indigo-600 text-white transition-colors">
+              <button type="button" @click="recurrence = 'daily'"
+                      :class="recurrence === 'daily' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'"
+                      class="px-6 py-2 text-sm font-medium transition-colors">
                 Daily
               </button>
-              <button type="button" id="freq-weekly" onclick="setFrequency('weekly')"
-                      class="px-6 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+              <button type="button" @click="recurrence = 'weekly'"
+                      :class="recurrence === 'weekly' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'"
+                      class="px-6 py-2 text-sm font-medium transition-colors">
                 Weekly
               </button>
             </div>
-            <select name="recurrence" id="recurrence-select" class="sr-only">
-              <option value="daily" selected>Daily</option>
+            <select name="recurrence" class="sr-only" x-model="recurrence">
+              <option value="daily">Daily</option>
               <option value="weekly">Weekly</option>
             </select>
             {% if form.recurrence.errors %}
@@ -121,21 +125,22 @@
             {% endif %}
           </div>
 
-          <!-- Time — custom 24h selects -->
+          <!-- Time -->
           <div>
             <label class="block text-sm font-semibold text-gray-700 mb-2">Time
               <span class="ml-1 text-xs font-normal text-gray-400">(IST, 24h)</span>
             </label>
             <div class="flex items-center gap-2">
-              <select id="rec_hour"
+              <select x-model="recHour"
                       class="w-20 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                <template x-for="h in hours" :key="h"><option :value="h" x-text="h"></option></template>
               </select>
               <span class="text-gray-400 font-bold">:</span>
-              <select id="rec_min"
+              <select x-model="recMin"
                       class="w-20 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                <template x-for="m in minutes" :key="m"><option :value="m" x-text="m"></option></template>
               </select>
             </div>
-            <!-- Hidden field Django reads -->
             {{ form.recurrence_time }}
             {% if form.recurrence_time.errors %}
             <p class="text-red-500 text-xs mt-1.5">{{ form.recurrence_time.errors.0 }}</p>
@@ -145,99 +150,71 @@
         </div>
       </div>
 
-      <button type="submit" id="submit-btn"
-              class="w-full bg-indigo-600 text-white py-2.5 px-4 rounded-lg hover:bg-indigo-700 font-semibold text-sm transition-colors">
-        Run Now
-      </button>
+      <button type="submit"
+              class="w-full bg-indigo-600 text-white py-2.5 px-4 rounded-lg hover:bg-indigo-700 font-semibold text-sm transition-colors"
+              x-text="submitLabel"></button>
     </form>
   </div>
   {% endif %}
 </div>
 
+{% if not no_domains %}
+<style>[x-cloak] { display: none !important; }</style>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
 <script>
-  // Build hour/minute options
-  function buildOptions(select, count, pad) {
-    for (let i = 0; i < count; i++) {
-      const opt = document.createElement('option');
-      opt.value = String(i).padStart(2, '0');
-      opt.textContent = String(i).padStart(2, '0');
-      select.appendChild(opt);
-    }
+  function scanStartForm() {
+    return {
+      // Reactive state
+      schedule:   'now',
+      recurrence: 'daily',
+      onceDate:   '',
+      onceHour:   '02',
+      onceMin:    '00',
+      recHour:    '02',
+      recMin:     '00',
+
+      // Static option lists
+      hours:   Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')),
+      minutes: Array.from({length: 60}, (_, i) => String(i).padStart(2, '0')),
+
+      get submitLabel() {
+        return { now: 'Run Now', once: 'Schedule Scan', recurring: 'Set Recurring Scan' }[this.schedule];
+      },
+
+      init() {
+        // Hide the native Django widgets — we sync to them via $watch
+        const nativeDt  = this.$el.querySelector('input[name="scheduled_at"]');
+        const nativeRec = this.$el.querySelector('input[name="recurrence_time"]');
+        if (nativeDt)  nativeDt.style.display  = 'none';
+        if (nativeRec) nativeRec.style.display = 'none';
+
+        // Sync our state → hidden Django fields
+        const syncOnce = () => {
+          if (this.onceDate && nativeDt) {
+            nativeDt.value = `${this.onceDate}T${this.onceHour}:${this.onceMin}`;
+          }
+        };
+        const syncRec = () => {
+          if (nativeRec) nativeRec.value = `${this.recHour}:${this.recMin}`;
+        };
+
+        this.$watch('onceDate', syncOnce);
+        this.$watch('onceHour', syncOnce);
+        this.$watch('onceMin',  syncOnce);
+        this.$watch('recHour',  syncRec);
+        this.$watch('recMin',   syncRec);
+
+        // Initial sync
+        syncRec();
+
+        // Restore state on validation error (the radio Django renders is checked)
+        const checked = this.$el.querySelector('input[name="schedule_type"]:checked');
+        if (checked && checked.value !== this.schedule) {
+          this.schedule = checked.value;
+        }
+      },
+    };
   }
-
-  buildOptions(document.getElementById('once_hour'), 24);
-  buildOptions(document.getElementById('once_min'),  60);
-  buildOptions(document.getElementById('rec_hour'),  24);
-  buildOptions(document.getElementById('rec_min'),   60);
-
-  // Sync once date+hour+min → hidden scheduled_at field
-  function syncDatetime() {
-    const d = document.getElementById('once_date').value;
-    const h = document.getElementById('once_hour').value;
-    const m = document.getElementById('once_min').value;
-    if (d) {
-      const hidden = document.querySelector('input[name="scheduled_at"]');
-      if (hidden) hidden.value = `${d}T${h}:${m}`;
-    }
-  }
-  ['once_date','once_hour','once_min'].forEach(id =>
-    document.getElementById(id).addEventListener('change', syncDatetime)
-  );
-
-  // Sync rec hour+min → hidden recurrence_time field
-  function syncRecTime() {
-    const h = document.getElementById('rec_hour').value;
-    const m = document.getElementById('rec_min').value;
-    const hidden = document.querySelector('input[name="recurrence_time"]');
-    if (hidden) hidden.value = `${h}:${m}`;
-  }
-  ['rec_hour','rec_min'].forEach(id =>
-    document.getElementById(id).addEventListener('change', syncRecTime)
-  );
-
-  // Card selection
-  const CARD_ACTIVE   = ['border-indigo-500', 'bg-indigo-50'];
-  const CARD_INACTIVE = ['border-gray-200',   'bg-white'];
-  const BUTTON_LABELS = { now: 'Run Now', once: 'Schedule Scan', recurring: 'Set Recurring Scan' };
-
-  function selectSchedule(value) {
-    ['now', 'once', 'recurring'].forEach(v => {
-      const card = document.getElementById('card-' + v);
-      CARD_ACTIVE.forEach(c => card.classList.remove(c));
-      CARD_INACTIVE.forEach(c => card.classList.add(c));
-    });
-    const active = document.getElementById('card-' + value);
-    CARD_INACTIVE.forEach(c => active.classList.remove(c));
-    CARD_ACTIVE.forEach(c => active.classList.add(c));
-    document.querySelector(`input[name="schedule_type"][value="${value}"]`).checked = true;
-    document.getElementById('section-once').classList.add('hidden');
-    document.getElementById('section-recurring').classList.add('hidden');
-    if (value === 'once')      document.getElementById('section-once').classList.remove('hidden');
-    if (value === 'recurring') document.getElementById('section-recurring').classList.remove('hidden');
-    document.getElementById('submit-btn').textContent = BUTTON_LABELS[value];
-  }
-
-  function setFrequency(value) {
-    document.getElementById('recurrence-select').value = value;
-    const daily  = document.getElementById('freq-daily');
-    const weekly = document.getElementById('freq-weekly');
-    if (value === 'daily') {
-      daily.className  = 'px-6 py-2 text-sm font-medium bg-indigo-600 text-white transition-colors';
-      weekly.className = 'px-6 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors';
-    } else {
-      weekly.className = 'px-6 py-2 text-sm font-medium bg-indigo-600 text-white transition-colors';
-      daily.className  = 'px-6 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors';
-    }
-  }
-
-  // Hide native inputs — we drive them via custom selects
-  const nativeDt  = document.querySelector('input[name="scheduled_at"]');
-  const nativeRec = document.querySelector('input[name="recurrence_time"]');
-  if (nativeDt)  nativeDt.style.display  = 'none';
-  if (nativeRec) nativeRec.style.display = 'none';
-
-  // Restore state on validation error
-  const checked = document.querySelector('input[name="schedule_type"]:checked');
-  if (checked) selectSchedule(checked.value);
 </script>
+{% endif %}
 {% endblock %}

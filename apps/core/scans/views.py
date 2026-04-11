@@ -174,12 +174,18 @@ def scan_detail(request, session_uuid):
 
     from apps.core.assets.models import Subdomain, IPAddress, Port, URL
     from apps.nmap.models import NmapFinding
+    from apps.nmap.scanner import _web_pairs_for_session
 
     subdomains = Subdomain.objects.filter(session=session).order_by("-is_active", "subdomain")
     ips = IPAddress.objects.filter(session=session).select_related("subdomain").order_by("address")
-    ports = Port.objects.filter(session=session).order_by("address", "port")
+    ports = list(Port.objects.filter(session=session).order_by("address", "port"))
     urls = URL.objects.filter(session=session).order_by("url")
     nmap_findings = NmapFinding.objects.filter(session=session).order_by("-cvss_score")
+
+    # Annotate each port with its web/non-web classification (same logic as nmap scanner)
+    web_pairs = _web_pairs_for_session(session)
+    for p in ports:
+        p.is_web = (p.address, p.port) in web_pairs
 
     return render(request, "scans/detail.html", {
         "session": session,
@@ -193,7 +199,7 @@ def scan_detail(request, session_uuid):
             "subdomains_total": subdomains.count(),
             "subdomains_active": subdomains.filter(is_active=True).count(),
             "ips": ips.count(),
-            "ports": ports.count(),
+            "ports": len(ports),
             "urls": urls.count(),
             "nmap_findings": nmap_findings.count(),
         },
