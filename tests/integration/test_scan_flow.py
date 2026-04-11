@@ -291,3 +291,182 @@ class TestDomainDeleteCascade:
         assert not ScanSession.objects.filter(domain="cascade.com").exists()
         assert not DomainFinding.objects.filter(domain="cascade.com").exists()
         assert not ScanSummary.objects.filter(domain="cascade.com").exists()
+
+    def test_delete_domain_cascades_all_assets(self, auth_client, db):
+        """Regression test: deleting a domain must clean up subdomains, IPs, ports, URLs, NmapFindings."""
+        from apps.core.domains.models import Domain
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import Subdomain, IPAddress, Port, URL
+        from apps.nmap.models import NmapFinding
+        from django.urls import reverse
+
+        domain = Domain.objects.create(name="cascade.com", is_primary=True)
+        session = ScanSession.objects.create(
+            domain="cascade.com", scan_type="full", status="completed",
+            end_time=timezone.now(),
+        )
+        sub = Subdomain.objects.create(session=session, domain="cascade.com", subdomain="api.cascade.com", source="subfinder")
+        ip = IPAddress.objects.create(session=session, subdomain=sub, address="1.2.3.4", version=4, source="dnsx")
+        port = Port.objects.create(session=session, ip_address=ip, address="1.2.3.4", port=22, protocol="tcp", state="open", source="naabu")
+        URL.objects.create(session=session, port=port, subdomain=sub, url="http://api.cascade.com:80", host="api.cascade.com", port_number=80, source="httpx")
+        NmapFinding.objects.create(session=session, port=port, address="1.2.3.4", port_number=22, severity="high", title="CVE-2024-6387", cve="CVE-2024-6387", cvss_score=8.1)
+
+        auth_client.post(reverse("domain-delete", args=[domain.pk]))
+
+        # All asset types must be gone
+        assert Subdomain.objects.filter(session=session).count() == 0
+        assert IPAddress.objects.filter(session=session).count() == 0
+        assert Port.objects.filter(session=session).count() == 0
+        assert URL.objects.filter(session=session).count() == 0
+        assert NmapFinding.objects.filter(session=session).count() == 0
+
+
+@pytest.mark.django_db
+class TestFullPipelineMocked:
+    """Integration test for the full 6-phase pipeline with all tools mocked."""
+
+    def _mock_all_tools(self):
+        """Patch every collector + the dns/rdap calls so run_scan completes deterministically."""
+        import datetime
+        expiry = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=365)
+        mock_rdap = MagicMock()
+        mock_rdap.json.return_value = {
+            "status": ["client transfer prohibited"],
+            "events": [{"eventAction": "expiration", "eventDate": expiry.isoformat()}],
+        }
+
+        def mock_resolve(domain, record_type):
+            return ["1.2.3.4"] if record_type in ("A", "NS", "MX") else []
+
+        def mock_txt(domain):
+            if "_dmarc" in domain:
+                return ["v=DMARC1; p=reject"]
+            if "_domainkey" in domain:
+                return ["v=DKIM1; k=rsa; p=abc"]
+            return ["v=spf1 -all"]
+
+        # Tool collectors return canned data
+        subfinder_records = [
+            {"host": "www.pipeline.test", "ip": None},
+            {"host": "api.pipeline.test", "ip": None},
+        ]
+        dnsx_records = [
+            {"host": "www.pipeline.test", "a": ["1.2.3.4"], "aaaa": []},
+            {"host": "api.pipeline.test", "a": ["5.6.7.8"], "aaaa": []},
+        ]
+        naabu_records = [
+            {"host": "1.2.3.4", "port": 80, "protocol": "tcp"},
+            {"host": "1.2.3.4", "port": 22, "protocol": "tcp"},
+            {"host": "5.6.7.8", "port": 443, "protocol": "tcp"},
+        ]
+        httpx_records = [
+            {"url": "http://www.pipeline.test:80", "host": "www.pipeline.test", "host_ip": "1.2.3.4", "port": "80", "status_code": 200},
+            {"url": "https://api.pipeline.test:443", "host": "api.pipeline.test", "host_ip": "5.6.7.8", "port": "443", "status_code": 200},
+        ]
+
+        return {
+            "rdap": mock_rdap,
+            "resolve": mock_resolve,
+            "txt": mock_txt,
+            "subfinder": subfinder_records,
+            "dnsx": dnsx_records,
+            "naabu": naabu_records,
+            "httpx": httpx_records,
+        }
+
+    def test_full_pipeline_produces_correct_asset_graph(self, db):
+        from apps.core.scans.models import ScanSession
+        from apps.core.scans.tasks import run_scan
+        from apps.core.assets.models import Subdomain, IPAddress, Port, URL
+
+        session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending")
+        m = self._mock_all_tools()
+
+        with patch("apps.domain_security.scanner._resolve", side_effect=m["resolve"]), \
+             patch("apps.domain_security.scanner._get_txt_record", side_effect=m["txt"]), \
+             patch("apps.domain_security.scanner.dns") as mdns, \
+             patch("apps.domain_security.scanner.dns.zone.from_xfr", side_effect=Exception("refused")), \
+             patch("apps.domain_security.scanner.dns.query.xfr"), \
+             patch("apps.domain_security.scanner.requests.get", return_value=m["rdap"]), \
+             patch("apps.subfinder.scanner.collect", return_value=m["subfinder"]), \
+             patch("apps.dnsx.scanner.collect", return_value=m["dnsx"]), \
+             patch("apps.naabu.scanner.collect", return_value=m["naabu"]), \
+             patch("apps.httpx.scanner.collect", return_value=m["httpx"]), \
+             patch("apps.nmap.scanner.collect", return_value={}):
+            mdns.resolver.resolve.side_effect = Exception("no DNSKEY")
+            run_scan(session.id)
+
+        session.refresh_from_db()
+        assert session.status == "completed"
+
+        # Verify the asset graph is intact
+        assert Subdomain.objects.filter(session=session).count() == 2
+        assert Subdomain.objects.filter(session=session, is_active=True).count() == 2
+        assert IPAddress.objects.filter(session=session).count() == 2
+        assert Port.objects.filter(session=session).count() == 3
+        assert URL.objects.filter(session=session).count() == 2
+
+    def test_full_pipeline_classifies_web_vs_non_web_correctly(self, db):
+        from apps.core.scans.models import ScanSession
+        from apps.core.scans.tasks import run_scan
+        from apps.core.assets.models import Port
+        from apps.nmap.scanner import _web_pairs_for_session
+
+        session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending")
+        m = self._mock_all_tools()
+
+        with patch("apps.domain_security.scanner._resolve", side_effect=m["resolve"]), \
+             patch("apps.domain_security.scanner._get_txt_record", side_effect=m["txt"]), \
+             patch("apps.domain_security.scanner.dns") as mdns, \
+             patch("apps.domain_security.scanner.dns.zone.from_xfr", side_effect=Exception("refused")), \
+             patch("apps.domain_security.scanner.dns.query.xfr"), \
+             patch("apps.domain_security.scanner.requests.get", return_value=m["rdap"]), \
+             patch("apps.subfinder.scanner.collect", return_value=m["subfinder"]), \
+             patch("apps.dnsx.scanner.collect", return_value=m["dnsx"]), \
+             patch("apps.naabu.scanner.collect", return_value=m["naabu"]), \
+             patch("apps.httpx.scanner.collect", return_value=m["httpx"]), \
+             patch("apps.nmap.scanner.collect", return_value={}):
+            mdns.resolver.resolve.side_effect = Exception("no DNSKEY")
+            run_scan(session.id)
+
+        web_pairs = _web_pairs_for_session(session)
+        # Web ports: 1.2.3.4:80, 5.6.7.8:443
+        assert ("1.2.3.4", 80) in web_pairs
+        assert ("5.6.7.8", 443) in web_pairs
+        # Non-web ports: 1.2.3.4:22 (SSH)
+        assert ("1.2.3.4", 22) not in web_pairs
+
+        # Verify nmap would only target the SSH port
+        non_web = [p for p in Port.objects.filter(session=session, state="open") if (p.address, p.port) not in web_pairs]
+        assert len(non_web) == 1
+        assert non_web[0].port == 22
+
+    def test_full_pipeline_total_findings_includes_all_tools(self, db):
+        from apps.core.scans.models import ScanSession
+        from apps.core.scans.tasks import run_scan
+        from apps.core.insights.models import ScanSummary
+
+        session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending")
+        m = self._mock_all_tools()
+
+        with patch("apps.domain_security.scanner._resolve", side_effect=m["resolve"]), \
+             patch("apps.domain_security.scanner._get_txt_record", side_effect=m["txt"]), \
+             patch("apps.domain_security.scanner.dns") as mdns, \
+             patch("apps.domain_security.scanner.dns.zone.from_xfr", side_effect=Exception("refused")), \
+             patch("apps.domain_security.scanner.dns.query.xfr"), \
+             patch("apps.domain_security.scanner.requests.get", return_value=m["rdap"]), \
+             patch("apps.subfinder.scanner.collect", return_value=m["subfinder"]), \
+             patch("apps.dnsx.scanner.collect", return_value=m["dnsx"]), \
+             patch("apps.naabu.scanner.collect", return_value=m["naabu"]), \
+             patch("apps.httpx.scanner.collect", return_value=m["httpx"]), \
+             patch("apps.nmap.scanner.collect", return_value={}):
+            mdns.resolver.resolve.side_effect = Exception("no DNSKEY")
+            run_scan(session.id)
+
+        summary = ScanSummary.objects.get(session=session)
+        # tool_breakdown has both domain_security and nmap (nmap=0 here, no findings)
+        assert "domain_security" in summary.tool_breakdown
+        assert summary.tool_breakdown["domain_security"] > 0
+        # Total should equal sum of tool_breakdown (regression test for the
+        # off-by-one bug where info-severity findings were excluded from total)
+        assert summary.total_findings == sum(summary.tool_breakdown.values())
