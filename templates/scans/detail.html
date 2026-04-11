@@ -21,11 +21,36 @@
 {% if session.status == "completed" %}
 <div class="mt-8 space-y-6">
 
+  <!-- Discovery summary cards -->
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+    <div class="bg-white rounded-lg shadow px-4 py-3">
+      <div class="text-xs text-gray-500 uppercase">Subdomains</div>
+      <div class="text-2xl font-bold text-gray-900">{{ asset_counts.subdomains_total }}</div>
+      <div class="text-xs text-green-600">{{ asset_counts.subdomains_active }} active</div>
+    </div>
+    <div class="bg-white rounded-lg shadow px-4 py-3">
+      <div class="text-xs text-gray-500 uppercase">Public IPs</div>
+      <div class="text-2xl font-bold text-gray-900">{{ asset_counts.ips }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow px-4 py-3">
+      <div class="text-xs text-gray-500 uppercase">Open Ports</div>
+      <div class="text-2xl font-bold text-gray-900">{{ asset_counts.ports }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow px-4 py-3">
+      <div class="text-xs text-gray-500 uppercase">Web URLs</div>
+      <div class="text-2xl font-bold text-gray-900">{{ asset_counts.urls }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow px-4 py-3">
+      <div class="text-xs text-gray-500 uppercase">CVE Findings</div>
+      <div class="text-2xl font-bold text-red-600">{{ asset_counts.nmap_findings }}</div>
+    </div>
+  </div>
+
   {% with findings=session.domain_findings.all %}
   {% if findings %}
   <div class="bg-white rounded-lg shadow overflow-hidden">
     <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-      <h2 class="font-semibold text-gray-700">Findings ({{ findings.count }})</h2>
+      <h2 class="font-semibold text-gray-700">Domain Security Findings ({{ findings.count }})</h2>
       <a href="{% url 'finding-list' %}?session_id={{ session.id }}"
          class="text-indigo-600 text-sm hover:underline">View all</a>
     </div>
@@ -52,12 +77,143 @@
       </tbody>
     </table>
   </div>
-  {% else %}
-  <div class="bg-white rounded-lg shadow px-6 py-8 text-center text-gray-400">
-    No findings recorded for this scan.
-  </div>
   {% endif %}
   {% endwith %}
+
+  <!-- Nmap CVE Findings -->
+  {% if nmap_findings %}
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-700">CVE Findings ({{ nmap_findings.count }})</h2>
+      <p class="text-xs text-gray-500 mt-0.5">Discovered by nmap NSE vulners on non-web services</p>
+    </div>
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">CVE</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Severity</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">CVSS</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Service</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200">
+        {% for f in nmap_findings %}
+        <tr>
+          <td class="px-6 py-3 text-sm font-mono text-gray-900">{{ f.cve }}</td>
+          <td class="px-6 py-3 text-sm">
+            {% include "partials/severity_badge.html" with severity=f.severity %}
+          </td>
+          <td class="px-6 py-3 text-sm text-gray-700">{{ f.cvss_score }}</td>
+          <td class="px-6 py-3 text-sm font-mono text-gray-700">{{ f.address }}:{{ f.port_number }}</td>
+          <td class="px-6 py-3 text-sm text-gray-500">{{ f.service }} {{ f.version|truncatechars:40 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- Subdomains -->
+  {% if subdomains %}
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-700">Subdomains ({{ asset_counts.subdomains_total }})</h2>
+    </div>
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Subdomain</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">IPs</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200">
+        {% for s in subdomains %}
+        <tr>
+          <td class="px-6 py-3 text-sm font-mono text-gray-900">{{ s.subdomain }}</td>
+          <td class="px-6 py-3 text-sm">
+            {% if s.is_active %}
+            <span class="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">active</span>
+            {% else %}
+            <span class="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">inactive</span>
+            {% endif %}
+          </td>
+          <td class="px-6 py-3 text-sm text-gray-700 font-mono">
+            {% for ip in s.ips.all %}{{ ip.address }}{% if not forloop.last %}, {% endif %}{% endfor %}
+          </td>
+          <td class="px-6 py-3 text-sm text-gray-500">{{ s.source }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- Web URLs -->
+  {% if urls %}
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-700">Web URLs ({{ asset_counts.urls }})</h2>
+    </div>
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">URL</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Server</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200">
+        {% for u in urls %}
+        <tr>
+          <td class="px-6 py-3 text-sm font-mono text-gray-900">{{ u.url }}</td>
+          <td class="px-6 py-3 text-sm text-gray-700">{{ u.status_code|default:"-" }}</td>
+          <td class="px-6 py-3 text-sm text-gray-500">{{ u.title|truncatechars:40 }}</td>
+          <td class="px-6 py-3 text-sm text-gray-500">{{ u.web_server|truncatechars:30 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- Open Ports -->
+  {% if ports %}
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-700">Open Ports ({{ asset_counts.ports }})</h2>
+    </div>
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Port</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Protocol</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200">
+        {% for p in ports %}
+        <tr>
+          <td class="px-6 py-3 text-sm font-mono text-gray-700">{{ p.address }}</td>
+          <td class="px-6 py-3 text-sm font-mono text-gray-900">{{ p.port }}</td>
+          <td class="px-6 py-3 text-sm text-gray-500 uppercase">{{ p.protocol }}</td>
+          <td class="px-6 py-3 text-sm">
+            {% if p.urls.all %}
+            <span class="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">web</span>
+            {% else %}
+            <span class="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">non-web</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
 
 </div>
 {% elif session.status == "failed" %}

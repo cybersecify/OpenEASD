@@ -1,21 +1,25 @@
-"""Subfinder result analysis — model building layer."""
+"""Subfinder result analysis — builds shared Subdomain assets."""
 
 import logging
 
-from .models import Subdomain
+from apps.core.assets.models import Subdomain
 
 logger = logging.getLogger(__name__)
 
 
-def analyze(session, records: list[dict]) -> list:
-    """Build Subdomain model instances from raw collector records."""
+def analyze(session, records: list[dict]) -> list[Subdomain]:
+    """Build shared Subdomain asset instances from raw collector records."""
     objs = []
+    seen = set()
     for record in records:
-        host = record.get("host", "").strip()
-        if host:
-            objs.append(Subdomain(
-                session=session,
-                subdomain=host,
-                ip_address=record.get("ip") or None,
-            ))
+        host = record.get("host", "").strip().lower()
+        if not host or host in seen:
+            continue
+        seen.add(host)
+        objs.append(Subdomain(
+            session=session,
+            domain=session.domain,
+            subdomain=host,
+            source="subfinder",
+        ))
     return objs

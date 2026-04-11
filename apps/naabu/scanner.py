@@ -1,23 +1,29 @@
-"""Naabu scanner — thin orchestrator calling collector then analyzer."""
+"""Naabu scanner — orchestrator: collect → analyze → save (top 100 TCP)."""
 
 import logging
 
-from .models import PortResult
+from apps.core.assets.models import IPAddress, Port
 from .collector import collect
 from .analyzer import analyze
 
 logger = logging.getLogger(__name__)
 
 
-def run_naabu(session, targets: list) -> list:
-    """Run naabu port scan against targets, save results, return PortResult list."""
-    records = collect(session, targets)
+def run_naabu(session) -> list:
+    """Run naabu against all public IPs discovered for the session."""
+    targets = list(
+        IPAddress.objects.filter(session=session).values_list("address", flat=True).distinct()
+    )
+    if not targets:
+        logger.info(f"[naabu:{session.id}] No public IPs to scan")
+        return []
 
+    records = collect(session, targets)
     objs = analyze(session, records)
 
     if objs:
-        PortResult.objects.bulk_create(objs, ignore_conflicts=True)
+        Port.objects.bulk_create(objs, ignore_conflicts=True)
 
-    saved = list(session.port_results.all())
+    saved = list(Port.objects.filter(session=session, source="naabu"))
     logger.info(f"[naabu:{session.id}] Found {len(saved)} open ports")
     return saved

@@ -1,10 +1,11 @@
 from django.contrib import admin
-from .models import ServiceResult
+
+from .models import NmapFinding
 
 
-@admin.register(ServiceResult)
-class ServiceResultAdmin(admin.ModelAdmin):
-    list_display = ["host", "port", "protocol", "service_name", "version", "risk_level", "session"]
-    list_filter = ["risk_level", "protocol", "state"]
-    search_fields = ["host", "service_name"]
+@admin.register(NmapFinding)
+class NmapFindingAdmin(admin.ModelAdmin):
+    list_display = ["title", "address", "port_number", "severity", "cvss_score", "cve", "session"]
+    list_filter = ["severity", "nse_script"]
+    search_fields = ["title", "address", "cve"]
     readonly_fields = ["discovered_at"]

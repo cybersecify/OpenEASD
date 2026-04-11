@@ -38,10 +38,12 @@ INSTALLED_APPS = [
     "apps.core.insights",
     "apps.core.reports",
     "apps.domain_security",
+    "apps.subfinder",
+    "apps.dnsx",
+    "apps.naabu",
+    "apps.httpx",
+    "apps.nmap",
     # Disabled — OSS binary tools (code kept in apps/ for later re-enable)
-    # "apps.subfinder",
-    # "apps.naabu",
-    # "apps.nmap",
     # "apps.nuclei",
     # "apps.ssl_checker",
 ]
@@ -135,12 +137,14 @@ MS_TEAMS_WEBHOOK_URL = config("MS_TEAMS_WEBHOOK_URL", default="")
 # Minimum severity to trigger an alert: critical / high / medium / low
 ALERT_SEVERITY_THRESHOLD = config("ALERT_SEVERITY_THRESHOLD", default="high")
 
-# Tool paths (Docker-based by default)
-TOOL_SUBFINDER = config("TOOL_SUBFINDER", default="subfinder")
-TOOL_NAABU = config("TOOL_NAABU", default="naabu")
+# Tool paths — ProjectDiscovery tools installed via pdtm at ~/.pdtm/go/bin/
+_PDTM_BIN = os.path.expanduser("~/.pdtm/go/bin")
+TOOL_SUBFINDER = config("TOOL_SUBFINDER", default=f"{_PDTM_BIN}/subfinder")
+TOOL_DNSX = config("TOOL_DNSX", default=f"{_PDTM_BIN}/dnsx")
+TOOL_NAABU = config("TOOL_NAABU", default=f"{_PDTM_BIN}/naabu")
+TOOL_HTTPX = config("TOOL_HTTPX", default=f"{_PDTM_BIN}/httpx")
 TOOL_NMAP = config("TOOL_NMAP", default="nmap")
-TOOL_NUCLEI = config("TOOL_NUCLEI", default="nuclei")
-USE_DOCKER_TOOLS = config("USE_DOCKER_TOOLS", default=True, cast=bool)
+TOOL_NUCLEI = config("TOOL_NUCLEI", default=f"{_PDTM_BIN}/nuclei")
 
 # Logging
 LOGGING = {

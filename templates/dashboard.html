@@ -41,6 +41,30 @@
   </div>
 </div>
 
+<!-- Discovery Summary -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Active Subdomains</p>
+    <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.subdomains }}</p>
+    <p class="text-xs text-gray-400 mt-1">discovered</p>
+  </div>
+  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Public IPs</p>
+    <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.ips }}</p>
+    <p class="text-xs text-gray-400 mt-1">resolved</p>
+  </div>
+  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Open Ports</p>
+    <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.ports }}</p>
+    <p class="text-xs text-gray-400 mt-1">across all hosts</p>
+  </div>
+  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Web URLs</p>
+    <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.urls }}</p>
+    <p class="text-xs text-gray-400 mt-1">live HTTP/HTTPS</p>
+  </div>
+</div>
+
 <!-- Domain Status -->
 <div class="bg-white rounded-lg shadow mb-6">
   <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
@@ -115,7 +139,41 @@
   {% endif %}
 </div>
 
-<!-- Urgent Findings -->
+<!-- Urgent CVE Findings (from nmap NSE vulners) -->
+{% if urgent_cves %}
+<div class="bg-white rounded-lg shadow mb-6">
+  <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+    <div>
+      <h2 class="font-semibold text-gray-700">Urgent CVEs</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Critical and high — discovered by nmap NSE vulners</p>
+    </div>
+  </div>
+  <table class="min-w-full divide-y divide-gray-100">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">CVE</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">CVSS</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Severity</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Service</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for c in urgent_cves %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-6 py-3 text-sm font-mono text-gray-900">{{ c.cve }}</td>
+        <td class="px-6 py-3 text-sm font-semibold text-gray-700">{{ c.cvss_score }}</td>
+        <td class="px-6 py-3">{% include "partials/severity_badge.html" with severity=c.severity %}</td>
+        <td class="px-6 py-3 text-sm font-mono text-gray-700">{{ c.address }}:{{ c.port_number }}</td>
+        <td class="px-6 py-3 text-sm text-gray-500">{{ c.service }} {{ c.version|truncatechars:30 }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- Urgent Findings (from domain_security) -->
 {% if urgent_findings %}
 <div class="bg-white rounded-lg shadow">
   <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">

@@ -27,8 +27,8 @@ SEVERITIES = ["critical", "high", "medium", "low"]
 # Add new tools here as they are enabled.
 TOOL_FINDING_SOURCES = [
     ("domain_security", "domain_findings", "severity"),
+    ("nmap",            "nmap_findings",   "severity"),
     # ("nuclei",         "nuclei_findings",  "severity"),
-    # ("subfinder",      "subdomains",        None),   # no severity field
 ]
 
 
@@ -52,7 +52,9 @@ def build_insights(session) -> None:
         except Exception as e:
             logger.warning(f"[insights] Failed to count {tool_name}: {e}")
 
-    total = sum(counts.values())
+    # Total = sum across all tools (includes info severity findings that
+    # don't fit into the critical/high/medium/low buckets)
+    total = sum(tool_breakdown.values())
     new_exp = ScanDelta.objects.filter(session=session, change_type="new").count()
     removed_exp = ScanDelta.objects.filter(session=session, change_type="removed").count()
 
@@ -90,6 +92,17 @@ def _rebuild_finding_type_summaries() -> None:
     latest_ids = _latest_session_ids_for_domains(active_domains)
     aggregated: dict[tuple, dict] = {}
 
+    def _merge(key, severity, count, last_seen):
+        existing = aggregated.get(key)
+        aggregated[key] = {
+            "severity": severity if not existing or
+                _SEVERITY_RANK.get(severity, 0) > _SEVERITY_RANK.get(existing["severity"], 0)
+                else existing["severity"],
+            "occurrence_count": (existing["occurrence_count"] if existing else 0) + count,
+            "last_seen": last_seen if not existing or last_seen > existing["last_seen"]
+                else existing["last_seen"],
+        }
+
     try:
         from apps.domain_security.models import DomainFinding
         rows = (
@@ -99,21 +112,22 @@ def _rebuild_finding_type_summaries() -> None:
             .annotate(count=Count("id"), last=Max("discovered_at"))
         )
         for row in rows:
-            key = (row["title"], row["check_type"])
-            existing = aggregated.get(key)
-            aggregated[key] = {
-                # Keep the highest severity seen across all occurrences
-                "severity": row["severity"] if not existing or
-                    _SEVERITY_RANK.get(row["severity"], 0) > _SEVERITY_RANK.get(existing["severity"], 0)
-                    else existing["severity"],
-                "occurrence_count": (existing["occurrence_count"] if existing else 0) + row["count"],
-                "last_seen": row["last"] if not existing or row["last"] > existing["last_seen"]
-                    else existing["last_seen"],
-            }
+            _merge((row["title"], row["check_type"]), row["severity"], row["count"], row["last"])
     except Exception as e:
         logger.warning(f"[insights] DomainFinding aggregation failed: {e}")
 
-    # Future tools: add their aggregation here following the same pattern
+    try:
+        from apps.nmap.models import NmapFinding
+        rows = (
+            NmapFinding.objects
+            .filter(session_id__in=latest_ids)
+            .values("cve", "severity")
+            .annotate(count=Count("id"), last=Max("discovered_at"))
+        )
+        for row in rows:
+            _merge((row["cve"], "cve"), row["severity"], row["count"], row["last"])
+    except Exception as e:
+        logger.warning(f"[insights] NmapFinding aggregation failed: {e}")
 
     # Bulk upsert
     for (title, check_type), data in aggregated.items():

@@ -10,6 +10,8 @@ from apps.core.scans.models import ScanSession
 from apps.domain_security.models import DomainFinding
 from apps.core.domains.models import Domain
 from apps.core.insights.models import ScanSummary
+from apps.core.assets.models import Subdomain, IPAddress, Port, URL
+from apps.nmap.models import NmapFinding
 
 
 @login_required
@@ -64,10 +66,30 @@ def dashboard(request):
 
     running_count = ScanSession.objects.filter(status__in=["pending", "running"]).count()
 
-    urgent_findings = DomainFinding.objects.filter(
-        session_id__in=latest_completed_ids,
-        severity__in=["critical", "high"],
-    ).select_related("session").order_by("-discovered_at")[:8]
+    urgent_findings = list(
+        DomainFinding.objects.filter(
+            session_id__in=latest_completed_ids,
+            severity__in=["critical", "high"],
+        ).select_related("session").order_by("-discovered_at")[:8]
+    )
+
+    # Also include high-severity nmap CVEs
+    urgent_cves = list(
+        NmapFinding.objects.filter(
+            session_id__in=latest_completed_ids,
+            severity__in=["critical", "high"],
+        ).select_related("session").order_by("-cvss_score")[:8]
+    )
+
+    # Asset counts across latest completed scans (the current attack surface)
+    asset_counts = {
+        "subdomains": Subdomain.objects.filter(
+            session_id__in=latest_completed_ids, is_active=True
+        ).count(),
+        "ips": IPAddress.objects.filter(session_id__in=latest_completed_ids).count(),
+        "ports": Port.objects.filter(session_id__in=latest_completed_ids).count(),
+        "urls": URL.objects.filter(session_id__in=latest_completed_ids).count(),
+    }
 
     return render(request, "dashboard.html", {
         "domain_status": domain_status,
@@ -76,6 +98,8 @@ def dashboard(request):
         "running_count": running_count,
         "active_domain_count": len(active_domains),
         "urgent_findings": urgent_findings,
+        "urgent_cves": urgent_cves,
+        "asset_counts": asset_counts,
     })
 
 

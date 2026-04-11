@@ -3,6 +3,8 @@
 import re
 from django import forms
 
+from apps.core.domains.models import Domain
+
 SCHEDULE_TYPE_CHOICES = [
     ("now", "Run now"),
     ("once", "Schedule once"),
@@ -23,13 +25,16 @@ _DOMAIN_RE = re.compile(
 
 
 class StartScanForm(forms.Form):
-    domain = forms.CharField(
-        max_length=253,
-        widget=forms.TextInput(attrs={
-            "placeholder": "e.g. example.com",
-            "class": INPUT_CLASS,
-        }),
+    domain = forms.ChoiceField(
+        choices=[],
+        widget=forms.Select(attrs={"class": INPUT_CLASS}),
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Populate choices from active domains only
+        active = Domain.objects.filter(is_active=True).order_by("name").values_list("name", flat=True)
+        self.fields["domain"].choices = [(d, d) for d in active]
     schedule_type = forms.ChoiceField(
         choices=SCHEDULE_TYPE_CHOICES,
         initial="now",
@@ -60,9 +65,10 @@ class StartScanForm(forms.Form):
     def clean_domain(self):
         domain = self.cleaned_data["domain"].strip().lower()
         if not _DOMAIN_RE.match(domain):
+            raise forms.ValidationError("Invalid domain format.")
+        if not Domain.objects.filter(name=domain, is_active=True).exists():
             raise forms.ValidationError(
-                "Enter a valid domain name (e.g. example.com). "
-                "No schemes, ports, or paths."
+                "This domain is not in your active domain list. Add it from Domains first."
             )
         return domain
 

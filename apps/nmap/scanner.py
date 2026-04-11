@@ -1,26 +1,39 @@
-"""Nmap scanner — thin orchestrator calling collector then analyzer."""
+"""Nmap scanner — orchestrator: collect → analyze → save NmapFindings.
+
+Reads non-web ports from apps.core.assets.Port (those with NO matching URL
+record from httpx), runs nmap with vulners NSE, stores findings linked
+back to the Port asset.
+"""
 
 import logging
 
-from .models import ServiceResult
-from .collector import collect
+from apps.core.assets.models import Port
+from .models import NmapFinding
+from .collector import collect, group_ports_by_ip
 from .analyzer import analyze
 
 logger = logging.getLogger(__name__)
 
 
-def run_nmap(session, domain: str = None) -> list:
-    """Run nmap service detection against domain, save results, return ServiceResult list."""
-    if domain is None:
-        domain = session.domain
+def run_nmap(session) -> list[NmapFinding]:
+    """Run nmap NSE vulners against non-web ports (Ports without a URL record)."""
+    # Non-web = open Port with no URL record (httpx couldn't probe it as web)
+    ports_qs = Port.objects.filter(session=session, state="open", urls__isnull=True).distinct()
+    if not ports_qs.exists():
+        logger.info(f"[nmap:{session.id}] No non-web ports to scan")
+        return []
 
-    xml_output = collect(session, domain)
+    ip_to_ports = group_ports_by_ip(ports_qs)
+    logger.info(
+        f"[nmap:{session.id}] Scanning {sum(len(v) for v in ip_to_ports.values())} "
+        f"non-web ports across {len(ip_to_ports)} hosts"
+    )
 
-    objs = analyze(session, xml_output, domain)
+    xml_outputs = collect(session, ip_to_ports)
+    findings = analyze(session, xml_outputs)
 
-    if objs:
-        ServiceResult.objects.bulk_create(objs, ignore_conflicts=True)
+    if findings:
+        NmapFinding.objects.bulk_create(findings)
 
-    saved = list(session.services.all())
-    logger.info(f"[nmap:{session.id}] Found {len(saved)} services")
-    return saved
+    logger.info(f"[nmap:{session.id}] {len(findings)} CVE findings")
+    return findings

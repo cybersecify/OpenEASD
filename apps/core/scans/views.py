@@ -85,6 +85,16 @@ def _schedule_recurring(domain, recurrence, recurrence_time):
 @login_required
 @require_http_methods(["GET", "POST"])
 def scan_start(request):
+    from apps.core.domains.models import Domain
+
+    # Block scanning entirely until at least one active domain exists
+    if not Domain.objects.filter(is_active=True).exists():
+        return render(request, "scans/start.html", {
+            "form": None,
+            "no_domains": True,
+            "prefilled_domain": "",
+        })
+
     if request.method == "POST":
         prefilled_domain = request.POST.get("domain", "").strip()
         form = StartScanForm(request.POST)
@@ -162,9 +172,31 @@ def scan_detail(request, session_uuid):
     session = get_object_or_404(ScanSession, uuid=session_uuid)
     vuln_counts = _get_vuln_counts(session)
 
+    from apps.core.assets.models import Subdomain, IPAddress, Port, URL
+    from apps.nmap.models import NmapFinding
+
+    subdomains = Subdomain.objects.filter(session=session).order_by("-is_active", "subdomain")
+    ips = IPAddress.objects.filter(session=session).select_related("subdomain").order_by("address")
+    ports = Port.objects.filter(session=session).order_by("address", "port")
+    urls = URL.objects.filter(session=session).order_by("url")
+    nmap_findings = NmapFinding.objects.filter(session=session).order_by("-cvss_score")
+
     return render(request, "scans/detail.html", {
         "session": session,
         "vuln_counts": vuln_counts,
+        "subdomains": subdomains,
+        "ips": ips,
+        "ports": ports,
+        "urls": urls,
+        "nmap_findings": nmap_findings,
+        "asset_counts": {
+            "subdomains_total": subdomains.count(),
+            "subdomains_active": subdomains.filter(is_active=True).count(),
+            "ips": ips.count(),
+            "ports": ports.count(),
+            "urls": urls.count(),
+            "nmap_findings": nmap_findings.count(),
+        },
     })
 
 

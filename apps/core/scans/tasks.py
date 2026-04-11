@@ -138,7 +138,52 @@ def run_scan(session_id: int):
         from apps.domain_security.scanner import run_domain_security
         run_domain_security(session)
 
-        # Phase 2: Finalise session
+        # Phase 2: Subdomain discovery
+        logger.info(f"[scan:{session_id}] Phase 2: subdomain discovery")
+        try:
+            from apps.subfinder.scanner import run_subfinder
+            subdomains = run_subfinder(session)
+            logger.info(f"[scan:{session_id}] Discovered {len(subdomains)} subdomains")
+        except Exception as e:
+            logger.error(f"[scan:{session_id}] Subfinder failed: {e}", exc_info=True)
+
+        # Phase 3: DNS resolution + public IP filtering
+        logger.info(f"[scan:{session_id}] Phase 3: dnsx resolution")
+        try:
+            from apps.dnsx.scanner import run_dnsx
+            active = run_dnsx(session)
+            logger.info(f"[scan:{session_id}] Active subdomains: {len(active)}")
+        except Exception as e:
+            logger.error(f"[scan:{session_id}] dnsx failed: {e}", exc_info=True)
+
+        # Phase 4: Port scan (top 100 TCP) on public IPs
+        logger.info(f"[scan:{session_id}] Phase 4: naabu port scan")
+        try:
+            from apps.naabu.scanner import run_naabu
+            ports = run_naabu(session)
+            logger.info(f"[scan:{session_id}] Open ports: {len(ports)}")
+        except Exception as e:
+            logger.error(f"[scan:{session_id}] naabu failed: {e}", exc_info=True)
+
+        # Phase 5: HTTPx web/non-web classification
+        logger.info(f"[scan:{session_id}] Phase 5: httpx web probe")
+        try:
+            from apps.httpx.scanner import run_httpx
+            urls = run_httpx(session)
+            logger.info(f"[scan:{session_id}] Web URLs: {len(urls)}")
+        except Exception as e:
+            logger.error(f"[scan:{session_id}] httpx failed: {e}", exc_info=True)
+
+        # Phase 6: Nmap NSE vulners on non-web ports (Ports without URL records)
+        logger.info(f"[scan:{session_id}] Phase 6: nmap NSE vulners")
+        try:
+            from apps.nmap.scanner import run_nmap
+            nmap_findings = run_nmap(session)
+            logger.info(f"[scan:{session_id}] Nmap CVE findings: {len(nmap_findings)}")
+        except Exception as e:
+            logger.error(f"[scan:{session_id}] nmap failed: {e}", exc_info=True)
+
+        # Phase 7: Finalise session
         total = _count_all_findings(session)
         session.total_findings = total
         session.status = "completed"

@@ -4,21 +4,22 @@ import json
 import logging
 import subprocess
 
-logger = logging.getLogger(__name__)
+from django.conf import settings
 
-BINARY = "/opt/homebrew/bin/subfinder"
+logger = logging.getLogger(__name__)
 
 
 def collect(session) -> list[dict]:
     """Run subfinder binary and return raw parsed JSON records."""
     domain = session.domain
-    cmd = [BINARY, "-d", domain, "-json", "-silent"]
+    binary = getattr(settings, "TOOL_SUBFINDER", "subfinder")
+    cmd = [binary, "-d", domain, "-json", "-silent"]
     logger.info(f"[subfinder:{session.id}] Running: {' '.join(cmd)}")
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     except FileNotFoundError:
-        logger.error(f"[subfinder:{session.id}] Binary not found: {BINARY}")
+        logger.error(f"[subfinder:{session.id}] Binary not found: {binary}")
         return []
     except subprocess.TimeoutExpired:
         logger.error(f"[subfinder:{session.id}] Timed out")

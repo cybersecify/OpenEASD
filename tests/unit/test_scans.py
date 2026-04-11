@@ -243,14 +243,16 @@ class TestScanViews:
         resp = auth_client.get(url)
         assert resp.status_code == 404
 
-    def test_scan_start_get(self, auth_client):
+    def test_scan_start_shows_empty_state_when_no_domains(self, auth_client):
+        resp = auth_client.get(reverse("scan-start"))
+        assert resp.status_code == 200
+        assert b"No domains added yet" in resp.content
+
+    def test_scan_start_shows_form_when_domains_exist(self, auth_client, domain):
         resp = auth_client.get(reverse("scan-start"))
         assert resp.status_code == 200
         assert b"Start Scan" in resp.content
-
-    def test_scan_start_prefills_domain(self, auth_client):
-        resp = auth_client.get(reverse("scan-start") + "?domain=test.com")
-        assert b"test.com" in resp.content
+        assert b"example.com" in resp.content  # domain from fixture appears in dropdown
 
     def test_scan_list_filter_by_domain(self, auth_client, completed_session):
         resp = auth_client.get(reverse("scan-list") + "?domain=example")
@@ -325,12 +327,19 @@ def _make_mock_job(job_id, next_run_time=None):
     return job
 
 
+def _ensure_domain(name):
+    """Create an active Domain record (required for scan_start validation)."""
+    from apps.core.domains.models import Domain
+    Domain.objects.get_or_create(name=name, defaults={"is_active": True})
+
+
 @pytest.mark.django_db
 class TestScanStartRunNow:
     """POST schedule_type=now starts scan immediately."""
 
     def test_run_now_creates_session_and_redirects(self, auth_client):
         from apps.core.scans.models import ScanSession
+        _ensure_domain("runnow.com")
         with patch("apps.core.scans.views.threading.Thread") as mock_thread:
             mock_thread.return_value.start = MagicMock()
             resp = auth_client.post(reverse("scan-start"), {
@@ -344,6 +353,7 @@ class TestScanStartRunNow:
 
     def test_run_now_already_running_shows_error(self, auth_client, db):
         from apps.core.scans.models import ScanSession
+        _ensure_domain("busy.com")
         ScanSession.objects.create(domain="busy.com", scan_type="full", status="running")
         resp = auth_client.post(reverse("scan-start"), {
             "domain": "busy.com",
@@ -353,6 +363,7 @@ class TestScanStartRunNow:
         assert b"already running" in resp.content
 
     def test_run_now_thread_is_started(self, auth_client):
+        _ensure_domain("threadtest.com")
         with patch("apps.core.scans.views.threading.Thread") as mock_thread:
             instance = MagicMock()
             mock_thread.return_value = instance
@@ -364,6 +375,7 @@ class TestScanStartRunNow:
 
     def test_run_now_triggered_by_is_manual(self, auth_client):
         from apps.core.scans.models import ScanSession
+        _ensure_domain("manualcheck.com")
         with patch("apps.core.scans.views.threading.Thread"):
             auth_client.post(reverse("scan-start"), {
                 "domain": "manualcheck.com",
@@ -378,6 +390,7 @@ class TestScanStartScheduleOnce:
     """POST schedule_type=once registers a one-time APScheduler job."""
 
     def _post_once(self, auth_client, domain="once.com", scheduled_at="2030-12-01 10:00"):
+        _ensure_domain(domain)
         with patch("apps.core.scans.views._schedule_once") as mock_sched:
             resp = auth_client.post(reverse("scan-start"), {
                 "domain": domain,
@@ -402,6 +415,7 @@ class TestScanStartScheduleOnce:
         assert not ScanSession.objects.filter(domain="nosession.com").exists()
 
     def test_once_missing_scheduled_at_shows_error(self, auth_client):
+        _ensure_domain("missing.com")
         resp = auth_client.post(reverse("scan-start"), {
             "domain": "missing.com",
             "schedule_type": "once",
@@ -415,6 +429,7 @@ class TestScanStartRecurring:
     """POST schedule_type=recurring registers a recurring APScheduler job."""
 
     def _post_recurring(self, auth_client, domain="rec.com", recurrence="daily", time="02:00"):
+        _ensure_domain(domain)
         with patch("apps.core.scans.views._schedule_recurring") as mock_sched:
             resp = auth_client.post(reverse("scan-start"), {
                 "domain": domain,

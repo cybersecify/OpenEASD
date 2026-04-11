@@ -9,6 +9,19 @@
     <p class="text-gray-500 text-sm mt-1">Configure and launch a security scan</p>
   </div>
 
+  {% if no_domains %}
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+    <div class="text-5xl mb-3">🌐</div>
+    <h2 class="text-lg font-semibold text-gray-900 mb-2">No domains added yet</h2>
+    <p class="text-gray-500 text-sm mb-5">
+      You must add a domain before you can start a scan.
+    </p>
+    <a href="{% url 'domain-list' %}"
+       class="inline-block px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition-colors">
+      Go to Domains
+    </a>
+  </div>
+  {% else %}
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
     <form method="post">
       {% csrf_token %}
@@ -16,14 +29,7 @@
       <!-- Domain -->
       <div class="mb-6">
         <label class="block text-sm font-semibold text-gray-700 mb-1.5">Domain</label>
-        {% if prefilled_domain %}
-        <div class="w-full border border-gray-200 bg-gray-50 rounded-lg px-4 py-2.5 text-sm font-mono text-gray-700">
-          {{ prefilled_domain }}
-        </div>
-        <input type="hidden" name="domain" value="{{ prefilled_domain }}">
-        {% else %}
         {{ form.domain }}
-        {% endif %}
         {% if form.domain.errors %}
         <p class="text-red-500 text-xs mt-1.5">{{ form.domain.errors.0 }}</p>
         {% endif %}
@@ -145,6 +151,7 @@
       </button>
     </form>
   </div>
+  {% endif %}
 </div>
 
 <script>

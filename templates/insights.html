@@ -135,6 +135,98 @@
 
 </div>
 
+<!-- Tool Breakdown — latest scan -->
+{% with latest=scan_trend|last %}
+{% if latest.tool_breakdown %}
+<div class="bg-white rounded-lg shadow mb-6">
+  <div class="px-6 py-4 border-b border-gray-200">
+    <h2 class="font-semibold text-gray-700">Findings by Tool — Latest Scan</h2>
+    <p class="text-xs text-gray-400 mt-0.5">{{ latest.label }} · Total: {{ latest.total }} findings</p>
+  </div>
+  <div class="px-6 py-4">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {% for tool, count in latest.tool_breakdown.items %}
+      <div class="bg-gray-50 rounded-lg px-4 py-3 border border-gray-100">
+        <div class="text-xs text-gray-500 uppercase font-medium">{{ tool }}</div>
+        <div class="text-2xl font-bold text-gray-900 mt-0.5">{{ count }}</div>
+        <div class="text-xs text-gray-400">findings</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endwith %}
+
+<!-- Asset Growth + Severity Distribution Charts -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+
+  <!-- Asset Growth Trend -->
+  <div class="bg-white rounded-lg shadow lg:col-span-2">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-700">Asset Growth Trend</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Discovered assets per scan over time</p>
+    </div>
+    <div class="px-6 py-4">
+      <div style="position: relative; height: 280px; width: 100%;">
+        <canvas id="assetGrowthChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- CVE Severity Distribution -->
+  <div class="bg-white rounded-lg shadow">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-700">CVE Severity</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Distribution from latest scans</p>
+    </div>
+    <div class="px-6 py-4">
+      {% if severity_distribution %}
+      <div style="position: relative; height: 280px; width: 100%;">
+        <canvas id="severityChart"></canvas>
+      </div>
+      {% else %}
+      <p class="text-gray-400 text-sm text-center py-12">No CVEs detected yet.</p>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<!-- Top Vulnerable Services -->
+{% if top_services %}
+<div class="bg-white rounded-lg shadow mb-6">
+  <div class="px-6 py-4 border-b border-gray-200">
+    <h2 class="font-semibold text-gray-700">Top Vulnerable Services</h2>
+    <p class="text-xs text-gray-400 mt-0.5">Services with the most CVEs — patch these first</p>
+  </div>
+  <table class="min-w-full divide-y divide-gray-100">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Service</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Version</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">CVEs</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Max CVSS</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for s in top_services %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-6 py-3 text-sm font-mono text-gray-900">{{ s.service|default:"unknown" }}</td>
+        <td class="px-6 py-3 text-sm text-gray-600">{{ s.version|default:"-" }}</td>
+        <td class="px-6 py-3 text-sm">
+          <span class="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">{{ s.cve_count }}</span>
+        </td>
+        <td class="px-6 py-3 text-sm font-semibold {% if s.max_cvss >= 7 %}text-red-600{% elif s.max_cvss >= 4 %}text-orange-500{% else %}text-gray-600{% endif %}">
+          {{ s.max_cvss|default:"-" }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 <!-- Top Vulnerable Domains -->
 <div class="bg-white rounded-lg shadow mb-6">
   <div class="px-6 py-4 border-b border-gray-200">
@@ -163,4 +255,63 @@
 </div>
 
 {% endif %}
+
+{# Chart.js for visualizations — loaded only on this page #}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{{ chart_data|json_script:"chart-data" }}
+<script>
+(function() {
+  const data = JSON.parse(document.getElementById('chart-data').textContent);
+
+  // Asset Growth Trend (multi-line)
+  const growthCanvas = document.getElementById('assetGrowthChart');
+  if (growthCanvas && data.asset_growth_labels.length > 0) {
+    new Chart(growthCanvas, {
+      type: 'line',
+      data: {
+        labels: data.asset_growth_labels,
+        datasets: [
+          { label: 'Active Subdomains', data: data.asset_growth_subdomains, borderColor: '#6366f1', backgroundColor: '#6366f120', tension: 0.3 },
+          { label: 'Public IPs', data: data.asset_growth_ips, borderColor: '#10b981', backgroundColor: '#10b98120', tension: 0.3 },
+          { label: 'Open Ports', data: data.asset_growth_ports, borderColor: '#f59e0b', backgroundColor: '#f59e0b20', tension: 0.3 },
+          { label: 'Web URLs', data: data.asset_growth_urls, borderColor: '#3b82f6', backgroundColor: '#3b82f620', tension: 0.3 },
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+      }
+    });
+  }
+
+  // Severity Distribution (donut)
+  const sevCanvas = document.getElementById('severityChart');
+  if (sevCanvas) {
+    const sev = data.severity_distribution || {};
+    const labels = ['Critical', 'High', 'Medium', 'Low', 'Info'];
+    const values = [sev.critical || 0, sev.high || 0, sev.medium || 0, sev.low || 0, sev.info || 0];
+    const total = values.reduce((a, b) => a + b, 0);
+    if (total > 0) {
+      new Chart(sevCanvas, {
+        type: 'doughnut',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: values,
+            backgroundColor: ['#dc2626', '#ea580c', '#facc15', '#3b82f6', '#9ca3af'],
+            borderWidth: 2,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
+        }
+      });
+    }
+  }
+})();
+</script>
 {% endblock %}

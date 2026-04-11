@@ -7,11 +7,18 @@
 
 ## Stack
 - Django 5+ with plain Django views (no DRF, no Celery, no Redis)
-- HTMX for dynamic frontend interactions
+- HTMX — server-driven UI updates (form submits, polling, partial HTML swaps)
+- Alpine.js — client-side UI state (modals, dropdowns, tabs, toggles, local form state). Use this for any interactivity that doesn't need a server roundtrip.
+- Chart.js — visualizations, loaded via CDN only on pages that need it (e.g. insights), not in `base.html`
+- Tailwind CSS via CDN (no build step)
 - `threading.Thread` for background scan execution
 - `django-apscheduler` for daily automated scans (starts in `DashboardConfig.ready()`)
 - SQLite database (dev), configurable via `DB_NAME` env var
-- Tailwind CSS via CDN (no build step)
+
+### Frontend rules
+- Reach for **Alpine.js first** for client-side interactivity (don't write vanilla JS event listeners for show/hide, tabs, modals)
+- Use **HTMX** when the server needs to compute/return new HTML
+- Load page-specific JS (Chart.js, etc.) inside the page template, not `base.html`
 
 ## Scheduler
 - Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (uses `TIME_ZONE` in settings, default 02:00)

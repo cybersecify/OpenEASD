@@ -12,22 +12,19 @@ from .models import WorkflowRun, WorkflowStepResult
 logger = logging.getLogger(__name__)
 
 # Maps tool name → (module path, function name)
-# Disabled tools (ssl_checker, subfinder, naabu, nmap, nuclei) are commented out.
-# Re-enable by uncommenting in apps/core/workflows/models.py TOOL_CHOICES,
-# settings.INSTALLED_APPS, and here.
+# All registered tools take only the session — they read upstream data
+# from apps.core.assets directly (no targets list needed).
+# Disabled tools (ssl_checker, nmap, nuclei) are commented out.
 _TOOL_RUNNERS = {
     "domain_security": ("apps.domain_security.scanner", "run_domain_security"),
+    "subfinder": ("apps.subfinder.scanner", "run_subfinder"),
+    "dnsx": ("apps.dnsx.scanner", "run_dnsx"),
+    "naabu": ("apps.naabu.scanner", "run_naabu"),
+    "httpx": ("apps.httpx.scanner", "run_httpx"),
+    "nmap": ("apps.nmap.scanner", "run_nmap"),
     # "ssl_checker": ("apps.ssl_checker.scanner", "run_ssl_check"),
-    # "subfinder": ("apps.subfinder.scanner", "run_subfinder"),
-    # "naabu": ("apps.naabu.scanner", "run_naabu"),
-    # "nmap": ("apps.nmap.scanner", "run_nmap"),
     # "nuclei": ("apps.nuclei.scanner", "run_nuclei"),
 }
-
-# Tools that need a 'targets' list (built from subfinder output)
-_NEEDS_TARGETS: set[str] = set()
-# Tools that only need domain
-_DOMAIN_ONLY = {"domain_security"}
 
 
 def run_workflow(workflow_run_id: int):
@@ -41,7 +38,6 @@ def run_workflow(workflow_run_id: int):
     run.save(update_fields=["status", "started_at"])
 
     tools = run.workflow.enabled_tools()
-    subdomains = []  # populated by subfinder, used by naabu/nuclei
 
     try:
         for order, tool in enumerate(tools, start=1):
@@ -62,17 +58,7 @@ def run_workflow(workflow_run_id: int):
                 module = importlib.import_module(module_path)
                 fn = getattr(module, func_name)
 
-                if tool in _NEEDS_TARGETS:
-                    targets = [domain] + [s.subdomain for s in subdomains]
-                    results = fn(session, targets)
-                elif tool in _DOMAIN_ONLY:
-                    results = fn(session)
-                elif tool == "subfinder":
-                    results = fn(session)
-                    subdomains = results  # save for downstream tools
-                else:
-                    results = fn(session)
-
+                results = fn(session)
                 count = len(results) if results else 0
                 step_result.status = "completed"
                 step_result.findings_count = count

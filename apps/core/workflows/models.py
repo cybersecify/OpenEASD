@@ -3,17 +3,24 @@ from django.db import models
 
 TOOL_CHOICES = [
     ("domain_security", "Domain Security"),
+    ("subfinder", "Subfinder"),
+    ("dnsx", "DNSx (Resolve)"),
+    ("naabu", "Naabu (Port Scan)"),
+    ("httpx", "HTTPx (Web Probe)"),
+    ("nmap", "Nmap (NSE Vuln Scan)"),
     # Disabled — OSS binary tools (re-enable in settings.INSTALLED_APPS to restore)
     # ("ssl_checker", "SSL Checker"),
-    # ("subfinder", "Subfinder"),
-    # ("naabu", "Naabu (Port Scan)"),
-    # ("nmap", "Nmap (Service Scan)"),
     # ("nuclei", "Nuclei (Vuln Scan)"),
 ]
 
 # Execution order within a phase — enforced by runner
 TOOL_PHASE = {
     "domain_security": 1,
+    "subfinder": 2,
+    "dnsx": 3,
+    "naabu": 4,
+    "httpx": 5,
+    "nmap": 6,
 }
 
 
