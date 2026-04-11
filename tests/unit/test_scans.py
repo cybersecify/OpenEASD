@@ -336,8 +336,7 @@ class TestScanStartRunNow:
     def test_run_now_creates_session_and_redirects(self, auth_client):
         from apps.core.scans.models import ScanSession
         _ensure_domain("runnow.com")
-        with patch("apps.core.scans.views.threading.Thread") as mock_thread:
-            mock_thread.return_value.start = MagicMock()
+        with patch("apps.core.scans.tasks.run_scan_task") as mock_task:
             resp = auth_client.post(reverse("scan-start"), {
                 "domain": "runnow.com",
                 "schedule_type": "now",
@@ -358,21 +357,19 @@ class TestScanStartRunNow:
         assert resp.status_code == 200
         assert b"already running" in resp.content
 
-    def test_run_now_thread_is_started(self, auth_client):
+    def test_run_now_task_is_enqueued(self, auth_client):
         _ensure_domain("threadtest.com")
-        with patch("apps.core.scans.views.threading.Thread") as mock_thread:
-            instance = MagicMock()
-            mock_thread.return_value = instance
+        with patch("apps.core.scans.tasks.run_scan_task") as mock_task:
             auth_client.post(reverse("scan-start"), {
                 "domain": "threadtest.com",
                 "schedule_type": "now",
             })
-        instance.start.assert_called_once()
+        mock_task.assert_called_once()
 
     def test_run_now_triggered_by_is_manual(self, auth_client):
         from apps.core.scans.models import ScanSession
         _ensure_domain("manualcheck.com")
-        with patch("apps.core.scans.views.threading.Thread"):
+        with patch("apps.core.scans.tasks.run_scan_task"):
             auth_client.post(reverse("scan-start"), {
                 "domain": "manualcheck.com",
                 "schedule_type": "now",

@@ -10,5 +10,6 @@ urlpatterns = [
     path("scans/", include("apps.core.scans.urls")),
     path("workflows/", include("apps.core.workflows.urls")),
     path("insights/", include("apps.core.insights.urls")),
+    path("reports/", include("apps.core.reports.urls")),
     path("", include("apps.core.dashboard.urls")),
 ]

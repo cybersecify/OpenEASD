@@ -81,7 +81,8 @@ def dashboard(request):
         ).select_related("session").order_by("-discovered_at")[:8]
     )
 
-    # Asset counts across latest completed scans (the current attack surface)
+    # Asset counts across latest completed scans (the current attack surface).
+    # 4 queries (one per model) is the ORM minimum — they query different tables.
     asset_counts = {
         "subdomains": Subdomain.objects.filter(
             session_id__in=latest_completed_ids, is_active=True

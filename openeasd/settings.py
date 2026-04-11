@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     # Third party
     "django_htmx",
     "django_apscheduler",
+    "huey.contrib.djhuey",
     # Local apps
     "apps.core.dashboard",
     "apps.core.assets",
@@ -126,6 +127,18 @@ OPENEASD_LOGS_DIR = BASE_DIR / "logs"
 # Ensure required directories exist at startup
 for _dir in [OPENEASD_DATA_DIR, OPENEASD_LOGS_DIR]:
     _dir.mkdir(parents=True, exist_ok=True)
+
+# Huey task queue — uses a separate SQLite DB to avoid write contention
+HUEY = {
+    "huey_class": "huey.SqliteHuey",
+    "name": "openeasd",
+    "filename": str(OPENEASD_DATA_DIR / "huey.db"),
+    "immediate": DEBUG,  # synchronous in dev, queued in prod
+    "consumer": {
+        "workers": 2,
+        "worker_type": "thread",
+    },
+}
 
 # Scanner timeouts (seconds) — override in .env if needed
 SCANNER_DNS_TIMEOUT = config("SCANNER_DNS_TIMEOUT", default=5, cast=int)

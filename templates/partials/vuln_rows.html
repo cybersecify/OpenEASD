@@ -6,6 +6,9 @@
     {% include "partials/severity_badge.html" with severity=vuln.severity %}
   </td>
   <td class="px-6 py-4 text-sm text-gray-500">{{ vuln.source|upper }}</td>
+  <td class="px-6 py-4 text-sm" id="finding-status-{{ vuln.obj.id }}">
+    {% include "partials/finding_status_cell.html" with finding=vuln.obj %}
+  </td>
   <td class="px-6 py-4 text-sm text-gray-500">{{ vuln.session.domain }}</td>
   <td class="px-6 py-4 text-sm">
     <a href="{% url 'scan-detail' vuln.session.uuid %}" class="text-indigo-600 hover:underline">View Scan</a>
@@ -13,6 +16,6 @@
 </tr>
 {% empty %}
 <tr>
-  <td colspan="6" class="px-6 py-8 text-center text-gray-400 text-sm">No findings found.</td>
+  <td colspan="7" class="px-6 py-8 text-center text-gray-400 text-sm">No findings found.</td>
 </tr>
 {% endfor %}

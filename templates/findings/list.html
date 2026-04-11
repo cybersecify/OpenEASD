@@ -25,6 +25,15 @@
         <option value="low" {% if severity == "low" %}selected{% endif %}>Low</option>
       </select>
     </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Status</label>
+      <select name="status" class="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <option value="">All</option>
+        {% for value, label in status_choices %}
+        <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
     {% if session_id %}
     <input type="hidden" name="session_id" value="{{ session_id }}">
     {% endif %}
@@ -39,6 +48,7 @@
         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Host</th>
         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Severity</th>
         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Scan</th>
       </tr>

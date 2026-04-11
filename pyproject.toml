@@ -22,6 +22,10 @@ dependencies = [
     # SSL / crypto (ssl_checker — enable when ready)
     "cryptography>=42.0",
     "pyopenssl>=23.0",
+    # Reports (PDF generation)
+    "xhtml2pdf>=0.2.15",
+    # Task queue
+    "huey>=2.5",
 ]
 
 [project.optional-dependencies]

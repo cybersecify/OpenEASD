@@ -16,11 +16,12 @@ import httpx
 from django.conf import settings
 from django.utils import timezone as django_tz
 
+from apps.core.constants import SEVERITY_RANK
 from .models import Alert
 
 logger = logging.getLogger(__name__)
 
-SEVERITY_ORDER = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+SEVERITY_ORDER = SEVERITY_RANK
 SEV_COLORS = {"critical": "FF0000", "high": "FF6600", "medium": "FFA500", "low": "0078D7"}
 
 

@@ -17,6 +17,16 @@
 </script>
 
 {% if session.status == "completed" %}
+<div class="flex gap-3 mb-4">
+  <a href="{% url 'export-csv' session.uuid %}"
+     class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+    Export CSV
+  </a>
+  <a href="{% url 'export-pdf' session.uuid %}"
+     class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+    Export PDF
+  </a>
+</div>
 <div class="space-y-6">
 
   {% with findings=domain_findings %}

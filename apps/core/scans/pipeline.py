@@ -10,7 +10,6 @@ Phases:
 """
 
 import logging
-import threading
 
 from django.db import transaction, DatabaseError
 from django.utils import timezone as django_tz
@@ -293,7 +292,8 @@ def run_scheduled_scan(domain: str, triggered_by: str = "scheduled"):
     if session is None:
         logger.info(f"[scheduled_scan] Skipping {domain} — scan already active")
         return
-    threading.Thread(target=run_scan, args=[session.id], daemon=True).start()
+    from .tasks import run_scan_task
+    run_scan_task(session.id)
     logger.info(f"[scheduled_scan] Launched scan for {domain} (session {session.id})")
 
 
@@ -310,7 +310,8 @@ def daily_scan():
         if session is None:
             logger.info(f"[daily_scan] Skipping {domain.name} — scan already active")
             continue
-        threading.Thread(target=run_scan, args=[session.id], daemon=True).start()
+        from .tasks import run_scan_task
+        run_scan_task(session.id)
         logger.info(f"[daily_scan] Launched scan for {domain.name} (session {session.id})")
 
 
@@ -327,5 +328,6 @@ def weekly_scan():
         if session is None:
             logger.info(f"[weekly_scan] Skipping {domain.name} — scan already active")
             continue
-        threading.Thread(target=run_scan, args=[session.id], daemon=True).start()
+        from .tasks import run_scan_task
+        run_scan_task(session.id)
         logger.info(f"[weekly_scan] Launched full scan for {domain.name} (session {session.id})")

@@ -2,10 +2,9 @@
 
 import datetime
 import logging
-import threading
 
 from django.db import models
-from django.db.models import Count, Max
+from django.db.models import Count, Q
 from django.core.paginator import Paginator
 from django.shortcuts import render, get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
@@ -14,13 +13,14 @@ from django.contrib.auth.decorators import login_required
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 
+from apps.core.constants import SEVERITY_LEVELS
+from apps.core.queries import latest_session_ids
+
 from .forms import StartScanForm
 from .models import ScanSession
-from .pipeline import run_scan, run_scheduled_scan
+from .pipeline import run_scheduled_scan
 
 logger = logging.getLogger(__name__)
-
-SEVERITY_LEVELS = ["critical", "high", "medium", "low"]
 BUILTIN_JOB_IDS = {"daily_scan", "watchdog_reap_stuck_scans"}
 
 
@@ -111,7 +111,8 @@ def scan_start(request):
                 if session is None:
                     form.add_error("domain", f"A scan for {domain} is already running. Please wait for it to finish.")
                 else:
-                    threading.Thread(target=run_scan, args=[session.id], daemon=True).start()
+                    from .tasks import run_scan_task
+                    run_scan_task(session.id)
                     logger.info(f"Scan started: session={session.id} domain={domain}")
                     return redirect("scan-detail", session_uuid=session.uuid)
 
@@ -179,12 +180,12 @@ def scan_detail(request, session_uuid):
     from apps.core.findings.models import Finding
     from apps.nmap.scanner import _web_pairs_for_session
 
-    subdomains = Subdomain.objects.filter(session=session).order_by("-is_active", "subdomain")
-    ips = IPAddress.objects.filter(session=session).select_related("subdomain").order_by("address")
+    subdomains = list(Subdomain.objects.filter(session=session).order_by("-is_active", "subdomain"))
+    ips = list(IPAddress.objects.filter(session=session).select_related("subdomain").order_by("address"))
     ports = list(Port.objects.filter(session=session).order_by("address", "port"))
-    urls = URL.objects.filter(session=session).order_by("url")
-    nmap_findings = Finding.objects.filter(session=session, source="nmap").order_by("-discovered_at")
-    domain_findings = Finding.objects.filter(session=session, source="domain_security").order_by("-severity", "-discovered_at")
+    urls = list(URL.objects.filter(session=session).order_by("url"))
+    nmap_findings = list(Finding.objects.filter(session=session, source="nmap").order_by("-discovered_at"))
+    domain_findings = list(Finding.objects.filter(session=session, source="domain_security").order_by("-severity", "-discovered_at"))
 
     # Annotate each port with its web/non-web classification (same logic as nmap scanner)
     web_pairs = _web_pairs_for_session(session)
@@ -202,12 +203,12 @@ def scan_detail(request, session_uuid):
         "nmap_findings": nmap_findings,
         "domain_findings": domain_findings,
         "asset_counts": {
-            "subdomains_total": subdomains.count(),
-            "subdomains_active": subdomains.filter(is_active=True).count(),
-            "ips": ips.count(),
+            "subdomains_total": len(subdomains),
+            "subdomains_active": sum(1 for s in subdomains if s.is_active),
+            "ips": len(ips),
             "ports": len(ports),
-            "urls": urls.count(),
-            "nmap_findings": nmap_findings.count(),
+            "urls": len(urls),
+            "nmap_findings": len(nmap_findings),
         },
     })
 
@@ -220,9 +221,13 @@ def scan_status_fragment(request, session_uuid):
     from apps.core.assets.models import Subdomain, IPAddress, Port, URL
     from apps.core.findings.models import Finding
 
+    sub_agg = Subdomain.objects.filter(session=session).aggregate(
+        total=Count("id"),
+        active=Count("id", filter=Q(is_active=True)),
+    )
     asset_counts = {
-        "subdomains_total":  Subdomain.objects.filter(session=session).count(),
-        "subdomains_active": Subdomain.objects.filter(session=session, is_active=True).count(),
+        "subdomains_total":  sub_agg["total"],
+        "subdomains_active": sub_agg["active"],
         "ips":               IPAddress.objects.filter(session=session).count(),
         "ports":             Port.objects.filter(session=session).count(),
         "urls":              URL.objects.filter(session=session).count(),
@@ -240,17 +245,6 @@ def scan_status_fragment(request, session_uuid):
         response["HX-Trigger"] = "scanComplete"
 
     return response
-
-
-def _latest_session_ids():
-    """Return the ID of the latest completed scan session per domain."""
-    rows = (
-        ScanSession.objects
-        .filter(status="completed")
-        .values("domain")
-        .annotate(latest_id=Max("id"))
-    )
-    return [r["latest_id"] for r in rows]
 
 
 def _describe_cron_trigger(trigger):
@@ -330,10 +324,11 @@ def cancel_scheduled_job(request, job_id):
 @login_required
 def vulnerability_list(request):
     """Show findings from the latest completed scan per domain only."""
-    from apps.core.findings.models import Finding
+    from apps.core.findings.models import Finding, STATUS_CHOICES
 
     severity = request.GET.get("severity", "").strip()
     domain = request.GET.get("domain", "").strip()
+    status_filter = request.GET.get("status", "").strip()
     raw_session_id = request.GET.get("session_id", "").strip()
     try:
         session_id = int(raw_session_id) if raw_session_id else None
@@ -347,12 +342,14 @@ def vulnerability_list(request):
             qs = qs.filter(session_id=session_id)
         if domain:
             qs = qs.filter(session__domain__icontains=domain)
+        if status_filter:
+            qs = qs.filter(status=status_filter)
         return qs
 
     # Default: restrict to latest completed session per domain (no duplicates across runs)
     base_qs = Finding.objects.select_related("session")
     if not session_id:
-        base_qs = base_qs.filter(session_id__in=_latest_session_ids())
+        base_qs = base_qs.filter(session_id__in=latest_session_ids())
 
     qs = _filter(
         base_qs
@@ -388,4 +385,36 @@ def vulnerability_list(request):
         "severity": severity,
         "session_id": session_id,
         "domain": domain,
+        "status_filter": status_filter,
+        "status_choices": STATUS_CHOICES,
+    })
+
+
+@login_required
+@require_http_methods(["POST"])
+def finding_update_status(request, finding_id):
+    """Update finding lifecycle status (HTMX inline edit)."""
+    from apps.core.findings.models import Finding, STATUS_CHOICES
+    from django.http import HttpResponseBadRequest
+    from django.utils import timezone
+
+    finding = get_object_or_404(Finding, id=finding_id)
+    new_status = request.POST.get("status", "").strip()
+    valid_statuses = {s[0] for s in STATUS_CHOICES}
+    if new_status not in valid_statuses:
+        return HttpResponseBadRequest("Invalid status")
+
+    finding.status = new_status
+    if new_status == "resolved" and not finding.resolved_at:
+        finding.resolved_at = timezone.now()
+    elif new_status != "resolved":
+        finding.resolved_at = None
+
+    finding.assigned_to = request.POST.get("assigned_to", finding.assigned_to)
+    finding.resolution_note = request.POST.get("resolution_note", finding.resolution_note)
+    finding.save(update_fields=["status", "resolved_at", "assigned_to", "resolution_note"])
+
+    return render(request, "partials/finding_status_cell.html", {
+        "finding": finding,
+        "status_choices": STATUS_CHOICES,
     })

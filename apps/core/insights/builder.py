@@ -13,11 +13,11 @@ import logging
 from django.db.models import Count, F, Max
 from django.utils import timezone as django_tz
 
+from apps.core.constants import SEVERITY_RANK
 from apps.core.domains.models import Domain
+from apps.core.queries import latest_session_ids
 from apps.core.scans.models import ScanDelta, ScanSession
 from .models import ScanSummary, FindingTypeSummary
-
-_SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
 
 logger = logging.getLogger(__name__)
 
@@ -64,30 +64,19 @@ def build_insights(session) -> None:
     logger.info(f"[insights] Summary built for session {session.id}: {total} total findings")
 
 
-def _latest_session_ids_for_domains(domains: list) -> list:
-    """Return the latest completed ScanSession id per domain."""
-    rows = (
-        ScanSession.objects
-        .filter(domain__in=domains, status="completed")
-        .values("domain")
-        .annotate(latest_id=Max("id"))
-    )
-    return [r["latest_id"] for r in rows]
-
-
 def _rebuild_finding_type_summaries() -> None:
     """Recompute global finding type aggregates — latest scan per domain only."""
     from apps.core.findings.models import Finding
 
     active_domains = list(Domain.objects.values_list("name", flat=True))
-    latest_ids = _latest_session_ids_for_domains(active_domains)
+    latest_ids = latest_session_ids(domains=active_domains)
     aggregated: dict[tuple, dict] = {}
 
     def _merge(key, severity, count, last_seen):
         existing = aggregated.get(key)
         aggregated[key] = {
             "severity": severity if not existing or
-                _SEVERITY_RANK.get(severity, 0) > _SEVERITY_RANK.get(existing["severity"], 0)
+                SEVERITY_RANK.get(severity, 0) > SEVERITY_RANK.get(existing["severity"], 0)
                 else existing["severity"],
             "occurrence_count": (existing["occurrence_count"] if existing else 0) + count,
             "last_seen": last_seen if not existing or last_seen > existing["last_seen"]

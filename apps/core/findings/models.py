@@ -16,6 +16,14 @@ SOURCE_CHOICES = [
     ("ssl_checker", "SSL Checker"),
 ]
 
+STATUS_CHOICES = [
+    ("open", "Open"),
+    ("acknowledged", "Acknowledged"),
+    ("in_progress", "In Progress"),
+    ("resolved", "Resolved"),
+    ("false_positive", "False Positive"),
+]
+
 
 class Finding(models.Model):
     """Unified finding model — replaces per-tool DomainFinding/NmapFinding.
@@ -72,6 +80,12 @@ class Finding(models.Model):
     extra = models.JSONField(default=dict, blank=True)
 
     discovered_at = models.DateTimeField(auto_now_add=True)
+
+    # Lifecycle tracking
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="open", db_index=True)
+    assigned_to = models.CharField(max_length=150, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolution_note = models.TextField(blank=True)
 
     class Meta:
         ordering = ["-discovered_at"]
