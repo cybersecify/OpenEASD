@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     # Local apps
     "apps.core.dashboard",
     "apps.core.assets",
+    "apps.core.findings",
     "apps.core.scans",
     "apps.core.domains",
     "apps.core.workflows",

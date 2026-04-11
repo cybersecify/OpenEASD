@@ -23,38 +23,27 @@ logger = logging.getLogger(__name__)
 
 SEVERITIES = ["critical", "high", "medium", "low"]
 
-# Registry: (tool_name, related_manager on ScanSession, severity field)
-# Add new tools here as they are enabled.
-TOOL_FINDING_SOURCES = [
-    ("domain_security", "domain_findings", "severity"),
-    ("nmap",            "nmap_findings",   "severity"),
-    # ("nuclei",         "nuclei_findings",  "severity"),
-]
-
 
 def build_insights(session) -> None:
     """Compute and store insights for a completed scan session."""
+    from apps.core.findings.models import Finding
+
     logger.info(f"[insights] Building summary for session {session.id}")
 
+    findings_qs = Finding.objects.filter(session=session)
+
     counts = {sev: 0 for sev in SEVERITIES}
-    tool_breakdown = {}
+    sev_rows = findings_qs.values("severity").annotate(total=Count("id"))
+    for row in sev_rows:
+        if row["severity"] in counts:
+            counts[row["severity"]] = row["total"]
 
-    for tool_name, related_name, sev_field in TOOL_FINDING_SOURCES:
-        qs = getattr(session, related_name, None)
-        if qs is None:
-            continue
-        try:
-            tool_total = qs.count()
-            tool_breakdown[tool_name] = tool_total
-            if sev_field:
-                for sev in SEVERITIES:
-                    counts[sev] += qs.filter(**{sev_field: sev}).count()
-        except Exception as e:
-            logger.warning(f"[insights] Failed to count {tool_name}: {e}")
+    tool_breakdown: dict[str, int] = {}
+    for row in findings_qs.values("source").annotate(total=Count("id")):
+        tool_breakdown[row["source"]] = row["total"]
 
-    # Total = sum across all tools (includes info severity findings that
-    # don't fit into the critical/high/medium/low buckets)
-    total = sum(tool_breakdown.values())
+    # Total includes info-severity findings (important: domain_security BIMI is info)
+    total = findings_qs.count()
     new_exp = ScanDelta.objects.filter(session=session, change_type="new").count()
     removed_exp = ScanDelta.objects.filter(session=session, change_type="removed").count()
 
@@ -88,6 +77,8 @@ def _latest_session_ids_for_domains(domains: list) -> list:
 
 def _rebuild_finding_type_summaries() -> None:
     """Recompute global finding type aggregates — latest scan per domain only."""
+    from apps.core.findings.models import Finding
+
     active_domains = list(Domain.objects.values_list("name", flat=True))
     latest_ids = _latest_session_ids_for_domains(active_domains)
     aggregated: dict[tuple, dict] = {}
@@ -104,30 +95,31 @@ def _rebuild_finding_type_summaries() -> None:
         }
 
     try:
-        from apps.domain_security.models import DomainFinding
         rows = (
-            DomainFinding.objects
+            Finding.objects
             .filter(session_id__in=latest_ids)
+            .exclude(source="nmap")
             .values("title", "check_type", "severity")
             .annotate(count=Count("id"), last=Max("discovered_at"))
         )
         for row in rows:
             _merge((row["title"], row["check_type"]), row["severity"], row["count"], row["last"])
     except Exception as e:
-        logger.warning(f"[insights] DomainFinding aggregation failed: {e}")
+        logger.warning(f"[insights] Finding aggregation failed: {e}")
 
     try:
-        from apps.nmap.models import NmapFinding
+        # Nmap CVEs grouped by CVE id (stored in extra JSON)
         rows = (
-            NmapFinding.objects
-            .filter(session_id__in=latest_ids)
-            .values("cve", "severity")
+            Finding.objects
+            .filter(session_id__in=latest_ids, source="nmap")
+            .values("extra__cve", "severity")
             .annotate(count=Count("id"), last=Max("discovered_at"))
         )
         for row in rows:
-            _merge((row["cve"], "cve"), row["severity"], row["count"], row["last"])
+            cve = row.get("extra__cve") or ""
+            _merge((cve, "cve"), row["severity"], row["count"], row["last"])
     except Exception as e:
-        logger.warning(f"[insights] NmapFinding aggregation failed: {e}")
+        logger.warning(f"[insights] Nmap CVE aggregation failed: {e}")
 
     # Bulk upsert
     for (title, check_type), data in aggregated.items():

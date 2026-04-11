@@ -30,18 +30,20 @@ SEV_COLORS = {"critical": "FF0000", "high": "FF6600", "medium": "FFA500", "low":
 
 def _get_qualifying_findings(session, threshold_level: int) -> list:
     """Return domain findings at or above the threshold severity."""
+    from apps.core.findings.models import Finding
+
     findings = []
     try:
-        for f in session.domain_findings.all():
+        for f in Finding.objects.filter(session=session, source="domain_security"):
             if SEVERITY_ORDER.get(f.severity, 0) >= threshold_level:
                 findings.append({
                     "severity": f.severity,
                     "title": f.title,
-                    "host": f.domain,
+                    "host": f.target,
                     "check_type": f.check_type,
                 })
     except Exception as e:
-        logger.warning(f"[alerts] Could not read domain_findings: {e}")
+        logger.warning(f"[alerts] Could not read findings: {e}")
     return findings
 
 

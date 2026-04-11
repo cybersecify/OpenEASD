@@ -125,15 +125,15 @@ class TestParseJob:
 class TestDetectDeltas:
     def test_new_findings_create_new_deltas(self, db):
         from apps.core.scans.models import ScanSession, ScanDelta
-        from apps.domain_security.models import DomainFinding
+        from apps.core.findings.models import Finding
         from apps.core.scans.tasks import _detect_deltas
         from django.utils import timezone
 
         s1 = ScanSession.objects.create(domain="delta.com", scan_type="full", status="completed", end_time=timezone.now())
         s2 = ScanSession.objects.create(domain="delta.com", scan_type="full", status="completed", end_time=timezone.now())
-        DomainFinding.objects.create(session=s1, domain="delta.com", check_type="dns", severity="high", title="Old Issue")
-        DomainFinding.objects.create(session=s2, domain="delta.com", check_type="dns", severity="high", title="Old Issue")
-        DomainFinding.objects.create(session=s2, domain="delta.com", check_type="dns", severity="medium", title="New Issue")
+        Finding.objects.create(session=s1, source="domain_security", target="delta.com", check_type="dns", severity="high", title="Old Issue")
+        Finding.objects.create(session=s2, source="domain_security", target="delta.com", check_type="dns", severity="high", title="Old Issue")
+        Finding.objects.create(session=s2, source="domain_security", target="delta.com", check_type="dns", severity="medium", title="New Issue")
 
         _detect_deltas(s2)
 
@@ -143,13 +143,13 @@ class TestDetectDeltas:
 
     def test_removed_findings_create_removed_deltas(self, db):
         from apps.core.scans.models import ScanSession, ScanDelta
-        from apps.domain_security.models import DomainFinding
+        from apps.core.findings.models import Finding
         from apps.core.scans.tasks import _detect_deltas
         from django.utils import timezone
 
         s1 = ScanSession.objects.create(domain="rem.com", scan_type="full", status="completed", end_time=timezone.now())
         s2 = ScanSession.objects.create(domain="rem.com", scan_type="full", status="completed", end_time=timezone.now())
-        DomainFinding.objects.create(session=s1, domain="rem.com", check_type="dns", severity="high", title="Gone")
+        Finding.objects.create(session=s1, source="domain_security", target="rem.com", check_type="dns", severity="high", title="Gone")
         # s2 has no findings
 
         _detect_deltas(s2)
@@ -290,7 +290,7 @@ class TestScanViews:
     def test_finding_list_only_latest_scan_per_domain(self, auth_client, db):
         """Findings from old scans must not appear — only from the latest per domain."""
         from apps.core.scans.models import ScanSession
-        from apps.domain_security.models import DomainFinding
+        from apps.core.findings.models import Finding
         from django.utils import timezone
 
         old_session = ScanSession.objects.create(
@@ -299,13 +299,9 @@ class TestScanViews:
         new_session = ScanSession.objects.create(
             domain="multi.com", scan_type="full", status="completed", end_time=timezone.now()
         )
-        DomainFinding.objects.create(
-            session=old_session, domain="multi.com",
-            check_type="dns", severity="high", title="Old Finding"
+        Finding.objects.create(session=old_session, source="domain_security", target="multi.com", check_type="dns", severity="high", title="Old Finding"
         )
-        DomainFinding.objects.create(
-            session=new_session, domain="multi.com",
-            check_type="dns", severity="medium", title="New Finding"
+        Finding.objects.create(session=new_session, source="domain_security", target="multi.com", check_type="dns", severity="medium", title="New Finding"
         )
 
         resp = auth_client.get(reverse("finding-list"))

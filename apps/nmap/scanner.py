@@ -9,7 +9,7 @@ to the Port asset.
 import logging
 
 from apps.core.assets.models import IPAddress, Port, URL
-from .models import NmapFinding
+from apps.core.findings.models import Finding
 from .collector import collect, group_ports_by_ip
 from .analyzer import analyze
 
@@ -39,7 +39,7 @@ def _web_pairs_for_session(session) -> set[tuple[str, int]]:
     return web_pairs
 
 
-def run_nmap(session) -> list[NmapFinding]:
+def run_nmap(session) -> list[Finding]:
     """Run nmap NSE vulners against non-web ports."""
     web_pairs = _web_pairs_for_session(session)
 
@@ -60,7 +60,7 @@ def run_nmap(session) -> list[NmapFinding]:
     findings = analyze(session, xml_outputs)
 
     if findings:
-        NmapFinding.objects.bulk_create(findings)
+        Finding.objects.bulk_create(findings)
 
     logger.info(f"[nmap:{session.id}] {len(findings)} CVE findings")
     return findings

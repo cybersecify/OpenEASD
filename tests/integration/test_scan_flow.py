@@ -67,7 +67,7 @@ class TestDomainSecurityScanFlow:
     def test_clean_domain_produces_only_dnssec_finding(self, db):
         """A well-configured domain should only flag DNSSEC (mocked as missing)."""
         from apps.core.scans.models import ScanSession
-        from apps.domain_security.models import DomainFinding
+        from apps.core.findings.models import Finding
 
         session = ScanSession.objects.create(domain="secure.com", scan_type="full", status="pending")
         findings = self._run_mocked_scan(session)
@@ -78,11 +78,11 @@ class TestDomainSecurityScanFlow:
         assert "SPF record missing" not in titles
         assert "DMARC record missing" not in titles
         # All findings saved to DB
-        assert DomainFinding.objects.filter(session=session).count() == len(findings)
+        assert Finding.objects.filter(session=session).count() == len(findings)
 
     def test_missing_email_records_creates_findings(self, db):
         from apps.core.scans.models import ScanSession
-        from apps.domain_security.models import DomainFinding
+        from apps.core.findings.models import Finding
 
         session = ScanSession.objects.create(domain="insecure.com", scan_type="full", status="pending")
         findings = self._run_mocked_scan(
@@ -110,12 +110,12 @@ class TestDomainSecurityScanFlow:
 
     def test_findings_saved_to_db(self, db):
         from apps.core.scans.models import ScanSession
-        from apps.domain_security.models import DomainFinding
+        from apps.core.findings.models import Finding
 
         session = ScanSession.objects.create(domain="dbtest.com", scan_type="full", status="pending")
         findings = self._run_mocked_scan(session, spf=None, dmarc=None)
 
-        db_count = DomainFinding.objects.filter(session=session).count()
+        db_count = Finding.objects.filter(session=session).count()
         assert db_count == len(findings)
         assert db_count > 0
 
@@ -267,7 +267,7 @@ class TestDomainDeleteCascade:
     def test_delete_domain_cascades_all_data(self, auth_client, db):
         from apps.core.domains.models import Domain
         from apps.core.scans.models import ScanSession
-        from apps.domain_security.models import DomainFinding
+        from apps.core.findings.models import Finding
         from apps.core.insights.models import ScanSummary
         from django.urls import reverse
 
@@ -276,9 +276,7 @@ class TestDomainDeleteCascade:
             domain="cascade.com", scan_type="full", status="completed",
             end_time=timezone.now()
         )
-        DomainFinding.objects.create(
-            session=session, domain="cascade.com",
-            check_type="dns", severity="high", title="No MX"
+        Finding.objects.create(session=session, source="domain_security", target="cascade.com", check_type="dns", severity="high", title="No MX"
         )
         ScanSummary.objects.create(
             session=session, domain="cascade.com",
@@ -289,7 +287,7 @@ class TestDomainDeleteCascade:
 
         assert not Domain.objects.filter(name="cascade.com").exists()
         assert not ScanSession.objects.filter(domain="cascade.com").exists()
-        assert not DomainFinding.objects.filter(domain="cascade.com").exists()
+        assert not Finding.objects.filter(source="domain_security", target="cascade.com").exists()
         assert not ScanSummary.objects.filter(domain="cascade.com").exists()
 
     def test_delete_domain_cascades_all_assets(self, auth_client, db):
@@ -297,7 +295,7 @@ class TestDomainDeleteCascade:
         from apps.core.domains.models import Domain
         from apps.core.scans.models import ScanSession
         from apps.core.assets.models import Subdomain, IPAddress, Port, URL
-        from apps.nmap.models import NmapFinding
+        from apps.core.findings.models import Finding
         from django.urls import reverse
 
         domain = Domain.objects.create(name="cascade.com", is_primary=True)
@@ -309,7 +307,11 @@ class TestDomainDeleteCascade:
         ip = IPAddress.objects.create(session=session, subdomain=sub, address="1.2.3.4", version=4, source="dnsx")
         port = Port.objects.create(session=session, ip_address=ip, address="1.2.3.4", port=22, protocol="tcp", state="open", source="naabu")
         URL.objects.create(session=session, port=port, subdomain=sub, url="http://api.cascade.com:80", host="api.cascade.com", port_number=80, source="httpx")
-        NmapFinding.objects.create(session=session, port=port, address="1.2.3.4", port_number=22, severity="high", title="CVE-2024-6387", cve="CVE-2024-6387", cvss_score=8.1)
+        Finding.objects.create(
+            session=session, source="nmap", check_type="cve", port=port,
+            target="1.2.3.4:22", severity="high", title="CVE-2024-6387",
+            extra={"cve": "CVE-2024-6387", "cvss_score": 8.1, "address": "1.2.3.4", "port_number": 22},
+        )
 
         auth_client.post(reverse("domain-delete", args=[domain.pk]))
 
@@ -318,7 +320,7 @@ class TestDomainDeleteCascade:
         assert IPAddress.objects.filter(session=session).count() == 0
         assert Port.objects.filter(session=session).count() == 0
         assert URL.objects.filter(session=session).count() == 0
-        assert NmapFinding.objects.filter(session=session).count() == 0
+        assert Finding.objects.filter(session=session, source="nmap").count() == 0
 
 
 @pytest.mark.django_db

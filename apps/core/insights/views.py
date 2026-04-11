@@ -9,7 +9,7 @@ from django.shortcuts import render
 from apps.core.assets.models import IPAddress, Port, Subdomain, URL
 from apps.core.domains.models import Domain
 from apps.core.scans.models import ScanSession
-from apps.nmap.models import NmapFinding
+from apps.core.findings.models import Finding
 from .models import FindingTypeSummary, ScanSummary
 
 
@@ -89,8 +89,8 @@ def insights(request):
 
     # ----- CVE severity distribution (latest scans only) -----
     severity_dist = (
-        NmapFinding.objects
-        .filter(session_id__in=latest_session_ids)
+        Finding.objects
+        .filter(session_id__in=latest_session_ids, source="nmap")
         .values("severity")
         .annotate(count=Count("id"))
     )
@@ -98,13 +98,21 @@ def insights(request):
 
     # ----- Top vulnerable services (group by service+version) -----
     top_services_qs = (
-        NmapFinding.objects
-        .filter(session_id__in=latest_session_ids)
-        .values("service", "version")
-        .annotate(cve_count=Count("id"), max_cvss=Max("cvss_score"))
+        Finding.objects
+        .filter(session_id__in=latest_session_ids, source="nmap")
+        .values("extra__service", "extra__version")
+        .annotate(cve_count=Count("id"), max_cvss=Max("extra__cvss_score"))
         .order_by("-cve_count")[:5]
     )
-    top_services = list(top_services_qs)
+    top_services = [
+        {
+            "service": row.get("extra__service", ""),
+            "version": row.get("extra__version", ""),
+            "cve_count": row["cve_count"],
+            "max_cvss": row["max_cvss"],
+        }
+        for row in top_services_qs
+    ]
 
     # Chart data passed to template — Django's json_script filter encodes safely
     chart_data = {

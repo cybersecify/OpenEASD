@@ -37,11 +37,15 @@ def _detect_deltas(session):
     if not previous:
         return
 
+    from apps.core.findings.models import Finding
+
     current_keys = {
-        f"{f.check_type}:{f.title}" for f in session.domain_findings.all()
+        f"{f.check_type}:{f.title}"
+        for f in Finding.objects.filter(session=session, source="domain_security")
     }
     prev_keys = {
-        f"{f.check_type}:{f.title}" for f in previous.domain_findings.all()
+        f"{f.check_type}:{f.title}"
+        for f in Finding.objects.filter(session=previous, source="domain_security")
     }
     deltas = []
     for key in current_keys - prev_keys:
@@ -58,7 +62,8 @@ def _detect_deltas(session):
 
 def _count_all_findings(session) -> int:
     try:
-        return session.domain_findings.count()
+        from apps.core.findings.models import Finding
+        return Finding.objects.filter(session=session).count()
     except Exception:
         return 0
 

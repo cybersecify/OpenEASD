@@ -8,10 +8,10 @@ from unittest.mock import patch, MagicMock
 class TestDispatchAlerts:
     def _make_session_with_findings(self, db, severity="high"):
         from apps.core.scans.models import ScanSession
-        from apps.domain_security.models import DomainFinding
+        from apps.core.findings.models import Finding
         session = ScanSession.objects.create(domain="example.com", scan_type="full", status="completed")
-        DomainFinding.objects.create(
-            session=session, domain="example.com",
+        Finding.objects.create(
+            session=session, source="domain_security", target="example.com",
             check_type="dns", severity=severity,
             title="DNSSEC not enabled",
         )
@@ -106,11 +106,11 @@ class TestDispatchAlerts:
         from apps.core.notifications.dispatcher import dispatch_alerts
         from apps.core.notifications.models import Alert
         from apps.core.scans.models import ScanSession
-        from apps.domain_security.models import DomainFinding
+        from apps.core.findings.models import Finding
 
         session = ScanSession.objects.create(domain="example.com", scan_type="full", status="completed")
-        DomainFinding.objects.create(
-            session=session, domain="example.com",
+        Finding.objects.create(
+            session=session, source="domain_security", target="example.com",
             check_type="email", severity="low", title="BIMI not configured",
         )
         with patch("apps.core.notifications.dispatcher.settings") as mock_settings:
