@@ -3,6 +3,12 @@
 External Attack Surface Detection platform. Built around a 6-phase scan
 pipeline that produces shared assets and unified findings.
 
+## Git workflow
+- Always use worktree isolation for all implementation tasks
+- Commit directly to main only for quick fixes (typos, CSS, config tweaks)
+- In any worktree, always use `DB_NAME=db_worktree.sqlite3` before running migrations
+- Always run `uv run pytest tests/ --ignore=tests/unit/test_domain_security.py` in the worktree before requesting merge
+
 ## Commands
 - Always use `uv run python` instead of `python` or `python3`
 - Always use `uv run manage.py` for Django management commands (e.g. `uv run manage.py check`)

@@ -1,7 +1,7 @@
 """Management command: run_weekly_scan."""
 
 from django.core.management.base import BaseCommand
-from apps.core.scans.tasks import weekly_scan
+from apps.core.scans.pipeline import weekly_scan
 
 
 class Command(BaseCommand):

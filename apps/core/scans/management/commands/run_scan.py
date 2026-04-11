@@ -2,7 +2,7 @@
 
 from django.core.management.base import BaseCommand
 from apps.core.scans.models import ScanSession
-from apps.core.scans.tasks import run_scan
+from apps.core.scans.pipeline import run_scan
 
 
 class Command(BaseCommand):

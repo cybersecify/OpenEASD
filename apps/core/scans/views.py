@@ -16,7 +16,7 @@ from apscheduler.triggers.date import DateTrigger
 
 from .forms import StartScanForm
 from .models import ScanSession
-from .tasks import run_scan, run_scheduled_scan
+from .pipeline import run_scan, run_scheduled_scan
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ def scan_start(request):
             schedule_type = form.cleaned_data["schedule_type"]
 
             if schedule_type == "now":
-                from .tasks import create_scan_session
+                from .pipeline import create_scan_session
                 session = create_scan_session(domain)
                 if session is None:
                     form.add_error("domain", f"A scan for {domain} is already running. Please wait for it to finish.")

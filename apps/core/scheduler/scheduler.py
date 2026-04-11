@@ -21,7 +21,7 @@ def start_scheduler():
     from apscheduler.triggers.cron import CronTrigger
     from django.conf import settings
     from django_apscheduler.jobstores import DjangoJobStore
-    from apps.core.scans.tasks import daily_scan, reap_stuck_scans
+    from apps.core.scans.pipeline import daily_scan, reap_stuck_scans
 
     scheduler = get_scheduler()
     scheduler.add_jobstore(DjangoJobStore(), "default")

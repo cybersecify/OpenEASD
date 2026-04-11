@@ -126,7 +126,7 @@ class TestFullScanPipeline:
 
     def test_run_scan_completes_session(self, db):
         from apps.core.scans.models import ScanSession
-        from apps.core.scans.tasks import run_scan
+        from apps.core.scans.pipeline import run_scan
 
         session = ScanSession.objects.create(domain="pipeline.com", scan_type="full", status="pending")
 
@@ -165,7 +165,7 @@ class TestFullScanPipeline:
 
     def test_run_scan_builds_insights(self, db):
         from apps.core.scans.models import ScanSession
-        from apps.core.scans.tasks import run_scan
+        from apps.core.scans.pipeline import run_scan
         from apps.core.insights.models import ScanSummary
 
         session = ScanSession.objects.create(domain="insights-test.com", scan_type="full", status="pending")
@@ -201,7 +201,7 @@ class TestFullScanPipeline:
 
     def test_run_scan_detects_deltas_on_second_scan(self, db):
         from apps.core.scans.models import ScanSession, ScanDelta
-        from apps.core.scans.tasks import run_scan
+        from apps.core.scans.pipeline import run_scan
 
         def make_mocks(spf=None, dmarc=None):
             def mock_resolve(domain, record_type):
@@ -378,7 +378,7 @@ class TestFullPipelineMocked:
 
     def test_full_pipeline_produces_correct_asset_graph(self, db):
         from apps.core.scans.models import ScanSession
-        from apps.core.scans.tasks import run_scan
+        from apps.core.scans.pipeline import run_scan
         from apps.core.assets.models import Subdomain, IPAddress, Port, URL
 
         session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending")
@@ -410,7 +410,7 @@ class TestFullPipelineMocked:
 
     def test_full_pipeline_classifies_web_vs_non_web_correctly(self, db):
         from apps.core.scans.models import ScanSession
-        from apps.core.scans.tasks import run_scan
+        from apps.core.scans.pipeline import run_scan
         from apps.core.assets.models import Port
         from apps.nmap.scanner import _web_pairs_for_session
 
@@ -445,7 +445,7 @@ class TestFullPipelineMocked:
 
     def test_full_pipeline_total_findings_includes_all_tools(self, db):
         from apps.core.scans.models import ScanSession
-        from apps.core.scans.tasks import run_scan
+        from apps.core.scans.pipeline import run_scan
         from apps.core.insights.models import ScanSummary
 
         session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending")

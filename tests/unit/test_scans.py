@@ -14,21 +14,21 @@ from django.urls import reverse
 @pytest.mark.django_db
 class TestCreateScanSession:
     def test_creates_session_when_no_active_scan(self, db):
-        from apps.core.scans.tasks import create_scan_session
+        from apps.core.scans.pipeline import create_scan_session
         session = create_scan_session("newdomain.com")
         assert session is not None
         assert session.domain == "newdomain.com"
         assert session.status == "pending"
 
     def test_returns_none_when_scan_already_pending(self, db):
-        from apps.core.scans.tasks import create_scan_session
+        from apps.core.scans.pipeline import create_scan_session
         from apps.core.scans.models import ScanSession
         ScanSession.objects.create(domain="busy.com", scan_type="full", status="pending")
         result = create_scan_session("busy.com")
         assert result is None
 
     def test_returns_none_when_scan_already_running(self, db):
-        from apps.core.scans.tasks import create_scan_session
+        from apps.core.scans.pipeline import create_scan_session
         from apps.core.scans.models import ScanSession
         ScanSession.objects.create(domain="running.com", scan_type="full", status="running")
         result = create_scan_session("running.com")
@@ -36,17 +36,17 @@ class TestCreateScanSession:
 
     def test_returns_none_on_database_error_when_scan_active(self, db):
         """DatabaseError + active scan → returns None without raising."""
-        from apps.core.scans.tasks import create_scan_session
+        from apps.core.scans.pipeline import create_scan_session
         from apps.core.scans.models import ScanSession
         from django.db import DatabaseError
         ScanSession.objects.create(domain="locktest.com", scan_type="full", status="running")
-        with patch("apps.core.scans.tasks.ScanSession.objects.select_for_update", side_effect=DatabaseError("lock")):
+        with patch("apps.core.scans.pipeline.ScanSession.objects.select_for_update", side_effect=DatabaseError("lock")):
             result = create_scan_session("locktest.com")
         assert result is None
 
     def test_retries_and_creates_session_on_transient_lock(self, db):
         """Transient DatabaseError with no active scan → fallback retry creates session."""
-        from apps.core.scans.tasks import create_scan_session
+        from apps.core.scans.pipeline import create_scan_session
         from django.db import DatabaseError
 
         call_count = {"n": 0}
@@ -58,18 +58,18 @@ class TestCreateScanSession:
                 raise DatabaseError("transient lock")
             return original(*args, **kwargs)
 
-        with patch("apps.core.scans.tasks.ScanSession.objects.select_for_update", side_effect=patched_select_for_update):
+        with patch("apps.core.scans.pipeline.ScanSession.objects.select_for_update", side_effect=patched_select_for_update):
             result = create_scan_session("retrytest.com")
         assert result is not None
         assert result.domain == "retrytest.com"
 
     def test_triggered_by_stored_correctly(self, db):
-        from apps.core.scans.tasks import create_scan_session
+        from apps.core.scans.pipeline import create_scan_session
         session = create_scan_session("trigger.com", triggered_by="recurring")
         assert session.triggered_by == "recurring"
 
     def test_completed_scan_allows_new_session(self, db):
-        from apps.core.scans.tasks import create_scan_session
+        from apps.core.scans.pipeline import create_scan_session
         from apps.core.scans.models import ScanSession
         ScanSession.objects.create(domain="done.com", scan_type="full", status="completed")
         result = create_scan_session("done.com")
@@ -126,7 +126,7 @@ class TestDetectDeltas:
     def test_new_findings_create_new_deltas(self, db):
         from apps.core.scans.models import ScanSession, ScanDelta
         from apps.core.findings.models import Finding
-        from apps.core.scans.tasks import _detect_deltas
+        from apps.core.scans.pipeline import _detect_deltas
         from django.utils import timezone
 
         s1 = ScanSession.objects.create(domain="delta.com", scan_type="full", status="completed", end_time=timezone.now())
@@ -144,7 +144,7 @@ class TestDetectDeltas:
     def test_removed_findings_create_removed_deltas(self, db):
         from apps.core.scans.models import ScanSession, ScanDelta
         from apps.core.findings.models import Finding
-        from apps.core.scans.tasks import _detect_deltas
+        from apps.core.scans.pipeline import _detect_deltas
         from django.utils import timezone
 
         s1 = ScanSession.objects.create(domain="rem.com", scan_type="full", status="completed", end_time=timezone.now())
@@ -159,7 +159,7 @@ class TestDetectDeltas:
 
     def test_no_previous_session_skips_delta(self, db):
         from apps.core.scans.models import ScanSession, ScanDelta
-        from apps.core.scans.tasks import _detect_deltas
+        from apps.core.scans.pipeline import _detect_deltas
         from django.utils import timezone
 
         s = ScanSession.objects.create(domain="first.com", scan_type="full", status="completed", end_time=timezone.now())
