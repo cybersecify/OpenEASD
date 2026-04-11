@@ -43,10 +43,11 @@ def completed_session(db):
 
 @pytest.fixture
 def domain_finding(db, completed_session):
-    from apps.domain_security.models import DomainFinding
-    return DomainFinding.objects.create(
+    from apps.core.findings.models import Finding
+    return Finding.objects.create(
         session=completed_session,
-        domain="example.com",
+        source="domain_security",
+        target="example.com",
         check_type="dns",
         severity="high",
         title="No MX records found",

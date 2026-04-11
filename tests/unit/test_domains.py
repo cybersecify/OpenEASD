@@ -82,15 +82,15 @@ class TestDomainViews:
 
     def test_delete_domain_removes_scan_data(self, auth_client, domain, completed_session, domain_finding):
         from apps.core.scans.models import ScanSession
-        from apps.domain_security.models import DomainFinding
+        from apps.core.findings.models import Finding
 
         assert ScanSession.objects.filter(domain="example.com").exists()
-        assert DomainFinding.objects.filter(domain="example.com").exists()
+        assert Finding.objects.filter(source="domain_security", target="example.com").exists()
 
         auth_client.post(reverse("domain-delete", args=[domain.pk]))
 
         assert not ScanSession.objects.filter(domain="example.com").exists()
-        assert not DomainFinding.objects.filter(domain="example.com").exists()
+        assert not Finding.objects.filter(source="domain_security", target="example.com").exists()
 
     def test_delete_domain_removes_domain_record(self, auth_client, domain):
         from apps.core.domains.models import Domain

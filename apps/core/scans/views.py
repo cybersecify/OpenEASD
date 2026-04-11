@@ -26,10 +26,13 @@ BUILTIN_JOB_IDS = {"daily_scan", "watchdog_reap_stuck_scans"}
 
 def _get_vuln_counts(session):
     """Aggregate finding counts by severity — single query."""
+    from apps.core.findings.models import Finding
+
     counts = {sev: 0 for sev in SEVERITY_LEVELS}
     try:
         rows = (
-            session.domain_findings
+            Finding.objects
+            .filter(session=session)
             .values("severity")
             .annotate(total=Count("id"))
         )
@@ -173,14 +176,15 @@ def scan_detail(request, session_uuid):
     vuln_counts = _get_vuln_counts(session)
 
     from apps.core.assets.models import Subdomain, IPAddress, Port, URL
-    from apps.nmap.models import NmapFinding
+    from apps.core.findings.models import Finding
     from apps.nmap.scanner import _web_pairs_for_session
 
     subdomains = Subdomain.objects.filter(session=session).order_by("-is_active", "subdomain")
     ips = IPAddress.objects.filter(session=session).select_related("subdomain").order_by("address")
     ports = list(Port.objects.filter(session=session).order_by("address", "port"))
     urls = URL.objects.filter(session=session).order_by("url")
-    nmap_findings = NmapFinding.objects.filter(session=session).order_by("-cvss_score")
+    nmap_findings = Finding.objects.filter(session=session, source="nmap").order_by("-discovered_at")
+    domain_findings = Finding.objects.filter(session=session, source="domain_security").order_by("-severity", "-discovered_at")
 
     # Annotate each port with its web/non-web classification (same logic as nmap scanner)
     web_pairs = _web_pairs_for_session(session)
@@ -195,6 +199,7 @@ def scan_detail(request, session_uuid):
         "ports": ports,
         "urls": urls,
         "nmap_findings": nmap_findings,
+        "domain_findings": domain_findings,
         "asset_counts": {
             "subdomains_total": subdomains.count(),
             "subdomains_active": subdomains.filter(is_active=True).count(),
@@ -310,7 +315,7 @@ def cancel_scheduled_job(request, job_id):
 @login_required
 def vulnerability_list(request):
     """Show findings from the latest completed scan per domain only."""
-    from apps.domain_security.models import DomainFinding
+    from apps.core.findings.models import Finding
 
     severity = request.GET.get("severity", "").strip()
     domain = request.GET.get("domain", "").strip()
@@ -330,7 +335,7 @@ def vulnerability_list(request):
         return qs
 
     # Default: restrict to latest completed session per domain (no duplicates across runs)
-    base_qs = DomainFinding.objects.select_related("session")
+    base_qs = Finding.objects.select_related("session")
     if not session_id:
         base_qs = base_qs.filter(session_id__in=_latest_session_ids())
 
@@ -354,8 +359,8 @@ def vulnerability_list(request):
     page = paginator.get_page(request.GET.get("page"))
 
     vulns = [
-        {"source": f.check_type, "severity": f.severity, "title": f.title,
-         "host": f.domain, "session": f.session, "obj": f}
+        {"source": f.source, "severity": f.severity, "title": f.title,
+         "host": f.target or f.session.domain, "session": f.session, "obj": f}
         for f in page
     ]
 

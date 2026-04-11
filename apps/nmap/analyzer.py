@@ -4,7 +4,7 @@ import logging
 import xml.etree.ElementTree as ET
 
 from apps.core.assets.models import Port
-from .models import NmapFinding
+from apps.core.findings.models import Finding
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +57,9 @@ def _severity_from_cvss(score: float) -> str:
     return "info"
 
 
-def analyze(session, xml_outputs: dict[str, str]) -> list[NmapFinding]:
+def analyze(session, xml_outputs: dict[str, str]) -> list[Finding]:
     """
-    Parse nmap XML outputs and build NmapFinding instances.
+    Parse nmap XML outputs and build Finding instances.
 
     xml_outputs: dict of ip → xml string (one entry per nmap run)
     """
@@ -72,7 +72,7 @@ def analyze(session, xml_outputs: dict[str, str]) -> list[NmapFinding]:
         for p in Port.objects.filter(session=session)
     }
 
-    findings: list[NmapFinding] = []
+    findings: list[Finding] = []
     seen = set()  # (address, port, cve)
 
     for ip, xml_str in xml_outputs.items():
@@ -121,19 +121,24 @@ def analyze(session, xml_outputs: dict[str, str]) -> list[NmapFinding]:
                             continue
                         seen.add(key)
 
-                        findings.append(NmapFinding(
+                        findings.append(Finding(
                             session=session,
+                            source="nmap",
+                            check_type="cve",
                             port=port_fk,
-                            address=ip,
-                            port_number=port_num,
-                            service=service_name,
-                            version=version,
+                            target=f"{ip}:{port_num}",
                             severity=_severity_from_cvss(v["cvss"]),
                             title=f"{v['id']} on {service_name or 'unknown'} {version}".strip(),
                             description=output[:2000],
-                            nse_script="vulners",
-                            cve=v["id"],
-                            cvss_score=v["cvss"],
+                            extra={
+                                "cve": v["id"],
+                                "cvss_score": v["cvss"],
+                                "service": service_name,
+                                "version": version,
+                                "nse_script": "vulners",
+                                "port_number": port_num,
+                                "address": ip,
+                            },
                         ))
 
     return findings

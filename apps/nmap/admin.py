@@ -1,11 +1,4 @@
-from django.contrib import admin
+from django.contrib import admin  # noqa: F401
 
-from .models import NmapFinding
-
-
-@admin.register(NmapFinding)
-class NmapFindingAdmin(admin.ModelAdmin):
-    list_display = ["title", "address", "port_number", "severity", "cvss_score", "cve", "session"]
-    list_filter = ["severity", "nse_script"]
-    search_fields = ["title", "address", "cve"]
-    readonly_fields = ["discovered_at"]
+# NmapFinding has been merged into apps.core.findings.Finding —
+# admin registration lives in apps/core/findings/admin.py.

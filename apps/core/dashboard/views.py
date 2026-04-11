@@ -7,11 +7,10 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
 from apps.core.scans.models import ScanSession
-from apps.domain_security.models import DomainFinding
+from apps.core.findings.models import Finding
 from apps.core.domains.models import Domain
 from apps.core.insights.models import ScanSummary
 from apps.core.assets.models import Subdomain, IPAddress, Port, URL
-from apps.nmap.models import NmapFinding
 
 
 @login_required
@@ -67,7 +66,7 @@ def dashboard(request):
     running_count = ScanSession.objects.filter(status__in=["pending", "running"]).count()
 
     urgent_findings = list(
-        DomainFinding.objects.filter(
+        Finding.objects.filter(
             session_id__in=latest_completed_ids,
             severity__in=["critical", "high"],
         ).select_related("session").order_by("-discovered_at")[:8]
@@ -75,10 +74,11 @@ def dashboard(request):
 
     # Also include high-severity nmap CVEs
     urgent_cves = list(
-        NmapFinding.objects.filter(
+        Finding.objects.filter(
             session_id__in=latest_completed_ids,
+            source="nmap",
             severity__in=["critical", "high"],
-        ).select_related("session").order_by("-cvss_score")[:8]
+        ).select_related("session").order_by("-discovered_at")[:8]
     )
 
     # Asset counts across latest completed scans (the current attack surface)

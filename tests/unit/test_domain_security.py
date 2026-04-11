@@ -11,11 +11,8 @@ from unittest.mock import patch, MagicMock
 @pytest.mark.django_db
 class TestDomainFindingModel:
     def test_create_finding(self, completed_session):
-        from apps.domain_security.models import DomainFinding
-        f = DomainFinding.objects.create(
-            session=completed_session,
-            domain="example.com",
-            check_type="email",
+        from apps.core.findings.models import Finding
+        f = Finding.objects.create(session=completed_session, source="domain_security", target="example.com", check_type="email",
             severity="high",
             title="SPF record missing",
             description="No SPF record found.",
@@ -25,11 +22,8 @@ class TestDomainFindingModel:
         assert f.check_type == "email"
 
     def test_extra_json_field(self, completed_session):
-        from apps.domain_security.models import DomainFinding
-        f = DomainFinding.objects.create(
-            session=completed_session,
-            domain="example.com",
-            check_type="rdap",
+        from apps.core.findings.models import Finding
+        f = Finding.objects.create(session=completed_session, source="domain_security", target="example.com", check_type="rdap",
             severity="medium",
             title="Transfer lock not enabled",
             extra={"statuses": ["active"]},
@@ -38,19 +32,17 @@ class TestDomainFindingModel:
         assert f.extra["statuses"] == ["active"]
 
     def test_finding_cascades_on_session_delete(self, domain_finding, completed_session):
-        from apps.domain_security.models import DomainFinding
+        from apps.core.findings.models import Finding
         session_id = completed_session.id
         completed_session.delete()
-        assert not DomainFinding.objects.filter(session_id=session_id).exists()
+        assert not Finding.objects.filter(session_id=session_id).exists()
 
     def test_findings_filtered_by_severity(self, db, completed_session):
-        from apps.domain_security.models import DomainFinding
-        DomainFinding.objects.create(session=completed_session, domain="example.com",
-                                     check_type="dns", severity="critical", title="Critical issue")
-        DomainFinding.objects.create(session=completed_session, domain="example.com",
-                                     check_type="dns", severity="low", title="Low issue")
-        assert DomainFinding.objects.filter(severity="critical").count() == 1
-        assert DomainFinding.objects.filter(severity="low").count() == 1
+        from apps.core.findings.models import Finding
+        Finding.objects.create(session=completed_session, source="domain_security", target="example.com", check_type="dns", severity="critical", title="Critical issue")
+        Finding.objects.create(session=completed_session, source="domain_security", target="example.com", check_type="dns", severity="low", title="Low issue")
+        assert Finding.objects.filter(severity="critical").count() == 1
+        assert Finding.objects.filter(severity="low").count() == 1
 
 
 # ---------------------------------------------------------------------------

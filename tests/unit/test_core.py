@@ -22,7 +22,7 @@ class TestDashboardView:
 
     def test_dashboard_current_critical_from_latest_scan(self, auth_client, domain, db):
         from apps.core.scans.models import ScanSession
-        from apps.domain_security.models import DomainFinding
+        from apps.core.findings.models import Finding
         from apps.core.insights.models import ScanSummary
         from django.utils import timezone
 
@@ -30,8 +30,8 @@ class TestDashboardView:
             domain="example.com", scan_type="full", status="completed",
             end_time=timezone.now()
         )
-        DomainFinding.objects.create(
-            session=session, domain="example.com",
+        Finding.objects.create(
+            session=session, source="domain_security", target="example.com",
             check_type="rdap", severity="critical", title="Domain expires soon"
         )
         ScanSummary.objects.create(

@@ -30,7 +30,7 @@ import requests
 from django.conf import settings
 from django.utils import timezone as django_tz
 
-from .models import DomainFinding
+from apps.core.findings.models import Finding
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +64,8 @@ def _check_caa(session, domain) -> list:
     caa_records = _resolve(domain, "CAA")
 
     if not caa_records:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="dns",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="dns",
             severity="medium",
             title="No CAA records found",
             description=(
@@ -81,8 +81,8 @@ def _check_caa(session, domain) -> list:
         for record in caa_records:
             record_str = record.to_text()
             if '0 issue ";"' in record_str or "0 issue ;" in record_str:
-                findings.append(DomainFinding(
-                    session=session, domain=domain, check_type="dns",
+                findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="dns",
                     severity="high",
                     title="CAA record blocks all certificate issuance",
                     description=(
@@ -105,8 +105,8 @@ def _check_wildcard(session, domain) -> list:
     try:
         answers = dns.resolver.resolve(test_subdomain, "A")
         if answers:
-            findings.append(DomainFinding(
-                session=session, domain=domain, check_type="dns",
+            findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="dns",
                 severity="medium",
                 title="Wildcard DNS is enabled",
                 description=(
@@ -145,8 +145,8 @@ def _check_zone_transfer(session, domain, ns_records) -> list:
             zone = dns.zone.from_xfr(dns.query.xfr(ns_ip, domain, _DNS_TIMEOUT))
             if zone:
                 record_count = sum(1 for _ in zone.nodes.keys())
-                findings.append(DomainFinding(
-                    session=session, domain=domain, check_type="dns",
+                findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="dns",
                     severity="critical",
                     title=f"DNS zone transfer allowed on {ns_host}",
                     description=(
@@ -196,8 +196,8 @@ def _check_lame_delegation(session, domain, ns_records) -> list:
             lame_servers.append(f"{ns_host} (no response / timeout)")
 
     if lame_servers:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="dns",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="dns",
             severity="high",
             title=f"Lame delegation detected ({len(lame_servers)} nameserver(s))",
             description=(
@@ -224,8 +224,8 @@ def _check_dns(session, domain) -> list:
     a_records = _resolve(domain, "A")
     aaaa_records = _resolve(domain, "AAAA")
     if not a_records and not aaaa_records:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="dns",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="dns",
             severity="high",
             title="No A or AAAA record found",
             description=f"{domain} does not resolve to any IP address.",
@@ -235,8 +235,8 @@ def _check_dns(session, domain) -> list:
     # NS records
     ns_records = _resolve(domain, "NS")
     if not ns_records:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="dns",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="dns",
             severity="high",
             title="No NS records found",
             description=f"{domain} has no nameserver records.",
@@ -246,8 +246,8 @@ def _check_dns(session, domain) -> list:
     # MX records
     mx_records = _resolve(domain, "MX")
     if not mx_records:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="dns",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="dns",
             severity="medium",
             title="No MX records found",
             description=f"{domain} has no mail exchange records.",
@@ -262,8 +262,8 @@ def _check_dns(session, domain) -> list:
         has_dnssec = False
 
     if not has_dnssec:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="dns",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="dns",
             severity="medium",
             title="DNSSEC not enabled",
             description=f"{domain} does not have DNSSEC configured.",
@@ -306,8 +306,8 @@ def _check_spf(session, domain) -> list:
     spf_records = [r for r in txt_records if r.startswith("v=spf1")]
 
     if not spf_records:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="email",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
             severity="high",
             title="SPF record missing",
             description=f"{domain} has no SPF record. Anyone can spoof email from this domain.",
@@ -316,8 +316,8 @@ def _check_spf(session, domain) -> list:
     else:
         spf = spf_records[0]
         if "~all" in spf:
-            findings.append(DomainFinding(
-                session=session, domain=domain, check_type="email",
+            findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
                 severity="medium",
                 title="SPF policy is soft fail (~all)",
                 description="SPF is set to ~all (soft fail). Spoofed emails may still be delivered.",
@@ -325,8 +325,8 @@ def _check_spf(session, domain) -> list:
                 extra={"spf_record": spf},
             ))
         elif "+all" in spf:
-            findings.append(DomainFinding(
-                session=session, domain=domain, check_type="email",
+            findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
                 severity="critical",
                 title="SPF policy allows all senders (+all)",
                 description="SPF +all means any server can send email as this domain.",
@@ -343,8 +343,8 @@ def _check_dmarc(session, domain) -> list:
     dmarc = next((r for r in dmarc_records if r.startswith("v=DMARC1")), None)
 
     if not dmarc:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="email",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
             severity="high",
             title="DMARC record missing",
             description=f"{domain} has no DMARC record. Email spoofing is not prevented.",
@@ -352,8 +352,8 @@ def _check_dmarc(session, domain) -> list:
         ))
     else:
         if "p=none" in dmarc:
-            findings.append(DomainFinding(
-                session=session, domain=domain, check_type="email",
+            findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
                 severity="medium",
                 title="DMARC policy is none (monitoring only)",
                 description="DMARC p=none means no action is taken on failing emails.",
@@ -361,8 +361,8 @@ def _check_dmarc(session, domain) -> list:
                 extra={"dmarc_record": dmarc},
             ))
         elif "p=quarantine" in dmarc:
-            findings.append(DomainFinding(
-                session=session, domain=domain, check_type="email",
+            findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
                 severity="low",
                 title="DMARC policy is quarantine (not reject)",
                 description="DMARC p=quarantine sends failing emails to spam. p=reject is stronger.",
@@ -383,8 +383,8 @@ def _check_dkim(session, domain) -> list:
             break
 
     if not dkim_found:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="email",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
             severity="medium",
             title="DKIM record not found",
             description=f"No DKIM record found for common selectors on {domain}.",
@@ -401,8 +401,8 @@ def _check_mta_sts(session, domain) -> list:
     mta_sts = next((r for r in mta_sts_records if r.startswith("v=STSv1")), None)
 
     if not mta_sts:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="email",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
             severity="medium",
             title="MTA-STS not configured",
             description=(
@@ -418,8 +418,8 @@ def _check_mta_sts(session, domain) -> list:
         ))
     else:
         if "mode=testing" in mta_sts:
-            findings.append(DomainFinding(
-                session=session, domain=domain, check_type="email",
+            findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
                 severity="low",
                 title="MTA-STS is in testing mode",
                 description="MTA-STS mode=testing reports failures but does not enforce TLS.",
@@ -427,8 +427,8 @@ def _check_mta_sts(session, domain) -> list:
                 extra={"mta_sts_record": mta_sts},
             ))
         elif "mode=none" in mta_sts:
-            findings.append(DomainFinding(
-                session=session, domain=domain, check_type="email",
+            findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
                 severity="medium",
                 title="MTA-STS is in none mode (disabled)",
                 description="MTA-STS mode=none disables enforcement.",
@@ -446,8 +446,8 @@ def _check_tls_rpt(session, domain) -> list:
     has_tls_rpt = any(r.startswith("v=TLSRPTv1") for r in tls_rpt_records)
 
     if not has_tls_rpt:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="email",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
             severity="low",
             title="TLS-RPT not configured",
             description=(
@@ -470,8 +470,8 @@ def _check_bimi(session, domain) -> list:
     has_bimi = any(r.startswith("v=BIMI1") for r in bimi_records)
 
     if not has_bimi:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="email",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
             severity="info",
             title="BIMI not configured",
             description=(
@@ -559,8 +559,8 @@ def _check_rdap(session, domain) -> list:
         data = _fetch_rdap(domain)
     except Exception as e:
         logger.warning(f"[domain_security] All RDAP sources failed for {domain}: {e}")
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="rdap",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="rdap",
             severity="info",
             title="RDAP lookup failed",
             description=(
@@ -584,8 +584,8 @@ def _check_rdap(session, domain) -> list:
             extra = {"expiry_date": expiry_str, "days_left": days_left}
 
             if days_left <= 7:
-                findings.append(DomainFinding(
-                    session=session, domain=domain, check_type="rdap",
+                findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="rdap",
                     severity="critical",
                     title=f"Domain expires in {days_left} day(s)",
                     description=f"{domain} expires on {expiry.date()}. Immediate renewal required.",
@@ -593,8 +593,8 @@ def _check_rdap(session, domain) -> list:
                     extra=extra,
                 ))
             elif days_left <= 30:
-                findings.append(DomainFinding(
-                    session=session, domain=domain, check_type="rdap",
+                findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="rdap",
                     severity="high",
                     title=f"Domain expires in {days_left} days",
                     description=f"{domain} expires on {expiry.date()}.",
@@ -607,8 +607,8 @@ def _check_rdap(session, domain) -> list:
     # Transfer lock
     has_transfer_lock = any(s in {"client transfer prohibited", "server transfer prohibited"} for s in statuses)
     if not has_transfer_lock:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="rdap",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="rdap",
             severity="medium",
             title="Domain transfer lock not enabled",
             description=(
@@ -622,8 +622,8 @@ def _check_rdap(session, domain) -> list:
     # Delete lock
     has_delete_lock = any(s in {"client delete prohibited", "server delete prohibited"} for s in statuses)
     if not has_delete_lock:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="rdap",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="rdap",
             severity="medium",
             title="Domain delete lock not enabled",
             description=(
@@ -637,8 +637,8 @@ def _check_rdap(session, domain) -> list:
     # Update lock
     has_update_lock = any(s in {"client update prohibited", "server update prohibited"} for s in statuses)
     if not has_update_lock:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="rdap",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="rdap",
             severity="low",
             title="Domain update lock not enabled",
             description=(
@@ -651,8 +651,8 @@ def _check_rdap(session, domain) -> list:
 
     # Domain active status
     if "inactive" in statuses or "pending delete" in statuses:
-        findings.append(DomainFinding(
-            session=session, domain=domain, check_type="rdap",
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="rdap",
             severity="critical",
             title="Domain is inactive or pending deletion",
             description=f"{domain} status: {', '.join(statuses)}",
@@ -678,7 +678,7 @@ def run_domain_security(session) -> list:
     findings += _check_rdap(session, domain)
 
     if findings:
-        DomainFinding.objects.bulk_create(findings)
+        Finding.objects.bulk_create(findings)
 
     logger.info(f"[domain_security:{session.id}] {len(findings)} findings for {domain}")
     return findings
