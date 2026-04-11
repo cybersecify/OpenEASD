@@ -11,22 +11,26 @@
 
 <!-- Current State Cards -->
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-  <div class="bg-red-50 border border-red-200 rounded-lg px-5 py-4">
+  <a href="{% url 'finding-list' %}?severity=critical"
+     class="bg-red-50 border border-red-200 rounded-lg px-5 py-4 hover:bg-red-100 hover:border-red-300 transition-colors block">
     <p class="text-xs font-medium text-red-500 uppercase tracking-wide">Critical Now</p>
     <p class="text-3xl font-bold text-red-700 mt-1">{{ current_critical }}</p>
     <p class="text-xs text-red-400 mt-1">active findings</p>
-  </div>
-  <div class="bg-orange-50 border border-orange-200 rounded-lg px-5 py-4">
+  </a>
+  <a href="{% url 'finding-list' %}?severity=high"
+     class="bg-orange-50 border border-orange-200 rounded-lg px-5 py-4 hover:bg-orange-100 hover:border-orange-300 transition-colors block">
     <p class="text-xs font-medium text-orange-500 uppercase tracking-wide">High Now</p>
     <p class="text-3xl font-bold text-orange-600 mt-1">{{ current_high }}</p>
     <p class="text-xs text-orange-400 mt-1">active findings</p>
-  </div>
-  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+  </a>
+  <a href="{% url 'domain-list' %}"
+     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Domains</p>
     <p class="text-3xl font-bold text-gray-900 mt-1">{{ active_domain_count }}</p>
     <p class="text-xs text-gray-400 mt-1">monitored</p>
-  </div>
-  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+  </a>
+  <a href="{% url 'scan-list' %}?status=running"
+     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Scans Running</p>
     <p class="text-3xl font-bold text-gray-900 mt-1">{{ running_count }}</p>
     <p class="text-xs text-gray-400 mt-1">
@@ -38,31 +42,35 @@
       idle
       {% endif %}
     </p>
-  </div>
+  </a>
 </div>
 
 <!-- Discovery Summary -->
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+  <a href="{% url 'scan-list' %}#subdomains"
+     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Active Subdomains</p>
     <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.subdomains }}</p>
     <p class="text-xs text-gray-400 mt-1">discovered</p>
-  </div>
-  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+  </a>
+  <a href="{% url 'scan-list' %}#ips"
+     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Public IPs</p>
     <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.ips }}</p>
     <p class="text-xs text-gray-400 mt-1">resolved</p>
-  </div>
-  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+  </a>
+  <a href="{% url 'scan-list' %}#ports"
+     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Open Ports</p>
     <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.ports }}</p>
     <p class="text-xs text-gray-400 mt-1">across all hosts</p>
-  </div>
-  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+  </a>
+  <a href="{% url 'scan-list' %}#urls"
+     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Web URLs</p>
     <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.urls }}</p>
     <p class="text-xs text-gray-400 mt-1">live HTTP/HTTPS</p>
-  </div>
+  </a>
 </div>
 
 <!-- Domain Status -->
@@ -101,16 +109,24 @@
           {% endif %}
         </td>
         <td class="px-6 py-3 text-center text-sm font-semibold {% if item.summary.critical_count > 0 %}text-red-600{% else %}text-gray-300{% endif %}">
-          {{ item.summary.critical_count|default:"—" }}
+          {% if item.summary.critical_count > 0 and item.latest_session %}
+          <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=critical" class="hover:underline">{{ item.summary.critical_count }}</a>
+          {% else %}{{ item.summary.critical_count|default:"—" }}{% endif %}
         </td>
         <td class="px-6 py-3 text-center text-sm font-semibold {% if item.summary.high_count > 0 %}text-orange-500{% else %}text-gray-300{% endif %}">
-          {{ item.summary.high_count|default:"—" }}
+          {% if item.summary.high_count > 0 and item.latest_session %}
+          <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=high" class="hover:underline">{{ item.summary.high_count }}</a>
+          {% else %}{{ item.summary.high_count|default:"—" }}{% endif %}
         </td>
         <td class="px-6 py-3 text-center text-sm font-semibold {% if item.summary.medium_count > 0 %}text-yellow-600{% else %}text-gray-300{% endif %}">
-          {{ item.summary.medium_count|default:"—" }}
+          {% if item.summary.medium_count > 0 and item.latest_session %}
+          <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=medium" class="hover:underline">{{ item.summary.medium_count }}</a>
+          {% else %}{{ item.summary.medium_count|default:"—" }}{% endif %}
         </td>
         <td class="px-6 py-3 text-center text-sm font-semibold {% if item.summary.low_count > 0 %}text-blue-500{% else %}text-gray-300{% endif %}">
-          {{ item.summary.low_count|default:"—" }}
+          {% if item.summary.low_count > 0 and item.latest_session %}
+          <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=low" class="hover:underline">{{ item.summary.low_count }}</a>
+          {% else %}{{ item.summary.low_count|default:"—" }}{% endif %}
         </td>
         <td class="px-6 py-3 text-sm">
           {% if item.latest_session %}
