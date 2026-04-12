@@ -127,9 +127,14 @@ def _ensure_default_workflow():
         name="Full Scan", defaults={"is_default": True, "description": "Test default workflow"},
     )
     if created:
+        from apps.core.workflows.registry import get_registry
+        all_tools = list(get_registry().keys())
         tools = [
-            "domain_security", "subfinder", "dnsx", "naabu", "service_detection",
-            "httpx", "nmap", "tls_checker", "ssh_checker", "nuclei", "web_checker",
+            t for t in [
+                "domain_security", "subfinder", "dnsx", "naabu",
+                "httpx", "nmap", "tls_checker", "ssh_checker",
+                "nuclei", "nuclei_network", "web_checker",
+            ] if t in all_tools
         ]
         for order, tool in enumerate(tools, start=1):
             WorkflowStep.objects.create(workflow=wf, tool=tool, order=order, enabled=True)
@@ -411,6 +416,10 @@ class TestFullPipelineMocked:
             "httpx": httpx_records,
         }
 
+    @pytest.mark.skipif(
+        "apps.httpx" not in __import__("django.conf", fromlist=["settings"]).settings.INSTALLED_APPS,
+        reason="Web tools disabled"
+    )
     def test_full_pipeline_produces_correct_asset_graph(self, db):
         from apps.core.scans.models import ScanSession
         from apps.core.scans.pipeline import run_scan
@@ -450,6 +459,10 @@ class TestFullPipelineMocked:
         assert Port.objects.filter(session=session).count() == 3
         assert URL.objects.filter(session=session).count() == 2
 
+    @pytest.mark.skipif(
+        "apps.httpx" not in __import__("django.conf", fromlist=["settings"]).settings.INSTALLED_APPS,
+        reason="Web tools disabled"
+    )
     def test_full_pipeline_classifies_web_vs_non_web_correctly(self, db):
         from apps.core.scans.models import ScanSession
         from apps.core.scans.pipeline import run_scan
@@ -489,6 +502,10 @@ class TestFullPipelineMocked:
         # Non-web port: 1.2.3.4:22 (SSH)
         assert ("1.2.3.4", 22) not in web_pairs
 
+    @pytest.mark.skipif(
+        "apps.httpx" not in __import__("django.conf", fromlist=["settings"]).settings.INSTALLED_APPS,
+        reason="Web tools disabled"
+    )
     def test_full_pipeline_total_findings_includes_all_tools(self, db):
         from apps.core.scans.models import ScanSession
         from apps.core.scans.pipeline import run_scan

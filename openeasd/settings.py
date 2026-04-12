@@ -45,13 +45,14 @@ INSTALLED_APPS = [
     "apps.subfinder",
     "apps.dnsx",
     "apps.naabu",
-    "apps.httpx",
+    # Web tools — disabled for non-web focus (re-enable for full scan)
+    # "apps.httpx",
     "apps.nmap",
     "apps.tls_checker",
     "apps.ssh_checker",
-    "apps.nuclei",
+    # "apps.nuclei",
     "apps.nuclei_network",
-    "apps.web_checker",
+    # "apps.web_checker",
 ]
 
 MIDDLEWARE = [
