@@ -45,10 +45,18 @@ def dashboard(request):
         for s in ScanSession.objects.filter(id__in=latest_session_ids)
     }
 
+    # Latest completed session per domain (for asset counts — independent of latest session)
+    latest_completed_ids = list(
+        ScanSession.objects
+        .filter(domain__in=domain_names, status="completed")
+        .values("domain")
+        .annotate(latest_id=Max("id"))
+        .values_list("latest_id", flat=True)
+    )
+
     domain_status = []
     current_critical = 0
     current_high = 0
-    latest_completed_ids = []
 
     for domain in active_domains:
         summary = summaries.get(domain.name)
@@ -61,8 +69,6 @@ def dashboard(request):
         if summary:
             current_critical += summary.critical_count
             current_high += summary.high_count
-        if session and session.status == "completed":
-            latest_completed_ids.append(session.id)
 
     running_count = ScanSession.objects.filter(status__in=["pending", "running"]).count()
 
