@@ -680,9 +680,9 @@ class TestTlsCollector:
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
 
         port_443 = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
-                            port=443, protocol="tcp", state="open", service="https", source="naabu")
+                            port=443, protocol="tcp", state="open", service="https", is_web=True, source="naabu")
         port_80 = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
-                            port=80, protocol="tcp", state="open", service="http", source="naabu")
+                            port=80, protocol="tcp", state="open", service="http", is_web=True, source="naabu")
         Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
                             port=6379, protocol="tcp", state="open", service="redis", source="naabu")
         Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",

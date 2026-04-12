@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from apps.nmap.analyzer import _extract_vulns, _severity_from_cvss, analyze
-from apps.nmap.scanner import _web_pairs_for_session, run_nmap
+from apps.nmap.scanner import run_nmap
 
 
 # ---------------------------------------------------------------------------
@@ -221,87 +221,52 @@ class TestNmapAnalyzer:
 
 
 # ---------------------------------------------------------------------------
-# Web/non-web classification (CDN regression test)
+# Web/non-web classification via Port.is_web
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
-class TestWebPairsClassification:
-    """Regression tests for the Cloudflare CDN classification fix."""
+class TestWebClassification:
+    """Tests that nmap only scans ports with is_web=False."""
 
-    def test_subdomain_with_one_ip_one_url_marks_pair_as_web(self):
+    def test_nmap_skips_web_ports(self):
         from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, IPAddress, URL
+        from apps.core.assets.models import IPAddress, Port
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
-        sub = Subdomain.objects.create(
-            session=sess, domain="example.com", subdomain="www.example.com", source="subfinder"
-        )
-        IPAddress.objects.create(session=sess, subdomain=sub, address="1.2.3.4", version=4, source="dnsx")
-        URL.objects.create(
-            session=sess, subdomain=sub, url="http://www.example.com:80",
-            host="www.example.com", port_number=80, source="httpx",
-        )
-        pairs = _web_pairs_for_session(sess)
-        assert ("1.2.3.4", 80) in pairs
+        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                            port=80, protocol="tcp", state="open", is_web=True, source="naabu")
+        Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                            port=22, protocol="tcp", state="open", is_web=False, source="naabu")
 
-    def test_cdn_one_hostname_multiple_ips_all_marked_web(self):
-        """The Cloudflare bug: 1 hostname → 2 IPs, only 1 probed by httpx,
-        but BOTH IPs should be classified as web."""
+        with patch("apps.nmap.scanner.collect", return_value={}) as mock_collect:
+            run_nmap(sess)
+
+        # Only port 22 should be scanned (non-web)
+        if mock_collect.called:
+            ip_to_ports = mock_collect.call_args[0][1]
+            ports = ip_to_ports.get("1.2.3.4", [])
+            assert 80 not in ports
+            assert 22 in ports
+
+    def test_nmap_skips_when_all_web(self):
         from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, IPAddress, URL
+        from apps.core.assets.models import IPAddress, Port
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
-        sub = Subdomain.objects.create(
-            session=sess, domain="example.com", subdomain="cdn.example.com", source="subfinder"
-        )
-        # Subdomain resolves to two Cloudflare IPs
-        IPAddress.objects.create(session=sess, subdomain=sub, address="104.21.38.252", version=4, source="dnsx")
-        IPAddress.objects.create(session=sess, subdomain=sub, address="172.67.141.152", version=4, source="dnsx")
-        # httpx confirmed via the hostname (only one URL record)
-        URL.objects.create(
-            session=sess, subdomain=sub, url="https://cdn.example.com:443",
-            host="cdn.example.com", port_number=443, source="httpx",
-        )
+        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                            port=80, protocol="tcp", state="open", is_web=True, source="naabu")
+        Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                            port=443, protocol="tcp", state="open", is_web=True, source="naabu")
 
-        pairs = _web_pairs_for_session(sess)
-        # BOTH IPs on port 443 must be marked web
-        assert ("104.21.38.252", 443) in pairs
-        assert ("172.67.141.152", 443) in pairs
+        findings = run_nmap(sess)
+        assert findings == []
 
-    def test_url_with_no_subdomain_links_via_host_field(self):
-        """Direct IP probes (no hostname) still work via the URL.host field."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import URL
-
-        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
-        URL.objects.create(
-            session=sess, subdomain=None, url="http://1.2.3.4:8080",
-            host="1.2.3.4", port_number=8080, source="httpx",
-        )
-        pairs = _web_pairs_for_session(sess)
-        assert ("1.2.3.4", 8080) in pairs
-
-    def test_unrelated_ports_are_not_web(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, IPAddress, URL
-
-        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
-        sub = Subdomain.objects.create(
-            session=sess, domain="example.com", subdomain="www.example.com", source="subfinder"
-        )
-        IPAddress.objects.create(session=sess, subdomain=sub, address="1.2.3.4", version=4, source="dnsx")
-        URL.objects.create(
-            session=sess, subdomain=sub, url="http://www.example.com:80",
-            host="www.example.com", port_number=80, source="httpx",
-        )
-        pairs = _web_pairs_for_session(sess)
-        # Port 22 on the same IP is NOT web
-        assert ("1.2.3.4", 22) not in pairs
-
-    def test_empty_session_returns_empty_set(self):
+    def test_empty_session(self):
         from apps.core.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
-        assert _web_pairs_for_session(sess) == set()
+        assert run_nmap(sess) == []
 
 
 # ---------------------------------------------------------------------------
@@ -316,29 +281,21 @@ class TestNmapScanner:
         findings = run_nmap(sess)
         assert findings == []
 
-    def test_run_nmap_excludes_web_ports_via_classification(self):
-        """nmap should skip ports that httpx classified as web."""
+    def test_run_nmap_excludes_web_ports_via_is_web(self):
+        """nmap should skip ports with is_web=True."""
         from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, IPAddress, Port, URL
+        from apps.core.assets.models import IPAddress, Port
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
-        sub = Subdomain.objects.create(
-            session=sess, domain="example.com", subdomain="www.example.com", source="subfinder"
-        )
-        ip = IPAddress.objects.create(session=sess, subdomain=sub, address="1.2.3.4", version=4, source="dnsx")
-        # Two ports — 80 (web) and 22 (non-web)
-        Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4", port=80, protocol="tcp", state="open", source="naabu")
-        Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4", port=22, protocol="tcp", state="open", source="naabu")
-        # httpx confirmed port 80 as web
-        URL.objects.create(
-            session=sess, subdomain=sub, url="http://www.example.com:80",
-            host="www.example.com", port_number=80, source="httpx",
-        )
+        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                            port=80, protocol="tcp", state="open", is_web=True, source="naabu")
+        Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                            port=22, protocol="tcp", state="open", is_web=False, source="naabu")
 
         with patch("apps.nmap.scanner.collect", return_value={}) as mock_collect:
             run_nmap(sess)
 
-        # collect() should be called with only non-web ports (22)
-        called_with = mock_collect.call_args[0][1]  # second arg = ip_to_ports
+        called_with = mock_collect.call_args[0][1]
         assert "1.2.3.4" in called_with
-        assert called_with["1.2.3.4"] == [22]  # NOT [80, 22]
+        assert called_with["1.2.3.4"] == [22]

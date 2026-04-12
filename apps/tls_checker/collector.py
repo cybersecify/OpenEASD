@@ -400,13 +400,11 @@ def collect(session) -> list[dict]:
     if not open_ports:
         return []
 
-    # Build (IP, port_number) → (scheme, URL obj) from httpx phase.
-    # URL.host is a hostname (e.g. "www.example.com") but Port.address is an IP,
-    # so we join via the URL → Port FK to get the IP address for matching.
-    web_port_map: dict[tuple[str, int], tuple[str, object]] = {}
+    # Build port_id → URL obj for web ports (need scheme + hostname for HSTS/SAN)
+    url_by_port: dict[int, object] = {}
     for url in URL.objects.filter(session=session).select_related("port"):
-        if url.port and url.port.address and url.port.port:
-            web_port_map[(url.port.address, url.port.port)] = (url.scheme, url)
+        if url.port_id:
+            url_by_port[url.port_id] = url
 
     _tls_empty = {
         "tls_version": "", "cipher_name": "", "cipher_bits": 0,
@@ -424,10 +422,10 @@ def collect(session) -> list[dict]:
         ip = p.address
         port_num = p.port
         service = (p.service or "").lower()
-        web_entry = web_port_map.get((ip, port_num))
 
-        if web_entry is not None:
-            scheme, url_obj = web_entry
+        if p.is_web:
+            url_obj = url_by_port.get(p.id)
+            scheme = url_obj.scheme if url_obj else ""
             has_tls = scheme == "https"
             tls_detail: dict = _tls_empty.copy()
 

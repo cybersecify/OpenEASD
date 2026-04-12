@@ -44,6 +44,7 @@ class Port(models.Model):
     state = models.CharField(max_length=20, default='open')
     service = models.CharField(max_length=100, blank=True)
     version = models.CharField(max_length=200, blank=True)
+    is_web = models.BooleanField(default=False)
     source = models.CharField(max_length=50)
     discovered_at = models.DateTimeField(auto_now_add=True)
 

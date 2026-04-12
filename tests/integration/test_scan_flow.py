@@ -450,7 +450,6 @@ class TestFullPipelineMocked:
         from apps.core.scans.models import ScanSession
         from apps.core.scans.pipeline import run_scan
         from apps.core.assets.models import Port
-        from apps.nmap.scanner import _web_pairs_for_session
 
         wf = _ensure_default_workflow()
         session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending", workflow=wf)
@@ -474,11 +473,12 @@ class TestFullPipelineMocked:
             mdns.resolver.resolve.side_effect = Exception("no DNSKEY")
             run_scan(session.id)
 
-        web_pairs = _web_pairs_for_session(session)
-        # Web ports: 1.2.3.4:80, 5.6.7.8:443
+        # Web ports (httpx sets is_web=True): 1.2.3.4:80, 5.6.7.8:443
+        web_ports = Port.objects.filter(session=session, is_web=True)
+        web_pairs = {(p.address, p.port) for p in web_ports}
         assert ("1.2.3.4", 80) in web_pairs
         assert ("5.6.7.8", 443) in web_pairs
-        # Non-web ports: 1.2.3.4:22 (SSH)
+        # Non-web port: 1.2.3.4:22 (SSH)
         assert ("1.2.3.4", 22) not in web_pairs
 
         # Verify nmap would only target the SSH port
