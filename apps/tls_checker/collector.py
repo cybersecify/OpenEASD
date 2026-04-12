@@ -398,7 +398,7 @@ def collect(session) -> list[dict]:
     from apps.core.web_assets.models import URL
 
     open_ports = list(
-        Port.objects.filter(session=session, state="open")
+        Port.objects.filter(session=session, state="open", is_web=False)
         .select_related("ip_address__subdomain")
     )
     if not open_ports:

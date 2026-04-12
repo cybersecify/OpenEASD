@@ -700,6 +700,10 @@ class TestTlsCollector:
                            host="www.example.com", port_number=80, scheme="http", source="httpx")
         return sess
 
+    @pytest.mark.skipif(
+        "apps.httpx" not in __import__("django.conf", fromlist=["settings"]).settings.INSTALLED_APPS,
+        reason="Web tools disabled — TLS checker skips web ports"
+    )
     def test_https_web_port_no_probe(self):
         sess = self._make_session()
         with patch("apps.tls_checker.collector._probe_tls") as mock_probe:
@@ -711,6 +715,10 @@ class TestTlsCollector:
         assert https_result["is_web"] is True
         assert not any(c.args[:2] == ("1.2.3.4", 443) for c in mock_probe.call_args_list)
 
+    @pytest.mark.skipif(
+        "apps.httpx" not in __import__("django.conf", fromlist=["settings"]).settings.INSTALLED_APPS,
+        reason="Web tools disabled — TLS checker skips web ports"
+    )
     def test_http_web_port_has_tls_false(self):
         sess = self._make_session()
         with patch("apps.tls_checker.collector._probe_tls"):
