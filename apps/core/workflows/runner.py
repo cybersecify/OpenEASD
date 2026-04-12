@@ -72,7 +72,11 @@ def run_workflow(workflow_run_id: int):
             step_result.finished_at = django_tz.now()
             step_result.save(update_fields=["status", "findings_count", "error", "finished_at"])
 
-        run.status = "completed"
+        # Check if any step failed — mark as partial failure
+        if WorkflowStepResult.objects.filter(run=run, status="failed").exists():
+            run.status = "partial"
+        else:
+            run.status = "completed"
 
     except Exception as exc:
         logger.error(f"[workflow:{run.id}] Run failed: {exc}", exc_info=True)

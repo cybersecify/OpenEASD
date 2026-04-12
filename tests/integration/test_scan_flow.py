@@ -120,8 +120,24 @@ class TestDomainSecurityScanFlow:
         assert db_count > 0
 
 
+def _ensure_default_workflow():
+    """Create the default Full Scan workflow (data migration doesn't run in test DBs)."""
+    from apps.core.workflows.models import Workflow, WorkflowStep
+    wf, created = Workflow.objects.get_or_create(
+        name="Full Scan", defaults={"is_default": True, "description": "Test default workflow"},
+    )
+    if created:
+        tools = [
+            "domain_security", "subfinder", "dnsx", "naabu", "httpx",
+            "nmap", "tls_checker", "ssh_checker", "nuclei", "web_checker",
+        ]
+        for order, tool in enumerate(tools, start=1):
+            WorkflowStep.objects.create(workflow=wf, tool=tool, order=order, enabled=True)
+    return wf
+
+
 def _patch_all_tool_collectors():
-    """Patch phases 2-7 tool collectors to return empty data (no binaries needed)."""
+    """Patch all tool collectors to return empty data (no binaries needed)."""
     from contextlib import ExitStack
     stack = ExitStack()
     stack.enter_context(patch("apps.subfinder.scanner.collect", return_value=[]))
@@ -144,7 +160,8 @@ class TestFullScanPipeline:
         from apps.core.scans.models import ScanSession
         from apps.core.scans.pipeline import run_scan
 
-        session = ScanSession.objects.create(domain="pipeline.com", scan_type="full", status="pending")
+        wf = _ensure_default_workflow()
+        session = ScanSession.objects.create(domain="pipeline.com", scan_type="full", status="pending", workflow=wf)
 
         def mock_resolve(domain, record_type):
             return ["1.2.3.4"] if record_type in ("A", "NS", "MX") else []
@@ -183,7 +200,8 @@ class TestFullScanPipeline:
         from apps.core.scans.pipeline import run_scan
         from apps.core.insights.models import ScanSummary
 
-        session = ScanSession.objects.create(domain="insights-test.com", scan_type="full", status="pending")
+        wf = _ensure_default_workflow()
+        session = ScanSession.objects.create(domain="insights-test.com", scan_type="full", status="pending", workflow=wf)
 
         def mock_resolve(domain, record_type):
             return ["1.2.3.4"] if record_type in ("A", "NS") else []  # missing MX
@@ -239,7 +257,8 @@ class TestFullScanPipeline:
             return mock_resolve, mock_txt, mock_rdap
 
         # First scan — no SPF/DMARC
-        s1 = ScanSession.objects.create(domain="delta.com", scan_type="full", status="pending")
+        wf = _ensure_default_workflow()
+        s1 = ScanSession.objects.create(domain="delta.com", scan_type="full", status="pending", workflow=wf)
         mr, mt, mrdap = make_mocks()
         with _patch_all_tool_collectors(), \
              patch("apps.domain_security.scanner._resolve", side_effect=mr), \
@@ -252,7 +271,7 @@ class TestFullScanPipeline:
             run_scan(s1.id)
 
         # Second scan — same config (findings should be the same, delta = 0 new)
-        s2 = ScanSession.objects.create(domain="delta.com", scan_type="full", status="pending")
+        s2 = ScanSession.objects.create(domain="delta.com", scan_type="full", status="pending", workflow=wf)
         mr2, mt2, mrdap2 = make_mocks()
         with _patch_all_tool_collectors(), \
              patch("apps.domain_security.scanner._resolve", side_effect=mr2), \
@@ -395,7 +414,8 @@ class TestFullPipelineMocked:
         from apps.core.scans.pipeline import run_scan
         from apps.core.assets.models import Subdomain, IPAddress, Port, URL
 
-        session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending")
+        wf = _ensure_default_workflow()
+        session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending", workflow=wf)
         m = self._mock_all_tools()
 
         with patch("apps.domain_security.scanner._resolve", side_effect=m["resolve"]), \
@@ -432,7 +452,8 @@ class TestFullPipelineMocked:
         from apps.core.assets.models import Port
         from apps.nmap.scanner import _web_pairs_for_session
 
-        session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending")
+        wf = _ensure_default_workflow()
+        session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending", workflow=wf)
         m = self._mock_all_tools()
 
         with patch("apps.domain_security.scanner._resolve", side_effect=m["resolve"]), \
@@ -470,7 +491,8 @@ class TestFullPipelineMocked:
         from apps.core.scans.pipeline import run_scan
         from apps.core.insights.models import ScanSummary
 
-        session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending")
+        wf = _ensure_default_workflow()
+        session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending", workflow=wf)
         m = self._mock_all_tools()
 
         with patch("apps.domain_security.scanner._resolve", side_effect=m["resolve"]), \

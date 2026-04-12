@@ -1,18 +1,22 @@
 """
 Scan orchestration for OpenEASD.
 
-Phases:
+All scans run through the workflow system — tools are defined as WorkflowSteps
+in the database and executed dynamically by apps.core.workflows.runner.
+
+The default "Full Scan" workflow runs all tools in order:
   1. Domain security (DNS, email, RDAP)
   2. Subfinder (passive subdomain enumeration)
   3. DNSx (DNS resolution, public IP filtering)
   4. Naabu (port scanning)
   5. HTTPx (web probe, URL discovery)
-  6a. Nmap (NSE vulners on non-web ports)
-  6b. TLS checker (all open ports)
-  6c. SSH checker (SSH ports)
-  7a. Nuclei (web vulnerability scanning on URLs)
-  7b. Web checker (security headers, cookies, CORS, disclosure)
-  Then: finalise session, delta detection, insights, alerts.
+  6. Nmap (NSE vulners on non-web ports)
+  7. TLS checker (all open ports)
+  8. SSH checker (SSH ports)
+  9. Nuclei (web vulnerability scanning on URLs)
+  10. Web checker (security headers, cookies, CORS, disclosure)
+
+After tools complete: finalise session, delta detection, insights, alerts.
 """
 
 import logging
@@ -74,6 +78,28 @@ def _count_all_findings(session) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Post-scan finalisation
+# ---------------------------------------------------------------------------
+
+def _finalize_session(session):
+    """Post-scan: count findings, mark completed, detect deltas, build insights, dispatch alerts."""
+    session_id = session.id
+    total = _count_all_findings(session)
+    session.total_findings = total
+    session.status = "completed"
+    session.end_time = django_tz.now()
+    session.save(update_fields=["total_findings", "status", "end_time"])
+    logger.info(f"[scan:{session_id}] Completed — {total} findings")
+
+    _detect_deltas(session)
+
+    from apps.core.insights.builder import build_insights
+    build_insights(session)
+
+    _dispatch_alerts(session)
+
+
+# ---------------------------------------------------------------------------
 # Concurrency guard
 # ---------------------------------------------------------------------------
 
@@ -84,12 +110,18 @@ def _is_scan_active(domain: str) -> bool:
     ).exists()
 
 
-def create_scan_session(domain: str, triggered_by: str = "manual") -> "ScanSession | None":
+def create_scan_session(domain: str, triggered_by: str = "manual", workflow=None) -> "ScanSession | None":
     """
     Atomically create a scan session if no active scan exists for the domain.
     Returns the new ScanSession or None if a scan is already active.
-    Uses SELECT FOR UPDATE to prevent race conditions between concurrent requests.
+
+    If no workflow is specified, the default workflow is auto-assigned so all
+    scans run through the dynamic workflow runner.
     """
+    if workflow is None:
+        from apps.core.workflows.models import Workflow
+        workflow = Workflow.objects.filter(is_default=True).first()
+
     try:
         with transaction.atomic():
             active = (
@@ -100,15 +132,15 @@ def create_scan_session(domain: str, triggered_by: str = "manual") -> "ScanSessi
             )
             if active:
                 return None
-            return ScanSession.objects.create(domain=domain, scan_type="full", status="pending", triggered_by=triggered_by)
+            return ScanSession.objects.create(
+                domain=domain, scan_type="full", status="pending",
+                triggered_by=triggered_by, workflow=workflow,
+            )
     except DatabaseError:
-        # SQLite write lock was held by another transaction (transient contention).
-        # Fall back to a plain read to check if a scan is genuinely active.
         if _is_scan_active(domain):
             logger.info(f"[create_scan_session] Scan already active for {domain} (confirmed via fallback read)")
             return None
         logger.warning(f"[create_scan_session] Transient lock contention for {domain} — retrying once")
-        # Retry once without nowait; if it fails again we give up.
         try:
             with transaction.atomic():
                 active = (
@@ -119,7 +151,10 @@ def create_scan_session(domain: str, triggered_by: str = "manual") -> "ScanSessi
                 )
                 if active:
                     return None
-                return ScanSession.objects.create(domain=domain, scan_type="full", status="pending", triggered_by=triggered_by)
+                return ScanSession.objects.create(
+                    domain=domain, scan_type="full", status="pending",
+                    triggered_by=triggered_by, workflow=workflow,
+                )
         except DatabaseError:
             logger.error(f"[create_scan_session] Retry failed for {domain} — skipping scan")
             return None
@@ -130,123 +165,15 @@ def create_scan_session(domain: str, triggered_by: str = "manual") -> "ScanSessi
 # ---------------------------------------------------------------------------
 
 def run_scan(session_id: int):
+    """Execute a scan session via its attached workflow, then finalise."""
     session = ScanSession.objects.select_related("workflow").get(id=session_id)
-    domain = session.domain
-
     session.status = "running"
     session.save(update_fields=["status"])
-    logger.info(f"[scan:{session_id}] Starting scan for {domain}")
-
-    # If a workflow is attached, delegate to workflow runner
-    if session.workflow_id:
-        _run_via_workflow(session)
-        return
+    logger.info(f"[scan:{session_id}] Starting scan for {session.domain}")
 
     try:
-        # Phase 1: Apex domain security
-        logger.info(f"[scan:{session_id}] Phase 1: domain security")
-        from apps.domain_security.scanner import run_domain_security
-        run_domain_security(session)
-
-        # Phase 2: Subdomain discovery
-        logger.info(f"[scan:{session_id}] Phase 2: subdomain discovery")
-        try:
-            from apps.subfinder.scanner import run_subfinder
-            subdomains = run_subfinder(session)
-            logger.info(f"[scan:{session_id}] Discovered {len(subdomains)} subdomains")
-        except Exception as e:
-            logger.error(f"[scan:{session_id}] Subfinder failed: {e}", exc_info=True)
-
-        # Phase 3: DNS resolution + public IP filtering
-        logger.info(f"[scan:{session_id}] Phase 3: dnsx resolution")
-        try:
-            from apps.dnsx.scanner import run_dnsx
-            active = run_dnsx(session)
-            logger.info(f"[scan:{session_id}] Active subdomains: {len(active)}")
-        except Exception as e:
-            logger.error(f"[scan:{session_id}] dnsx failed: {e}", exc_info=True)
-
-        # Phase 4: Port scan (top 100 TCP) on public IPs
-        logger.info(f"[scan:{session_id}] Phase 4: naabu port scan")
-        try:
-            from apps.naabu.scanner import run_naabu
-            ports = run_naabu(session)
-            logger.info(f"[scan:{session_id}] Open ports: {len(ports)}")
-        except Exception as e:
-            logger.error(f"[scan:{session_id}] naabu failed: {e}", exc_info=True)
-
-        # Phase 5: HTTPx web/non-web classification
-        logger.info(f"[scan:{session_id}] Phase 5: httpx web probe")
-        try:
-            from apps.httpx.scanner import run_httpx
-            urls = run_httpx(session)
-            logger.info(f"[scan:{session_id}] Web URLs: {len(urls)}")
-        except Exception as e:
-            logger.error(f"[scan:{session_id}] httpx failed: {e}", exc_info=True)
-
-        # Phase 6a: Nmap NSE vulners on non-web ports (Ports without URL records)
-        logger.info(f"[scan:{session_id}] Phase 6a: nmap NSE vulners")
-        try:
-            from apps.nmap.scanner import run_nmap
-            nmap_findings = run_nmap(session)
-            logger.info(f"[scan:{session_id}] Nmap CVE findings: {len(nmap_findings)}")
-        except Exception as e:
-            logger.error(f"[scan:{session_id}] nmap failed: {e}", exc_info=True)
-
-        # Phase 6b: TLS checker on all open ports
-        logger.info(f"[scan:{session_id}] Phase 6b: TLS checker")
-        try:
-            from apps.tls_checker.scanner import run_tls_check
-            tls_findings = run_tls_check(session)
-            logger.info(f"[scan:{session_id}] TLS findings: {len(tls_findings)}")
-        except Exception as e:
-            logger.error(f"[scan:{session_id}] tls_checker failed: {e}", exc_info=True)
-
-        # Phase 6c: SSH checker on SSH ports
-        logger.info(f"[scan:{session_id}] Phase 6c: SSH checker")
-        try:
-            from apps.ssh_checker.scanner import run_ssh_check
-            ssh_findings = run_ssh_check(session)
-            logger.info(f"[scan:{session_id}] SSH findings: {len(ssh_findings)}")
-        except Exception as e:
-            logger.error(f"[scan:{session_id}] ssh_checker failed: {e}", exc_info=True)
-
-        # Phase 7a: Nuclei web vulnerability scan on URLs
-        logger.info(f"[scan:{session_id}] Phase 7a: nuclei web vuln scan")
-        try:
-            from apps.nuclei.scanner import run_nuclei
-            nuclei_findings = run_nuclei(session)
-            logger.info(f"[scan:{session_id}] Nuclei findings: {len(nuclei_findings)}")
-        except Exception as e:
-            logger.error(f"[scan:{session_id}] nuclei failed: {e}", exc_info=True)
-
-        # Phase 7b: Web checker (security headers, cookies, CORS)
-        logger.info(f"[scan:{session_id}] Phase 7b: web checker")
-        try:
-            from apps.web_checker.scanner import run_web_check
-            web_findings = run_web_check(session)
-            logger.info(f"[scan:{session_id}] Web checker findings: {len(web_findings)}")
-        except Exception as e:
-            logger.error(f"[scan:{session_id}] web_checker failed: {e}", exc_info=True)
-
-        # Finalise session
-        total = _count_all_findings(session)
-        session.total_findings = total
-        session.status = "completed"
-        session.end_time = django_tz.now()
-        session.save(update_fields=["total_findings", "status", "end_time"])
-        logger.info(f"[scan:{session_id}] Completed — {total} findings")
-
-        # Phase 3: Delta detection
-        _detect_deltas(session)
-
-        # Phase 4: Build insights
-        from apps.core.insights.builder import build_insights
-        build_insights(session)
-
-        # Phase 5: Alerts
-        _dispatch_alerts(session)
-
+        _run_via_workflow(session)
+        _finalize_session(session)
     except Exception as exc:
         logger.error(f"[scan:{session_id}] Scan failed: {exc}", exc_info=True)
         session.status = "failed"
@@ -255,32 +182,18 @@ def run_scan(session_id: int):
 
 
 def _run_via_workflow(session):
-    """Run scan using a Workflow definition, then finalise the session."""
-    session_id = session.id
+    """Run scan using the session's Workflow definition."""
     from apps.core.workflows.models import WorkflowRun
     from apps.core.workflows.runner import run_workflow
 
+    if not session.workflow_id:
+        raise RuntimeError(
+            f"Session {session.id} has no workflow assigned. "
+            f"Ensure a default workflow exists (run migrations)."
+        )
+
     run = WorkflowRun.objects.create(workflow=session.workflow, session=session)
-    try:
-        run_workflow(run.id)
-
-        total = _count_all_findings(session)
-        session.total_findings = total
-        session.status = "completed" if run.status == "completed" else "failed"
-        session.end_time = django_tz.now()
-        session.save(update_fields=["total_findings", "status", "end_time"])
-
-        if session.status == "completed":
-            _detect_deltas(session)
-            from apps.core.insights.builder import build_insights
-            build_insights(session)
-            _dispatch_alerts(session)
-
-    except Exception as exc:
-        logger.error(f"[scan:{session_id}] Workflow run failed: {exc}", exc_info=True)
-        session.status = "failed"
-        session.end_time = django_tz.now()
-        session.save(update_fields=["status", "end_time"])
+    run_workflow(run.id)
 
 
 # ---------------------------------------------------------------------------
