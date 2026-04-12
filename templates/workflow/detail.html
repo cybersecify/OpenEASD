@@ -12,11 +12,18 @@
     </h1>
     {% if workflow.description %}<p class="text-gray-500 text-sm mt-1">{{ workflow.description }}</p>{% endif %}
   </div>
-  <form method="post" action="{% url 'workflow-delete' workflow.pk %}"
-        onsubmit="return confirm('Delete this workflow?')">
-    {% csrf_token %}
-    <button class="text-sm text-red-600 hover:underline">Delete</button>
-  </form>
+  {% if not workflow.is_default %}
+  <div x-data="{ confirmDelete: false }">
+    <button @click="confirmDelete = true" x-show="!confirmDelete" class="text-sm text-red-600 hover:underline">Delete</button>
+    <div x-show="confirmDelete" x-cloak class="flex items-center gap-3">
+      <button @click="confirmDelete = false" class="text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+      <form method="post" action="{% url 'workflow-delete' workflow.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700">Yes, delete</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -29,7 +29,7 @@
     </thead>
     <tbody class="divide-y divide-gray-100">
       {% for job in scheduled %}
-      <tr class="hover:bg-gray-50">
+      <tr class="hover:bg-gray-50" x-data="{ confirmCancel: false }">
         <td class="px-6 py-3 text-sm font-mono font-medium text-gray-900">{{ job.domain }}</td>
         <td class="px-6 py-3 text-sm">
           {% if job.job_type == "recurring" %}
@@ -43,11 +43,21 @@
         </td>
         <td class="px-6 py-3 text-sm text-gray-500">{{ job.frequency }}</td>
         <td class="px-6 py-3 text-right">
-          <form method="post" action="{% url 'cancel-scheduled-job' job.job_id %}"
-                onsubmit="return confirm('Cancel scheduled scan for {{ job.domain }}?')">
-            {% csrf_token %}
-            <button type="submit" class="text-red-500 hover:text-red-700 text-sm">Cancel</button>
-          </form>
+          <button @click="confirmCancel = true" x-show="!confirmCancel" class="text-red-500 hover:text-red-700 text-sm">Cancel</button>
+        </td>
+      </tr>
+      <tr x-show="confirmCancel" x-cloak class="bg-red-50">
+        <td colspan="5" class="px-6 py-3">
+          <div class="flex items-center justify-between">
+            <p class="text-sm text-red-700">Cancel scheduled scan for <span class="font-bold">{{ job.domain }}</span>?</p>
+            <div class="flex items-center gap-3">
+              <button @click="confirmCancel = false" class="text-sm text-gray-600 hover:text-gray-800">No, keep</button>
+              <form method="post" action="{% url 'cancel-scheduled-job' job.job_id %}">
+                {% csrf_token %}
+                <button type="submit" class="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700">Yes, cancel</button>
+              </form>
+            </div>
+          </div>
         </td>
       </tr>
       {% endfor %}
