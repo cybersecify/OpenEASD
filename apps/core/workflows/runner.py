@@ -49,6 +49,16 @@ def run_workflow(workflow_run_id: int):
                 status="running",
                 started_at=django_tz.now(),
             )
+            # Check if scan was cancelled between steps
+            session.refresh_from_db(fields=["status"])
+            if session.status == "cancelled":
+                logger.info(f"[workflow:{run.id}] Scan cancelled — stopping at step {order}")
+                step_result.status = "skipped"
+                step_result.finished_at = django_tz.now()
+                step_result.save(update_fields=["status", "finished_at"])
+                # Skip remaining steps
+                break
+
             logger.info(f"[workflow:{run.id}] Running step {order}/{len(tools)}: {tool}")
 
             try:

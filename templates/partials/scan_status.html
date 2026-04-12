@@ -11,10 +11,19 @@
         {% include "partials/status_badge.html" with status=session.status large=True %}
         {% if session.status == "running" %}
         <span class="text-gray-500 text-sm animate-pulse">Scanning in progress...</span>
+        {% elif session.status == "cancelled" %}
+        <span class="text-gray-500 text-sm">Scan cancelled</span>
         {% endif %}
       </div>
-      {% if session.end_time %}
-      <span class="text-gray-400 text-sm">Completed {{ session.end_time|date:"M d, Y H:i" }}</span>
+      {% if session.status == "running" or session.status == "pending" %}
+      <form method="post" action="{% url 'scan-stop' session.uuid %}">
+        {% csrf_token %}
+        <button type="submit" class="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-300 rounded-md hover:bg-red-50 transition-colors">
+          Stop Scan
+        </button>
+      </form>
+      {% elif session.end_time %}
+      <span class="text-gray-400 text-sm">{{ session.end_time|date:"M d, Y H:i" }}</span>
       {% endif %}
     </div>
 

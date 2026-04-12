@@ -13,6 +13,7 @@ class ScanSession(models.Model):
         ("pending", "Pending"),
         ("running", "Running"),
         ("completed", "Completed"),
+        ("cancelled", "Cancelled"),
         ("failed", "Failed"),
     ]
     TRIGGERED_BY_CHOICES = [

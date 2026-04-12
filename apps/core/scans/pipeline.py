@@ -170,6 +170,10 @@ def run_scan(session_id: int):
 
     try:
         _run_via_workflow(session)
+        session.refresh_from_db(fields=["status"])
+        if session.status == "cancelled":
+            logger.info(f"[scan:{session_id}] Scan was cancelled — skipping finalization")
+            return
         _finalize_session(session)
     except Exception as exc:
         logger.error(f"[scan:{session_id}] Scan failed: {exc}", exc_info=True)

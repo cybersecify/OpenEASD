@@ -254,6 +254,20 @@ def scan_status_fragment(request, session_uuid):
     return response
 
 
+@login_required
+@require_http_methods(["POST"])
+def scan_stop(request, session_uuid):
+    """Cancel a running scan. The workflow runner checks for this between steps."""
+    session = get_object_or_404(ScanSession, uuid=session_uuid)
+    if session.status in ("pending", "running"):
+        from django.utils import timezone as django_tz
+        session.status = "cancelled"
+        session.end_time = django_tz.now()
+        session.save(update_fields=["status", "end_time"])
+        logger.info(f"Scan cancelled: session={session.id} domain={session.domain}")
+    return redirect("scan-detail", session_uuid=session.uuid)
+
+
 def _describe_cron_trigger(trigger):
     try:
         for field in trigger.fields:
