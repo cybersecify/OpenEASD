@@ -24,6 +24,7 @@ _TOOL_RUNNERS = {
     "tls_checker": ("apps.tls_checker.scanner", "run_tls_check"),
     "ssh_checker": ("apps.ssh_checker.scanner", "run_ssh_check"),
     "nuclei": ("apps.nuclei.scanner", "run_nuclei"),
+    "web_checker": ("apps.web_checker.scanner", "run_web_check"),
 }
 
 

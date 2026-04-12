@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "apps.tls_checker",
     "apps.ssh_checker",
     "apps.nuclei",
+    "apps.web_checker",
 ]
 
 MIDDLEWARE = [

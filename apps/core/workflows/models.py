@@ -11,6 +11,7 @@ TOOL_CHOICES = [
     ("tls_checker", "TLS Checker"),
     ("ssh_checker", "SSH Checker"),
     ("nuclei", "Nuclei (Web Vuln Scan)"),
+    ("web_checker", "Web Checker"),
 ]
 
 # Execution order within a phase — enforced by runner
@@ -24,6 +25,7 @@ TOOL_PHASE = {
     "tls_checker": 6,
     "ssh_checker": 6,
     "nuclei": 7,
+    "web_checker": 7,
 }
 
 

@@ -15,6 +15,7 @@ SOURCE_CHOICES = [
     ("tls_checker", "TLS Checker"),
     ("ssh_checker", "SSH Checker"),
     ("nuclei", "Nuclei"),
+    ("web_checker", "Web Checker"),
 ]
 
 STATUS_CHOICES = [

@@ -132,6 +132,7 @@ def _patch_all_tool_collectors():
     stack.enter_context(patch("apps.tls_checker.scanner.collect", return_value=[]))
     stack.enter_context(patch("apps.ssh_checker.scanner.collect", return_value=[]))
     stack.enter_context(patch("apps.nuclei.scanner.collect", return_value=[]))
+    stack.enter_context(patch("apps.web_checker.scanner.collect", return_value=[]))
     return stack
 
 
@@ -410,7 +411,8 @@ class TestFullPipelineMocked:
              patch("apps.nmap.scanner.collect", return_value={}), \
              patch("apps.tls_checker.scanner.collect", return_value=[]), \
              patch("apps.ssh_checker.scanner.collect", return_value=[]), \
-             patch("apps.nuclei.scanner.collect", return_value=[]):
+             patch("apps.nuclei.scanner.collect", return_value=[]), \
+             patch("apps.web_checker.scanner.collect", return_value=[]):
             mdns.resolver.resolve.side_effect = Exception("no DNSKEY")
             run_scan(session.id)
 
@@ -446,7 +448,8 @@ class TestFullPipelineMocked:
              patch("apps.nmap.scanner.collect", return_value={}), \
              patch("apps.tls_checker.scanner.collect", return_value=[]), \
              patch("apps.ssh_checker.scanner.collect", return_value=[]), \
-             patch("apps.nuclei.scanner.collect", return_value=[]):
+             patch("apps.nuclei.scanner.collect", return_value=[]), \
+             patch("apps.web_checker.scanner.collect", return_value=[]):
             mdns.resolver.resolve.side_effect = Exception("no DNSKEY")
             run_scan(session.id)
 
@@ -483,7 +486,8 @@ class TestFullPipelineMocked:
              patch("apps.nmap.scanner.collect", return_value={}), \
              patch("apps.tls_checker.scanner.collect", return_value=[]), \
              patch("apps.ssh_checker.scanner.collect", return_value=[]), \
-             patch("apps.nuclei.scanner.collect", return_value=[]):
+             patch("apps.nuclei.scanner.collect", return_value=[]), \
+             patch("apps.web_checker.scanner.collect", return_value=[]):
             mdns.resolver.resolve.side_effect = Exception("no DNSKEY")
             run_scan(session.id)
 

@@ -10,7 +10,8 @@ Phases:
   6a. Nmap (NSE vulners on non-web ports)
   6b. TLS checker (all open ports)
   6c. SSH checker (SSH ports)
-  7. Nuclei (web vulnerability scanning on URLs)
+  7a. Nuclei (web vulnerability scanning on URLs)
+  7b. Web checker (security headers, cookies, CORS, disclosure)
   Then: finalise session, delta detection, insights, alerts.
 """
 
@@ -210,14 +211,23 @@ def run_scan(session_id: int):
         except Exception as e:
             logger.error(f"[scan:{session_id}] ssh_checker failed: {e}", exc_info=True)
 
-        # Phase 7: Nuclei web vulnerability scan on URLs
-        logger.info(f"[scan:{session_id}] Phase 7: nuclei web vuln scan")
+        # Phase 7a: Nuclei web vulnerability scan on URLs
+        logger.info(f"[scan:{session_id}] Phase 7a: nuclei web vuln scan")
         try:
             from apps.nuclei.scanner import run_nuclei
             nuclei_findings = run_nuclei(session)
             logger.info(f"[scan:{session_id}] Nuclei findings: {len(nuclei_findings)}")
         except Exception as e:
             logger.error(f"[scan:{session_id}] nuclei failed: {e}", exc_info=True)
+
+        # Phase 7b: Web checker (security headers, cookies, CORS)
+        logger.info(f"[scan:{session_id}] Phase 7b: web checker")
+        try:
+            from apps.web_checker.scanner import run_web_check
+            web_findings = run_web_check(session)
+            logger.info(f"[scan:{session_id}] Web checker findings: {len(web_findings)}")
+        except Exception as e:
+            logger.error(f"[scan:{session_id}] web_checker failed: {e}", exc_info=True)
 
         # Finalise session
         total = _count_all_findings(session)
