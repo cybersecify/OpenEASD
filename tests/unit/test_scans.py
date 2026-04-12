@@ -139,7 +139,7 @@ class TestDetectDeltas:
 
         new_deltas = ScanDelta.objects.filter(session=s2, change_type="new")
         assert new_deltas.count() == 1
-        assert new_deltas.first().item_identifier == "dns:New Issue"
+        assert new_deltas.first().item_identifier == "domain_security:dns:New Issue"
 
     def test_removed_findings_create_removed_deltas(self, db):
         from apps.core.scans.models import ScanSession, ScanDelta

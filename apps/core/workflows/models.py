@@ -3,51 +3,6 @@ import uuid
 from django.db import models
 
 
-TOOL_CHOICES = [
-    ("domain_security", "Domain Security"),
-    ("subfinder", "Subfinder"),
-    ("dnsx", "DNSx (Resolve)"),
-    ("naabu", "Naabu (Port Scan)"),
-    ("service_detection", "Service Detection"),
-    ("httpx", "HTTPx (Web Probe)"),
-    ("nmap", "Nmap (NSE Vuln Scan)"),
-    ("tls_checker", "TLS Checker"),
-    ("ssh_checker", "SSH Checker"),
-    ("nuclei", "Nuclei (Web Vuln Scan)"),
-    ("web_checker", "Web Checker"),
-]
-
-# Tool dependencies — each tool requires these upstream tools to have data
-TOOL_REQUIRES = {
-    "domain_security": [],
-    "subfinder": [],
-    "dnsx": ["subfinder"],
-    "naabu": ["dnsx"],
-    "service_detection": ["naabu"],
-    "httpx": ["naabu"],
-    "nmap": ["naabu", "service_detection"],
-    "tls_checker": ["naabu", "service_detection"],
-    "ssh_checker": ["naabu", "service_detection"],
-    "nuclei": ["httpx"],
-    "web_checker": ["httpx"],
-}
-
-# Execution order within a phase — enforced by runner
-TOOL_PHASE = {
-    "domain_security": 1,
-    "subfinder": 2,
-    "dnsx": 3,
-    "naabu": 4,
-    "service_detection": 5,
-    "httpx": 6,
-    "nmap": 6,
-    "tls_checker": 6,
-    "ssh_checker": 6,
-    "nuclei": 7,
-    "web_checker": 7,
-}
-
-
 class Workflow(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
@@ -77,7 +32,7 @@ class Workflow(models.Model):
 
 class WorkflowStep(models.Model):
     workflow = models.ForeignKey(Workflow, on_delete=models.CASCADE, related_name="steps")
-    tool = models.CharField(max_length=30, choices=TOOL_CHOICES)
+    tool = models.CharField(max_length=50)  # no choices constraint — registry is the source of truth
     order = models.PositiveSmallIntegerField(default=0)
     enabled = models.BooleanField(default=True)
 
@@ -122,7 +77,7 @@ class WorkflowStepResult(models.Model):
     ]
 
     run = models.ForeignKey(WorkflowRun, on_delete=models.CASCADE, related_name="step_results")
-    tool = models.CharField(max_length=30, choices=TOOL_CHOICES)
+    tool = models.CharField(max_length=50)  # no choices constraint
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     order = models.PositiveSmallIntegerField(default=0)
     started_at = models.DateTimeField(null=True, blank=True)

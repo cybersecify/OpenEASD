@@ -9,14 +9,7 @@ SEVERITY_CHOICES = [
     ("info", "Info"),
 ]
 
-SOURCE_CHOICES = [
-    ("domain_security", "Domain Security"),
-    ("nmap", "Nmap NSE"),
-    ("tls_checker", "TLS Checker"),
-    ("ssh_checker", "SSH Checker"),
-    ("nuclei", "Nuclei"),
-    ("web_checker", "Web Checker"),
-]
+# SOURCE_CHOICES removed — auto-discovered from tool_meta.produces_findings via registry
 
 STATUS_CHOICES = [
     ("open", "Open"),
@@ -38,7 +31,7 @@ class Finding(models.Model):
     session = models.ForeignKey(
         "scans.ScanSession", on_delete=models.CASCADE, related_name="findings"
     )
-    source = models.CharField(max_length=50, choices=SOURCE_CHOICES, db_index=True)
+    source = models.CharField(max_length=50, db_index=True)  # no choices constraint — registry is source of truth
     check_type = models.CharField(max_length=50, blank=True, db_index=True)
     severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES, db_index=True)
     title = models.CharField(max_length=500)

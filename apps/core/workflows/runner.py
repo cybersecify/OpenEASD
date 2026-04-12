@@ -1,8 +1,11 @@
 """
 Workflow runner — executes a Workflow's steps for a ScanSession,
 recording per-step status, timing, and finding counts.
+
+Tool runners are auto-discovered from AppConfig.tool_meta via the registry.
 """
 
+import importlib
 import logging
 
 from django.utils import timezone as django_tz
@@ -11,29 +14,25 @@ from .models import WorkflowRun, WorkflowStepResult
 
 logger = logging.getLogger(__name__)
 
-# Maps tool name → (module path, function name)
-# All registered tools take only the session — they read upstream data
-# from apps.core.assets directly (no targets list needed).
-_TOOL_RUNNERS = {
-    "domain_security": ("apps.domain_security.scanner", "run_domain_security"),
-    "subfinder": ("apps.subfinder.scanner", "run_subfinder"),
-    "dnsx": ("apps.dnsx.scanner", "run_dnsx"),
-    "naabu": ("apps.naabu.scanner", "run_naabu"),
-    "service_detection": ("apps.core.service_detection.detector", "detect_services"),
-    "httpx": ("apps.httpx.scanner", "run_httpx"),
-    "nmap": ("apps.nmap.scanner", "run_nmap"),
-    "tls_checker": ("apps.tls_checker.scanner", "run_tls_check"),
-    "ssh_checker": ("apps.ssh_checker.scanner", "run_ssh_check"),
-    "nuclei": ("apps.nuclei.scanner", "run_nuclei"),
-    "web_checker": ("apps.web_checker.scanner", "run_web_check"),
-}
+
+def _get_runner(tool_name: str):
+    """Import and return the runner function for a tool from the registry."""
+    from .registry import get_tool_runners
+
+    runners = get_tool_runners()
+    if tool_name not in runners:
+        raise ValueError(f"Tool '{tool_name}' is not registered (no tool_meta in AppConfig)")
+
+    runner_path = runners[tool_name]
+    module_path, func_name = runner_path.rsplit(".", 1)
+    module = importlib.import_module(module_path)
+    return getattr(module, func_name)
 
 
 def run_workflow(workflow_run_id: int):
     """Execute all steps of a WorkflowRun in order."""
     run = WorkflowRun.objects.select_related("workflow", "session").get(id=workflow_run_id)
     session = run.session
-    domain = session.domain
 
     run.status = "running"
     run.started_at = django_tz.now()
@@ -53,13 +52,7 @@ def run_workflow(workflow_run_id: int):
             logger.info(f"[workflow:{run.id}] Running step {order}/{len(tools)}: {tool}")
 
             try:
-                if tool not in _TOOL_RUNNERS:
-                    raise ValueError(f"Tool '{tool}' is not registered in _TOOL_RUNNERS")
-                module_path, func_name = _TOOL_RUNNERS[tool]
-                import importlib
-                module = importlib.import_module(module_path)
-                fn = getattr(module, func_name)
-
+                fn = _get_runner(tool)
                 results = fn(session)
                 count = len(results) if results else 0
                 step_result.status = "completed"

@@ -46,21 +46,21 @@ def _detect_deltas(session):
     from apps.core.findings.models import Finding
 
     current_keys = {
-        f"{f.check_type}:{f.title}"
-        for f in Finding.objects.filter(session=session, source="domain_security")
+        f"{f.source}:{f.check_type}:{f.title}"
+        for f in Finding.objects.filter(session=session)
     }
     prev_keys = {
-        f"{f.check_type}:{f.title}"
-        for f in Finding.objects.filter(session=previous, source="domain_security")
+        f"{f.source}:{f.check_type}:{f.title}"
+        for f in Finding.objects.filter(session=previous)
     }
     deltas = []
     for key in current_keys - prev_keys:
         deltas.append(ScanDelta(session=session, previous_session=previous,
-                                change_type="new", change_category="domain_finding",
+                                change_type="new", change_category="finding",
                                 item_identifier=key))
     for key in prev_keys - current_keys:
         deltas.append(ScanDelta(session=session, previous_session=previous,
-                                change_type="removed", change_category="domain_finding",
+                                change_type="removed", change_category="finding",
                                 item_identifier=key))
     if deltas:
         ScanDelta.objects.bulk_create(deltas)
