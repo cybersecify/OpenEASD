@@ -39,10 +39,15 @@
         <span class="text-sm text-gray-700">{{ step.label }}</span>
         <form method="post" action="{% url 'workflow-toggle-step' workflow.pk step.key %}">
           {% csrf_token %}
-          <button type="submit"
-                  class="text-xs px-3 py-1 rounded {% if step.enabled %}bg-green-100 text-green-700 hover:bg-green-200{% else %}bg-gray-100 text-gray-400 hover:bg-gray-200{% endif %}">
-            {% if step.enabled %}Enabled{% else %}Disabled{% endif %}
+          {% if step.enabled %}
+          <button type="submit" class="relative inline-flex h-6 w-11 items-center rounded-full bg-green-500 transition-colors hover:bg-green-600" title="Click to disable">
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform translate-x-6"></span>
           </button>
+          {% else %}
+          <button type="submit" class="relative inline-flex h-6 w-11 items-center rounded-full bg-gray-300 transition-colors hover:bg-gray-400" title="Click to enable">
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform translate-x-1"></span>
+          </button>
+          {% endif %}
         </form>
       </li>
       {% endfor %}
