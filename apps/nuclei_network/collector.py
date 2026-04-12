@@ -18,10 +18,7 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 BINARY = getattr(settings, "TOOL_NUCLEI", "nuclei")
-TIMEOUT = 1800  # 30 min max
-
-# Template tags for network service scanning
-NETWORK_TAGS = "network,dns,ftp,ssh,smtp,redis,mysql,postgres,rdp,vnc,telnet,mongodb"
+TIMEOUT = 3600  # 1 hour max (same as web nuclei)
 
 
 def collect(session) -> list[dict]:
@@ -45,7 +42,7 @@ def collect(session) -> list[dict]:
         f.write("\n".join(targets))
         tmp = f.name
 
-    cmd = [BINARY, "-list", tmp, "-jsonl", "-silent", "-no-color", "-tags", NETWORK_TAGS]
+    cmd = [BINARY, "-list", tmp, "-type", "network", "-jsonl", "-silent", "-no-color"]
     logger.info(f"[nuclei_network:{session.id}] Scanning {len(targets)} non-web targets")
 
     try:

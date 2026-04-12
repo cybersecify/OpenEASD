@@ -73,7 +73,8 @@ class TestNucleiNetworkCollector:
         assert mock_run.called
         # Check the target file doesn't include port 80 (web)
         cmd = mock_run.call_args[0][0]
-        assert "-tags" in cmd
+        assert "-type" in cmd
+        assert "network" in cmd
 
     def test_empty_session(self):
         from apps.core.scans.models import ScanSession
