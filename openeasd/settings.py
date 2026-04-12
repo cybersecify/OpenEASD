@@ -136,7 +136,7 @@ HUEY = {
     "huey_class": "huey.SqliteHuey",
     "name": "openeasd",
     "filename": str(OPENEASD_DATA_DIR / "huey.db"),
-    "immediate": DEBUG,  # synchronous in dev, queued in prod
+    "immediate": False,  # always queue — scans are too long for synchronous execution
     "consumer": {
         "workers": 2,
         "worker_type": "thread",
