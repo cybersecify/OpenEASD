@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Subdomain, IPAddress, Port, URL, Technology, Certificate
+from .models import Subdomain, IPAddress, Port, URL
 
 
 @admin.register(Subdomain)
@@ -29,17 +29,3 @@ class URLAdmin(admin.ModelAdmin):
     list_display = ["url", "status_code", "source", "session"]
     list_filter = ["source", "status_code"]
     search_fields = ["url"]
-
-
-@admin.register(Technology)
-class TechnologyAdmin(admin.ModelAdmin):
-    list_display = ["name", "version", "category", "source", "session"]
-    list_filter = ["category", "source"]
-    search_fields = ["name"]
-
-
-@admin.register(Certificate)
-class CertificateAdmin(admin.ModelAdmin):
-    list_display = ["domain", "issuer", "valid_to", "is_expired", "session"]
-    list_filter = ["is_expired", "source"]
-    search_fields = ["domain", "issuer"]

@@ -78,24 +78,3 @@ class URL(models.Model):
 
     def __str__(self):
         return self.url
-
-
-class Technology(models.Model):
-    session = models.ForeignKey('scans.ScanSession', on_delete=models.CASCADE, related_name='asset_technologies')
-    name = models.CharField(max_length=200)
-    version = models.CharField(max_length=100, blank=True)
-    category = models.CharField(max_length=100, blank=True)
-    source = models.CharField(max_length=50)
-    discovered_at = models.DateTimeField(auto_now_add=True)
-
-
-class Certificate(models.Model):
-    session = models.ForeignKey('scans.ScanSession', on_delete=models.CASCADE, related_name='asset_certificates')
-    domain = models.CharField(max_length=255)
-    issuer = models.CharField(max_length=500, blank=True)
-    subject = models.CharField(max_length=500, blank=True)
-    valid_from = models.DateTimeField(null=True, blank=True)
-    valid_to = models.DateTimeField(null=True, blank=True)
-    is_expired = models.BooleanField(default=False)
-    source = models.CharField(max_length=50)
-    discovered_at = models.DateTimeField(auto_now_add=True)
