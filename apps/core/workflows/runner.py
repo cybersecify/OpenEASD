@@ -40,6 +40,17 @@ def run_workflow(workflow_run_id: int):
 
     tools = run.workflow.enabled_tools()
 
+    # Core step: service_detection always runs after naabu (if naabu produced ports)
+    # even if the workflow doesn't include it — it's core infrastructure.
+    if "service_detection" not in tools:
+        # Find where to insert: after naabu (or at start if no naabu)
+        insert_at = 0
+        for i, t in enumerate(tools):
+            if t == "naabu":
+                insert_at = i + 1
+                break
+        tools.insert(insert_at, "service_detection")
+
     try:
         for order, tool in enumerate(tools, start=1):
             step_result = WorkflowStepResult.objects.create(
