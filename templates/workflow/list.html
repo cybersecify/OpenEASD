@@ -21,13 +21,19 @@
       <div class="flex gap-2 mt-2 flex-wrap">
         {% for step in wf.steps.all %}
         <span class="text-xs px-2 py-0.5 rounded {% if step.enabled %}bg-green-100 text-green-700{% else %}bg-gray-100 text-gray-400 line-through{% endif %}">
-          {{ step.get_tool_display }}
+          {{ step.tool }}
         </span>
         {% endfor %}
       </div>
     </div>
-    <div class="text-sm text-gray-400">
-      {{ wf.runs.count }} run{{ wf.runs.count|pluralize }}
+    <div class="flex items-center gap-4">
+      <span class="text-sm text-gray-400">{{ wf.runs.count }} run{{ wf.runs.count|pluralize }}</span>
+      {% if not wf.is_default %}
+      <form method="post" action="{% url 'workflow-delete' wf.pk %}" onsubmit="return confirm('Delete workflow &quot;{{ wf.name }}&quot;?')">
+        {% csrf_token %}
+        <button type="submit" class="text-xs text-red-500 hover:text-red-700">Delete</button>
+      </form>
+      {% endif %}
     </div>
   </div>
   {% endfor %}
