@@ -9,6 +9,7 @@ TOOL_CHOICES = [
     ("httpx", "HTTPx (Web Probe)"),
     ("nmap", "Nmap (NSE Vuln Scan)"),
     ("tls_checker", "TLS Checker"),
+    ("ssh_checker", "SSH Checker"),
     # Disabled — OSS binary tools (re-enable in settings.INSTALLED_APPS to restore)
     # ("nuclei", "Nuclei (Vuln Scan)"),
 ]
@@ -22,6 +23,7 @@ TOOL_PHASE = {
     "httpx": 5,
     "nmap": 6,
     "tls_checker": 6,
+    "ssh_checker": 6,
 }
 
 

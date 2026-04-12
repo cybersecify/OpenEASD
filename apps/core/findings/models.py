@@ -13,6 +13,7 @@ SOURCE_CHOICES = [
     ("domain_security", "Domain Security"),
     ("nmap", "Nmap NSE"),
     ("tls_checker", "TLS Checker"),
+    ("ssh_checker", "SSH Checker"),
     ("nuclei", "Nuclei"),
 ]
 

@@ -24,6 +24,10 @@ import smtplib
 import socket
 import ssl
 
+from cryptography import x509
+from cryptography.hazmat.primitives.asymmetric import ec, rsa, dsa
+from cryptography.hazmat.primitives.hashes import SHA1
+
 logger = logging.getLogger(__name__)
 
 PROBE_TIMEOUT = 5  # seconds per port
@@ -139,54 +143,172 @@ def _check_hsts(ip: str, port: int, host: str) -> str | None:
             pass
 
 
-def _probe_tls_details(ip: str, port: int) -> dict | None:
+def _parse_cert_details(der_bytes: bytes, hostname: str | None = None) -> dict:
+    """
+    Parse DER-encoded certificate bytes via ``cryptography`` and return a dict
+    of certificate metadata.  Returns safe defaults on any parsing error.
+
+    Fields returned:
+      cert_expiry_days   — int (days until expiry, negative = expired)
+      cert_self_signed   — bool (issuer == subject)
+      cert_key_type      — "RSA" | "EC" | "DSA" | "unknown"
+      cert_key_bits      — int (key size in bits)
+      cert_sig_algorithm — str (OID name, e.g. "sha256WithRSAEncryption")
+      cert_sig_sha1      — bool (True if signature uses SHA-1)
+      cert_san_list      — list[str] (DNS names from SAN extension)
+      cert_san_mismatch  — bool (hostname not in SAN list)
+      cert_has_sct       — bool (SCT extension present)
+    """
+    defaults: dict = {
+        "cert_expiry_days": None, "cert_self_signed": False,
+        "cert_key_type": None, "cert_key_bits": None,
+        "cert_sig_algorithm": None, "cert_sig_sha1": False,
+        "cert_san_list": [], "cert_san_mismatch": False,
+        "cert_has_sct": False,
+    }
+    try:
+        cert = x509.load_der_x509_certificate(der_bytes)
+    except Exception:
+        return defaults
+
+    result = dict(defaults)
+
+    # ── Expiry ───────────────────────────────────────────────────────────
+    try:
+        expiry = cert.not_valid_after_utc
+        now = datetime.datetime.now(datetime.timezone.utc)
+        result["cert_expiry_days"] = (expiry - now).days
+    except Exception:
+        pass
+
+    # ── Self-signed ──────────────────────────────────────────────────────
+    try:
+        result["cert_self_signed"] = cert.issuer == cert.subject
+    except Exception:
+        pass
+
+    # ── Key type & size ──────────────────────────────────────────────────
+    try:
+        pub = cert.public_key()
+        if isinstance(pub, rsa.RSAPublicKey):
+            result["cert_key_type"] = "RSA"
+        elif isinstance(pub, ec.EllipticCurvePublicKey):
+            result["cert_key_type"] = "EC"
+        elif isinstance(pub, dsa.DSAPublicKey):
+            result["cert_key_type"] = "DSA"
+        else:
+            result["cert_key_type"] = "unknown"
+        result["cert_key_bits"] = pub.key_size
+    except Exception:
+        pass
+
+    # ── Signature algorithm ──────────────────────────────────────────────
+    try:
+        result["cert_sig_algorithm"] = cert.signature_algorithm_oid._name
+        result["cert_sig_sha1"] = isinstance(cert.signature_hash_algorithm, SHA1)
+    except Exception:
+        pass
+
+    # ── Subject Alternative Names ────────────────────────────────────────
+    try:
+        san_ext = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+        san_list = san_ext.value.get_values_for_type(x509.DNSName)
+        result["cert_san_list"] = san_list
+        if hostname and not _is_ip_address(hostname):
+            result["cert_san_mismatch"] = not _hostname_matches_san(hostname, san_list)
+    except x509.ExtensionNotFound:
+        # No SAN extension — mismatch only if hostname given
+        if hostname and not _is_ip_address(hostname):
+            result["cert_san_mismatch"] = True
+    except Exception:
+        pass
+
+    # ── Certificate Transparency (SCT) ───────────────────────────────────
+    try:
+        cert.extensions.get_extension_for_oid(
+            x509.oid.ExtensionOID.PRECERT_SIGNED_CERTIFICATE_TIMESTAMPS
+        )
+        result["cert_has_sct"] = True
+    except x509.ExtensionNotFound:
+        pass
+    except Exception:
+        pass
+
+    return result
+
+
+def _is_ip_address(hostname: str) -> bool:
+    """True if hostname looks like an IP address (v4 or v6)."""
+    try:
+        import ipaddress
+        ipaddress.ip_address(hostname)
+        return True
+    except ValueError:
+        return False
+
+
+def _hostname_matches_san(hostname: str, san_list: list[str]) -> bool:
+    """Check if hostname matches any SAN entry (supports wildcard certs)."""
+    hostname = hostname.lower()
+    for san in san_list:
+        san = san.lower()
+        if san == hostname:
+            return True
+        # Wildcard match: *.example.com matches sub.example.com but not example.com
+        if san.startswith("*."):
+            wildcard_base = san[2:]
+            if hostname.endswith(wildcard_base) and hostname.count(".") == san.count("."):
+                return True
+    return False
+
+
+def _check_trusted_ca(ip: str, port: int, hostname: str | None = None) -> bool:
+    """
+    Attempt a TLS connection with full certificate validation (system trust store).
+    Returns True if the certificate chain is trusted, False otherwise.
+    """
+    try:
+        ctx = ssl.create_default_context()  # default: CERT_REQUIRED + system CA bundle
+        server_hostname = hostname or ip
+        with socket.create_connection((ip, port), timeout=PROBE_TIMEOUT) as sock:
+            with ctx.wrap_socket(sock, server_hostname=server_hostname):
+                return True
+    except Exception:
+        return False
+
+
+def _probe_tls_details(ip: str, port: int, hostname: str | None = None) -> dict | None:
     """
     Connect via TLS and collect protocol version, cipher suite, and cert info.
     Returns None if TLS is not available on this port.
 
-    Result dict:
-      tls_version      — "TLSv1.3" / "TLSv1.2" / etc.
-      cipher_name      — OpenSSL cipher name e.g. "ECDHE-RSA-AES256-GCM-SHA384"
-      cipher_bits      — key size in bits
-      cert_expiry_days — days until cert expiry (None if unavailable)
-      cert_self_signed — True if issuer == subject
+    Uses ``getpeercert(binary_form=True)`` + ``cryptography`` for cert parsing
+    (``getpeercert()`` returns an empty dict under CERT_NONE).
+    Also performs a separate validated connection to check CA trust.
     """
     try:
         with socket.create_connection((ip, port), timeout=PROBE_TIMEOUT) as sock:
             with _tls_context().wrap_socket(sock, server_hostname=ip) as ssock:
                 version = ssock.version() or ""
                 cipher_name, _, cipher_bits = ssock.cipher() or ("", "", 0)
-                cert = ssock.getpeercert() or {}
+                der_bytes = ssock.getpeercert(binary_form=True)
+                cert_info = _parse_cert_details(der_bytes, hostname or ip) if der_bytes else {
+                    "cert_expiry_days": None, "cert_self_signed": False,
+                    "cert_key_type": None, "cert_key_bits": None,
+                    "cert_sig_algorithm": None, "cert_sig_sha1": False,
+                    "cert_san_list": [], "cert_san_mismatch": False,
+                    "cert_has_sct": False,
+                }
+                # Check CA trust via a separate validated connection
+                cert_info["cert_trusted"] = _check_trusted_ca(ip, port, hostname)
                 return {
-                    "tls_version":      version,
-                    "cipher_name":      cipher_name or "",
-                    "cipher_bits":      cipher_bits or 0,
-                    "cert_expiry_days": _cert_days_remaining(cert),
-                    "cert_self_signed": _is_self_signed(cert),
+                    "tls_version":  version,
+                    "cipher_name":  cipher_name or "",
+                    "cipher_bits":  cipher_bits or 0,
+                    **cert_info,
                 }
     except Exception:
         return None
-
-
-def _cert_days_remaining(cert: dict) -> int | None:
-    """Days until certificate expiry from getpeercert() dict."""
-    expiry_str = cert.get("notAfter")
-    if not expiry_str:
-        return None
-    try:
-        expiry = datetime.datetime.strptime(expiry_str, "%b %d %H:%M:%S %Y %Z")
-        return (expiry - datetime.datetime.utcnow()).days
-    except ValueError:
-        return None
-
-
-def _is_self_signed(cert: dict) -> bool:
-    """Certificate is self-signed when issuer equals subject."""
-    if not cert:
-        return False
-    subject = dict(x[0] for x in cert.get("subject", []))
-    issuer = dict(x[0] for x in cert.get("issuer", []))
-    return bool(subject) and subject == issuer
 
 
 def _check_legacy_protocol_support(ip: str, port: int) -> dict:
@@ -213,7 +335,7 @@ def _check_legacy_protocol_support(ip: str, port: int) -> dict:
     return results
 
 
-def _probe_tls(ip: str, port: int, service: str) -> dict | None:
+def _probe_tls(ip: str, port: int, service: str, hostname: str | None = None) -> dict | None:
     """
     Probe TLS for a non-web port. Returns TLS details dict if TLS is available,
     None if no TLS (or STARTTLS + direct TLS both fail).
@@ -225,20 +347,21 @@ def _probe_tls(ip: str, port: int, service: str) -> dict | None:
         # Try STARTTLS — if it works, do a full detail probe via direct TLS
         # (STARTTLS details aren't easily extractable from smtplib/imaplib)
         starttls_ok = _STARTTLS_PROBERS[service](ip, port)
-        details = _probe_tls_details(ip, port)
+        details = _probe_tls_details(ip, port, hostname)
         if details:
             return details  # Direct TLS also works (implicit TLS port)
         if starttls_ok:
             # STARTTLS works but direct TLS doesn't — return minimal detail dict
             return {
-                "tls_version":      "",   # can't determine without direct handshake
-                "cipher_name":      "",
-                "cipher_bits":      0,
-                "cert_expiry_days": None,
-                "cert_self_signed": False,
+                "tls_version": "", "cipher_name": "", "cipher_bits": 0,
+                "cert_expiry_days": None, "cert_self_signed": False,
+                "cert_key_type": None, "cert_key_bits": None,
+                "cert_sig_algorithm": None, "cert_sig_sha1": False,
+                "cert_san_list": [], "cert_san_mismatch": False,
+                "cert_has_sct": False, "cert_trusted": False,
             }
         return None
-    return _probe_tls_details(ip, port)
+    return _probe_tls_details(ip, port, hostname)
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +409,10 @@ def collect(session) -> list[dict]:
     _tls_empty = {
         "tls_version": "", "cipher_name": "", "cipher_bits": 0,
         "cert_expiry_days": None, "cert_self_signed": False,
+        "cert_key_type": None, "cert_key_bits": None,
+        "cert_sig_algorithm": None, "cert_sig_sha1": False,
+        "cert_san_list": [], "cert_san_mismatch": False,
+        "cert_has_sct": False, "cert_trusted": False,
         "supports_tls10": False, "supports_tls11": False,
         "hsts_header": None,
     }
@@ -303,13 +430,13 @@ def collect(session) -> list[dict]:
             tls_detail: dict = _tls_empty.copy()
 
             if has_tls:
-                details = _probe_tls_details(ip, port_num)
+                host = (url_obj.host if url_obj and url_obj.host else ip)
+                details = _probe_tls_details(ip, port_num, hostname=host)
                 if details:
                     legacy = _check_legacy_protocol_support(ip, port_num)
                     tls_detail = {**details, **legacy}
                 else:
                     tls_detail = {**_tls_empty, "supports_tls10": False, "supports_tls11": False}
-                host = (url_obj.host if url_obj and url_obj.host else ip)
                 tls_detail["hsts_header"] = _check_hsts(ip, port_num, host)
             else:
                 tls_detail = {**_tls_empty}

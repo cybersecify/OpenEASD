@@ -18,9 +18,10 @@ dependencies = [
     "requests>=2.31",
     # Scheduler
     "django-apscheduler>=0.7.0",
-    # SSL / crypto (ssl_checker — enable when ready)
+    # SSL / crypto / SSH
     "cryptography>=42.0",
     "pyopenssl>=23.0",
+    "paramiko>=3.4",
     # Reports (PDF generation)
     "xhtml2pdf>=0.2.15",
     # Task queue

@@ -85,7 +85,8 @@ Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TO
 | `apps/naabu/` | Pattern 2 (OSS binary) | ✅ Active | 4 |
 | `apps/httpx/` | Pattern 2 (OSS binary) | ✅ Active | 5 |
 | `apps/nmap/` | Pattern 2 (OSS binary) | ✅ Active | 6 |
-| `apps/tls_checker/` | Pattern 1 (custom Python, stdlib ssl) | ✅ Active | 6 |
+| `apps/tls_checker/` | Pattern 1 (custom Python, stdlib ssl + cryptography) | ✅ Active | 6 |
+| `apps/ssh_checker/` | Pattern 1 (custom Python, paramiko) | ✅ Active | 6 |
 | `apps/nuclei/` | Pattern 2 (OSS binary) | ❌ Disabled | future web workflow |
 
 To re-enable a disabled tool, uncomment it in:
@@ -125,6 +126,7 @@ Phase 4  naabu            → assets.Port (top 100 TCP scan against IPs)
 Phase 5  httpx            → assets.URL (probes HTTP/HTTPS via subdomain hostname for CDN support)
 Phase 6a nmap NSE vulners → Finding (source="nmap", check_type="cve") on non-web ports only
 Phase 6b tls_checker      → Finding (source="tls_checker") on ALL open ports (web + non-web)
+Phase 6c ssh_checker      → Finding (source="ssh_checker") on SSH ports (paramiko-based)
 ```
 
 ### Key design rules
@@ -133,8 +135,9 @@ Phase 6b tls_checker      → Finding (source="tls_checker") on ALL open ports (
 3. **httpx feeds subdomain:port pairs, not IP:port pairs.** Cloudflare/CDN-fronted services need SNI matching the hostname.
 4. **Web vs non-web classification** is in `apps/nmap/scanner.py:_web_pairs_for_session()`. A port is "web" if any URL exists for any IP behind the same hostname (handles 1-hostname → multiple-IPs CDN case).
 5. **nmap only scans non-web ports** (those without a matching URL record). Web ports are reserved for the future web workflow with nuclei.
-6. **tls_checker covers ALL open ports** (both web ports via URL scheme and non-web ports via stdlib ssl probing). Web port TLS is inferred from URL scheme (http/https) — no probing needed. Non-web ports are probed with `ssl.create_default_context()` (direct TLS) or STARTTLS (smtp/imap/pop3/ftp). Inherently insecure services (telnet/rlogin/rsh/rexec) are always flagged without probing. Findings cover: unencrypted service, weak ciphers (RC4, NULL, EXPORT, 3DES/Blowfish, SHA-1, CBC, anon, RSA-KEX), deprecated protocols (TLS 1.0/1.1), cert issues (expired, expiring, self-signed), and HSTS missing (HTTPS web ports).
+6. **tls_checker covers ALL open ports** (both web ports via URL scheme and non-web ports via stdlib ssl probing). Web port TLS is inferred from URL scheme (http/https) — no probing needed. Non-web ports are probed with `ssl.create_default_context()` (direct TLS) or STARTTLS (smtp/imap/pop3/ftp). Inherently insecure services (telnet/rlogin/rsh/rexec) are always flagged without probing. Certificate parsing uses the `cryptography` library via `getpeercert(binary_form=True)` for DER bytes (stdlib `getpeercert()` returns empty dict under `CERT_NONE`). Findings cover: unencrypted service, weak ciphers (RC4, NULL, EXPORT, 3DES/Blowfish, SHA-1, CBC, anon, RSA-KEX), deprecated protocols (TLS 1.0/1.1), cert issues (expired, expiring, self-signed, untrusted CA, weak key RSA<2048/EC<256, DSA deprecated, SHA-1 signature, SAN mismatch, missing SCT), and HSTS missing (HTTPS web ports).
 7. **Asset deletion cascades** through Subdomain → IPAddress → Port → URL. Deleting a Domain wipes all session data.
+8. **ssh_checker probes SSH ports** (service="ssh" from nmap) via `paramiko.Transport` for host key, algorithms, and auth methods. Uses `_probe_weak_algorithms()` to test each weak algorithm individually against the server. Detects: SSHv1, weak host keys (DSA/short RSA), weak kex/ciphers/MACs, password auth, root login.
 
 ## Unified Finding model
 
@@ -191,7 +194,9 @@ Backward-compat `@property` accessors on Finding (`cve`, `cvss_score`, `service`
 | `tests/unit/test_nmap.py` | 24 | Severity mapping, vulners XML parser, web/non-web exclusion |
 | `tests/unit/test_scans.py` | 55 | ScanSession, scheduling, scan_start views |
 | `tests/unit/test_subfinder.py` | 11 | JSON parser, dedup, hostname normalization |
-| `tests/unit/test_tls_checker.py` | 49 | Cert helpers, cipher checks, protocol versions, cert lifecycle, HSTS, collector, scanner |
+| `tests/unit/test_tls_checker.py` | 77 | Cert parsing (cryptography lib), cipher checks, protocol versions, cert lifecycle, weak keys, SHA-1 sig, SAN mismatch, SCT, untrusted CA, HSTS, collector, scanner |
 | `tests/integration/test_scan_flow.py` | 13 | Domain security flow + full pipeline (mocked) + delete cascade |
 
-**Total: 289 tests** (248 fast + 41 slow domain_security)
+| `tests/unit/test_ssh_checker.py` | 33 | SSH probe, SSHv1, host key, weak kex/cipher/MAC, password auth, root login, collector, scanner |
+
+**Total: 350 tests** (309 fast + 41 slow domain_security)

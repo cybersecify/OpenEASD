@@ -316,6 +316,73 @@ def _cert_findings(result: dict, session) -> list[Finding]:
                 extra={"cert_expiry_days": days, "address": ip, "port_number": port_num},
             ))
 
+    # Weak key
+    key_type = result.get("cert_key_type")
+    key_bits = result.get("cert_key_bits")
+    if key_type == "RSA" and key_bits is not None and key_bits < 2048:
+        findings.append(Finding(
+            session=session,
+            source="tls_checker",
+            check_type="weak_rsa_key",
+            severity="high",
+            title=f"Weak RSA key ({key_bits}-bit) on {ip}:{port_num}",
+            description=(
+                f"The TLS certificate on {ip}:{port_num} uses a {key_bits}-bit RSA key. "
+                f"RSA keys shorter than 2048 bits are considered insecure and can be "
+                f"factored with modern hardware. NIST and CA/Browser Forum require "
+                f"a minimum of 2048 bits."
+            ),
+            remediation=(
+                "Generate a new RSA key pair with at least 2048 bits (recommended: 4096) "
+                "or switch to ECDSA P-256 / P-384 for better performance at equivalent security."
+            ),
+            port=port_fk,
+            target=f"{ip}:{port_num}",
+            extra={"cert_key_type": key_type, "cert_key_bits": key_bits,
+                   "address": ip, "port_number": port_num},
+        ))
+    elif key_type == "EC" and key_bits is not None and key_bits < 256:
+        findings.append(Finding(
+            session=session,
+            source="tls_checker",
+            check_type="weak_ec_key",
+            severity="high",
+            title=f"Weak EC key ({key_bits}-bit) on {ip}:{port_num}",
+            description=(
+                f"The TLS certificate on {ip}:{port_num} uses a {key_bits}-bit elliptic "
+                f"curve key. EC keys shorter than 256 bits do not provide adequate security. "
+                f"NIST recommends P-256 (256-bit) as the minimum curve."
+            ),
+            remediation=(
+                "Generate a new ECDSA key pair using P-256 (256-bit) or P-384 (384-bit) curve."
+            ),
+            port=port_fk,
+            target=f"{ip}:{port_num}",
+            extra={"cert_key_type": key_type, "cert_key_bits": key_bits,
+                   "address": ip, "port_number": port_num},
+        ))
+    elif key_type == "DSA":
+        findings.append(Finding(
+            session=session,
+            source="tls_checker",
+            check_type="dsa_key",
+            severity="medium",
+            title=f"Deprecated DSA key on {ip}:{port_num}",
+            description=(
+                f"The TLS certificate on {ip}:{port_num} uses a DSA key. "
+                f"DSA is deprecated — it requires careful random number generation "
+                f"(a single nonce reuse leaks the private key) and is no longer "
+                f"recommended by NIST or supported by modern browsers."
+            ),
+            remediation=(
+                "Replace the DSA key with RSA 2048+ or ECDSA P-256/P-384."
+            ),
+            port=port_fk,
+            target=f"{ip}:{port_num}",
+            extra={"cert_key_type": key_type, "cert_key_bits": key_bits,
+                   "address": ip, "port_number": port_num},
+        ))
+
     # Self-signed certificate
     if result.get("cert_self_signed"):
         findings.append(Finding(
@@ -341,6 +408,167 @@ def _cert_findings(result: dict, session) -> list[Finding]:
         ))
 
     return findings
+
+
+# ---------------------------------------------------------------------------
+# SHA-1 signature finding
+# ---------------------------------------------------------------------------
+
+def _sig_algorithm_findings(result: dict, session) -> list[Finding]:
+    """Return a finding if the certificate is signed with SHA-1."""
+    if not result.get("cert_sig_sha1"):
+        return []
+
+    ip = result["ip"]
+    port_num = result["port"]
+    return [Finding(
+        session=session,
+        source="tls_checker",
+        check_type="sha1_cert_signature",
+        severity="high",
+        title=f"SHA-1 signed certificate on {ip}:{port_num}",
+        description=(
+            f"The TLS certificate on {ip}:{port_num} is signed with SHA-1 "
+            f"(algorithm: {result.get('cert_sig_algorithm', 'unknown')}). "
+            f"SHA-1 was demonstrated broken by the SHAttered collision attack in 2017. "
+            f"All major browsers and CAs deprecated SHA-1 certificates. "
+            f"An attacker with sufficient resources could forge a certificate."
+        ),
+        remediation=(
+            "Reissue the certificate with a SHA-256 or SHA-384 signature. "
+            "Most CAs have stopped issuing SHA-1 certificates since 2016."
+        ),
+        port=result["port_fk"],
+        target=f"{ip}:{port_num}",
+        extra={
+            "cert_sig_algorithm": result.get("cert_sig_algorithm"),
+            "address": ip, "port_number": port_num,
+        },
+    )]
+
+
+# ---------------------------------------------------------------------------
+# SAN mismatch finding
+# ---------------------------------------------------------------------------
+
+def _san_mismatch_findings(result: dict, session) -> list[Finding]:
+    """Return a finding if the hostname is not in the certificate's SAN list."""
+    if not result.get("cert_san_mismatch"):
+        return []
+
+    ip = result["ip"]
+    port_num = result["port"]
+    san_list = result.get("cert_san_list", [])
+    return [Finding(
+        session=session,
+        source="tls_checker",
+        check_type="san_mismatch",
+        severity="high",
+        title=f"Certificate SAN mismatch on {ip}:{port_num}",
+        description=(
+            f"The TLS certificate on {ip}:{port_num} does not include the expected "
+            f"hostname in its Subject Alternative Name (SAN) extension. "
+            f"Certificate SANs: {', '.join(san_list) if san_list else '(none)'}. "
+            f"Browsers and clients will reject this certificate with a name mismatch error, "
+            f"and users may be trained to ignore certificate warnings."
+        ),
+        remediation=(
+            "Reissue the certificate with the correct hostname(s) in the "
+            "Subject Alternative Name extension. Include all domains and "
+            "subdomains that the service serves."
+        ),
+        port=result["port_fk"],
+        target=f"{ip}:{port_num}",
+        extra={
+            "cert_san_list": san_list,
+            "address": ip, "port_number": port_num,
+        },
+    )]
+
+
+# ---------------------------------------------------------------------------
+# Certificate Transparency (SCT) finding
+# ---------------------------------------------------------------------------
+
+def _sct_findings(result: dict, session) -> list[Finding]:
+    """Return a finding if no SCT extension is present in a CA-signed certificate."""
+    # Only check CA-signed certs (self-signed certs never have SCTs)
+    if result.get("cert_key_type") is None:
+        return []  # No cert data available
+    if result.get("cert_self_signed"):
+        return []  # Self-signed — SCT check is irrelevant
+    if result.get("cert_has_sct"):
+        return []
+
+    ip = result["ip"]
+    port_num = result["port"]
+    return [Finding(
+        session=session,
+        source="tls_checker",
+        check_type="no_sct",
+        severity="medium",
+        title=f"No Certificate Transparency SCT on {ip}:{port_num}",
+        description=(
+            f"The TLS certificate on {ip}:{port_num} does not contain a "
+            f"Signed Certificate Timestamp (SCT). Since April 2018, Chrome requires "
+            f"SCTs for all publicly trusted certificates (Certificate Transparency policy). "
+            f"Apple's CT policy also mandates SCTs. Certificates without SCTs may be "
+            f"rejected or flagged by browsers."
+        ),
+        remediation=(
+            "Ensure your CA embeds SCT (Signed Certificate Timestamp) in certificates. "
+            "Most public CAs do this by default. If using a private CA for public-facing "
+            "services, submit certificates to CT logs."
+        ),
+        port=result["port_fk"],
+        target=f"{ip}:{port_num}",
+        extra={"address": ip, "port_number": port_num},
+    )]
+
+
+# ---------------------------------------------------------------------------
+# Untrusted CA finding
+# ---------------------------------------------------------------------------
+
+def _untrusted_ca_findings(result: dict, session) -> list[Finding]:
+    """Return a finding if the certificate is not trusted by the system CA store."""
+    # Skip if no cert data, or if already self-signed (separate finding covers that)
+    if result.get("cert_key_type") is None:
+        return []
+    if result.get("cert_self_signed"):
+        return []  # Already flagged by self_signed_cert finding
+    if result.get("cert_trusted", True):
+        return []  # Trusted — no finding
+
+    ip = result["ip"]
+    port_num = result["port"]
+    return [Finding(
+        session=session,
+        source="tls_checker",
+        check_type="untrusted_ca",
+        severity="high",
+        title=f"Untrusted certificate authority on {ip}:{port_num}",
+        description=(
+            f"The TLS certificate on {ip}:{port_num} is not trusted by the system "
+            f"certificate store. The certificate may be signed by an unknown CA, "
+            f"have an incomplete chain (missing intermediate certificates), or the "
+            f"CA may have been revoked. Clients will reject this certificate, and "
+            f"users may be trained to click through security warnings — weakening "
+            f"protection against man-in-the-middle attacks."
+        ),
+        remediation=(
+            "Replace the certificate with one issued by a publicly trusted CA "
+            "(e.g. Let's Encrypt, DigiCert, Sectigo). Ensure the full certificate "
+            "chain is configured (leaf + intermediates). For internal services, "
+            "distribute your internal CA to all clients via system trust stores."
+        ),
+        port=result["port_fk"],
+        target=f"{ip}:{port_num}",
+        extra={
+            "cert_san_list": result.get("cert_san_list", []),
+            "address": ip, "port_number": port_num,
+        },
+    )]
 
 
 # ---------------------------------------------------------------------------
@@ -513,6 +741,10 @@ def analyze(session, results: list[dict]) -> list[Finding]:
             findings.extend(_protocol_findings(r, session))
             findings.extend(_weak_cipher_findings(r, session))
             findings.extend(_cert_findings(r, session))
+            findings.extend(_sig_algorithm_findings(r, session))
+            findings.extend(_san_mismatch_findings(r, session))
+            findings.extend(_sct_findings(r, session))
+            findings.extend(_untrusted_ca_findings(r, session))
             findings.extend(_hsts_finding(r, session))
 
     return findings
