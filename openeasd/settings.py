@@ -47,8 +47,7 @@ INSTALLED_APPS = [
     "apps.nmap",
     "apps.tls_checker",
     "apps.ssh_checker",
-    # Disabled — OSS binary tools (code kept in apps/ for later re-enable)
-    # "apps.nuclei",
+    "apps.nuclei",
 ]
 
 MIDDLEWARE = [

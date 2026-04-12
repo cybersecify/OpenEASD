@@ -10,8 +10,7 @@ TOOL_CHOICES = [
     ("nmap", "Nmap (NSE Vuln Scan)"),
     ("tls_checker", "TLS Checker"),
     ("ssh_checker", "SSH Checker"),
-    # Disabled — OSS binary tools (re-enable in settings.INSTALLED_APPS to restore)
-    # ("nuclei", "Nuclei (Vuln Scan)"),
+    ("nuclei", "Nuclei (Web Vuln Scan)"),
 ]
 
 # Execution order within a phase — enforced by runner
@@ -24,6 +23,7 @@ TOOL_PHASE = {
     "nmap": 6,
     "tls_checker": 6,
     "ssh_checker": 6,
+    "nuclei": 7,
 }
 
 

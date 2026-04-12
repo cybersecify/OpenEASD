@@ -23,7 +23,7 @@ _TOOL_RUNNERS = {
     "nmap": ("apps.nmap.scanner", "run_nmap"),
     "tls_checker": ("apps.tls_checker.scanner", "run_tls_check"),
     "ssh_checker": ("apps.ssh_checker.scanner", "run_ssh_check"),
-    # "nuclei": ("apps.nuclei.scanner", "run_nuclei"),
+    "nuclei": ("apps.nuclei.scanner", "run_nuclei"),
 }
 
 
