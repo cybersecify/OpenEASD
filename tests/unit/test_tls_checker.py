@@ -678,7 +678,9 @@ class TestTlsCollector:
         from apps.core.web_assets.models import URL
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
-        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        sub = Subdomain.objects.create(session=sess, domain="example.com",
+                                       subdomain="www.example.com", source="subfinder")
+        ip = IPAddress.objects.create(session=sess, subdomain=sub, address="1.2.3.4", version=4, source="dnsx")
 
         port_443 = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
                             port=443, protocol="tcp", state="open", service="https", is_web=True, source="naabu")
@@ -690,9 +692,6 @@ class TestTlsCollector:
                             port=23, protocol="tcp", state="open", service="telnet", source="naabu")
         Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
                             port=8888, protocol="tcp", state="open", service="unknown", source="naabu")
-
-        sub = Subdomain.objects.create(session=sess, domain="example.com",
-                                       subdomain="www.example.com", source="subfinder")
         URL.objects.create(session=sess, subdomain=sub, port=port_443,
                            url="https://www.example.com:443",
                            host="www.example.com", port_number=443, scheme="https", source="httpx")
@@ -751,7 +750,7 @@ class TestTlsCollector:
                 results = collect(sess)
         redis = next((r for r in results if r["port"] == 6379), None)
         assert redis is not None
-        mock_probe.assert_any_call("1.2.3.4", 6379, "redis")
+        mock_probe.assert_any_call("1.2.3.4", 6379, "redis", hostname="www.example.com")
 
 
 # ---------------------------------------------------------------------------

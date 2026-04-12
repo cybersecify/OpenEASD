@@ -476,8 +476,8 @@ def collect(session) -> list[dict]:
             })
 
         elif service in TLS_CAPABLE_SERVICES:
-            logger.debug(f"[tls_checker:{session.id}] Probing TLS on {ip}:{port_num} ({service})")
-            details = _probe_tls(ip, port_num, service)
+            logger.debug(f"[tls_checker:{session.id}] Probing TLS on {host}:{port_num} ({service})")
+            details = _probe_tls(ip, port_num, service, hostname=host)
             has_tls = details is not None
             tls_detail = _tls_empty.copy()
 
@@ -494,9 +494,9 @@ def collect(session) -> list[dict]:
             })
 
         else:
-            # Unknown or empty service — try direct TLS probe (naabu doesn't set service names)
-            logger.debug(f"[tls_checker:{session.id}] Probing unknown service on {ip}:{port_num}")
-            details = _probe_tls_details(ip, port_num)
+            # Unknown or empty service — try direct TLS probe
+            logger.debug(f"[tls_checker:{session.id}] Probing unknown service on {host}:{port_num}")
+            details = _probe_tls_details(ip, port_num, hostname=host)
             if details:
                 legacy = _check_legacy_protocol_support(ip, port_num)
                 tls_detail = {**details, **legacy}
