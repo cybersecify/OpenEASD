@@ -1,67 +1,99 @@
-"""Service detection — enriches Port records with service names via nmap -sV.
+"""Service detection — pure Python probes to classify ports as web/non-web.
 
-Runs after port discovery (naabu) and before all scanning tools. Updates
-Port.service, Port.version, and Port.is_web so downstream tools have
-accurate service information.
+Probes each open port to determine the running service:
+  1. HTTP probe (requests) → http/https → is_web=True
+  2. Banner grab (socket) → ssh, smtp, pop3, imap, redis, ftp, etc.
+
+No external binary dependency — uses only Python stdlib + requests.
 """
 
 import logging
-import subprocess
-from collections import defaultdict
+import socket
+import ssl
 
-from django.conf import settings
-
-from .parser import parse_services
+import requests
+import urllib3
 
 logger = logging.getLogger(__name__)
 
-# Services that indicate a web port (Port.is_web=True)
-WEB_SERVICES = frozenset({
-    "http", "https", "http-proxy", "https-alt", "http-alt",
-})
+# Suppress InsecureRequestWarning from verify=False
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-TIMEOUT = 120  # seconds per host
+PROBE_TIMEOUT = 3  # seconds per probe
+
+# Services that indicate a web port
+WEB_SERVICES = frozenset({"http", "https"})
+
+# Banner prefix → service name (checked in order, first match wins)
+_BANNER_SIGNATURES = [
+    ("SSH-", "ssh"),
+    ("220 ", "smtp"),          # 220 mail.example.com ESMTP
+    ("220-", "smtp"),          # 220-mail.example.com multiline
+    ("+OK", "pop3"),           # +OK POP3 server ready
+    ("* OK", "imap"),          # * OK IMAP server ready
+    ("-ERR", "redis"),         # Redis error response
+    ("+PONG", "redis"),        # Redis PING response
+    ("$", "redis"),            # Redis bulk string
+]
 
 
-def _group_ports_by_ip(ports) -> dict[str, list]:
-    """Group Port objects by IP address → list of (port_number, port_obj)."""
-    grouped: dict[str, list] = defaultdict(list)
-    for p in ports:
-        grouped[p.address].append((p.port, p))
-    return dict(grouped)
+def _probe_http(ip: str, port: int) -> str | None:
+    """Try HTTP and HTTPS requests. Return "https", "http", or None."""
+    for scheme in ("https", "http"):
+        try:
+            resp = requests.head(
+                f"{scheme}://{ip}:{port}",
+                timeout=PROBE_TIMEOUT,
+                verify=False,
+                allow_redirects=False,
+                headers={"User-Agent": "openeasd-service-probe/1.0"},
+            )
+            if resp.status_code > 0:
+                return scheme
+        except requests.RequestException:
+            continue
+    return None
 
 
-def _run_nmap_sv(session_id, ip: str, port_list: str) -> str:
-    """Run nmap -sV --version-light on an IP and return raw XML output."""
-    binary = getattr(settings, "TOOL_NMAP", "nmap")
-    cmd = [
-        binary,
-        "-sV", "--version-light",   # fast service detection (intensity 2)
-        "--host-timeout", f"{TIMEOUT}s",
-        "-p", port_list,
-        "-oX", "-",                 # XML to stdout
-        "-Pn",                      # skip host discovery
-        ip,
-    ]
-    logger.info(f"[service_detection:{session_id}] Detecting services on {ip} ports {port_list}")
-
+def _probe_banner(ip: str, port: int) -> str | None:
+    """Connect via raw socket, read banner, match against known signatures."""
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT + 30)
-        if proc.returncode != 0 and proc.stderr:
-            logger.warning(f"[service_detection:{session_id}] {ip} stderr: {proc.stderr[:300]}")
-        return proc.stdout
-    except FileNotFoundError:
-        logger.error(f"[service_detection:{session_id}] Binary not found: {binary}")
-        return ""
-    except subprocess.TimeoutExpired:
-        logger.warning(f"[service_detection:{session_id}] Timeout on {ip}")
-        return ""
+        with socket.create_connection((ip, port), timeout=PROBE_TIMEOUT) as sock:
+            sock.settimeout(PROBE_TIMEOUT)
+            data = sock.recv(1024)
+            if not data:
+                return None
+            banner = data.decode("utf-8", errors="replace").strip()
+            for prefix, service in _BANNER_SIGNATURES:
+                if banner.startswith(prefix):
+                    return service
+    except Exception:
+        pass
+    return None
+
+
+def _probe_tls(ip: str, port: int) -> bool:
+    """Check if the port speaks TLS (direct handshake). Returns True if TLS."""
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with socket.create_connection((ip, port), timeout=PROBE_TIMEOUT) as sock:
+            with ctx.wrap_socket(sock, server_hostname=ip):
+                return True
+    except Exception:
+        return False
 
 
 def detect_services(session) -> int:
     """
-    Run nmap -sV --version-light on all open ports, update Port.service,
-    Port.version, and Port.is_web. Returns count of ports updated.
+    Probe all open ports to identify services. Updates Port.service and
+    Port.is_web. Returns count of ports updated.
+
+    Probe order per port:
+      1. HTTP probe (requests HEAD on https:// then http://)
+      2. Banner grab (raw socket, match known signatures)
+      3. If no match and TLS handshake succeeds → "https"
     """
     from apps.core.assets.models import Port
 
@@ -70,37 +102,30 @@ def detect_services(session) -> int:
         logger.info(f"[service_detection:{session.id}] No open ports")
         return 0
 
-    ip_groups = _group_ports_by_ip(open_ports)
-    # Build port_num → Port object lookup for updates
-    port_lookup: dict[tuple[str, int], "Port"] = {
-        (p.address, p.port): p for p in open_ports
-    }
-
     updated = 0
-    for ip, port_entries in ip_groups.items():
-        port_list = ",".join(str(p) for p, _ in sorted(set(port_entries)))
-        xml = _run_nmap_sv(session.id, ip, port_list)
-        if not xml:
-            continue
+    for p in open_ports:
+        ip = p.address
+        port_num = p.port
+        service = None
 
-        services = parse_services(xml)
-        for svc in services:
-            port_obj = port_lookup.get((svc["ip"], svc["port"]))
-            if not port_obj:
-                continue
-            if not svc["service"]:
-                continue
+        # Step 1: HTTP probe
+        http_result = _probe_http(ip, port_num)
+        if http_result:
+            service = http_result
+        else:
+            # Step 2: Banner grab
+            service = _probe_banner(ip, port_num)
 
-            is_web = svc["service"].lower() in WEB_SERVICES
-            Port.objects.filter(id=port_obj.id).update(
-                service=svc["service"],
-                version=svc["version"],
-                is_web=is_web,
-            )
+            # Step 3: TLS fallback — if no banner but TLS works, likely HTTPS
+            if not service and _probe_tls(ip, port_num):
+                service = "https"
+
+        if service:
+            is_web = service in WEB_SERVICES
+            Port.objects.filter(id=p.id).update(service=service, is_web=is_web)
             updated += 1
             logger.debug(
-                f"[service_detection:{session.id}] {svc['ip']}:{svc['port']} "
-                f"→ {svc['service']} {svc['version']} (web={is_web})"
+                f"[service_detection:{session.id}] {ip}:{port_num} → {service} (web={is_web})"
             )
 
     logger.info(f"[service_detection:{session.id}] Updated {updated}/{len(open_ports)} ports")
