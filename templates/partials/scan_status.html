@@ -70,9 +70,6 @@
           {% elif step.status == 'failed' %}&#10007;
           {% else %}&#9675;{% endif %}
           {{ step.tool }}
-          {% if step.status == 'completed' and step.findings_count %}
-          <span class="text-xs opacity-70">({{ step.findings_count }})</span>
-          {% endif %}
         </div>
         {% endfor %}
       </div>
