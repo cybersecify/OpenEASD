@@ -71,7 +71,7 @@ def workflow_create(request):
             )
 
         messages.success(request, f"Workflow '{workflow.name}' created.")
-        return redirect("workflow-detail", pk=workflow.pk)
+        return redirect("workflow-list")
 
     return render(request, "workflow/create.html", {
         "tool_choices": tool_choices,
