@@ -142,7 +142,7 @@ def create_scan_session(domain: str, triggered_by: str = "manual", workflow=None
             with transaction.atomic():
                 active = (
                     ScanSession.objects
-                    .select_for_update()
+                    .select_for_update(nowait=True)
                     .filter(domain=domain, status__in=["pending", "running"])
                     .exists()
                 )

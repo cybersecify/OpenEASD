@@ -9,9 +9,9 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+# RFC 1035 / RFC 1123 — must have at least one dot and a valid TLD (2+ alpha chars)
 _VALID_HOSTNAME = re.compile(
-    r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?'
-    r'(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$'
+    r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$"
 )
 
 

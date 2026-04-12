@@ -1,7 +1,8 @@
 """Nmap result analysis — parses XML, extracts vulners CVE findings."""
 
 import logging
-import xml.etree.ElementTree as ET
+
+import defusedxml.ElementTree as ET
 
 from apps.core.assets.models import Port
 from apps.core.findings.models import Finding
@@ -90,7 +91,14 @@ def analyze(session, xml_outputs: dict[str, str]) -> list[Finding]:
                 if state_el is None or state_el.get("state") != "open":
                     continue
 
-                port_num = int(port_el.get("portid", 0))
+                portid = port_el.get("portid", "")
+                if not portid.isdigit():
+                    logger.warning(f"[nmap:{session.id}] Skipping port with invalid portid: {portid!r}")
+                    continue
+                port_num = int(portid)
+                if not (1 <= port_num <= 65535):
+                    logger.warning(f"[nmap:{session.id}] Skipping out-of-range port: {port_num}")
+                    continue
                 service_el = port_el.find("service")
                 service_name = service_el.get("name", "") if service_el is not None else ""
                 version = ""

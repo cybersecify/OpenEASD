@@ -75,7 +75,10 @@ def analyze(session, records: list[dict]) -> list[Finding]:
             try:
                 port_fk = port_map.get((parts[0], int(parts[1])))
             except (ValueError, IndexError):
-                pass
+                logger.debug(
+                    f"[nuclei_network:{session.id}] Could not parse port from matched_at={matched_at!r} "
+                    f"— finding will not be linked to a Port"
+                )
 
         findings.append(Finding(
             session=session,

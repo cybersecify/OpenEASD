@@ -23,10 +23,10 @@ import dns.zone
 import dns.message
 import dns.flags
 import dns.rcode
-import dns.dnssec
 import dns.rdatatype
-import dns.name
-import dns.exception
+# Import DNS exception classes directly so they remain bound to real exception
+# types even when tests patch the `dns` module-level reference.
+from dns.resolver import NXDOMAIN as _DNS_NXDOMAIN, NoAnswer as _DNS_NoAnswer, NoNameservers as _DNS_NoNameservers
 import requests
 from django.conf import settings
 from django.utils import timezone as django_tz
@@ -55,7 +55,10 @@ def _resolve(domain, record_type):
     """Resolve a DNS record, return answers or empty list."""
     try:
         return dns.resolver.resolve(domain, record_type)
-    except Exception:
+    except (_DNS_NoAnswer, _DNS_NXDOMAIN, _DNS_NoNameservers):
+        return []
+    except Exception as e:
+        logger.debug(f"[domain_security] DNS {record_type} lookup failed for {domain}: {e}")
         return []
 
 
@@ -121,8 +124,10 @@ def _check_wildcard(session, domain) -> list:
                 ),
                 extra={"resolves_to": [r.address for r in answers]},
             ))
-    except Exception:
-        pass
+    except (_DNS_NoAnswer, _DNS_NXDOMAIN, _DNS_NoNameservers):
+        pass  # No wildcard — expected
+    except Exception as e:
+        logger.debug(f"[domain_security] Wildcard probe failed for {domain}: {e}")
 
     return findings
 
@@ -541,6 +546,11 @@ def _fetch_rdap(domain) -> dict:
                 break
 
         if rdap_base:
+            # Validate the bootstrap URL is an HTTPS URL before using it
+            parsed = urllib.parse.urlparse(rdap_base)
+            if parsed.scheme != "https" or not parsed.netloc:
+                logger.warning(f"[domain_security] IANA bootstrap returned non-HTTPS URL for .{tld}: {rdap_base!r} — skipping")
+                raise ValueError(f"Untrusted RDAP base URL: {rdap_base!r}")
             logger.info(f"[domain_security] Trying IANA RDAP bootstrap for .{tld}: {rdap_base}")
             resp = requests.get(f"{rdap_base}/domain/{urllib.parse.quote(domain, safe='')}", timeout=_HTTP_TIMEOUT)
             resp.raise_for_status()
@@ -602,8 +612,8 @@ def _check_rdap(session, domain) -> list:
                     remediation="Renew the domain soon to avoid disruption.",
                     extra=extra,
                 ))
-        except Exception:
-            pass
+        except (ValueError, KeyError) as e:
+            logger.debug(f"[domain_security] Could not parse RDAP expiry date {expiry_str!r} for {domain}: {e}")
 
     # Transfer lock
     has_transfer_lock = any(s in {"client transfer prohibited", "server transfer prohibited"} for s in statuses)

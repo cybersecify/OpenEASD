@@ -24,6 +24,8 @@ import smtplib
 import socket
 import ssl
 
+from django.utils import timezone as django_tz
+
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import ec, rsa, dsa
 from cryptography.hazmat.primitives.hashes import SHA1
@@ -64,7 +66,10 @@ def _probe_starttls_smtp(ip: str, port: int) -> bool:
         with smtplib.SMTP(host=ip, port=port, timeout=PROBE_TIMEOUT) as s:
             s.starttls()
             return True
-    except Exception:
+    except (OSError, smtplib.SMTPException):
+        return False
+    except Exception as e:
+        logger.debug(f"[tls_checker] STARTTLS SMTP probe failed on {ip}:{port}: {type(e).__name__}: {e}")
         return False
 
 
@@ -74,7 +79,10 @@ def _probe_starttls_imap(ip: str, port: int) -> bool:
         m.starttls()
         m.logout()
         return True
-    except Exception:
+    except (OSError, imaplib.IMAP4.error):
+        return False
+    except Exception as e:
+        logger.debug(f"[tls_checker] STARTTLS IMAP probe failed on {ip}:{port}: {type(e).__name__}: {e}")
         return False
 
 
@@ -84,7 +92,10 @@ def _probe_starttls_pop3(ip: str, port: int) -> bool:
         m.stls()
         m.quit()
         return True
-    except Exception:
+    except (OSError, poplib.error_proto):
+        return False
+    except Exception as e:
+        logger.debug(f"[tls_checker] STARTTLS POP3 probe failed on {ip}:{port}: {type(e).__name__}: {e}")
         return False
 
 
@@ -95,7 +106,10 @@ def _probe_starttls_ftp(ip: str, port: int) -> bool:
         ftp.auth()
         ftp.quit()
         return True
-    except Exception:
+    except (OSError, ftplib.Error):
+        return False
+    except Exception as e:
+        logger.debug(f"[tls_checker] STARTTLS FTP probe failed on {ip}:{port}: {type(e).__name__}: {e}")
         return False
 
 
@@ -134,7 +148,10 @@ def _check_hsts(ip: str, port: int, host: str) -> str | None:
         conn.request("HEAD", "/", headers={"Host": host, "User-Agent": "openeasd-tls-checker/1.0"})
         resp = conn.getresponse()
         return resp.getheader("Strict-Transport-Security")
-    except Exception:
+    except (OSError, ssl.SSLError, http.client.HTTPException):
+        return None
+    except Exception as e:
+        logger.debug(f"[tls_checker] HSTS check failed on {ip}:{port}: {type(e).__name__}: {e}")
         return None
     finally:
         try:
@@ -176,8 +193,7 @@ def _parse_cert_details(der_bytes: bytes, hostname: str | None = None) -> dict:
     # ── Expiry ───────────────────────────────────────────────────────────
     try:
         expiry = cert.not_valid_after_utc
-        now = datetime.datetime.now(datetime.timezone.utc)
-        result["cert_expiry_days"] = (expiry - now).days
+        result["cert_expiry_days"] = (expiry - django_tz.now()).days
     except Exception:
         pass
 
@@ -307,7 +323,10 @@ def _probe_tls_details(ip: str, port: int, hostname: str | None = None) -> dict 
                     "cipher_bits":  cipher_bits or 0,
                     **cert_info,
                 }
-    except Exception:
+    except (OSError, ssl.SSLError):
+        return None  # No TLS or connection refused/timed out
+    except Exception as e:
+        logger.debug(f"[tls_checker] TLS detail probe failed on {ip}:{port}: {type(e).__name__}: {e}")
         return None
 
 

@@ -26,6 +26,7 @@ dependencies = [
     "xhtml2pdf>=0.2.15",
     # Task queue
     "huey>=2.5",
+    "defusedxml>=0.7.1",
 ]
 
 [project.optional-dependencies]
