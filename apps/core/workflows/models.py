@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import models
 
 
@@ -75,9 +77,11 @@ class WorkflowRun(models.Model):
         ("pending", "Pending"),
         ("running", "Running"),
         ("completed", "Completed"),
+        ("partial", "Partial"),
         ("failed", "Failed"),
     ]
 
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     workflow = models.ForeignKey(Workflow, on_delete=models.SET_NULL, null=True, related_name="runs")
     session = models.OneToOneField("scans.ScanSession", on_delete=models.CASCADE, related_name="workflow_run")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", db_index=True)
