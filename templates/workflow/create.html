@@ -70,7 +70,6 @@
 </form>
 
 {{ tool_requires_json|json_script:"tool-deps" }}
-<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
 <script>
 function workflowForm() {
   const deps = JSON.parse(document.getElementById('tool-deps').textContent);

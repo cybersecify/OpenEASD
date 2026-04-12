@@ -16,12 +16,21 @@
         {% endif %}
       </div>
       {% if session.status == "running" or session.status == "pending" %}
-      <form method="post" action="{% url 'scan-stop' session.uuid %}">
-        {% csrf_token %}
-        <button type="submit" class="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-300 rounded-md hover:bg-red-50 transition-colors">
+      <div x-data="{ confirmStop: false }">
+        <button @click="confirmStop = true" x-show="!confirmStop"
+                class="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-300 rounded-md hover:bg-red-50 transition-colors">
           Stop Scan
         </button>
-      </form>
+        <div x-show="confirmStop" x-cloak class="flex items-center gap-2">
+          <button @click="confirmStop = false" class="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+          <form method="post" action="{% url 'scan-stop' session.uuid %}">
+            {% csrf_token %}
+            <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700">
+              Yes, stop
+            </button>
+          </form>
+        </div>
+      </div>
       {% elif session.end_time %}
       <span class="text-gray-400 text-sm">{{ session.end_time|date:"M d, Y H:i" }}</span>
       {% endif %}

@@ -61,8 +61,7 @@
     </thead>
     <tbody class="divide-y divide-gray-100">
       {% for domain in domains %}
-      <!-- Normal row -->
-      <tr id="row-{{ domain.pk }}" class="hover:bg-gray-50">
+      <tr class="hover:bg-gray-50" x-data="{ confirmDelete: false }">
         <td class="px-6 py-4 text-sm font-mono font-medium text-gray-900">
           {{ domain.name }}
           {% if domain.name in recurring_domains %}
@@ -97,14 +96,11 @@
                 {% if domain.is_active %}Pause{% else %}Resume{% endif %}
               </button>
             </form>
-            <button onclick="showConfirm({{ domain.pk }})" class="text-red-500 hover:text-red-700 text-sm">
-              Delete
-            </button>
+            <button @click="confirmDelete = true" x-show="!confirmDelete" class="text-red-500 hover:text-red-700 text-sm">Delete</button>
           </div>
         </td>
       </tr>
-      <!-- Inline confirm row (hidden by default) -->
-      <tr id="confirm-{{ domain.pk }}" class="hidden bg-red-50">
+      <tr x-show="confirmDelete" x-cloak class="bg-red-50">
         <td colspan="5" class="px-6 py-3">
           <div class="flex items-center justify-between">
             <p class="text-sm text-red-700">
@@ -112,14 +108,10 @@
               This will remove all scan history and findings for this domain.
             </p>
             <div class="flex items-center gap-3 shrink-0 ml-6">
-              <button onclick="hideConfirm({{ domain.pk }})" class="text-sm text-gray-500 hover:text-gray-700">
-                Cancel
-              </button>
+              <button @click="confirmDelete = false" class="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
               <form method="post" action="{% url 'domain-delete' domain.pk %}" class="inline">
                 {% csrf_token %}
-                <button type="submit" class="bg-red-600 text-white text-sm px-4 py-1.5 rounded hover:bg-red-700">
-                  Yes, delete
-                </button>
+                <button type="submit" class="bg-red-600 text-white text-sm px-4 py-1.5 rounded hover:bg-red-700">Yes, delete</button>
               </form>
             </div>
           </div>
@@ -135,15 +127,4 @@
   </div>
   {% endif %}
 </div>
-
-<script>
-  function showConfirm(pk) {
-    document.getElementById('row-' + pk).classList.add('opacity-50');
-    document.getElementById('confirm-' + pk).classList.remove('hidden');
-  }
-  function hideConfirm(pk) {
-    document.getElementById('row-' + pk).classList.remove('opacity-50');
-    document.getElementById('confirm-' + pk).classList.add('hidden');
-  }
-</script>
 {% endblock %}

@@ -84,8 +84,12 @@
         <option value="pending" {% if status_filter == "pending" %}selected{% endif %}>Pending</option>
         <option value="running" {% if status_filter == "running" %}selected{% endif %}>Running</option>
         <option value="completed" {% if status_filter == "completed" %}selected{% endif %}>Completed</option>
+        <option value="cancelled" {% if status_filter == "cancelled" %}selected{% endif %}>Cancelled</option>
         <option value="failed" {% if status_filter == "failed" %}selected{% endif %}>Failed</option>
       </select>
+    </div>
+    <div class="shrink-0 self-end">
+      <a href="{% url 'scan-list' %}" class="text-xs text-gray-400 hover:text-gray-600">Clear filters</a>
     </div>
   </form>
 </div>

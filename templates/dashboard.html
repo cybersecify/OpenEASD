@@ -47,30 +47,26 @@
 
 <!-- Discovery Summary -->
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-  <a href="{% url 'scan-list' %}#subdomains"
-     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
+  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Active Subdomains</p>
     <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.subdomains }}</p>
     <p class="text-xs text-gray-400 mt-1">discovered</p>
-  </a>
-  <a href="{% url 'scan-list' %}#ips"
-     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
+  </div>
+  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Public IPs</p>
     <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.ips }}</p>
     <p class="text-xs text-gray-400 mt-1">resolved</p>
-  </a>
-  <a href="{% url 'scan-list' %}#ports"
-     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
+  </div>
+  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Open Ports</p>
     <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.ports }}</p>
     <p class="text-xs text-gray-400 mt-1">across all hosts</p>
-  </a>
-  <a href="{% url 'scan-list' %}#urls"
-     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
+  </div>
+  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Web URLs</p>
     <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.urls }}</p>
     <p class="text-xs text-gray-400 mt-1">live HTTP/HTTPS</p>
-  </a>
+  </div>
 </div>
 
 <!-- Domain Status -->
