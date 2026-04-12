@@ -99,6 +99,11 @@ def dashboard(request):
         "urls": URL.objects.filter(session_id__in=latest_completed_ids).count(),
     }
 
+    # Get the single latest completed session for asset card links
+    latest_completed_session = (
+        ScanSession.objects.filter(id__in=latest_completed_ids).order_by("-id").first()
+    )
+
     return render(request, "dashboard.html", {
         "domain_status": domain_status,
         "current_critical": current_critical,
@@ -108,6 +113,7 @@ def dashboard(request):
         "urgent_findings": urgent_findings,
         "urgent_cves": urgent_cves,
         "asset_counts": asset_counts,
+        "latest_scan_uuid": latest_completed_session.uuid if latest_completed_session else None,
     })
 
 

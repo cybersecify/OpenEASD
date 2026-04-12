@@ -47,26 +47,49 @@
 
 <!-- Discovery Summary -->
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  {% if latest_scan_uuid %}
+  <a href="{% url 'scan-detail' latest_scan_uuid %}#subdomains"
+     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
+  {% else %}
   <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+  {% endif %}
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Active Subdomains</p>
     <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.subdomains }}</p>
     <p class="text-xs text-gray-400 mt-1">discovered</p>
-  </div>
+  {% if latest_scan_uuid %}</a>{% else %}</div>{% endif %}
+
+  {% if latest_scan_uuid %}
+  <a href="{% url 'scan-detail' latest_scan_uuid %}#ips"
+     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
+  {% else %}
   <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+  {% endif %}
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Public IPs</p>
     <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.ips }}</p>
     <p class="text-xs text-gray-400 mt-1">resolved</p>
-  </div>
+  {% if latest_scan_uuid %}</a>{% else %}</div>{% endif %}
+
+  {% if latest_scan_uuid %}
+  <a href="{% url 'scan-detail' latest_scan_uuid %}#ports"
+     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
+  {% else %}
   <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+  {% endif %}
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Open Ports</p>
     <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.ports }}</p>
     <p class="text-xs text-gray-400 mt-1">across all hosts</p>
-  </div>
+  {% if latest_scan_uuid %}</a>{% else %}</div>{% endif %}
+
+  {% if latest_scan_uuid %}
+  <a href="{% url 'scan-detail' latest_scan_uuid %}#urls"
+     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
+  {% else %}
   <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+  {% endif %}
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Web URLs</p>
     <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.urls }}</p>
     <p class="text-xs text-gray-400 mt-1">live HTTP/HTTPS</p>
-  </div>
+  {% if latest_scan_uuid %}</a>{% else %}</div>{% endif %}
 </div>
 
 <!-- Domain Status -->
