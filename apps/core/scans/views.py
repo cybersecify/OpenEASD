@@ -262,6 +262,9 @@ def scan_delete(request, session_uuid):
     domain = session.domain
     session.delete()
     logger.info(f"Scan deleted: domain={domain} uuid={session_uuid}")
+    # Rebuild global insights after deletion (FindingTypeSummary uses latest scan data)
+    from apps.core.insights.builder import _rebuild_finding_type_summaries
+    _rebuild_finding_type_summaries()
     return redirect("scan-list")
 
 
