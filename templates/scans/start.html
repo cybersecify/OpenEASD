@@ -36,6 +36,13 @@
         {% endif %}
       </div>
 
+      <!-- Workflow -->
+      <div class="mb-6">
+        <label class="block text-sm font-semibold text-gray-700 mb-1.5">Workflow</label>
+        {{ form.workflow }}
+        <p class="text-gray-400 text-xs mt-1">Select which tools to run. <a href="{% url 'workflow-list' %}" class="text-indigo-500 hover:underline">Manage workflows</a></p>
+      </div>
+
       <!-- Schedule Type — card selection -->
       <div class="mb-6">
         <label class="block text-sm font-semibold text-gray-700 mb-2">When to run</label>

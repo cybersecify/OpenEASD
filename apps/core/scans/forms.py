@@ -4,6 +4,7 @@ import re
 from django import forms
 
 from apps.core.domains.models import Domain
+from apps.core.workflows.models import Workflow
 
 SCHEDULE_TYPE_CHOICES = [
     ("now", "Run now"),
@@ -29,12 +30,23 @@ class StartScanForm(forms.Form):
         choices=[],
         widget=forms.Select(attrs={"class": INPUT_CLASS}),
     )
+    workflow = forms.ModelChoiceField(
+        queryset=Workflow.objects.all(),
+        required=False,
+        empty_label=None,
+        widget=forms.Select(attrs={"class": INPUT_CLASS}),
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Populate choices from active domains only
         active = Domain.objects.filter(is_active=True).order_by("name").values_list("name", flat=True)
         self.fields["domain"].choices = [(d, d) for d in active]
+        # Default to the default workflow
+        default_wf = Workflow.objects.filter(is_default=True).first()
+        if default_wf:
+            self.fields["workflow"].initial = default_wf.pk
+
     schedule_type = forms.ChoiceField(
         choices=SCHEDULE_TYPE_CHOICES,
         initial="now",

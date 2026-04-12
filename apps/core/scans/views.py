@@ -108,7 +108,8 @@ def scan_start(request):
 
             if schedule_type == "now":
                 from .pipeline import create_scan_session
-                session = create_scan_session(domain)
+                workflow = form.cleaned_data.get("workflow")
+                session = create_scan_session(domain, workflow=workflow)
                 if session is None:
                     form.add_error("domain", f"A scan for {domain} is already running. Please wait for it to finish.")
                 else:
