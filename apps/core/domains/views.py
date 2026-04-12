@@ -68,4 +68,6 @@ def domain_delete(request, pk):
             ScanSession.objects.filter(domain=domain_name).delete()
             ScanSummary.objects.filter(domain=domain_name).delete()
             domain.delete()
+            from apps.core.insights.builder import _rebuild_finding_type_summaries
+            _rebuild_finding_type_summaries()
     return redirect("domain-list")
