@@ -256,6 +256,17 @@ def scan_status_fragment(request, session_uuid):
 
 @login_required
 @require_http_methods(["POST"])
+def scan_delete(request, session_uuid):
+    """Delete a scan session and all its assets/findings."""
+    session = get_object_or_404(ScanSession, uuid=session_uuid)
+    domain = session.domain
+    session.delete()
+    logger.info(f"Scan deleted: domain={domain} uuid={session_uuid}")
+    return redirect("scan-list")
+
+
+@login_required
+@require_http_methods(["POST"])
 def scan_stop(request, session_uuid):
     """Cancel a running scan. The workflow runner checks for this between steps."""
     session = get_object_or_404(ScanSession, uuid=session_uuid)

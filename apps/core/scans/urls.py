@@ -11,6 +11,7 @@ urlpatterns = [
     path("<uuid:session_uuid>/", views.scan_detail, name="scan-detail"),
     path("<uuid:session_uuid>/status/", views.scan_status_fragment, name="scan-status-fragment"),
     path("<uuid:session_uuid>/stop/", views.scan_stop, name="scan-stop"),
+    path("<uuid:session_uuid>/delete/", views.scan_delete, name="scan-delete"),
     path("findings/", views.vulnerability_list, name="finding-list"),
     path("findings/<int:finding_id>/status/", views.finding_update_status, name="finding-update-status"),
 ]
