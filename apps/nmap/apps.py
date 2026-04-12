@@ -9,7 +9,7 @@ class NmapConfig(AppConfig):
     tool_meta = {
         "label": "Nmap (NSE Vuln Scan)",
         "runner": "apps.nmap.scanner.run_nmap",
-        "phase": 7,
+        "phase": 6,
         "requires": ["naabu", "service_detection"],
         "produces_findings": True,
     }
