@@ -11,4 +11,5 @@ class ServiceDetectionConfig(AppConfig):
         "phase": 5,
         "requires": ["naabu"],
         "produces_findings": False,
+        "core": True,  # always runs, hidden from workflow UI
     }

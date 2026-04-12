@@ -44,6 +44,7 @@ def _discover_tools():
             "phase": meta.get("phase", 99),
             "requires": meta.get("requires", []),
             "produces_findings": meta.get("produces_findings", False),
+            "core": meta.get("core", False),
         }
         logger.debug(f"[registry] Registered tool: {tool_name}")
 
@@ -58,10 +59,10 @@ def get_registry() -> dict[str, dict]:
 
 
 def get_tool_choices() -> list[tuple[str, str]]:
-    """Dynamic TOOL_CHOICES for model fields and forms."""
+    """Dynamic TOOL_CHOICES for model fields and forms. Excludes core tools."""
     reg = get_registry()
     return sorted(
-        [(name, info["label"]) for name, info in reg.items()],
+        [(name, info["label"]) for name, info in reg.items() if not info.get("core")],
         key=lambda x: reg[x[0]]["phase"],
     )
 
