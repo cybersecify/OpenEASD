@@ -143,9 +143,8 @@ def _patch_all_tool_collectors():
     stack.enter_context(patch("apps.subfinder.scanner.collect", return_value=[]))
     stack.enter_context(patch("apps.dnsx.scanner.collect", return_value=[]))
     stack.enter_context(patch("apps.naabu.scanner.collect", return_value=[]))
-    stack.enter_context(patch("apps.core.service_detection.detector._probe_http", return_value=None))
-    stack.enter_context(patch("apps.core.service_detection.detector._probe_banner", return_value=None))
     stack.enter_context(patch("apps.core.service_detection.detector._probe_tls", return_value=False))
+    stack.enter_context(patch("apps.core.service_detection.detector._probe_http", return_value=False))
     stack.enter_context(patch("apps.httpx.scanner.collect", return_value=[]))
     stack.enter_context(patch("apps.nmap.scanner.collect", return_value={}))
     stack.enter_context(patch("apps.tls_checker.scanner.collect", return_value=[]))
@@ -432,9 +431,8 @@ class TestFullPipelineMocked:
              patch("apps.subfinder.scanner.collect", return_value=m["subfinder"]), \
              patch("apps.dnsx.scanner.collect", return_value=m["dnsx"]), \
              patch("apps.naabu.scanner.collect", return_value=m["naabu"]), \
-             patch("apps.core.service_detection.detector._probe_http", return_value=None), \
-             patch("apps.core.service_detection.detector._probe_banner", return_value=None), \
              patch("apps.core.service_detection.detector._probe_tls", return_value=False), \
+             patch("apps.core.service_detection.detector._probe_http", return_value=False), \
              patch("apps.httpx.scanner.collect", return_value=m["httpx"]), \
              patch("apps.nmap.scanner.collect", return_value={}), \
              patch("apps.tls_checker.scanner.collect", return_value=[]), \
@@ -459,17 +457,11 @@ class TestFullPipelineMocked:
         from apps.core.scans.pipeline import run_scan
         from apps.core.assets.models import Port
 
-        def mock_http_probe(ip, port):
-            if port in (80, 8080):
-                return "http"
-            if port in (443, 8443):
-                return "https"
-            return None
+        def mock_tls(ip, port):
+            return port in (443,)
 
-        def mock_banner_probe(ip, port):
-            if port == 22:
-                return "ssh"
-            return None
+        def mock_http(ip, port, scheme):
+            return port in (80, 443)
 
         wf = _ensure_default_workflow()
         session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending", workflow=wf)
@@ -484,9 +476,8 @@ class TestFullPipelineMocked:
              patch("apps.subfinder.scanner.collect", return_value=m["subfinder"]), \
              patch("apps.dnsx.scanner.collect", return_value=m["dnsx"]), \
              patch("apps.naabu.scanner.collect", return_value=m["naabu"]), \
-             patch("apps.core.service_detection.detector._probe_http", side_effect=mock_http_probe), \
-             patch("apps.core.service_detection.detector._probe_banner", side_effect=mock_banner_probe), \
-             patch("apps.core.service_detection.detector._probe_tls", return_value=False), \
+             patch("apps.core.service_detection.detector._probe_tls", side_effect=mock_tls), \
+             patch("apps.core.service_detection.detector._probe_http", side_effect=mock_http), \
              patch("apps.httpx.scanner.collect", return_value=m["httpx"]), \
              patch("apps.nmap.scanner.collect", return_value={}), \
              patch("apps.tls_checker.scanner.collect", return_value=[]), \
@@ -522,9 +513,8 @@ class TestFullPipelineMocked:
              patch("apps.subfinder.scanner.collect", return_value=m["subfinder"]), \
              patch("apps.dnsx.scanner.collect", return_value=m["dnsx"]), \
              patch("apps.naabu.scanner.collect", return_value=m["naabu"]), \
-             patch("apps.core.service_detection.detector._probe_http", return_value=None), \
-             patch("apps.core.service_detection.detector._probe_banner", return_value=None), \
              patch("apps.core.service_detection.detector._probe_tls", return_value=False), \
+             patch("apps.core.service_detection.detector._probe_http", return_value=False), \
              patch("apps.httpx.scanner.collect", return_value=m["httpx"]), \
              patch("apps.nmap.scanner.collect", return_value={}), \
              patch("apps.tls_checker.scanner.collect", return_value=[]), \
