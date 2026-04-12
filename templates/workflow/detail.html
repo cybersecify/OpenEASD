@@ -34,26 +34,17 @@
       <h2 class="font-semibold text-gray-700">Steps</h2>
     </div>
     <ul class="divide-y divide-gray-100">
-      {% for tool_key, tool_label in tool_choices %}
-      {% with step=workflow.steps.all %}
+      {% for step in tool_steps %}
       <li class="px-6 py-3 flex items-center justify-between">
-        <span class="text-sm text-gray-700">{{ tool_label }}</span>
-        <form method="post" action="{% url 'workflow-toggle-step' workflow.pk tool_key %}">
+        <span class="text-sm text-gray-700">{{ step.label }}</span>
+        <form method="post" action="{% url 'workflow-toggle-step' workflow.pk step.key %}">
           {% csrf_token %}
-          {% for s in workflow.steps.all %}{% if s.tool == tool_key %}
           <button type="submit"
-                  class="text-xs px-3 py-1 rounded {% if s.enabled %}bg-green-100 text-green-700 hover:bg-green-200{% else %}bg-gray-100 text-gray-500 hover:bg-gray-200{% endif %}">
-            {% if s.enabled %}Enabled{% else %}Disabled{% endif %}
+                  class="text-xs px-3 py-1 rounded {% if step.enabled %}bg-green-100 text-green-700 hover:bg-green-200{% else %}bg-gray-100 text-gray-400 hover:bg-gray-200{% endif %}">
+            {% if step.enabled %}Enabled{% else %}Disabled{% endif %}
           </button>
-          {% endif %}{% endfor %}
-          {% if not workflow.steps.all|length %}
-          <button type="submit" class="text-xs px-3 py-1 rounded bg-gray-100 text-gray-500 hover:bg-gray-200">
-            Disabled
-          </button>
-          {% endif %}
         </form>
       </li>
-      {% endwith %}
       {% endfor %}
     </ul>
   </div>

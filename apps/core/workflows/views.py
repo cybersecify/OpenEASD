@@ -20,10 +20,18 @@ def workflow_list(request):
 def workflow_detail(request, pk):
     workflow = get_object_or_404(Workflow.objects.prefetch_related("steps", "runs__step_results"), pk=pk)
     recent_runs = workflow.runs.select_related("session").order_by("-started_at")[:10]
+
+    # Build step status for each tool
+    enabled_tools = {s.tool: s.enabled for s in workflow.steps.all()}
+    tool_steps = [
+        {"key": key, "label": label, "enabled": enabled_tools.get(key, False)}
+        for key, label in get_tool_choices()
+    ]
+
     return render(request, "workflow/detail.html", {
         "workflow": workflow,
         "recent_runs": recent_runs,
-        "tool_choices": get_tool_choices(),
+        "tool_steps": tool_steps,
     })
 
 
