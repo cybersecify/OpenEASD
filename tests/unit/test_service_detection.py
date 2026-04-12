@@ -1,4 +1,4 @@
-"""Unit tests for apps/core/service_detection — TLS + HTTP probes."""
+"""Unit tests for apps/core/service_detection — HTTPS + HTTP probes."""
 
 from unittest.mock import patch, MagicMock
 
@@ -6,34 +6,13 @@ import pytest
 import requests
 
 from apps.core.service_detection.detector import (
-    _probe_tls, _probe_http, detect_services, WEB_SERVICES,
+    _probe_http, detect_services, WEB_SERVICES,
 )
 
 
 # ---------------------------------------------------------------------------
 # Unit tests — no DB needed
 # ---------------------------------------------------------------------------
-
-class TestProbeTls:
-    def test_tls_detected(self):
-        mock_sock = MagicMock()
-        mock_sock.__enter__ = lambda s: s
-        mock_sock.__exit__ = MagicMock(return_value=False)
-        mock_ssock = MagicMock()
-        mock_ssock.__enter__ = lambda s: s
-        mock_ssock.__exit__ = MagicMock(return_value=False)
-
-        with patch("apps.core.service_detection.detector.socket.create_connection",
-                   return_value=mock_sock):
-            with patch("apps.core.service_detection.detector.ssl.create_default_context") as mock_ctx:
-                mock_ctx.return_value.wrap_socket.return_value = mock_ssock
-                assert _probe_tls("1.2.3.4", 443) is True
-
-    def test_no_tls(self):
-        with patch("apps.core.service_detection.detector.socket.create_connection",
-                   side_effect=ConnectionRefusedError):
-            assert _probe_tls("1.2.3.4", 22) is False
-
 
 class TestProbeHttp:
     def test_http_responds(self):
@@ -84,10 +63,8 @@ class TestDetectServices:
         from apps.core.assets.models import Port
         sess = self._make_session()
 
-        with patch("apps.core.service_detection.detector._probe_tls") as mock_tls, \
-             patch("apps.core.service_detection.detector._probe_http") as mock_http:
-            mock_tls.side_effect = lambda ip, port: port == 443
-            mock_http.side_effect = lambda ip, port, scheme: port in (80, 443)
+        with patch("apps.core.service_detection.detector._probe_http") as mock_http:
+            mock_http.side_effect = lambda ip, port, scheme: scheme == "https" and port == 443
             detect_services(sess)
 
         p443 = Port.objects.get(session=sess, port=443)
@@ -98,9 +75,8 @@ class TestDetectServices:
         from apps.core.assets.models import Port
         sess = self._make_session()
 
-        with patch("apps.core.service_detection.detector._probe_tls", return_value=False), \
-             patch("apps.core.service_detection.detector._probe_http") as mock_http:
-            mock_http.side_effect = lambda ip, port, scheme: port == 80
+        with patch("apps.core.service_detection.detector._probe_http") as mock_http:
+            mock_http.side_effect = lambda ip, port, scheme: port == 80 and scheme == "http"
             detect_services(sess)
 
         p80 = Port.objects.get(session=sess, port=80)
@@ -111,8 +87,7 @@ class TestDetectServices:
         from apps.core.assets.models import Port
         sess = self._make_session()
 
-        with patch("apps.core.service_detection.detector._probe_tls", return_value=False), \
-             patch("apps.core.service_detection.detector._probe_http", return_value=False):
+        with patch("apps.core.service_detection.detector._probe_http", return_value=False):
             detect_services(sess)
 
         p22 = Port.objects.get(session=sess, port=22)
@@ -122,15 +97,23 @@ class TestDetectServices:
     def test_returns_count_of_web_ports(self):
         sess = self._make_session()
 
-        with patch("apps.core.service_detection.detector._probe_tls") as mock_tls, \
-             patch("apps.core.service_detection.detector._probe_http") as mock_http:
-            mock_tls.side_effect = lambda ip, port: port == 443
+        with patch("apps.core.service_detection.detector._probe_http") as mock_http:
             mock_http.side_effect = lambda ip, port, scheme: port in (80, 443)
             count = detect_services(sess)
 
-        assert count == 2  # port 80 and 443
+        assert count == 2
 
     def test_empty_session(self):
         from apps.core.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
         assert detect_services(sess) == 0
+
+    def test_undetectable_port_not_updated(self):
+        from apps.core.assets.models import Port
+        sess = self._make_session()
+
+        with patch("apps.core.service_detection.detector._probe_http", return_value=False):
+            count = detect_services(sess)
+
+        assert count == 0
+        assert Port.objects.get(session=sess, port=22).service == ""

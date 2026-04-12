@@ -54,7 +54,7 @@ def run_workflow(workflow_run_id: int):
             try:
                 fn = _get_runner(tool)
                 results = fn(session)
-                count = len(results) if results else 0
+                count = len(results) if isinstance(results, (list, tuple)) else (results or 0)
                 step_result.status = "completed"
                 step_result.findings_count = count
 

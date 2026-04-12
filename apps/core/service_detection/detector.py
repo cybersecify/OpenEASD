@@ -9,8 +9,6 @@ Secondary output: Port.service ("http", "https", or "")
 """
 
 import logging
-import socket
-import ssl
 
 import requests
 import urllib3
@@ -23,18 +21,6 @@ PROBE_TIMEOUT = 3
 
 WEB_SERVICES = frozenset({"http", "https"})
 
-
-def _probe_tls(ip: str, port: int) -> bool:
-    """Check if the port speaks TLS. Returns True if TLS handshake succeeds."""
-    try:
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        with socket.create_connection((ip, port), timeout=PROBE_TIMEOUT) as sock:
-            with ctx.wrap_socket(sock, server_hostname=ip):
-                return True
-    except Exception:
-        return False
 
 
 def _probe_http(ip: str, port: int, scheme: str) -> bool:
@@ -57,10 +43,9 @@ def detect_services(session) -> int:
     Probe all open ports to classify as web or non-web.
 
     For each port:
-      1. Try TLS handshake → determines if encrypted
-      2. Try HTTP request (https:// if TLS, http:// if plain)
-      3. If HTTP responds → is_web=True, service="http"/"https"
-         If not → is_web=False, service=""
+      1. Try HTTPS request → if responds, service="https", is_web=True
+      2. Try HTTP request  → if responds, service="http", is_web=True
+      3. Neither responds  → is_web=False
 
     Returns count of ports updated.
     """
@@ -76,15 +61,12 @@ def detect_services(session) -> int:
         ip = p.address
         port_num = p.port
 
-        # Step 1: TLS or plain?
-        has_tls = _probe_tls(ip, port_num)
-
-        # Step 2: Web or not?
-        scheme = "https" if has_tls else "http"
-        is_http = _probe_http(ip, port_num, scheme)
-
-        if is_http:
-            service = scheme
+        # Try HTTPS first, then HTTP
+        if _probe_http(ip, port_num, "https"):
+            service = "https"
+            is_web = True
+        elif _probe_http(ip, port_num, "http"):
+            service = "http"
             is_web = True
         else:
             service = ""
@@ -95,7 +77,7 @@ def detect_services(session) -> int:
             updated += 1
             logger.debug(
                 f"[service_detection:{session.id}] {ip}:{port_num} → "
-                f"{'web' if is_web else 'non-web'} ({scheme if is_http else 'no http'})"
+                f"{service if service else 'unknown'} (web={is_web})"
             )
 
     logger.info(f"[service_detection:{session.id}] {updated}/{len(open_ports)} ports classified")
