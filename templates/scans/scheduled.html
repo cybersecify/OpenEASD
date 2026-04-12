@@ -28,7 +28,8 @@
     </thead>
     <tbody class="divide-y divide-gray-100">
       {% for job in jobs %}
-      <tr class="hover:bg-gray-50" x-data="{ confirmCancel: false }">
+      <tbody x-data="{ confirmCancel: false }">
+      <tr class="hover:bg-gray-50">
 
         <td class="px-6 py-4 text-sm font-mono font-medium text-gray-900">
           {{ job.domain }}
@@ -80,6 +81,7 @@
           </div>
         </td>
       </tr>
+      </tbody>
       {% endfor %}
     </tbody>
   </table>

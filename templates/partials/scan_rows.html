@@ -1,5 +1,6 @@
 {% for scan in scans %}
-<tr class="hover:bg-gray-50" x-data="{ confirmDelete: false }">
+<tbody x-data="{ confirmDelete: false }">
+<tr class="hover:bg-gray-50">
   <td class="px-6 py-4 text-sm font-medium text-gray-900">{{ scan.domain }}</td>
   <td class="px-6 py-4 text-sm text-gray-500">
     <span class="capitalize">{{ scan.scan_type }}</span>
@@ -37,6 +38,7 @@
     </div>
   </td>
 </tr>
+</tbody>
 {% empty %}
 <tr>
   <td colspan="6" class="px-6 py-8 text-center text-gray-400 text-sm">No scans found.</td>

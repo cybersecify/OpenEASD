@@ -61,7 +61,8 @@
     </thead>
     <tbody class="divide-y divide-gray-100">
       {% for domain in domains %}
-      <tr class="hover:bg-gray-50" x-data="{ confirmDelete: false }">
+      <tbody x-data="{ confirmDelete: false }">
+      <tr class="hover:bg-gray-50">
         <td class="px-6 py-4 text-sm font-mono font-medium text-gray-900">
           {{ domain.name }}
           {% if domain.name in recurring_domains %}
@@ -117,6 +118,7 @@
           </div>
         </td>
       </tr>
+      </tbody>
       {% endfor %}
     </tbody>
   </table>
