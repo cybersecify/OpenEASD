@@ -16,6 +16,20 @@ TOOL_CHOICES = [
     ("web_checker", "Web Checker"),
 ]
 
+# Tool dependencies — each tool requires these upstream tools to have data
+TOOL_REQUIRES = {
+    "domain_security": [],
+    "subfinder": [],
+    "dnsx": ["subfinder"],
+    "naabu": ["dnsx"],
+    "httpx": ["naabu"],
+    "nmap": ["naabu", "httpx"],
+    "tls_checker": ["naabu", "httpx"],
+    "ssh_checker": ["naabu"],
+    "nuclei": ["httpx"],
+    "web_checker": ["httpx"],
+}
+
 # Execution order within a phase — enforced by runner
 TOOL_PHASE = {
     "domain_security": 1,

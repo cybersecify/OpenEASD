@@ -4,7 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
 
-from .models import Workflow, WorkflowStep, TOOL_CHOICES
+from .models import Workflow, WorkflowStep, TOOL_CHOICES, TOOL_REQUIRES
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ def workflow_create(request):
         if not name:
             return render(request, "workflow/create.html", {
                 "tool_choices": TOOL_CHOICES,
+                "tool_requires_json": TOOL_REQUIRES,
                 "error": "Workflow name is required.",
             })
 
@@ -59,7 +60,10 @@ def workflow_create(request):
 
         return redirect("workflow-detail", pk=workflow.pk)
 
-    return render(request, "workflow/create.html", {"tool_choices": TOOL_CHOICES})
+    return render(request, "workflow/create.html", {
+        "tool_choices": TOOL_CHOICES,
+        "tool_requires_json": TOOL_REQUIRES,
+    })
 
 
 @login_required

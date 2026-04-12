@@ -12,7 +12,8 @@
 <div class="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">{{ error }}</div>
 {% endif %}
 
-<form method="post" class="space-y-6 max-w-2xl">
+<form method="post" class="space-y-6 max-w-2xl"
+      x-data="workflowForm()" >
   {% csrf_token %}
 
   <div class="bg-white rounded-lg shadow px-6 py-5 space-y-4">
@@ -37,12 +38,25 @@
     <div class="space-y-2">
       {% for tool_key, tool_label in tool_choices %}
       <label class="flex items-center gap-3 cursor-pointer">
-        <input type="checkbox" name="tools" value="{{ tool_key }}" checked
+        <input type="checkbox" name="tools" value="{{ tool_key }}"
+               x-model="selected"
                class="rounded border-gray-300 text-indigo-600">
         <span class="text-sm text-gray-700">{{ tool_label }}</span>
+        <template x-if="missingDeps('{{ tool_key }}').length > 0">
+          <span class="text-xs text-amber-600 ml-1"
+                x-text="'Needs: ' + missingDeps('{{ tool_key }}').join(', ')"></span>
+        </template>
       </label>
       {% endfor %}
     </div>
+
+    <!-- Dependency warning banner -->
+    <template x-if="allWarnings().length > 0">
+      <div class="mt-4 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded text-sm">
+        <span class="font-semibold">Dependency warning:</span> Some selected tools need upstream tools that are not included.
+        They will run but may produce no results.
+      </div>
+    </template>
   </div>
 
   <div class="flex gap-3">
@@ -54,4 +68,28 @@
     </a>
   </div>
 </form>
+
+{{ tool_requires_json|json_script:"tool-deps" }}
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
+<script>
+function workflowForm() {
+  const deps = JSON.parse(document.getElementById('tool-deps').textContent);
+  const toolLabels = Object.fromEntries(
+    [{% for k, v in tool_choices %}['{{ k }}', '{{ v }}'],{% endfor %}]
+  );
+  return {
+    selected: [],
+    missingDeps(tool) {
+      if (!this.selected.includes(tool)) return [];
+      const requires = deps[tool] || [];
+      return requires
+        .filter(dep => !this.selected.includes(dep))
+        .map(dep => toolLabels[dep] || dep);
+    },
+    allWarnings() {
+      return this.selected.filter(tool => this.missingDeps(tool).length > 0);
+    },
+  };
+}
+</script>
 {% endblock %}
