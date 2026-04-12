@@ -28,9 +28,6 @@ from .models import ScanSession, ScanDelta
 
 logger = logging.getLogger(__name__)
 
-# A scan running longer than this is considered stuck and will be marked failed.
-SCAN_TIMEOUT_MINUTES = 30
-
 
 # ---------------------------------------------------------------------------
 # Delta detection
@@ -211,78 +208,3 @@ def _dispatch_alerts(session):
         dispatch_alerts(session.id, severity_threshold=threshold)
     except Exception as e:
         logger.error(f"[scan:{session.id}] Alert dispatch failed: {e}", exc_info=True)
-
-
-# ---------------------------------------------------------------------------
-# Stuck scan watchdog
-# ---------------------------------------------------------------------------
-
-def reap_stuck_scans():
-    """
-    Mark scans that have been running/pending beyond SCAN_TIMEOUT_MINUTES as failed.
-    Called by the scheduler; safe to call multiple times concurrently.
-    """
-    cutoff = django_tz.now() - django_tz.timedelta(minutes=SCAN_TIMEOUT_MINUTES)
-    stuck = ScanSession.objects.filter(
-        status__in=["pending", "running"],
-        start_time__lt=cutoff,
-    )
-    count = stuck.count()
-    if count:
-        stuck.update(status="failed", end_time=django_tz.now())
-        logger.warning(f"[watchdog] Reaped {count} stuck scan(s)")
-    return count
-
-
-# ---------------------------------------------------------------------------
-# Scheduled scan functions
-# ---------------------------------------------------------------------------
-
-def run_scheduled_scan(domain: str, triggered_by: str = "scheduled"):
-    """
-    Top-level callable for APScheduler jobs (one-time and recurring).
-    Must be a module-level function so APScheduler can serialize it by reference.
-    """
-    session = create_scan_session(domain, triggered_by=triggered_by)
-    if session is None:
-        logger.info(f"[scheduled_scan] Skipping {domain} — scan already active")
-        return
-    from .tasks import run_scan_task
-    run_scan_task(session.id)
-    logger.info(f"[scheduled_scan] Launched scan for {domain} (session {session.id})")
-
-
-def daily_scan():
-    from apps.core.domains.models import Domain
-
-    active_domains = Domain.objects.filter(is_active=True)
-    if not active_domains.exists():
-        logger.info("[daily_scan] No active domains found")
-        return
-
-    for domain in active_domains:
-        session = create_scan_session(domain.name)
-        if session is None:
-            logger.info(f"[daily_scan] Skipping {domain.name} — scan already active")
-            continue
-        from .tasks import run_scan_task
-        run_scan_task(session.id)
-        logger.info(f"[daily_scan] Launched scan for {domain.name} (session {session.id})")
-
-
-def weekly_scan():
-    from apps.core.domains.models import Domain
-
-    active_domains = Domain.objects.filter(is_active=True)
-    if not active_domains.exists():
-        logger.info("[weekly_scan] No active domains found")
-        return
-
-    for domain in active_domains:
-        session = create_scan_session(domain.name)
-        if session is None:
-            logger.info(f"[weekly_scan] Skipping {domain.name} — scan already active")
-            continue
-        from .tasks import run_scan_task
-        run_scan_task(session.id)
-        logger.info(f"[weekly_scan] Launched full scan for {domain.name} (session {session.id})")

@@ -19,7 +19,7 @@ from apps.core.queries import latest_session_ids
 
 from .forms import StartScanForm
 from .models import ScanSession
-from .pipeline import run_scheduled_scan
+from apps.core.scheduler.scheduler import run_scheduled_scan
 
 logger = logging.getLogger(__name__)
 BUILTIN_JOB_IDS = {"daily_scan", "watchdog_reap_stuck_scans"}

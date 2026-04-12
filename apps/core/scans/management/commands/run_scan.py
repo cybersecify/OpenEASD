@@ -1,8 +1,7 @@
 """Management command: run_scan — triggers a scan synchronously."""
 
 from django.core.management.base import BaseCommand
-from apps.core.scans.models import ScanSession
-from apps.core.scans.pipeline import run_scan
+from apps.core.scans.pipeline import create_scan_session, run_scan
 
 
 class Command(BaseCommand):
@@ -14,7 +13,10 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         domain = options["domain"]
         self.stdout.write(f"Starting scan for {domain}...")
-        session = ScanSession.objects.create(domain=domain, scan_type="full", status="pending")
+        session = create_scan_session(domain, triggered_by="manual")
+        if session is None:
+            self.stdout.write(self.style.ERROR(f"Scan already active for {domain}"))
+            return
         self.stdout.write(f"Session ID: {session.id} (UUID: {session.uuid})")
         run_scan(session.id)
         session.refresh_from_db()
