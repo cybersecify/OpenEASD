@@ -121,7 +121,7 @@ class TestDomainSecurityScanFlow:
 
 
 def _patch_all_tool_collectors():
-    """Patch phases 2-6 tool collectors to return empty data (no binaries needed)."""
+    """Patch phases 2-7 tool collectors to return empty data (no binaries needed)."""
     from contextlib import ExitStack
     stack = ExitStack()
     stack.enter_context(patch("apps.subfinder.scanner.collect", return_value=[]))
@@ -129,6 +129,9 @@ def _patch_all_tool_collectors():
     stack.enter_context(patch("apps.naabu.scanner.collect", return_value=[]))
     stack.enter_context(patch("apps.httpx.scanner.collect", return_value=[]))
     stack.enter_context(patch("apps.nmap.scanner.collect", return_value={}))
+    stack.enter_context(patch("apps.tls_checker.scanner.collect", return_value=[]))
+    stack.enter_context(patch("apps.ssh_checker.scanner.collect", return_value=[]))
+    stack.enter_context(patch("apps.nuclei.scanner.collect", return_value=[]))
     return stack
 
 
@@ -404,7 +407,10 @@ class TestFullPipelineMocked:
              patch("apps.dnsx.scanner.collect", return_value=m["dnsx"]), \
              patch("apps.naabu.scanner.collect", return_value=m["naabu"]), \
              patch("apps.httpx.scanner.collect", return_value=m["httpx"]), \
-             patch("apps.nmap.scanner.collect", return_value={}):
+             patch("apps.nmap.scanner.collect", return_value={}), \
+             patch("apps.tls_checker.scanner.collect", return_value=[]), \
+             patch("apps.ssh_checker.scanner.collect", return_value=[]), \
+             patch("apps.nuclei.scanner.collect", return_value=[]):
             mdns.resolver.resolve.side_effect = Exception("no DNSKEY")
             run_scan(session.id)
 
@@ -437,7 +443,10 @@ class TestFullPipelineMocked:
              patch("apps.dnsx.scanner.collect", return_value=m["dnsx"]), \
              patch("apps.naabu.scanner.collect", return_value=m["naabu"]), \
              patch("apps.httpx.scanner.collect", return_value=m["httpx"]), \
-             patch("apps.nmap.scanner.collect", return_value={}):
+             patch("apps.nmap.scanner.collect", return_value={}), \
+             patch("apps.tls_checker.scanner.collect", return_value=[]), \
+             patch("apps.ssh_checker.scanner.collect", return_value=[]), \
+             patch("apps.nuclei.scanner.collect", return_value=[]):
             mdns.resolver.resolve.side_effect = Exception("no DNSKEY")
             run_scan(session.id)
 
@@ -471,7 +480,10 @@ class TestFullPipelineMocked:
              patch("apps.dnsx.scanner.collect", return_value=m["dnsx"]), \
              patch("apps.naabu.scanner.collect", return_value=m["naabu"]), \
              patch("apps.httpx.scanner.collect", return_value=m["httpx"]), \
-             patch("apps.nmap.scanner.collect", return_value={}):
+             patch("apps.nmap.scanner.collect", return_value={}), \
+             patch("apps.tls_checker.scanner.collect", return_value=[]), \
+             patch("apps.ssh_checker.scanner.collect", return_value=[]), \
+             patch("apps.nuclei.scanner.collect", return_value=[]):
             mdns.resolver.resolve.side_effect = Exception("no DNSKEY")
             run_scan(session.id)
 

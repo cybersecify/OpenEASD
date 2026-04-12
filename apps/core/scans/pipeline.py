@@ -2,11 +2,16 @@
 Scan orchestration for OpenEASD.
 
 Phases:
-  1. Apex domain security (DNS, email, RDAP)
-  2. Update session totals + mark completed
-  3. Delta detection
-  4. Build insights
-  5. Dispatch alerts
+  1. Domain security (DNS, email, RDAP)
+  2. Subfinder (passive subdomain enumeration)
+  3. DNSx (DNS resolution, public IP filtering)
+  4. Naabu (port scanning)
+  5. HTTPx (web probe, URL discovery)
+  6a. Nmap (NSE vulners on non-web ports)
+  6b. TLS checker (all open ports)
+  6c. SSH checker (SSH ports)
+  7. Nuclei (web vulnerability scanning on URLs)
+  Then: finalise session, delta detection, insights, alerts.
 """
 
 import logging
@@ -178,8 +183,8 @@ def run_scan(session_id: int):
         except Exception as e:
             logger.error(f"[scan:{session_id}] httpx failed: {e}", exc_info=True)
 
-        # Phase 6: Nmap NSE vulners on non-web ports (Ports without URL records)
-        logger.info(f"[scan:{session_id}] Phase 6: nmap NSE vulners")
+        # Phase 6a: Nmap NSE vulners on non-web ports (Ports without URL records)
+        logger.info(f"[scan:{session_id}] Phase 6a: nmap NSE vulners")
         try:
             from apps.nmap.scanner import run_nmap
             nmap_findings = run_nmap(session)
@@ -187,7 +192,34 @@ def run_scan(session_id: int):
         except Exception as e:
             logger.error(f"[scan:{session_id}] nmap failed: {e}", exc_info=True)
 
-        # Phase 7: Finalise session
+        # Phase 6b: TLS checker on all open ports
+        logger.info(f"[scan:{session_id}] Phase 6b: TLS checker")
+        try:
+            from apps.tls_checker.scanner import run_tls_check
+            tls_findings = run_tls_check(session)
+            logger.info(f"[scan:{session_id}] TLS findings: {len(tls_findings)}")
+        except Exception as e:
+            logger.error(f"[scan:{session_id}] tls_checker failed: {e}", exc_info=True)
+
+        # Phase 6c: SSH checker on SSH ports
+        logger.info(f"[scan:{session_id}] Phase 6c: SSH checker")
+        try:
+            from apps.ssh_checker.scanner import run_ssh_check
+            ssh_findings = run_ssh_check(session)
+            logger.info(f"[scan:{session_id}] SSH findings: {len(ssh_findings)}")
+        except Exception as e:
+            logger.error(f"[scan:{session_id}] ssh_checker failed: {e}", exc_info=True)
+
+        # Phase 7: Nuclei web vulnerability scan on URLs
+        logger.info(f"[scan:{session_id}] Phase 7: nuclei web vuln scan")
+        try:
+            from apps.nuclei.scanner import run_nuclei
+            nuclei_findings = run_nuclei(session)
+            logger.info(f"[scan:{session_id}] Nuclei findings: {len(nuclei_findings)}")
+        except Exception as e:
+            logger.error(f"[scan:{session_id}] nuclei failed: {e}", exc_info=True)
+
+        # Finalise session
         total = _count_all_findings(session)
         session.total_findings = total
         session.status = "completed"
