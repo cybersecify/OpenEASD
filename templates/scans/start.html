@@ -27,6 +27,16 @@
     <form method="post">
       {% csrf_token %}
 
+      {% if form.errors %}
+      <div class="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">
+        {% for field, errors in form.errors.items %}
+          {% for error in errors %}
+            <p>{{ error }}</p>
+          {% endfor %}
+        {% endfor %}
+      </div>
+      {% endif %}
+
       <!-- Domain -->
       <div class="mb-6">
         <label class="block text-sm font-semibold text-gray-700 mb-1.5">Domain</label>
