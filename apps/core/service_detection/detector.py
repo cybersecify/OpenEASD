@@ -1,8 +1,8 @@
 """Service detection — classifies ports as web or non-web.
 
-Two-step probe per port:
-  1. TLS handshake (socket + ssl) → encrypted or plaintext?
-  2. HTTP request (requests) → web or non-web?
+Probes each port with HTTP/HTTPS requests. If the probe fails on a
+common web port (80, 443, etc.), assumes web to avoid false non-web
+classification (CDN-fronted services reject requests by IP).
 
 Primary output: Port.is_web (True/False)
 Secondary output: Port.service ("http", "https", or "")
@@ -21,6 +21,9 @@ PROBE_TIMEOUT = 3
 
 WEB_SERVICES = frozenset({"http", "https"})
 
+# Common web ports — if probe fails/times out, assume web rather than
+# letting nmap scan them (CDN services reject raw IP requests)
+COMMON_WEB_PORTS = frozenset({80, 443, 8080, 8443, 8000, 8888, 3000, 5000})
 
 
 def _probe_http(ip: str, port: int, scheme: str) -> bool:
@@ -45,7 +48,8 @@ def detect_services(session) -> int:
     For each port:
       1. Try HTTPS request → if responds, service="https", is_web=True
       2. Try HTTP request  → if responds, service="http", is_web=True
-      3. Neither responds  → is_web=False
+      3. Neither responds + common web port → assume web (is_web=True)
+      4. Neither responds + uncommon port → is_web=False
 
     Returns count of ports updated.
     """
@@ -61,12 +65,14 @@ def detect_services(session) -> int:
         ip = p.address
         port_num = p.port
 
-        # Try HTTPS first, then HTTP
         if _probe_http(ip, port_num, "https"):
             service = "https"
             is_web = True
         elif _probe_http(ip, port_num, "http"):
             service = "http"
+            is_web = True
+        elif port_num in COMMON_WEB_PORTS:
+            service = "https" if port_num == 443 else "http"
             is_web = True
         else:
             service = ""
@@ -77,7 +83,7 @@ def detect_services(session) -> int:
             updated += 1
             logger.debug(
                 f"[service_detection:{session.id}] {ip}:{port_num} → "
-                f"{service if service else 'unknown'} (web={is_web})"
+                f"{service if service else 'non-web'} (web={is_web})"
             )
 
     logger.info(f"[service_detection:{session.id}] {updated}/{len(open_ports)} ports classified")

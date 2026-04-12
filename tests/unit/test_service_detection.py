@@ -108,12 +108,24 @@ class TestDetectServices:
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
         assert detect_services(sess) == 0
 
-    def test_undetectable_port_not_updated(self):
+    def test_undetectable_non_common_port_stays_non_web(self):
         from apps.core.assets.models import Port
         sess = self._make_session()
 
         with patch("apps.core.service_detection.detector._probe_http", return_value=False):
-            count = detect_services(sess)
+            detect_services(sess)
 
-        assert count == 0
+        # Port 22 is not a common web port — stays non-web
+        assert Port.objects.get(session=sess, port=22).is_web is False
         assert Port.objects.get(session=sess, port=22).service == ""
+
+    def test_common_web_port_assumed_web_on_probe_failure(self):
+        from apps.core.assets.models import Port
+        sess = self._make_session()
+
+        with patch("apps.core.service_detection.detector._probe_http", return_value=False):
+            detect_services(sess)
+
+        # Port 80 and 443 are common web ports — assumed web even if probe fails
+        assert Port.objects.get(session=sess, port=80).is_web is True
+        assert Port.objects.get(session=sess, port=443).is_web is True
