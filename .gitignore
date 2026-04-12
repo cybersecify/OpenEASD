@@ -15,6 +15,9 @@ wheels/
 
 # Database
 data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.db-journal
 
 # Logs
 logs/*.log
