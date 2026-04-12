@@ -59,6 +59,7 @@ def workflow_detail(request, pk):
         "workflow": workflow,
         "recent_runs": recent_runs,
         "tool_steps": tool_steps,
+        "tool_requires_json": get_tool_requires(),
     })
 
 

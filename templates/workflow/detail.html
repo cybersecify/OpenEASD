@@ -22,7 +22,8 @@
   {% endif %}
 </div>
 
-<form method="post" class="space-y-6 max-w-2xl">
+<form method="post" class="space-y-6 max-w-2xl"
+      x-data="workflowForm()">
   {% csrf_token %}
 
   <div class="bg-white rounded-lg shadow px-6 py-5 space-y-4">
@@ -49,11 +50,23 @@
       {% for step in tool_steps %}
       <label class="flex items-center gap-3 cursor-pointer">
         <input type="checkbox" name="tools" value="{{ step.key }}" {% if step.enabled %}checked{% endif %}
+               x-model="selected"
                class="rounded border-gray-300 text-indigo-600">
         <span class="text-sm text-gray-700">{{ step.label }}</span>
+        <template x-if="missingDeps('{{ step.key }}').length > 0">
+          <span class="text-xs text-amber-600 ml-1"
+                x-text="'Needs: ' + missingDeps('{{ step.key }}').join(', ')"></span>
+        </template>
       </label>
       {% endfor %}
     </div>
+
+    <template x-if="allWarnings().length > 0">
+      <div class="mt-4 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded text-sm">
+        <span class="font-semibold">Dependency warning:</span> Some selected tools need upstream tools that are not included.
+        They will run but may produce no results.
+      </div>
+    </template>
   </div>
 
   <div class="flex gap-3">
@@ -94,4 +107,27 @@
   </div>
 </div>
 {% endif %}
+
+{{ tool_requires_json|json_script:"tool-deps" }}
+<script>
+function workflowForm() {
+  const deps = JSON.parse(document.getElementById('tool-deps').textContent);
+  const toolLabels = Object.fromEntries(
+    [{% for step in tool_steps %}['{{ step.key }}', '{{ step.label }}'],{% endfor %}]
+  );
+  return {
+    selected: [],
+    missingDeps(tool) {
+      if (!this.selected.includes(tool)) return [];
+      const requires = deps[tool] || [];
+      return requires
+        .filter(dep => !this.selected.includes(dep))
+        .map(dep => toolLabels[dep] || dep);
+    },
+    allWarnings() {
+      return this.selected.filter(tool => this.missingDeps(tool).length > 0);
+    },
+  };
+}
+</script>
 {% endblock %}
