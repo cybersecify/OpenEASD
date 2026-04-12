@@ -21,13 +21,38 @@ def workflow_list(request):
 @login_required
 def workflow_detail(request, pk):
     workflow = get_object_or_404(Workflow.objects.prefetch_related("steps", "runs__step_results"), pk=pk)
-    recent_runs = workflow.runs.select_related("session").order_by("-started_at")[:10]
+    tool_choices = get_tool_choices()
+    tool_phases = get_tool_phases()
 
-    # Build step status for each tool
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()
+        description = request.POST.get("description", "").strip()
+        is_default = request.POST.get("is_default") == "on"
+        selected_tools = request.POST.getlist("tools")
+
+        if name:
+            workflow.name = name
+            workflow.description = description
+            workflow.is_default = is_default
+            workflow.save()
+
+            # Sync steps: delete old, create new
+            workflow.steps.all().delete()
+            for tool in selected_tools:
+                WorkflowStep.objects.create(
+                    workflow=workflow,
+                    tool=tool,
+                    order=tool_phases.get(tool, 99),
+                    enabled=True,
+                )
+            messages.success(request, f"Workflow '{workflow.name}' saved.")
+            return redirect("workflow-list")
+
+    recent_runs = workflow.runs.select_related("session").order_by("-started_at")[:10]
     enabled_tools = {s.tool: s.enabled for s in workflow.steps.all()}
     tool_steps = [
         {"key": key, "label": label, "enabled": enabled_tools.get(key, False)}
-        for key, label in get_tool_choices()
+        for key, label in tool_choices
     ]
 
     return render(request, "workflow/detail.html", {

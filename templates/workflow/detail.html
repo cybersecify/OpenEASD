@@ -1,16 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}{{ workflow.name }}{% endblock %}
+{% block title %}Edit {{ workflow.name }}{% endblock %}
 
 {% block content %}
 <div class="mb-6 flex items-start justify-between">
   <div>
     <a href="{% url 'workflow-list' %}" class="text-indigo-600 text-sm hover:underline">&larr; Workflows</a>
-    <h1 class="text-2xl font-bold text-gray-900 mt-2">
-      {{ workflow.name }}
-      {% if workflow.is_default %}<span class="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full align-middle">Default</span>{% endif %}
-    </h1>
-    {% if workflow.description %}<p class="text-gray-500 text-sm mt-1">{{ workflow.description }}</p>{% endif %}
+    <h1 class="text-2xl font-bold text-gray-900 mt-2">Edit Workflow</h1>
   </div>
   {% if not workflow.is_default %}
   <div x-data="{ confirmDelete: false }">
@@ -26,40 +22,56 @@
   {% endif %}
 </div>
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+<form method="post" class="space-y-6 max-w-2xl">
+  {% csrf_token %}
 
-  <!-- Steps -->
-  <div class="bg-white rounded-lg shadow overflow-hidden">
-    <div class="px-6 py-4 border-b border-gray-200">
-      <h2 class="font-semibold text-gray-700">Steps</h2>
+  <div class="bg-white rounded-lg shadow px-6 py-5 space-y-4">
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+      <input type="text" name="name" value="{{ workflow.name }}" required
+             class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
     </div>
-    <ul class="divide-y divide-gray-100">
-      {% for step in tool_steps %}
-      <li class="px-6 py-3 flex items-center justify-between">
-        <span class="text-sm text-gray-700">{{ step.label }}</span>
-        <form method="post" action="{% url 'workflow-toggle-step' workflow.pk step.key %}">
-          {% csrf_token %}
-          {% if step.enabled %}
-          <button type="submit" class="relative inline-flex h-6 w-11 items-center rounded-full bg-green-500 transition-colors hover:bg-green-600" title="Click to disable">
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform translate-x-6"></span>
-          </button>
-          {% else %}
-          <button type="submit" class="relative inline-flex h-6 w-11 items-center rounded-full bg-gray-300 transition-colors hover:bg-gray-400" title="Click to enable">
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform translate-x-1"></span>
-          </button>
-          {% endif %}
-        </form>
-      </li>
-      {% endfor %}
-    </ul>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+      <textarea name="description" rows="2" placeholder="Optional description"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">{{ workflow.description }}</textarea>
+    </div>
+    <div class="flex items-center gap-2">
+      <input type="checkbox" name="is_default" id="is_default" {% if workflow.is_default %}checked{% endif %}
+             class="rounded border-gray-300 text-indigo-600">
+      <label for="is_default" class="text-sm text-gray-700">Set as default workflow</label>
+    </div>
   </div>
 
-  <!-- Recent runs -->
+  <div class="bg-white rounded-lg shadow px-6 py-5">
+    <h2 class="font-semibold text-gray-700 mb-4">Tools to include</h2>
+    <div class="space-y-2">
+      {% for step in tool_steps %}
+      <label class="flex items-center gap-3 cursor-pointer">
+        <input type="checkbox" name="tools" value="{{ step.key }}" {% if step.enabled %}checked{% endif %}
+               class="rounded border-gray-300 text-indigo-600">
+        <span class="text-sm text-gray-700">{{ step.label }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="flex gap-3">
+    <button type="submit" class="bg-indigo-600 text-white px-5 py-2 rounded-md text-sm hover:bg-indigo-700">
+      Save Workflow
+    </button>
+    <a href="{% url 'workflow-list' %}" class="px-5 py-2 rounded-md text-sm border border-gray-300 text-gray-700 hover:bg-gray-50">
+      Cancel
+    </a>
+  </div>
+</form>
+
+{% if recent_runs %}
+<div class="mt-8 max-w-2xl">
   <div class="bg-white rounded-lg shadow overflow-hidden">
     <div class="px-6 py-4 border-b border-gray-200">
       <h2 class="font-semibold text-gray-700">Recent Runs</h2>
     </div>
-    {% if recent_runs %}
     <ul class="divide-y divide-gray-100">
       {% for run in recent_runs %}
       <li class="px-6 py-4">
@@ -75,32 +87,11 @@
             {{ run.status|upper }}
           </span>
         </div>
-        <div class="flex gap-2 flex-wrap">
-          {% for sr in run.step_results.all %}
-          <span class="text-xs px-2 py-0.5 rounded
-            {% if sr.status == 'completed' %}bg-green-50 text-green-600
-            {% elif sr.status == 'failed' %}bg-red-50 text-red-600
-            {% elif sr.status == 'running' %}bg-yellow-50 text-yellow-600
-            {% else %}bg-gray-50 text-gray-400{% endif %}">
-            {{ sr.tool }} {% if sr.findings_count %}({{ sr.findings_count }}){% endif %}
-          </span>
-          {% endfor %}
-        </div>
-        {% if run.started_at %}<p class="text-xs text-gray-400 mt-1">{{ run.started_at|date:"M d H:i" }}</p>{% endif %}
+        {% if run.started_at %}<p class="text-xs text-gray-400">{{ run.started_at|date:"M d H:i" }}</p>{% endif %}
       </li>
       {% endfor %}
     </ul>
-    {% else %}
-    <p class="px-6 py-8 text-center text-gray-400 text-sm">No runs yet.</p>
-    {% endif %}
   </div>
-
 </div>
-
-<div class="mt-6">
-  <a href="{% url 'scan-start' %}?workflow={{ workflow.pk }}"
-     class="bg-indigo-600 text-white px-5 py-2 rounded-md text-sm hover:bg-indigo-700">
-    Run this Workflow
-  </a>
-</div>
+{% endif %}
 {% endblock %}
