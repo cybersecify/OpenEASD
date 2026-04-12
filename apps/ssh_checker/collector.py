@@ -20,6 +20,10 @@ import paramiko
 
 logger = logging.getLogger(__name__)
 
+# Suppress noisy paramiko ERROR logs when testing weak algorithms
+# (IncompatiblePeer exceptions are expected — they mean the server is secure)
+logging.getLogger("paramiko.transport").setLevel(logging.CRITICAL)
+
 PROBE_TIMEOUT = 5  # seconds per port
 
 # ---------------------------------------------------------------------------
