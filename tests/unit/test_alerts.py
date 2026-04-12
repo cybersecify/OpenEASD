@@ -34,7 +34,7 @@ class TestDispatchAlerts:
         mock_resp = MagicMock()
         mock_resp.raise_for_status.return_value = None
 
-        with patch("apps.core.notifications.dispatcher.httpx.post", return_value=mock_resp) as mock_post:
+        with patch("apps.core.notifications.dispatcher.requests.post", return_value=mock_resp) as mock_post:
             with patch("apps.core.notifications.dispatcher.settings") as mock_settings:
                 mock_settings.SLACK_WEBHOOK_URL = "https://hooks.slack.com/test"
                 mock_settings.MS_TEAMS_WEBHOOK_URL = ""
@@ -51,7 +51,7 @@ class TestDispatchAlerts:
         mock_resp = MagicMock()
         mock_resp.raise_for_status.return_value = None
 
-        with patch("apps.core.notifications.dispatcher.httpx.post", return_value=mock_resp):
+        with patch("apps.core.notifications.dispatcher.requests.post", return_value=mock_resp):
             with patch("apps.core.notifications.dispatcher.settings") as mock_settings:
                 mock_settings.SLACK_WEBHOOK_URL = ""
                 mock_settings.MS_TEAMS_WEBHOOK_URL = "https://outlook.office.com/webhook/test"
@@ -67,7 +67,7 @@ class TestDispatchAlerts:
         mock_resp = MagicMock()
         mock_resp.raise_for_status.return_value = None
 
-        with patch("apps.core.notifications.dispatcher.httpx.post", return_value=mock_resp):
+        with patch("apps.core.notifications.dispatcher.requests.post", return_value=mock_resp):
             with patch("apps.core.notifications.dispatcher.settings") as mock_settings:
                 mock_settings.SLACK_WEBHOOK_URL = "https://hooks.slack.com/test"
                 mock_settings.MS_TEAMS_WEBHOOK_URL = "https://outlook.office.com/webhook/test"
@@ -93,7 +93,7 @@ class TestDispatchAlerts:
             mock_resp.raise_for_status.return_value = None
             return mock_resp
 
-        with patch("apps.core.notifications.dispatcher.httpx.post", side_effect=side_effect):
+        with patch("apps.core.notifications.dispatcher.requests.post", side_effect=side_effect):
             with patch("apps.core.notifications.dispatcher.settings") as mock_settings:
                 mock_settings.SLACK_WEBHOOK_URL = "https://hooks.slack.com/test"
                 mock_settings.MS_TEAMS_WEBHOOK_URL = "https://outlook.office.com/webhook/test"

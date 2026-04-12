@@ -39,6 +39,11 @@ def collect(session, targets: list[str]) -> list[dict]:
     finally:
         os.unlink(tmp)
 
+    if result.returncode != 0:
+        logger.warning(f"[naabu:{session.id}] Exited with code {result.returncode}")
+        if result.stderr:
+            logger.warning(f"[naabu:{session.id}] stderr: {result.stderr[:500]}")
+
     records = []
     for line in result.stdout.strip().splitlines():
         if not line:

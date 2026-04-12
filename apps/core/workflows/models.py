@@ -8,8 +8,8 @@ TOOL_CHOICES = [
     ("naabu", "Naabu (Port Scan)"),
     ("httpx", "HTTPx (Web Probe)"),
     ("nmap", "Nmap (NSE Vuln Scan)"),
+    ("tls_checker", "TLS Checker"),
     # Disabled — OSS binary tools (re-enable in settings.INSTALLED_APPS to restore)
-    # ("ssl_checker", "SSL Checker"),
     # ("nuclei", "Nuclei (Vuln Scan)"),
 ]
 
@@ -21,6 +21,7 @@ TOOL_PHASE = {
     "naabu": 4,
     "httpx": 5,
     "nmap": 6,
+    "tls_checker": 6,
 }
 
 

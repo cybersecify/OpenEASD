@@ -7,6 +7,7 @@ to the Port asset.
 """
 
 import logging
+from collections import defaultdict
 
 from apps.core.assets.models import IPAddress, Port, URL
 from apps.core.findings.models import Finding
@@ -26,11 +27,16 @@ def _web_pairs_for_session(session) -> set[tuple[str, int]]:
     """
     web_pairs: set[tuple[str, int]] = set()
 
-    urls = URL.objects.filter(session=session, port_number__isnull=False).select_related("subdomain")
+    # Single query: fetch all IPs grouped by subdomain_id (avoids N+1)
+    ip_by_subdomain: dict[int, list[str]] = defaultdict(list)
+    for row in IPAddress.objects.filter(session=session).values("subdomain_id", "address"):
+        if row["subdomain_id"]:
+            ip_by_subdomain[row["subdomain_id"]].append(row["address"])
+
+    urls = URL.objects.filter(session=session, port_number__isnull=False)
     for url in urls:
-        if url.subdomain:
-            ips = IPAddress.objects.filter(session=session, subdomain=url.subdomain).values_list("address", flat=True)
-            for ip in ips:
+        if url.subdomain_id:
+            for ip in ip_by_subdomain.get(url.subdomain_id, []):
                 web_pairs.add((ip, url.port_number))
         # Also pair the URL's own host (in case host was a raw IP, no subdomain)
         if url.host:

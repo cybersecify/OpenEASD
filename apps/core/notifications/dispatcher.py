@@ -12,7 +12,7 @@ Settings required (set in .env):
 
 import logging
 
-import httpx
+import requests
 from django.conf import settings
 from django.utils import timezone as django_tz
 
@@ -96,7 +96,7 @@ def _send_slack(session, grouped: dict, threshold: str) -> tuple[str, str]:
     payload["text"] = f"OpenEASD alert for {session.domain} — {sum(len(v) for v in grouped.values())} finding(s)"
 
     try:
-        resp = httpx.post(url, json=payload, timeout=10)
+        resp = requests.post(url, json=payload, timeout=10)
         resp.raise_for_status()
         logger.info(f"[alerts:{session.id}] Slack alert sent")
         return "sent", ""
@@ -153,7 +153,7 @@ def _send_teams(session, grouped: dict, threshold: str) -> tuple[str, str]:
     payload = _build_teams_payload(session, grouped, threshold)
 
     try:
-        resp = httpx.post(url, json=payload, timeout=10)
+        resp = requests.post(url, json=payload, timeout=10)
         resp.raise_for_status()
         logger.info(f"[alerts:{session.id}] Teams alert sent")
         return "sent", ""
@@ -184,13 +184,18 @@ def dispatch_alerts(session_id: int, severity_threshold: str = "high") -> None:
 
     # Fire Slack
     slack_status, slack_err = _send_slack(session, grouped, severity_threshold)
+    summary = (
+        f"{sum(len(v) for v in grouped.values())} finding(s): "
+        + ", ".join(f"{sev}={len(items)}" for sev, items in grouped.items())
+    )
+
     if slack_status != "skipped":
         try:
             Alert.objects.create(
                 session=session,
                 alert_type="slack",
                 severity_threshold=severity_threshold,
-                message=str(_build_slack_payload(session, grouped, severity_threshold)),
+                message=summary,
                 status=slack_status,
                 error_message=slack_err,
             )
@@ -205,7 +210,7 @@ def dispatch_alerts(session_id: int, severity_threshold: str = "high") -> None:
                 session=session,
                 alert_type="teams",
                 severity_threshold=severity_threshold,
-                message=str(_build_teams_payload(session, grouped, severity_threshold)),
+                message=summary,
                 status=teams_status,
                 error_message=teams_err,
             )

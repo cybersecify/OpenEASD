@@ -15,6 +15,7 @@ used independently; it is NOT imported here.
 import datetime
 import logging
 import time
+import urllib.parse
 
 import dns.resolver
 import dns.query
@@ -519,7 +520,7 @@ def _fetch_rdap(domain) -> dict:
     # Step 1: rdap.org with retries
     for attempt in range(3):
         try:
-            resp = requests.get(RDAP_URL.format(domain), timeout=_HTTP_TIMEOUT)
+            resp = requests.get(RDAP_URL.format(urllib.parse.quote(domain, safe="")), timeout=_HTTP_TIMEOUT)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
@@ -541,7 +542,7 @@ def _fetch_rdap(domain) -> dict:
 
         if rdap_base:
             logger.info(f"[domain_security] Trying IANA RDAP bootstrap for .{tld}: {rdap_base}")
-            resp = requests.get(f"{rdap_base}/domain/{domain}", timeout=_HTTP_TIMEOUT)
+            resp = requests.get(f"{rdap_base}/domain/{urllib.parse.quote(domain, safe='')}", timeout=_HTTP_TIMEOUT)
             resp.raise_for_status()
             return resp.json()
     except Exception as e:

@@ -38,6 +38,10 @@ def collect(session, ip_to_ports: dict[str, list[int]]) -> dict[str, str]:
         logger.info(f"[nmap:{session.id}] Scanning {ip} ports {port_list}")
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=360)
+            if proc.returncode != 0:
+                logger.warning(f"[nmap:{session.id}] {ip} exited with code {proc.returncode}")
+                if proc.stderr:
+                    logger.warning(f"[nmap:{session.id}] {ip} stderr: {proc.stderr[:500]}")
             results[ip] = proc.stdout
         except FileNotFoundError:
             logger.error(f"[nmap:{session.id}] Binary not found: {binary}")

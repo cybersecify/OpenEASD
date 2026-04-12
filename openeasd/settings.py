@@ -45,9 +45,9 @@ INSTALLED_APPS = [
     "apps.naabu",
     "apps.httpx",
     "apps.nmap",
+    "apps.tls_checker",
     # Disabled — OSS binary tools (code kept in apps/ for later re-enable)
     # "apps.nuclei",
-    # "apps.ssl_checker",
 ]
 
 MIDDLEWARE = [

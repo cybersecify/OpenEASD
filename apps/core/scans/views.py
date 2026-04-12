@@ -2,6 +2,7 @@
 
 import datetime
 import logging
+import uuid
 
 from django.db import models
 from django.db.models import Count, Q
@@ -48,7 +49,7 @@ def _schedule_once(domain, scheduled_at):
     """Schedule a one-time scan using the shared persistent scheduler."""
     from apps.core.scheduler import get_scheduler
 
-    job_id = f"once_{domain}_{scheduled_at.strftime('%Y%m%d%H%M')}"
+    job_id = f"once_{domain}_{uuid.uuid4().hex}"
     get_scheduler().add_job(
         run_scheduled_scan,
         args=[domain, "scheduled"],
@@ -182,10 +183,10 @@ def scan_detail(request, session_uuid):
 
     subdomains = list(Subdomain.objects.filter(session=session).order_by("-is_active", "subdomain"))
     ips = list(IPAddress.objects.filter(session=session).select_related("subdomain").order_by("address"))
-    ports = list(Port.objects.filter(session=session).order_by("address", "port"))
-    urls = list(URL.objects.filter(session=session).order_by("url"))
-    nmap_findings = list(Finding.objects.filter(session=session, source="nmap").order_by("-discovered_at"))
-    domain_findings = list(Finding.objects.filter(session=session, source="domain_security").order_by("-severity", "-discovered_at"))
+    ports = list(Port.objects.filter(session=session).select_related("ip_address").order_by("address", "port"))
+    urls = list(URL.objects.filter(session=session).select_related("port", "subdomain").order_by("url"))
+    nmap_findings = list(Finding.objects.filter(session=session, source="nmap").select_related("port").order_by("-discovered_at"))
+    domain_findings = list(Finding.objects.filter(session=session, source="domain_security").select_related("subdomain").order_by("-severity", "-discovered_at"))
 
     # Annotate each port with its web/non-web classification (same logic as nmap scanner)
     web_pairs = _web_pairs_for_session(session)
@@ -266,9 +267,9 @@ def _parse_job(job):
         job_type = "recurring"
         frequency = _describe_cron_trigger(job.trigger)
     elif job.id.startswith("once_"):
-        # Format: once_{domain}_{YYYYMMDDHHmm} — strip prefix and 13-char timestamp suffix
+        # Format: once_{domain}_{32-char uuid hex} — strip prefix and 33-char suffix
         suffix = job.id[len("once_"):]
-        domain = suffix[:-13] if len(suffix) > 13 else suffix
+        domain = suffix[:-33] if len(suffix) > 33 else suffix
         job_type = "one-time"
         frequency = "—"
     else:
@@ -410,8 +411,8 @@ def finding_update_status(request, finding_id):
     elif new_status != "resolved":
         finding.resolved_at = None
 
-    finding.assigned_to = request.POST.get("assigned_to", finding.assigned_to)
-    finding.resolution_note = request.POST.get("resolution_note", finding.resolution_note)
+    finding.assigned_to = request.POST.get("assigned_to", finding.assigned_to)[:150]
+    finding.resolution_note = request.POST.get("resolution_note", finding.resolution_note)[:5000]
     finding.save(update_fields=["status", "resolved_at", "assigned_to", "resolution_note"])
 
     return render(request, "partials/finding_status_cell.html", {

@@ -12,8 +12,8 @@ SEVERITY_CHOICES = [
 SOURCE_CHOICES = [
     ("domain_security", "Domain Security"),
     ("nmap", "Nmap NSE"),
+    ("tls_checker", "TLS Checker"),
     ("nuclei", "Nuclei"),
-    ("ssl_checker", "SSL Checker"),
 ]
 
 STATUS_CHOICES = [

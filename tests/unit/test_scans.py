@@ -103,14 +103,14 @@ class TestParseJob:
 
     def test_once_plain_domain(self):
         from apps.core.scans.views import _parse_job
-        job = self._make_job("once_example.com_202504101200")
+        job = self._make_job("once_example.com_" + "a" * 32)
         result = _parse_job(job)
         assert result["domain"] == "example.com"
         assert result["job_type"] == "one-time"
 
     def test_once_underscored_domain(self):
         from apps.core.scans.views import _parse_job
-        job = self._make_job("once_sub_domain.com_202504101200")
+        job = self._make_job("once_sub_domain.com_" + "b" * 32)
         result = _parse_job(job)
         assert result["domain"] == "sub_domain.com"
 
@@ -489,7 +489,7 @@ class TestScheduledJobsView:
         assert b"watchdog_reap_stuck_scans" not in resp.content
 
     def test_once_job_shown_as_one_time(self, auth_client):
-        job = _make_mock_job("once_example.com_202512011000")
+        job = _make_mock_job("once_example.com_" + "a" * 32)
         with patch("apps.core.scheduler.get_scheduler", return_value=self._mock_scheduler([job])):
             resp = auth_client.get(reverse("scheduled-jobs"))
         assert b"example.com" in resp.content
@@ -509,7 +509,7 @@ class TestCancelScheduledJob:
     def test_cancel_once_job(self, auth_client):
         mock_sched = MagicMock()
         with patch("apps.core.scheduler.get_scheduler", return_value=mock_sched):
-            resp = auth_client.post(reverse("cancel-scheduled-job", args=["once_example.com_202512011000"]))
+            resp = auth_client.post(reverse("cancel-scheduled-job", args=["once_example.com_" + "a" * 32]))
         mock_sched.remove_job.assert_called_once()
         assert resp.status_code == 302
 

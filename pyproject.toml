@@ -9,14 +9,13 @@ authors = [
 ]
 dependencies = [
     # Web framework
-    "django>=5.0",
+    "django>=5.2,<5.3",
     "django-htmx>=1.17",
     # Configuration
     "python-decouple>=3.8",
     # DNS / network
     "dnspython>=2.4",
     "requests>=2.31",
-    "httpx>=0.25",
     # Scheduler
     "django-apscheduler>=0.7.0",
     # SSL / crypto (ssl_checker — enable when ready)

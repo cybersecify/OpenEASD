@@ -120,6 +120,18 @@ class TestDomainSecurityScanFlow:
         assert db_count > 0
 
 
+def _patch_all_tool_collectors():
+    """Patch phases 2-6 tool collectors to return empty data (no binaries needed)."""
+    from contextlib import ExitStack
+    stack = ExitStack()
+    stack.enter_context(patch("apps.subfinder.scanner.collect", return_value=[]))
+    stack.enter_context(patch("apps.dnsx.scanner.collect", return_value=[]))
+    stack.enter_context(patch("apps.naabu.scanner.collect", return_value=[]))
+    stack.enter_context(patch("apps.httpx.scanner.collect", return_value=[]))
+    stack.enter_context(patch("apps.nmap.scanner.collect", return_value={}))
+    return stack
+
+
 @pytest.mark.django_db
 class TestFullScanPipeline:
     """Tests run_scan orchestration → domain_security → insights."""
@@ -148,16 +160,15 @@ class TestFullScanPipeline:
             "events": [{"eventAction": "expiration", "eventDate": expiry.isoformat()}],
         }
 
-        with patch("apps.domain_security.scanner._resolve", side_effect=mock_resolve):
-            with patch("apps.domain_security.scanner._get_txt_record", side_effect=mock_txt):
-                with patch("apps.domain_security.scanner.dns") as mock_dns:
-                    mock_dns.resolver.resolve.side_effect = Exception("no DNSKEY")
-                    with patch("apps.domain_security.scanner.dns.zone.from_xfr",
-                               side_effect=Exception("refused")):
-                        with patch("apps.domain_security.scanner.dns.query.xfr"):
-                            with patch("apps.domain_security.scanner.requests.get",
-                                       return_value=mock_rdap):
-                                run_scan(session.id)
+        with _patch_all_tool_collectors(), \
+             patch("apps.domain_security.scanner._resolve", side_effect=mock_resolve), \
+             patch("apps.domain_security.scanner._get_txt_record", side_effect=mock_txt), \
+             patch("apps.domain_security.scanner.dns") as mock_dns, \
+             patch("apps.domain_security.scanner.dns.zone.from_xfr", side_effect=Exception("refused")), \
+             patch("apps.domain_security.scanner.dns.query.xfr"), \
+             patch("apps.domain_security.scanner.requests.get", return_value=mock_rdap):
+            mock_dns.resolver.resolve.side_effect = Exception("no DNSKEY")
+            run_scan(session.id)
 
         session.refresh_from_db()
         assert session.status == "completed"
@@ -184,16 +195,15 @@ class TestFullScanPipeline:
             "events": [{"eventAction": "expiration", "eventDate": expiry.isoformat()}],
         }
 
-        with patch("apps.domain_security.scanner._resolve", side_effect=mock_resolve):
-            with patch("apps.domain_security.scanner._get_txt_record", side_effect=mock_txt):
-                with patch("apps.domain_security.scanner.dns") as mock_dns:
-                    mock_dns.resolver.resolve.side_effect = Exception("no DNSKEY")
-                    with patch("apps.domain_security.scanner.dns.zone.from_xfr",
-                               side_effect=Exception("refused")):
-                        with patch("apps.domain_security.scanner.dns.query.xfr"):
-                            with patch("apps.domain_security.scanner.requests.get",
-                                       return_value=mock_rdap):
-                                run_scan(session.id)
+        with _patch_all_tool_collectors(), \
+             patch("apps.domain_security.scanner._resolve", side_effect=mock_resolve), \
+             patch("apps.domain_security.scanner._get_txt_record", side_effect=mock_txt), \
+             patch("apps.domain_security.scanner.dns") as mock_dns, \
+             patch("apps.domain_security.scanner.dns.zone.from_xfr", side_effect=Exception("refused")), \
+             patch("apps.domain_security.scanner.dns.query.xfr"), \
+             patch("apps.domain_security.scanner.requests.get", return_value=mock_rdap):
+            mock_dns.resolver.resolve.side_effect = Exception("no DNSKEY")
+            run_scan(session.id)
 
         assert ScanSummary.objects.filter(session=session).exists()
         summary = ScanSummary.objects.get(session=session)
@@ -227,28 +237,28 @@ class TestFullScanPipeline:
         # First scan — no SPF/DMARC
         s1 = ScanSession.objects.create(domain="delta.com", scan_type="full", status="pending")
         mr, mt, mrdap = make_mocks()
-        with patch("apps.domain_security.scanner._resolve", side_effect=mr):
-            with patch("apps.domain_security.scanner._get_txt_record", side_effect=mt):
-                with patch("apps.domain_security.scanner.dns") as mdns:
-                    mdns.resolver.resolve.side_effect = Exception("no DNSKEY")
-                    with patch("apps.domain_security.scanner.dns.zone.from_xfr",
-                               side_effect=Exception("refused")):
-                        with patch("apps.domain_security.scanner.dns.query.xfr"):
-                            with patch("apps.domain_security.scanner.requests.get", return_value=mrdap):
-                                run_scan(s1.id)
+        with _patch_all_tool_collectors(), \
+             patch("apps.domain_security.scanner._resolve", side_effect=mr), \
+             patch("apps.domain_security.scanner._get_txt_record", side_effect=mt), \
+             patch("apps.domain_security.scanner.dns") as mdns, \
+             patch("apps.domain_security.scanner.dns.zone.from_xfr", side_effect=Exception("refused")), \
+             patch("apps.domain_security.scanner.dns.query.xfr"), \
+             patch("apps.domain_security.scanner.requests.get", return_value=mrdap):
+            mdns.resolver.resolve.side_effect = Exception("no DNSKEY")
+            run_scan(s1.id)
 
         # Second scan — same config (findings should be the same, delta = 0 new)
         s2 = ScanSession.objects.create(domain="delta.com", scan_type="full", status="pending")
         mr2, mt2, mrdap2 = make_mocks()
-        with patch("apps.domain_security.scanner._resolve", side_effect=mr2):
-            with patch("apps.domain_security.scanner._get_txt_record", side_effect=mt2):
-                with patch("apps.domain_security.scanner.dns") as mdns2:
-                    mdns2.resolver.resolve.side_effect = Exception("no DNSKEY")
-                    with patch("apps.domain_security.scanner.dns.zone.from_xfr",
-                               side_effect=Exception("refused")):
-                        with patch("apps.domain_security.scanner.dns.query.xfr"):
-                            with patch("apps.domain_security.scanner.requests.get", return_value=mrdap2):
-                                run_scan(s2.id)
+        with _patch_all_tool_collectors(), \
+             patch("apps.domain_security.scanner._resolve", side_effect=mr2), \
+             patch("apps.domain_security.scanner._get_txt_record", side_effect=mt2), \
+             patch("apps.domain_security.scanner.dns") as mdns2, \
+             patch("apps.domain_security.scanner.dns.zone.from_xfr", side_effect=Exception("refused")), \
+             patch("apps.domain_security.scanner.dns.query.xfr"), \
+             patch("apps.domain_security.scanner.requests.get", return_value=mrdap2):
+            mdns2.resolver.resolve.side_effect = Exception("no DNSKEY")
+            run_scan(s2.id)
 
         s1.refresh_from_db()
         s2.refresh_from_db()

@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 # Maps tool name → (module path, function name)
 # All registered tools take only the session — they read upstream data
 # from apps.core.assets directly (no targets list needed).
-# Disabled tools (ssl_checker, nmap, nuclei) are commented out.
 _TOOL_RUNNERS = {
     "domain_security": ("apps.domain_security.scanner", "run_domain_security"),
     "subfinder": ("apps.subfinder.scanner", "run_subfinder"),
@@ -22,7 +21,7 @@ _TOOL_RUNNERS = {
     "naabu": ("apps.naabu.scanner", "run_naabu"),
     "httpx": ("apps.httpx.scanner", "run_httpx"),
     "nmap": ("apps.nmap.scanner", "run_nmap"),
-    # "ssl_checker": ("apps.ssl_checker.scanner", "run_ssl_check"),
+    "tls_checker": ("apps.tls_checker.scanner", "run_tls_check"),
     # "nuclei": ("apps.nuclei.scanner", "run_nuclei"),
 }
 

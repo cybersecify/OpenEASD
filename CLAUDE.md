@@ -4,10 +4,16 @@ External Attack Surface Detection platform. Built around a 6-phase scan
 pipeline that produces shared assets and unified findings.
 
 ## Git workflow
-- Always use worktree isolation for all implementation tasks
-- Commit directly to main only for quick fixes (typos, CSS, config tweaks)
-- In any worktree, always use `DB_NAME=db_worktree.sqlite3` before running migrations
-- Always run `uv run pytest tests/ --ignore=tests/unit/test_domain_security.py` in the worktree before requesting merge
+- Solo developer — commit directly to main, no branches or worktrees
+- Run `uv run pytest tests/ --ignore=tests/unit/test_domain_security.py` before committing
+- Tag before big changes (new libs, refactors, schema changes): `git tag -a v0.x -m "description"`
+- If something breaks: `git revert <commit>` or `git reset --hard v0.x` to roll back
+- **Versioning:** `0.x` = building/architecture changes, `1.0` = first stable public release
+- **Pushing to GitHub (clean history):**
+  1. Work locally, commit as often as needed
+  2. When stable, squash into one commit: `git reset --soft <last-tag> && git commit -m "v0.x: summary"`
+  3. Tag it: `git tag -a v0.x -m "description"`
+  4. Push: `git push origin main --tags`
 
 ## Commands
 - Always use `uv run python` instead of `python` or `python3`
@@ -79,8 +85,8 @@ Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TO
 | `apps/naabu/` | Pattern 2 (OSS binary) | ✅ Active | 4 |
 | `apps/httpx/` | Pattern 2 (OSS binary) | ✅ Active | 5 |
 | `apps/nmap/` | Pattern 2 (OSS binary) | ✅ Active | 6 |
+| `apps/tls_checker/` | Pattern 1 (custom Python, stdlib ssl) | ✅ Active | 6 |
 | `apps/nuclei/` | Pattern 2 (OSS binary) | ❌ Disabled | future web workflow |
-| `apps/ssl_checker/` | Pattern 2 (OSS binary) | ❌ Disabled | future |
 
 To re-enable a disabled tool, uncomment it in:
 1. `settings.INSTALLED_APPS`
@@ -117,7 +123,8 @@ Phase 2  subfinder        → assets.Subdomain (passive subdomain enumeration)
 Phase 3  dnsx             → assets.IPAddress (public-only filter, marks Subdomain.is_active)
 Phase 4  naabu            → assets.Port (top 100 TCP scan against IPs)
 Phase 5  httpx            → assets.URL (probes HTTP/HTTPS via subdomain hostname for CDN support)
-Phase 6  nmap NSE vulners → Finding (source="nmap", check_type="cve") on non-web ports only
+Phase 6a nmap NSE vulners → Finding (source="nmap", check_type="cve") on non-web ports only
+Phase 6b tls_checker      → Finding (source="tls_checker") on ALL open ports (web + non-web)
 ```
 
 ### Key design rules
@@ -126,7 +133,8 @@ Phase 6  nmap NSE vulners → Finding (source="nmap", check_type="cve") on non-w
 3. **httpx feeds subdomain:port pairs, not IP:port pairs.** Cloudflare/CDN-fronted services need SNI matching the hostname.
 4. **Web vs non-web classification** is in `apps/nmap/scanner.py:_web_pairs_for_session()`. A port is "web" if any URL exists for any IP behind the same hostname (handles 1-hostname → multiple-IPs CDN case).
 5. **nmap only scans non-web ports** (those without a matching URL record). Web ports are reserved for the future web workflow with nuclei.
-6. **Asset deletion cascades** through Subdomain → IPAddress → Port → URL. Deleting a Domain wipes all session data.
+6. **tls_checker covers ALL open ports** (both web ports via URL scheme and non-web ports via stdlib ssl probing). Web port TLS is inferred from URL scheme (http/https) — no probing needed. Non-web ports are probed with `ssl.create_default_context()` (direct TLS) or STARTTLS (smtp/imap/pop3/ftp). Inherently insecure services (telnet/rlogin/rsh/rexec) are always flagged without probing. Findings cover: unencrypted service, weak ciphers (RC4, NULL, EXPORT, 3DES/Blowfish, SHA-1, CBC, anon, RSA-KEX), deprecated protocols (TLS 1.0/1.1), cert issues (expired, expiring, self-signed), and HSTS missing (HTTPS web ports).
+7. **Asset deletion cascades** through Subdomain → IPAddress → Port → URL. Deleting a Domain wipes all session data.
 
 ## Unified Finding model
 
@@ -135,7 +143,7 @@ Phase 6  nmap NSE vulners → Finding (source="nmap", check_type="cve") on non-w
 ```python
 class Finding(models.Model):
     session     = FK(ScanSession)
-    source      = "domain_security" | "nmap" | "nuclei" | "ssl_checker"
+    source      = "domain_security" | "nmap" | "tls_checker" | "nuclei"
     check_type  = "dns" | "email" | "rdap" | "cve" | ...
     severity    = "critical" | "high" | "medium" | "low" | "info"
     title       = CharField()
@@ -183,6 +191,7 @@ Backward-compat `@property` accessors on Finding (`cve`, `cvss_score`, `service`
 | `tests/unit/test_nmap.py` | 24 | Severity mapping, vulners XML parser, web/non-web exclusion |
 | `tests/unit/test_scans.py` | 55 | ScanSession, scheduling, scan_start views |
 | `tests/unit/test_subfinder.py` | 11 | JSON parser, dedup, hostname normalization |
+| `tests/unit/test_tls_checker.py` | 49 | Cert helpers, cipher checks, protocol versions, cert lifecycle, HSTS, collector, scanner |
 | `tests/integration/test_scan_flow.py` | 13 | Domain security flow + full pipeline (mocked) + delete cascade |
 
-**Total: 240 tests** (199 fast + 41 slow domain_security)
+**Total: 289 tests** (248 fast + 41 slow domain_security)

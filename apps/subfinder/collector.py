@@ -2,16 +2,26 @@
 
 import json
 import logging
+import re
 import subprocess
 
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+_VALID_HOSTNAME = re.compile(
+    r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?'
+    r'(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$'
+)
+
 
 def collect(session) -> list[dict]:
     """Run subfinder binary and return raw parsed JSON records."""
     domain = session.domain
+    if not _VALID_HOSTNAME.match(domain):
+        logger.error(f"[subfinder:{session.id}] Invalid domain: {domain!r}")
+        return []
+
     binary = getattr(settings, "TOOL_SUBFINDER", "subfinder")
     cmd = [binary, "-d", domain, "-json", "-silent"]
     logger.info(f"[subfinder:{session.id}] Running: {' '.join(cmd)}")
@@ -24,6 +34,11 @@ def collect(session) -> list[dict]:
     except subprocess.TimeoutExpired:
         logger.error(f"[subfinder:{session.id}] Timed out")
         return []
+
+    if result.returncode != 0:
+        logger.warning(f"[subfinder:{session.id}] Exited with code {result.returncode}")
+        if result.stderr:
+            logger.warning(f"[subfinder:{session.id}] stderr: {result.stderr[:500]}")
 
     records = []
     for line in result.stdout.strip().splitlines():
