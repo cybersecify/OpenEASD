@@ -48,10 +48,6 @@ def run_httpx(session) -> list[URL]:
     if objs:
         URL.objects.bulk_create(objs, ignore_conflicts=True)
 
-    # Mark ports with web URLs as is_web=True
     saved = list(URL.objects.filter(session=session, source="httpx"))
-    web_port_ids = {u.port_id for u in saved if u.port_id}
-    if web_port_ids:
-        Port.objects.filter(id__in=web_port_ids).update(is_web=True)
     logger.info(f"[httpx:{session.id}] Confirmed {len(saved)} web URLs (out of {len(targets)} probes)")
     return saved

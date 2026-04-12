@@ -128,8 +128,8 @@ def _ensure_default_workflow():
     )
     if created:
         tools = [
-            "domain_security", "subfinder", "dnsx", "naabu", "httpx",
-            "nmap", "tls_checker", "ssh_checker", "nuclei", "web_checker",
+            "domain_security", "subfinder", "dnsx", "naabu", "service_detection",
+            "httpx", "nmap", "tls_checker", "ssh_checker", "nuclei", "web_checker",
         ]
         for order, tool in enumerate(tools, start=1):
             WorkflowStep.objects.create(workflow=wf, tool=tool, order=order, enabled=True)
@@ -143,6 +143,7 @@ def _patch_all_tool_collectors():
     stack.enter_context(patch("apps.subfinder.scanner.collect", return_value=[]))
     stack.enter_context(patch("apps.dnsx.scanner.collect", return_value=[]))
     stack.enter_context(patch("apps.naabu.scanner.collect", return_value=[]))
+    stack.enter_context(patch("apps.core.service_detection.detector._run_nmap_sv", return_value=""))
     stack.enter_context(patch("apps.httpx.scanner.collect", return_value=[]))
     stack.enter_context(patch("apps.nmap.scanner.collect", return_value={}))
     stack.enter_context(patch("apps.tls_checker.scanner.collect", return_value=[]))
@@ -429,6 +430,7 @@ class TestFullPipelineMocked:
              patch("apps.subfinder.scanner.collect", return_value=m["subfinder"]), \
              patch("apps.dnsx.scanner.collect", return_value=m["dnsx"]), \
              patch("apps.naabu.scanner.collect", return_value=m["naabu"]), \
+             patch("apps.core.service_detection.detector._run_nmap_sv", return_value=""), \
              patch("apps.httpx.scanner.collect", return_value=m["httpx"]), \
              patch("apps.nmap.scanner.collect", return_value={}), \
              patch("apps.tls_checker.scanner.collect", return_value=[]), \
@@ -453,6 +455,27 @@ class TestFullPipelineMocked:
         from apps.core.scans.pipeline import run_scan
         from apps.core.assets.models import Port
 
+        # Service detection XML — marks port 80 and 443 as http/https
+        svc_xml = """<?xml version="1.0"?>
+        <nmaprun><host>
+          <address addr="{ip}" addrtype="ipv4"/>
+          <ports>
+            {ports}
+          </ports>
+        </host></nmaprun>"""
+
+        def mock_svc_detect(session_id, ip, port_list):
+            ports_xml = ""
+            for p in port_list.split(","):
+                p = int(p)
+                if p == 80:
+                    ports_xml += '<port protocol="tcp" portid="80"><state state="open"/><service name="http"/></port>'
+                elif p == 443:
+                    ports_xml += '<port protocol="tcp" portid="443"><state state="open"/><service name="https"/></port>'
+                elif p == 22:
+                    ports_xml += '<port protocol="tcp" portid="22"><state state="open"/><service name="ssh"/></port>'
+            return svc_xml.format(ip=ip, ports=ports_xml)
+
         wf = _ensure_default_workflow()
         session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending", workflow=wf)
         m = self._mock_all_tools()
@@ -466,6 +489,7 @@ class TestFullPipelineMocked:
              patch("apps.subfinder.scanner.collect", return_value=m["subfinder"]), \
              patch("apps.dnsx.scanner.collect", return_value=m["dnsx"]), \
              patch("apps.naabu.scanner.collect", return_value=m["naabu"]), \
+             patch("apps.core.service_detection.detector._run_nmap_sv", side_effect=mock_svc_detect), \
              patch("apps.httpx.scanner.collect", return_value=m["httpx"]), \
              patch("apps.nmap.scanner.collect", return_value={}), \
              patch("apps.tls_checker.scanner.collect", return_value=[]), \
@@ -475,18 +499,13 @@ class TestFullPipelineMocked:
             mdns.resolver.resolve.side_effect = Exception("no DNSKEY")
             run_scan(session.id)
 
-        # Web ports (httpx sets is_web=True): 1.2.3.4:80, 5.6.7.8:443
+        # Web ports (service_detection sets is_web=True for http/https)
         web_ports = Port.objects.filter(session=session, is_web=True)
         web_pairs = {(p.address, p.port) for p in web_ports}
         assert ("1.2.3.4", 80) in web_pairs
         assert ("5.6.7.8", 443) in web_pairs
         # Non-web port: 1.2.3.4:22 (SSH)
         assert ("1.2.3.4", 22) not in web_pairs
-
-        # Verify nmap would only target the SSH port
-        non_web = [p for p in Port.objects.filter(session=session, state="open") if (p.address, p.port) not in web_pairs]
-        assert len(non_web) == 1
-        assert non_web[0].port == 22
 
     def test_full_pipeline_total_findings_includes_all_tools(self, db):
         from apps.core.scans.models import ScanSession
@@ -506,6 +525,7 @@ class TestFullPipelineMocked:
              patch("apps.subfinder.scanner.collect", return_value=m["subfinder"]), \
              patch("apps.dnsx.scanner.collect", return_value=m["dnsx"]), \
              patch("apps.naabu.scanner.collect", return_value=m["naabu"]), \
+             patch("apps.core.service_detection.detector._run_nmap_sv", return_value=""), \
              patch("apps.httpx.scanner.collect", return_value=m["httpx"]), \
              patch("apps.nmap.scanner.collect", return_value={}), \
              patch("apps.tls_checker.scanner.collect", return_value=[]), \

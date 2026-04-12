@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "apps.core.dashboard",
     "apps.core.assets",
     "apps.core.web_assets",
+    "apps.core.service_detection",
     "apps.core.findings",
     "apps.core.scans",
     "apps.core.domains",

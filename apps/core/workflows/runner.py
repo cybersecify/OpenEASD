@@ -19,6 +19,7 @@ _TOOL_RUNNERS = {
     "subfinder": ("apps.subfinder.scanner", "run_subfinder"),
     "dnsx": ("apps.dnsx.scanner", "run_dnsx"),
     "naabu": ("apps.naabu.scanner", "run_naabu"),
+    "service_detection": ("apps.core.service_detection.detector", "detect_services"),
     "httpx": ("apps.httpx.scanner", "run_httpx"),
     "nmap": ("apps.nmap.scanner", "run_nmap"),
     "tls_checker": ("apps.tls_checker.scanner", "run_tls_check"),
