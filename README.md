@@ -2,15 +2,16 @@
 
 **Open External Attack Surface Detection** - An automated platform for discovering and analyzing your organization's external attack surface.
 
-OpenEASD scans domains to discover subdomains, resolve IPs, scan ports, detect services, and find vulnerabilities across both web and non-web attack surfaces.
+OpenEASD scans domains to discover subdomains, resolve IPs, scan ports, detect services, and find vulnerabilities across your network attack surface.
 
 ## Features
 
-- **Automated pipeline** - 11-step scan workflow from domain to findings
-- **Web + non-web scanning** - Separate analysis paths for web and network services
+- **Automated pipeline** - 9-step scan workflow from domain to findings
+- **Network attack surface scanning** - CVEs, TLS/cert issues, SSH config, protocol vulnerabilities
 - **Dynamic workflows** - Create custom scan configurations, enable/disable tools
 - **Tool auto-registration** - Add new tools with zero core modification
 - **Live scan progress** - Real-time pipeline status with per-tool tracking
+- **Scan stop/cancel** - Graceful cancellation between tool steps
 - **Unified findings** - All tools write to a single Finding model
 - **Reports** - CSV and PDF export
 - **Alerts** - Slack and Microsoft Teams notifications
@@ -23,35 +24,42 @@ Phase 1  Domain Security    - DNS, email (SPF/DMARC/DKIM), RDAP checks
 Phase 2  Subfinder          - Passive subdomain enumeration
 Phase 3  DNSx               - DNS resolution, public IP filtering
 Phase 4  Naabu              - TCP port scanning (top 100)
-Phase 5  Service Detection  - Classify ports as web/non-web
-Phase 6  HTTPx              - Web probing, URL discovery (CDN-aware)
-Phase 7  Nmap               - CVE scanning on non-web ports
-Phase 7  TLS Checker        - Certificate and cipher analysis (all ports)
-Phase 7  SSH Checker        - SSH configuration audit
-Phase 8  Nuclei             - Web vulnerability scanning (community templates)
-Phase 8  Web Checker        - Security headers, cookies, CORS, disclosure
+Phase 5  Service Detection  - Classify ports as web/non-web (core, auto)
+Phase 6  Nmap               - CVE scanning via NSE vulners
+Phase 7  TLS Checker        - Certificate and cipher analysis
+Phase 8  SSH Checker        - SSH configuration audit
+Phase 9  Nuclei Network     - Network protocol vulnerability scanning (319 templates)
 ```
+
+Web scanning tools (httpx, nuclei web, web_checker) are available but disabled
+in this release. Re-enable by uncommenting in `settings.py` INSTALLED_APPS.
 
 ## Architecture
 
 ```
-apps/core/          - Infrastructure (never changes)
-  assets/           - Network assets: Subdomain, IPAddress, Port
-  web_assets/       - Web assets: URL
-  service_detection/- Classifies ports as web/non-web
-  findings/         - Unified Finding model
-  scans/            - ScanSession, pipeline orchestrator
-  workflows/        - Dynamic workflow engine + tool registry
-  scheduler/        - APScheduler, daily/weekly scans
-  notifications/    - Slack/Teams alerts
-  insights/         - Scan summaries, charts
-  reports/          - CSV/PDF export
-  domains/          - Domain management
-  dashboard/        - UI home
+apps/core/              - Infrastructure (never changes)
+  assets/               - Network assets: Subdomain, IPAddress, Port
+  web_assets/           - Web assets: URL (disabled in non-web focus)
+  service_detection/    - Classifies ports as web/non-web (core, always runs)
+  findings/             - Unified Finding model
+  scans/                - ScanSession, pipeline orchestrator
+  workflows/            - Dynamic workflow engine + tool registry
+  scheduler/            - APScheduler, daily/weekly scans
+  notifications/        - Slack/Teams alerts
+  insights/             - Scan summaries, charts
+  reports/              - CSV/PDF export
+  domains/              - Domain management
+  dashboard/            - UI home
 
-apps/               - Tool apps (add/remove freely)
-  domain_security/  subfinder/  dnsx/  naabu/  httpx/
-  nmap/  tls_checker/  ssh_checker/  nuclei/  web_checker/
+apps/                   - Tool apps (add/remove freely)
+  domain_security/      - DNS, email, RDAP checks
+  subfinder/            - Passive subdomain enumeration
+  dnsx/                 - DNS resolution
+  naabu/                - Port scanning
+  nmap/                 - CVE scanning (NSE vulners)
+  tls_checker/          - TLS/cert/cipher analysis
+  ssh_checker/          - SSH configuration audit
+  nuclei_network/       - Network protocol vuln scanning
 ```
 
 ## Quick Start
@@ -67,8 +75,8 @@ apps/               - Tool apps (add/remove freely)
 
 ```bash
 # Clone
-git clone https://github.com/cybersecify/openeasd-django.git
-cd openeasd-django
+git clone https://github.com/cybersecify/OpenEASD.git
+cd OpenEASD
 
 # Install dependencies
 uv sync --extra dev
@@ -83,8 +91,8 @@ pdtm -install-all
 uv run manage.py migrate
 uv run manage.py createsuperuser
 
-# Run
-uv run manage.py runserver
+# Run (starts both web server + task worker)
+uv run python main.py
 ```
 
 Open http://localhost:8000, add a domain, and start scanning.
@@ -92,7 +100,7 @@ Open http://localhost:8000, add a domain, and start scanning.
 ### Install External Tools
 
 ```bash
-# ProjectDiscovery tools (subfinder, dnsx, naabu, httpx, nuclei)
+# ProjectDiscovery tools (subfinder, dnsx, naabu, nuclei)
 curl -sL https://raw.githubusercontent.com/projectdiscovery/pdtm/main/scripts/install.sh | bash
 pdtm -install-all
 
@@ -118,7 +126,7 @@ class MyToolConfig(AppConfig):
     tool_meta = {
         "label": "My Tool",
         "runner": "apps.my_tool.scanner.run_my_tool",
-        "phase": 7,
+        "phase": 6,
         "requires": ["naabu"],
         "produces_findings": True,
     }
@@ -156,6 +164,8 @@ uv run pytest tests/
 - **Chart.js** - Visualizations
 - **Huey** - Background task queue
 - **SQLite** - Database (dev), configurable via `DB_NAME`
+- **paramiko** - SSH protocol inspection
+- **cryptography** - X.509 certificate analysis
 
 ## License
 
