@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "apps.tls_checker",
     "apps.ssh_checker",
     "apps.nuclei",
+    "apps.nuclei_network",
     "apps.web_checker",
 ]
 
