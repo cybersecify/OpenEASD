@@ -42,7 +42,7 @@ def collect(session) -> list[dict]:
         f.write("\n".join(targets))
         tmp = f.name
 
-    cmd = [BINARY, "-list", tmp, "-type", "network", "-jsonl", "-silent", "-no-color"]
+    cmd = [BINARY, "-list", tmp, "-pt", "tcp,ssl", "-jsonl", "-silent", "-no-color"]
     logger.info(f"[nuclei_network:{session.id}] Scanning {len(targets)} non-web targets")
 
     try:
