@@ -679,9 +679,9 @@ class TestTlsCollector:
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
 
-        Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+        port_443 = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
                             port=443, protocol="tcp", state="open", service="https", source="naabu")
-        Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+        port_80 = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
                             port=80, protocol="tcp", state="open", service="http", source="naabu")
         Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
                             port=6379, protocol="tcp", state="open", service="redis", source="naabu")
@@ -692,10 +692,12 @@ class TestTlsCollector:
 
         sub = Subdomain.objects.create(session=sess, domain="example.com",
                                        subdomain="www.example.com", source="subfinder")
-        URL.objects.create(session=sess, subdomain=sub, url="https://1.2.3.4:443",
-                           host="1.2.3.4", port_number=443, scheme="https", source="httpx")
-        URL.objects.create(session=sess, subdomain=sub, url="http://1.2.3.4:80",
-                           host="1.2.3.4", port_number=80, scheme="http", source="httpx")
+        URL.objects.create(session=sess, subdomain=sub, port=port_443,
+                           url="https://www.example.com:443",
+                           host="www.example.com", port_number=443, scheme="https", source="httpx")
+        URL.objects.create(session=sess, subdomain=sub, port=port_80,
+                           url="http://www.example.com:80",
+                           host="www.example.com", port_number=80, scheme="http", source="httpx")
         return sess
 
     def test_https_web_port_no_probe(self):

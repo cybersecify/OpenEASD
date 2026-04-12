@@ -400,11 +400,13 @@ def collect(session) -> list[dict]:
     if not open_ports:
         return []
 
-    # Build (host, port_number) → (scheme, URL obj) from httpx phase
+    # Build (IP, port_number) → (scheme, URL obj) from httpx phase.
+    # URL.host is a hostname (e.g. "www.example.com") but Port.address is an IP,
+    # so we join via the URL → Port FK to get the IP address for matching.
     web_port_map: dict[tuple[str, int], tuple[str, object]] = {}
-    for url in URL.objects.filter(session=session):
-        if url.host and url.port_number:
-            web_port_map[(url.host, url.port_number)] = (url.scheme, url)
+    for url in URL.objects.filter(session=session).select_related("port"):
+        if url.port and url.port.address and url.port.port:
+            web_port_map[(url.port.address, url.port.port)] = (url.scheme, url)
 
     _tls_empty = {
         "tls_version": "", "cipher_name": "", "cipher_bits": 0,
@@ -476,7 +478,21 @@ def collect(session) -> list[dict]:
                 "port_fk": p, "url_fk": None,
                 **tls_detail,
             })
-        # else: unknown service on non-web port — skip
+
+        else:
+            # Unknown or empty service — try direct TLS probe (naabu doesn't set service names)
+            logger.debug(f"[tls_checker:{session.id}] Probing unknown service on {ip}:{port_num}")
+            details = _probe_tls_details(ip, port_num)
+            if details:
+                legacy = _check_legacy_protocol_support(ip, port_num)
+                tls_detail = {**details, **legacy}
+                results.append({
+                    "ip": ip, "port": port_num, "service": service,
+                    "has_tls": True, "is_web": False, "scheme": None,
+                    "inherently_insecure": False,
+                    "port_fk": p, "url_fk": None,
+                    **tls_detail,
+                })
 
     encrypted = sum(1 for r in results if r["has_tls"])
     plaintext = len(results) - encrypted

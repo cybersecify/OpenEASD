@@ -290,10 +290,14 @@ def collect(session) -> list[dict]:
         weak_kex_accepted, weak_ciphers_accepted, weak_macs_accepted,
       }
     """
+    from django.db import models as db_models
     from apps.core.assets.models import Port
 
+    # Match by service name OR well-known SSH port (naabu doesn't set service names)
     ssh_ports = list(Port.objects.filter(
-        session=session, state="open", service="ssh",
+        session=session, state="open",
+    ).filter(
+        db_models.Q(service="ssh") | db_models.Q(port=22)
     ))
     if not ssh_ports:
         return []

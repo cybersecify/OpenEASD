@@ -44,7 +44,7 @@ def collect(session) -> list[dict]:
         f.write("\n".join(targets))
         tmp = f.name
 
-    cmd = [BINARY, "-list", tmp, "-json", "-silent", "-no-color"]
+    cmd = [BINARY, "-list", tmp, "-jsonl", "-silent", "-no-color"]
     logger.info(f"[nuclei:{session.id}] Scanning {len(targets)} web targets")
 
     try:
