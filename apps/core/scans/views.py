@@ -232,11 +232,20 @@ def scan_status_fragment(request, session_uuid):
         "nmap_findings":     Finding.objects.filter(session=session, source="nmap").count(),
     }
 
+    # Workflow step progress
+    step_results = []
+    try:
+        run = session.workflow_run
+        step_results = list(run.step_results.order_by("order"))
+    except Exception:
+        pass
+
     response = render(request, "partials/scan_status.html", {
         "live_total": sum(vuln_counts.values()),
         "session": session,
         "vuln_counts": vuln_counts,
         "asset_counts": asset_counts,
+        "step_results": step_results,
     })
 
     if session.status not in ("running", "pending"):
