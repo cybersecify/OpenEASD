@@ -11,29 +11,40 @@
 {% if workflows %}
 <div class="space-y-4">
   {% for wf in workflows %}
-  <div class="bg-white rounded-lg shadow px-6 py-5 flex items-center justify-between">
-    <div>
-      <div class="flex items-center gap-3">
-        <a href="{% url 'workflow-detail' wf.pk %}" class="font-semibold text-gray-900 hover:text-indigo-600">{{ wf.name }}</a>
-        {% if wf.is_default %}<span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">Default</span>{% endif %}
+  <div x-data="{ confirmDelete: false }">
+    <div class="bg-white rounded-lg shadow px-6 py-5 flex items-center justify-between">
+      <div>
+        <div class="flex items-center gap-3">
+          <a href="{% url 'workflow-detail' wf.pk %}" class="font-semibold text-gray-900 hover:text-indigo-600">{{ wf.name }}</a>
+          {% if wf.is_default %}<span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">Default</span>{% endif %}
+        </div>
+        {% if wf.description %}<p class="text-sm text-gray-500 mt-1">{{ wf.description }}</p>{% endif %}
+        <div class="flex gap-2 mt-2 flex-wrap">
+          {% for step in wf.steps.all %}
+          <span class="text-xs px-2 py-0.5 rounded {% if step.enabled %}bg-green-100 text-green-700{% else %}bg-gray-100 text-gray-400 line-through{% endif %}">
+            {{ step.tool }}
+          </span>
+          {% endfor %}
+        </div>
       </div>
-      {% if wf.description %}<p class="text-sm text-gray-500 mt-1">{{ wf.description }}</p>{% endif %}
-      <div class="flex gap-2 mt-2 flex-wrap">
-        {% for step in wf.steps.all %}
-        <span class="text-xs px-2 py-0.5 rounded {% if step.enabled %}bg-green-100 text-green-700{% else %}bg-gray-100 text-gray-400 line-through{% endif %}">
-          {{ step.tool }}
-        </span>
-        {% endfor %}
+      <div class="flex items-center gap-4">
+        <span class="text-sm text-gray-400">{{ wf.runs.count }} run{{ wf.runs.count|pluralize }}</span>
+        {% if not wf.is_default %}
+        <button @click="confirmDelete = true" x-show="!confirmDelete" class="text-xs text-red-500 hover:text-red-700">Delete</button>
+        {% endif %}
       </div>
     </div>
-    <div class="flex items-center gap-4">
-      <span class="text-sm text-gray-400">{{ wf.runs.count }} run{{ wf.runs.count|pluralize }}</span>
-      {% if not wf.is_default %}
-      <form method="post" action="{% url 'workflow-delete' wf.pk %}" onsubmit="return confirm('Delete workflow &quot;{{ wf.name }}&quot;?')">
-        {% csrf_token %}
-        <button type="submit" class="text-xs text-red-500 hover:text-red-700">Delete</button>
-      </form>
-      {% endif %}
+    <div x-show="confirmDelete" x-cloak class="bg-red-50 border border-red-200 rounded-lg px-6 py-3 mt-1 flex items-center justify-between">
+      <p class="text-sm text-red-700">
+        Delete <span class="font-bold">{{ wf.name }}</span>? This will remove the workflow configuration.
+      </p>
+      <div class="flex items-center gap-3">
+        <button @click="confirmDelete = false" class="text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+        <form method="post" action="{% url 'workflow-delete' wf.pk %}">
+          {% csrf_token %}
+          <button type="submit" class="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700">Yes, delete</button>
+        </form>
+      </div>
     </div>
   </div>
   {% endfor %}
