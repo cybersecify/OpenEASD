@@ -674,7 +674,8 @@ class TestTlsAnalyzerHsts:
 class TestTlsCollector:
     def _make_session(self):
         from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port, URL, Subdomain
+        from apps.core.assets.models import IPAddress, Port, Subdomain
+        from apps.core.web_assets.models import URL
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")

@@ -327,7 +327,8 @@ class TestDomainDeleteCascade:
         """Regression test: deleting a domain must clean up subdomains, IPs, ports, URLs, NmapFindings."""
         from apps.core.domains.models import Domain
         from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, IPAddress, Port, URL
+        from apps.core.assets.models import Subdomain, IPAddress, Port
+        from apps.core.web_assets.models import URL
         from apps.core.findings.models import Finding
         from django.urls import reverse
 
@@ -412,7 +413,8 @@ class TestFullPipelineMocked:
     def test_full_pipeline_produces_correct_asset_graph(self, db):
         from apps.core.scans.models import ScanSession
         from apps.core.scans.pipeline import run_scan
-        from apps.core.assets.models import Subdomain, IPAddress, Port, URL
+        from apps.core.assets.models import Subdomain, IPAddress, Port
+        from apps.core.web_assets.models import URL
 
         wf = _ensure_default_workflow()
         session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending", workflow=wf)

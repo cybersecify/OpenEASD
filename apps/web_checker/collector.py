@@ -89,7 +89,7 @@ def collect(session) -> list[dict]:
         error: str | None,
       }
     """
-    from apps.core.assets.models import URL
+    from apps.core.web_assets.models import URL
 
     urls = list(URL.objects.filter(session=session).select_related("port", "subdomain"))
     if not urls:

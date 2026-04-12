@@ -178,7 +178,8 @@ def scan_detail(request, session_uuid):
     session = get_object_or_404(ScanSession, uuid=session_uuid)
     vuln_counts = _get_vuln_counts(session)
 
-    from apps.core.assets.models import Subdomain, IPAddress, Port, URL
+    from apps.core.assets.models import Subdomain, IPAddress, Port
+    from apps.core.web_assets.models import URL
     from apps.core.findings.models import Finding
 
     subdomains = list(Subdomain.objects.filter(session=session).order_by("-is_active", "subdomain"))
@@ -214,7 +215,8 @@ def scan_status_fragment(request, session_uuid):
     session = get_object_or_404(ScanSession, uuid=session_uuid)
     vuln_counts = _get_vuln_counts(session)
 
-    from apps.core.assets.models import Subdomain, IPAddress, Port, URL
+    from apps.core.assets.models import Subdomain, IPAddress, Port
+    from apps.core.web_assets.models import URL
     from apps.core.findings.models import Finding
 
     sub_agg = Subdomain.objects.filter(session=session).aggregate(

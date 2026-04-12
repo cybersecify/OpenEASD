@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     # Local apps
     "apps.core.dashboard",
     "apps.core.assets",
+    "apps.core.web_assets",
     "apps.core.findings",
     "apps.core.scans",
     "apps.core.domains",

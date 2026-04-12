@@ -11,7 +11,8 @@ from django.template.loader import get_template
 from django.utils import timezone
 
 from apps.core.constants import SEVERITY_LEVELS
-from apps.core.assets.models import Subdomain, IPAddress, Port, URL
+from apps.core.assets.models import Subdomain, IPAddress, Port
+from apps.core.web_assets.models import URL
 from apps.core.findings.models import Finding
 from apps.core.scans.models import ScanSession
 

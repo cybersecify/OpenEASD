@@ -394,7 +394,8 @@ def collect(session) -> list[dict]:
     Ports with unknown services (not in TLS_CAPABLE or INHERENTLY_INSECURE)
     that are not web ports are omitted — no findings can be generated.
     """
-    from apps.core.assets.models import Port, URL
+    from apps.core.assets.models import Port
+    from apps.core.web_assets.models import URL
 
     open_ports = list(Port.objects.filter(session=session, state="open"))
     if not open_ports:

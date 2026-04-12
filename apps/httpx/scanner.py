@@ -10,7 +10,8 @@ which a raw IP probe cannot achieve.
 
 import logging
 
-from apps.core.assets.models import Port, URL
+from apps.core.assets.models import Port
+from apps.core.web_assets.models import URL
 from .collector import collect
 from .analyzer import analyze
 

@@ -30,7 +30,7 @@ def collect(session) -> list[dict]:
 
     Returns list of raw nuclei JSON records (one per finding).
     """
-    from apps.core.assets.models import URL
+    from apps.core.web_assets.models import URL
 
     urls = list(URL.objects.filter(session=session).values_list("url", flat=True))
     if not urls:

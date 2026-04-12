@@ -10,7 +10,8 @@ from apps.core.scans.models import ScanSession
 from apps.core.findings.models import Finding
 from apps.core.domains.models import Domain
 from apps.core.insights.models import ScanSummary
-from apps.core.assets.models import Subdomain, IPAddress, Port, URL
+from apps.core.assets.models import Subdomain, IPAddress, Port
+from apps.core.web_assets.models import URL
 
 
 @login_required

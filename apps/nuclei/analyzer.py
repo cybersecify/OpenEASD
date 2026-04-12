@@ -109,7 +109,7 @@ def analyze(session, records: list[dict]) -> list[Finding]:
     Deduplicates by (template_id, matched_at) — nuclei can report the
     same finding multiple times across template runs.
     """
-    from apps.core.assets.models import URL
+    from apps.core.web_assets.models import URL
 
     if not records:
         return []

@@ -315,7 +315,8 @@ class TestWebCheckerDirectoryListing:
 class TestWebCheckerCollector:
     def _make_session(self):
         from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, URL, IPAddress, Port
+        from apps.core.assets.models import Subdomain, IPAddress, Port
+        from apps.core.web_assets.models import URL
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         port = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",

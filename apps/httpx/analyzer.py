@@ -2,7 +2,8 @@
 
 import logging
 
-from apps.core.assets.models import Port, Subdomain, URL
+from apps.core.assets.models import Port, Subdomain
+from apps.core.web_assets.models import URL
 
 logger = logging.getLogger(__name__)
 

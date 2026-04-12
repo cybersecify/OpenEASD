@@ -95,7 +95,8 @@ class TestPortModel:
 class TestURLModel:
     def test_url_linked_to_port_and_subdomain(self):
         from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, IPAddress, Port, URL
+        from apps.core.assets.models import Subdomain, IPAddress, Port
+        from apps.core.web_assets.models import URL
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         sub = Subdomain.objects.create(session=sess, domain="example.com", subdomain="www.example.com", source="subfinder")
         ip = IPAddress.objects.create(session=sess, subdomain=sub, address="1.2.3.4", version=4, source="dnsx")
@@ -111,7 +112,7 @@ class TestURLModel:
 
     def test_url_unique_per_session(self):
         from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import URL
+        from apps.core.web_assets.models import URL
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         URL.objects.create(session=sess, url="https://www.example.com:443", host="www.example.com", port_number=443, source="httpx")
         with pytest.raises(IntegrityError):
@@ -124,7 +125,8 @@ class TestAssetCascadeDelete:
 
     def test_session_delete_cascades_all_assets(self):
         from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, IPAddress, Port, URL
+        from apps.core.assets.models import Subdomain, IPAddress, Port
+        from apps.core.web_assets.models import URL
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         sub = Subdomain.objects.create(session=sess, domain="example.com", subdomain="api.example.com", source="subfinder")

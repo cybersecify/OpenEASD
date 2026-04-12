@@ -87,7 +87,8 @@ class TestParseHostTarget:
 class TestNucleiAnalyzer:
     def _make_session(self):
         from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, URL
+        from apps.core.assets.models import Subdomain
+        from apps.core.web_assets.models import URL
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         sub = Subdomain.objects.create(session=sess, domain="example.com",
                                        subdomain="www.example.com", source="subfinder")
@@ -185,7 +186,8 @@ class TestNucleiAnalyzer:
 class TestNucleiCollector:
     def _make_session(self):
         from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, URL
+        from apps.core.assets.models import Subdomain
+        from apps.core.web_assets.models import URL
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         sub = Subdomain.objects.create(session=sess, domain="example.com",
                                        subdomain="www.example.com", source="subfinder")
@@ -258,7 +260,8 @@ class TestNucleiCollector:
 class TestNucleiScanner:
     def test_scanner_creates_findings(self):
         from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, URL
+        from apps.core.assets.models import Subdomain
+        from apps.core.web_assets.models import URL
         from apps.core.findings.models import Finding
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")

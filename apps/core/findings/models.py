@@ -68,7 +68,7 @@ class Finding(models.Model):
         related_name="findings",
     )
     url = models.ForeignKey(
-        "assets.URL",
+        "web_assets.URL",
         on_delete=models.CASCADE,
         null=True,
         blank=True,

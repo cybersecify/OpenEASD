@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Subdomain, IPAddress, Port, URL
+from .models import Subdomain, IPAddress, Port
 
 
 @admin.register(Subdomain)
@@ -24,8 +24,3 @@ class PortAdmin(admin.ModelAdmin):
     list_filter = ["protocol", "state", "source"]
 
 
-@admin.register(URL)
-class URLAdmin(admin.ModelAdmin):
-    list_display = ["url", "status_code", "source", "session"]
-    list_filter = ["source", "status_code"]
-    search_fields = ["url"]
