@@ -397,7 +397,10 @@ def collect(session) -> list[dict]:
     from apps.core.assets.models import Port
     from apps.core.web_assets.models import URL
 
-    open_ports = list(Port.objects.filter(session=session, state="open"))
+    open_ports = list(
+        Port.objects.filter(session=session, state="open")
+        .select_related("ip_address__subdomain")
+    )
     if not open_ports:
         return []
 
@@ -424,15 +427,27 @@ def collect(session) -> list[dict]:
         port_num = p.port
         service = (p.service or "").lower()
 
+        # Resolve hostname: URL hostname > subdomain > IP fallback
+        url_obj = url_by_port.get(p.id)
+        if url_obj and url_obj.host:
+            host = url_obj.host
+        elif p.ip_address and p.ip_address.subdomain:
+            host = p.ip_address.subdomain.subdomain
+        else:
+            host = ip
+
         if p.is_web:
-            url_obj = url_by_port.get(p.id)
             scheme = url_obj.scheme if url_obj else ""
             has_tls = scheme == "https"
             tls_detail: dict = _tls_empty.copy()
+            details = None
 
-            if has_tls:
-                host = (url_obj.host if url_obj and url_obj.host else ip)
+            if has_tls or not scheme:
+                # HTTPS confirmed by URL, or no URL — probe with hostname
                 details = _probe_tls_details(ip, port_num, hostname=host)
+                if details and not scheme:
+                    has_tls = True
+                    scheme = "https"
                 if details:
                     legacy = _check_legacy_protocol_support(ip, port_num)
                     tls_detail = {**details, **legacy}
