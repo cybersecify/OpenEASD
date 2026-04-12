@@ -9,6 +9,7 @@ from django.db.models import Count, Q
 from django.core.paginator import Paginator
 from django.shortcuts import render, get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 
 from apscheduler.triggers.cron import CronTrigger
@@ -121,13 +122,15 @@ def scan_start(request):
             elif schedule_type == "once":
                 scheduled_at = form.cleaned_data["scheduled_at"]
                 _schedule_once(domain, scheduled_at)
-                return redirect("domain-list")
+                messages.success(request, f"Scan for {domain} scheduled at {scheduled_at.strftime('%b %d, %Y %H:%M')}.")
+                return redirect("scan-list")
 
             elif schedule_type == "recurring":
                 recurrence = form.cleaned_data["recurrence"]
                 recurrence_time = form.cleaned_data["recurrence_time"]
                 _schedule_recurring(domain, recurrence, recurrence_time)
-                return redirect("domain-list")
+                messages.success(request, f"Recurring {recurrence} scan for {domain} set at {recurrence_time.strftime('%H:%M')}.")
+                return redirect("scan-list")
     else:
         prefilled_domain = request.GET.get("domain", "").strip()
         form = StartScanForm(initial={"domain": prefilled_domain})
@@ -262,9 +265,9 @@ def scan_delete(request, session_uuid):
     domain = session.domain
     session.delete()
     logger.info(f"Scan deleted: domain={domain} uuid={session_uuid}")
-    # Rebuild global insights after deletion (FindingTypeSummary uses latest scan data)
     from apps.core.insights.builder import _rebuild_finding_type_summaries
     _rebuild_finding_type_summaries()
+    messages.success(request, f"Scan for {domain} deleted.")
     return redirect("scan-list")
 
 
@@ -279,6 +282,7 @@ def scan_stop(request, session_uuid):
         session.end_time = django_tz.now()
         session.save(update_fields=["status", "end_time"])
         logger.info(f"Scan cancelled: session={session.id} domain={session.domain}")
+        messages.success(request, f"Scan for {session.domain} cancelled.")
     return redirect("scan-detail", session_uuid=session.uuid)
 
 
@@ -350,8 +354,10 @@ def cancel_scheduled_job(request, job_id):
     try:
         get_scheduler().remove_job(job_id)
         logger.info(f"Scheduled job cancelled: {job_id}")
+        messages.success(request, "Scheduled scan cancelled.")
     except JobLookupError:
         logger.info(f"Job already gone (may have already run): {job_id}")
+        messages.info(request, "Scheduled scan already completed or was already cancelled.")
 
     return redirect("scan-list")
 
@@ -452,4 +458,5 @@ def finding_update_status(request, finding_id):
     return render(request, "partials/finding_status_cell.html", {
         "finding": finding,
         "status_choices": STATUS_CHOICES,
+        "saved": True,
     })

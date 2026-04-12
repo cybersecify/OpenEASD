@@ -1,5 +1,6 @@
 import logging
 
+from django.contrib import messages
 from django.db import transaction
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
@@ -17,7 +18,8 @@ def domain_list(request):
     if request.method == "POST":
         form = DomainForm(request.POST)
         if form.is_valid():
-            form.save()
+            domain = form.save()
+            messages.success(request, f"Domain {domain.name} added successfully.")
             return redirect("domain-list")
     else:
         form = DomainForm()
@@ -45,6 +47,8 @@ def domain_toggle(request, pk):
     domain = get_object_or_404(Domain, pk=pk)
     domain.is_active = not domain.is_active
     domain.save()
+    status = "activated" if domain.is_active else "paused"
+    messages.success(request, f"Domain {domain.name} {status}.")
     return redirect("domain-list")
 
 
@@ -70,4 +74,5 @@ def domain_delete(request, pk):
             domain.delete()
             from apps.core.insights.builder import _rebuild_finding_type_summaries
             _rebuild_finding_type_summaries()
+            messages.success(request, f"Domain {domain_name} and all its scan data deleted.")
     return redirect("domain-list")

@@ -4,6 +4,8 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
 
+from django.contrib import messages
+
 from .models import Workflow, WorkflowStep
 from .registry import get_tool_choices, get_tool_requires, get_tool_phases
 
@@ -68,6 +70,7 @@ def workflow_create(request):
                 enabled=True,
             )
 
+        messages.success(request, f"Workflow '{workflow.name}' created.")
         return redirect("workflow-detail", pk=workflow.pk)
 
     return render(request, "workflow/create.html", {
@@ -95,5 +98,7 @@ def workflow_toggle_step(request, pk, tool):
 @require_http_methods(["POST"])
 def workflow_delete(request, pk):
     workflow = get_object_or_404(Workflow, pk=pk)
+    name = workflow.name
     workflow.delete()
+    messages.success(request, f"Workflow '{name}' deleted.")
     return redirect("workflow-list")

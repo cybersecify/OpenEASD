@@ -1,9 +1,12 @@
-<select name="status"
-        hx-post="{% url 'finding-update-status' finding.id %}"
-        hx-target="#finding-status-{{ finding.id }}"
-        hx-swap="innerHTML"
-        class="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
-  {% for value, label in status_choices %}
-  <option value="{{ value }}" {% if finding.status == value %}selected{% endif %}>{{ label }}</option>
-  {% endfor %}
-</select>
+<div class="flex items-center gap-2">
+  <select name="status"
+          hx-post="{% url 'finding-update-status' finding.id %}"
+          hx-target="#finding-status-{{ finding.id }}"
+          hx-swap="innerHTML"
+          class="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+    {% for value, label in status_choices %}
+    <option value="{{ value }}" {% if finding.status == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  {% if saved %}<span class="text-xs text-green-600" x-data x-init="setTimeout(() => $el.remove(), 2000)">Saved</span>{% endif %}
+</div>
