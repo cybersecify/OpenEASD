@@ -350,12 +350,14 @@ class TestFindingsPageCards:
         assert resp.context["count_open_critical"] == 0
 
     def test_count_open_high_counts_correctly(self, auth_client):
+        baseline_resp = auth_client.get(reverse("finding-list"))
+        baseline = baseline_resp.context["count_open_high"]
         session = self._make_session("count-high.com")
         self._finding(session, "high")
         self._finding(session, "high")
         self._finding(session, "medium")
         resp = auth_client.get(reverse("finding-list"))
-        assert resp.context["count_open_high"] == 2
+        assert resp.context["count_open_high"] == baseline + 2
 
     def test_severity_card_link_present(self, auth_client):
         resp = auth_client.get(reverse("finding-list"))
