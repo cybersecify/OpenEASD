@@ -4,21 +4,28 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Login — OpenEASD</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    input:focus { outline: none !important; border-color: #30c074 !important; box-shadow: 0 0 0 2px rgba(48,192,116,0.15) !important; }
+  </style>
 </head>
-<body class="bg-gray-50 min-h-screen flex items-center justify-center">
+<body class="bg-[#0a1a0f] min-h-screen flex items-center justify-center"
+      style="background-image: radial-gradient(ellipse at 50% 0%, rgba(48,192,116,0.08) 0%, transparent 60%);">
 
   <div class="w-full max-w-sm">
     <div class="text-center mb-8">
-      <h1 class="text-2xl font-bold text-indigo-700">OpenEASD</h1>
-      <p class="text-gray-500 text-sm mt-1">Automated External Attack Surface Detection</p>
+      <div class="text-[#30c074] text-3xl mb-2">⬡</div>
+      <h1 class="text-2xl font-extrabold text-[#e8f5ef] tracking-tight">OpenEASD</h1>
+      <p class="text-[#3d6b4f] text-sm mt-1">Automated External Attack Surface Detection</p>
     </div>
 
-    <div class="bg-white rounded-lg shadow p-8">
-      <h2 class="text-lg font-semibold text-gray-800 mb-6">Sign in</h2>
+    <div class="bg-[#0d2614] rounded-lg border border-[rgba(48,192,116,0.12)] p-8">
+      <h2 class="text-lg font-semibold text-[#e8f5ef] mb-6">Sign in</h2>
 
       {% if form.errors %}
-      <div class="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">
+      <div class="mb-4 bg-[rgba(239,68,68,0.10)] border border-[rgba(239,68,68,0.25)] text-[#fca5a5] text-sm rounded-md px-4 py-3">
         Invalid username or password.
       </div>
       {% endif %}
@@ -26,18 +33,18 @@
       <form method="post">
         {% csrf_token %}
         <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+          <label class="block text-sm font-medium text-[#6b9e7e] mb-1">Username</label>
           <input type="text" name="username" autofocus autocomplete="username"
-                 class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                 class="w-full border border-[rgba(48,192,116,0.20)] rounded-md px-3 py-2 text-sm bg-[rgba(0,0,0,0.3)] text-[#e8f5ef] placeholder-[#3d6b4f]">
         </div>
         <div class="mb-6">
-          <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+          <label class="block text-sm font-medium text-[#6b9e7e] mb-1">Password</label>
           <input type="password" name="password" autocomplete="current-password"
-                 class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                 class="w-full border border-[rgba(48,192,116,0.20)] rounded-md px-3 py-2 text-sm bg-[rgba(0,0,0,0.3)] text-[#e8f5ef]">
         </div>
         <input type="hidden" name="next" value="{{ next }}">
         <button type="submit"
-                class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 font-medium text-sm">
+                class="w-full bg-[#30c074] text-[#022c22] py-2 px-4 rounded-md hover:bg-[#28a863] font-bold text-sm transition-colors">
           Sign in
         </button>
       </form>
