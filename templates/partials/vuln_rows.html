@@ -1,11 +1,11 @@
 {% for vuln in vulns %}
-<tr class="border-t border-[rgba(48,192,116,0.05)] hover:bg-[rgba(48,192,116,0.025)]">
-  <td class="px-6 py-4 text-sm text-[#e8f5ef]">{{ vuln.title }}</td>
-  <td class="px-6 py-4 text-sm font-mono text-[#6b9e7e]">{{ vuln.host }}</td>
+<tr class="border-t border-[rgba(48,192,116,0.05)] hover:bg-[rgba(255,255,255,0.03)]">
+  <td class="px-6 py-4 text-sm text-white">{{ vuln.title }}</td>
+  <td class="px-6 py-4 text-sm font-mono text-white/65">{{ vuln.host }}</td>
   <td class="px-6 py-4 text-sm">
     {% include "partials/severity_badge.html" with severity=vuln.severity %}
   </td>
-  <td class="px-6 py-4 text-sm text-[#6b9e7e]">{{ vuln.source|upper }}</td>
+  <td class="px-6 py-4 text-sm text-white/65">{{ vuln.source|upper }}</td>
   <td class="px-6 py-4 text-sm" id="finding-status-{{ vuln.obj.id }}">
     {% include "partials/finding_status_cell.html" with finding=vuln.obj %}
   </td>
@@ -15,6 +15,6 @@
 </tr>
 {% empty %}
 <tr>
-  <td colspan="6" class="px-6 py-8 text-center text-[#3d6b4f] text-sm">No findings found.</td>
+  <td colspan="6" class="px-6 py-8 text-center text-white/40 text-sm">No findings found.</td>
 </tr>
 {% endfor %}

@@ -6,13 +6,13 @@
 <div class="mb-6 flex items-start justify-between">
   <div>
     <a href="{% url 'workflow-list' %}" class="text-[#30c074] text-sm hover:underline">&larr; Workflows</a>
-    <h1 class="text-2xl font-extrabold tracking-tight text-[#e8f5ef] mt-2">Edit Workflow</h1>
+    <h1 class="text-2xl font-extrabold tracking-tight text-white mt-2">Edit Workflow</h1>
   </div>
   {% if not workflow.is_default %}
   <div x-data="{ confirmDelete: false }">
     <button @click="confirmDelete = true" x-show="!confirmDelete" class="text-sm text-red-600 hover:underline">Delete</button>
     <div x-show="confirmDelete" x-cloak class="flex items-center gap-3">
-      <button @click="confirmDelete = false" class="text-sm text-[#6b9e7e]">Cancel</button>
+      <button @click="confirmDelete = false" class="text-sm text-white/65">Cancel</button>
       <form method="post" action="{% url 'workflow-delete' workflow.pk %}">
         {% csrf_token %}
         <button type="submit" class="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700">Yes, delete</button>
@@ -26,33 +26,33 @@
       x-data="workflowForm()">
   {% csrf_token %}
 
-  <div class="bg-[#0d2614] rounded-lg border border-[rgba(48,192,116,0.12)] px-6 py-5 space-y-4">
+  <div class="bg-[#111111] rounded-lg border border-[rgba(255,255,255,0.10)] px-6 py-5 space-y-4">
     <div>
-      <label class="block text-sm font-medium text-[#e8f5ef] mb-1">Name</label>
+      <label class="block text-sm font-medium text-white mb-1">Name</label>
       <input type="text" name="name" value="{{ workflow.name }}" required
-             class="w-full px-3 py-2 border border-[rgba(48,192,116,0.12)] rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#30c074] bg-[rgba(0,0,0,0.15)] text-[#e8f5ef]">
+             class="w-full px-3 py-2 border border-[rgba(255,255,255,0.10)] rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#30c074] bg-[rgba(0,0,0,0.15)] text-white">
     </div>
     <div>
-      <label class="block text-sm font-medium text-[#e8f5ef] mb-1">Description</label>
+      <label class="block text-sm font-medium text-white mb-1">Description</label>
       <textarea name="description" rows="2" placeholder="Optional description"
-                class="w-full px-3 py-2 border border-[rgba(48,192,116,0.12)] rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#30c074] bg-[rgba(0,0,0,0.15)] text-[#e8f5ef]">{{ workflow.description }}</textarea>
+                class="w-full px-3 py-2 border border-[rgba(255,255,255,0.10)] rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#30c074] bg-[rgba(0,0,0,0.15)] text-white">{{ workflow.description }}</textarea>
     </div>
     <div class="flex items-center gap-2">
       <input type="checkbox" name="is_default" id="is_default" {% if workflow.is_default %}checked{% endif %}
-             class="rounded border-[rgba(48,192,116,0.12)] text-[#30c074]">
-      <label for="is_default" class="text-sm text-[#e8f5ef]">Set as default workflow</label>
+             class="rounded border-[rgba(255,255,255,0.10)] text-[#30c074]">
+      <label for="is_default" class="text-sm text-white">Set as default workflow</label>
     </div>
   </div>
 
-  <div class="bg-[#0d2614] rounded-lg border border-[rgba(48,192,116,0.12)] px-6 py-5">
-    <h2 class="font-semibold text-[#e8f5ef] mb-4">Tools to include</h2>
+  <div class="bg-[#111111] rounded-lg border border-[rgba(255,255,255,0.10)] px-6 py-5">
+    <h2 class="font-semibold text-white mb-4">Tools to include</h2>
     <div class="space-y-2">
       {% for step in tool_steps %}
       <label class="flex items-center gap-3 cursor-pointer">
         <input type="checkbox" name="tools" value="{{ step.key }}" {% if step.enabled %}checked{% endif %}
                x-model="selected"
-               class="rounded border-[rgba(48,192,116,0.12)] text-[#30c074]">
-        <span class="text-sm text-[#e8f5ef]">{{ step.label }}</span>
+               class="rounded border-[rgba(255,255,255,0.10)] text-[#30c074]">
+        <span class="text-sm text-white">{{ step.label }}</span>
         <template x-if="missingDeps('{{ step.key }}').length > 0">
           <span class="text-xs text-amber-600 ml-1"
                 x-text="'Needs: ' + missingDeps('{{ step.key }}').join(', ')"></span>
@@ -70,10 +70,10 @@
   </div>
 
   <div class="flex gap-3">
-    <button type="submit" class="bg-[#30c074] text-[#022c22] font-bold px-5 py-2 rounded-md text-sm hover:bg-[#28a863]">
+    <button type="submit" class="bg-[#30c074] text-white font-bold px-5 py-2 rounded-md text-sm hover:bg-[#28a863]">
       Save Workflow
     </button>
-    <a href="{% url 'workflow-list' %}" class="px-5 py-2 rounded-md text-sm border border-[rgba(48,192,116,0.12)] text-[#6b9e7e] hover:bg-[rgba(48,192,116,0.025)]">
+    <a href="{% url 'workflow-list' %}" class="px-5 py-2 rounded-md text-sm border border-[rgba(255,255,255,0.10)] text-white/65 hover:bg-[rgba(255,255,255,0.03)]">
       Cancel
     </a>
   </div>
@@ -81,9 +81,9 @@
 
 {% if recent_runs %}
 <div class="mt-8 max-w-2xl">
-  <div class="bg-[#0d2614] rounded-lg border border-[rgba(48,192,116,0.12)] overflow-hidden">
-    <div class="px-6 py-4 border-b border-[rgba(48,192,116,0.12)]">
-      <h2 class="font-semibold text-[#e8f5ef]">Recent Runs</h2>
+  <div class="bg-[#111111] rounded-lg border border-[rgba(255,255,255,0.10)] overflow-hidden">
+    <div class="px-6 py-4 border-b border-[rgba(255,255,255,0.10)]">
+      <h2 class="font-semibold text-white">Recent Runs</h2>
     </div>
     <ul>
       {% for run in recent_runs %}
@@ -96,11 +96,11 @@
             {% if run.status == 'completed' %}bg-[rgba(48,192,116,0.12)] text-[#6ee7b7]
             {% elif run.status == 'failed' %}bg-[rgba(239,68,68,0.12)] text-[#fca5a5]
             {% elif run.status == 'running' %}bg-[rgba(234,179,8,0.10)] text-[#fde047]
-            {% else %}bg-[rgba(255,255,255,0.05)] text-[#1e3d2a]{% endif %}">
+            {% else %}bg-[rgba(255,255,255,0.05)] text-white/20{% endif %}">
             {{ run.status|upper }}
           </span>
         </div>
-        {% if run.started_at %}<p class="text-xs text-[#3d6b4f]">{{ run.started_at|date:"M d H:i" }}</p>{% endif %}
+        {% if run.started_at %}<p class="text-xs text-white/40">{{ run.started_at|date:"M d H:i" }}</p>{% endif %}
       </li>
       {% endfor %}
     </ul>

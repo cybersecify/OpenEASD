@@ -1,5 +1,5 @@
 {% if status == "pending" %}
-  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[rgba(255,255,255,0.06)] text-[#6b9e7e]">Pending</span>
+  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[rgba(255,255,255,0.06)] text-white/65">Pending</span>
 {% elif status == "running" %}
   <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[rgba(59,130,246,0.12)] text-[#93c5fd]">Running</span>
 {% elif status == "completed" %}
@@ -7,5 +7,5 @@
 {% elif status == "failed" %}
   <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[rgba(239,68,68,0.12)] text-[#fca5a5]">Failed</span>
 {% else %}
-  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[rgba(255,255,255,0.06)] text-[#6b9e7e]">{{ status }}</span>
+  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[rgba(255,255,255,0.06)] text-white/65">{{ status }}</span>
 {% endif %}
