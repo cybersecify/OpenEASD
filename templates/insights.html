@@ -34,7 +34,7 @@
     <div class="text-xs text-[#3d6b4f] mt-1">new exposures</div>
   </div>
   <div class="bg-[#0d2614] rounded-lg border border-[rgba(59,130,246,0.20)] px-5 py-4">
-    <div class="text-xs font-semibold text-blue-400 uppercase tracking-wide">Fixed This Scan</div>
+    <div class="text-xs font-semibold text-[#93c5fd] uppercase tracking-wide">Fixed This Scan</div>
     <div class="text-3xl font-bold text-[#93c5fd] mt-1">{{ kpi_fixed }}</div>
     <div class="text-xs text-[#3d6b4f] mt-1">exposures removed</div>
   </div>
@@ -120,7 +120,7 @@
             <tr>
               <td class="py-2 pr-4 text-[#6b9e7e] whitespace-nowrap text-xs">{{ row.label }}</td>
               <td class="py-2 pr-4 font-semibold {% if row.new > 0 %}text-[#fca5a5]{% else %}text-[#1e3d2a]{% endif %}">+{{ row.new }}</td>
-              <td class="py-2 font-semibold {% if row.removed > 0 %}text-green-600{% else %}text-[#1e3d2a]{% endif %}">-{{ row.removed }}</td>
+              <td class="py-2 font-semibold {% if row.removed > 0 %}text-[#30c074]{% else %}text-[#1e3d2a]{% endif %}">-{{ row.removed }}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -161,7 +161,7 @@
 <!-- Section 3: Where to Focus -->
 <div class="mb-8">
   <div class="flex items-center gap-2 mb-4">
-    <div class="w-0.5 h-4 bg-orange-500 rounded"></div>
+    <div class="w-0.5 h-4 bg-[rgba(249,115,22,0.70)] rounded"></div>
     <h2 class="text-sm font-semibold text-[#e8f5ef]">Where to Focus</h2>
     <span class="text-xs text-[#3d6b4f]">Top vulnerable domains and services from latest scans</span>
   </div>
