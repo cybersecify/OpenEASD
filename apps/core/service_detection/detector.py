@@ -1,21 +1,22 @@
 """Service detection — classifies ports as web or non-web.
 
-Classification strategy:
+Classification strategy (most accurate first, fallback last):
 
-  Step 1 — Well-known ports classified by port number (deterministic, no probing):
-    80, 8080       → http  (web)
-    443, 8443      → https (web)
-    Port number is authoritative for these — probing CDNs/firewalls is unreliable.
+  Step 1 — HTTP probing (all ports)
+    1a. HTTPS + subdomain hostname  (CDN/SNI compatible)
+    1b. HTTP  + subdomain hostname
+    1c. HTTPS + raw IP              (CDN SNI rejection fallback)
+    1d. HTTP  + raw IP
 
-  Step 2 — Non-standard ports: HTTP probing
-    2a. HTTPS + subdomain hostname  (CDN/SNI compatible)
-    2b. HTTP  + subdomain hostname
-    2c. HTTPS + raw IP              (CDN SNI rejection fallback)
-    2d. HTTP  + raw IP
+  Step 2 — nmap -sV for still-unresolved ports
+    Batched per IP; accurately fingerprints ssh/ftp/smtp/https etc.
+    Treats tcpwrapped / ssl/unknown on known-web ports as web.
 
-  Step 3 — Non-standard ports still unresolved: nmap -sV fallback
-    Batched per IP; handles ssh/ftp/smtp etc. accurately.
-    Treats tcpwrapped / ssl/unknown as web if on a known-web port.
+  Step 3 — Well-known port fallback (last resort)
+    80, 8080  → http  (web)
+    443, 8443 → https (web)
+    Only applied when both probing and nmap fail to classify the port
+    (e.g. CloudFront blocking all probes on port 443).
 
 Primary output:  Port.is_web (True/False)
 Secondary output: Port.service (e.g. "https", "http", "ssh", ...)
@@ -174,23 +175,10 @@ def detect_services(session) -> int:
         return 0
 
     results: dict[int, tuple[str, bool]] = {}  # port.id → (service, is_web)
-    non_standard: list = []
 
-    # ── Step 1: well-known ports — deterministic, no probing ─────────────
-    for p in open_ports:
-        if p.port in _KNOWN_WEB_PORTS:
-            service = _KNOWN_WEB_PORTS[p.port]
-            results[p.id] = (service, True)
-            logger.debug(
-                f"[service_detection:{session.id}] {p.address}:{p.port} → "
-                f"{service} (well-known port)"
-            )
-        else:
-            non_standard.append(p)
-
-    # ── Step 2: HTTP probing for non-standard ports ───────────────────────
+    # ── Step 1: HTTP probing (all ports) ──────────────────────────────────
     unresolved: list = []
-    for p in non_standard:
+    for p in open_ports:
         ip       = p.address
         port_num = p.port
         hostname = ip
@@ -218,7 +206,8 @@ def detect_services(session) -> int:
         else:
             unresolved.append(p)
 
-    # ── Step 3: nmap -sV for non-standard ports still unresolved ─────────
+    # ── Step 2: nmap -sV for still-unresolved ports ───────────────────────
+    still_unresolved: list = []
     if unresolved:
         by_ip: dict[str, list] = {}
         for p in unresolved:
@@ -231,21 +220,32 @@ def detect_services(session) -> int:
                 nmap_svc = nmap_services.get(p.port, "")
                 is_web   = nmap_svc in _NMAP_WEB_SERVICES
 
-                # tcpwrapped / ssl/unknown: nmap connected but couldn't fingerprint.
-                # Shouldn't normally hit for non-standard ports, but handle it anyway.
                 if not is_web and nmap_svc in {"tcpwrapped", "ssl/unknown"}:
                     is_web   = True
-                    nmap_svc = "https"
+                    nmap_svc = "https" if p.port in {443, 8443} else "http"
                     logger.debug(
                         f"[service_detection:{session.id}] {ip}:{p.port} — "
-                        f"{nmap_svc} on non-standard port, assuming https"
+                        f"nmap={nmap_svc!r}, assuming {nmap_svc}"
                     )
 
-                results[p.id] = (nmap_svc, is_web)
-                logger.debug(
-                    f"[service_detection:{session.id}] {ip}:{p.port} → "
-                    f"{nmap_svc or 'unknown'} (nmap fallback, web={is_web})"
-                )
+                if is_web or nmap_svc:
+                    results[p.id] = (nmap_svc, is_web)
+                    logger.debug(
+                        f"[service_detection:{session.id}] {ip}:{p.port} → "
+                        f"{nmap_svc or 'unknown'} (nmap, web={is_web})"
+                    )
+                else:
+                    still_unresolved.append(p)
+
+    # ── Step 3: well-known port fallback (last resort) ────────────────────
+    for p in still_unresolved:
+        if p.port in _KNOWN_WEB_PORTS:
+            service = _KNOWN_WEB_PORTS[p.port]
+            results[p.id] = (service, True)
+            logger.debug(
+                f"[service_detection:{session.id}] {p.address}:{p.port} → "
+                f"{service} (well-known port fallback)"
+            )
 
     # ── Persist ───────────────────────────────────────────────────────────
     updated = 0
@@ -257,6 +257,6 @@ def detect_services(session) -> int:
 
     logger.info(
         f"[service_detection:{session.id}] {updated}/{len(open_ports)} ports classified "
-        f"({len(non_standard)} non-standard probed, {len(unresolved)} via nmap fallback)"
+        f"({len(unresolved)} to nmap, {len(still_unresolved)} to well-known fallback)"
     )
     return updated

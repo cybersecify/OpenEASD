@@ -158,38 +158,47 @@ class TestDetectServices:
                             port=443, protocol="tcp", state="open", source="naabu")
         return sess
 
-    # -- Well-known ports: classified by port number, no probing at all -----
+    # -- Well-known ports: fallback when probing + nmap both fail -----------
 
-    def test_port_443_always_web_no_probing(self):
-        """Port 443 must be https/web regardless of probe results."""
+    def test_port_443_fallback_when_all_probes_fail(self):
+        """Port 443 must be https/web via fallback when HTTP probe and nmap both fail."""
         from apps.core.assets.models import Port
         sess = self._make_session()
 
-        with patch("apps.core.service_detection.detector._probe_http") as mock_probe, \
-             patch("apps.core.service_detection.detector._nmap_sv") as mock_nmap:
+        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.service_detection.detector._nmap_sv", return_value={}):
             detect_services(sess)
 
         p443 = Port.objects.get(session=sess, port=443)
         assert p443.is_web is True
         assert p443.service == "https"
-        # well-known ports must not be passed to probing or nmap
-        for c in mock_probe.call_args_list:
-            assert c.args[1] not in _KNOWN_WEB_PORTS
-        for c in mock_nmap.call_args_list:
-            assert not any(p in _KNOWN_WEB_PORTS for p in c.args[1])
 
-    def test_port_80_always_web_no_probing(self):
-        """Port 80 must be http/web regardless of probe results."""
+    def test_port_80_fallback_when_all_probes_fail(self):
+        """Port 80 must be http/web via fallback when HTTP probe and nmap both fail."""
         from apps.core.assets.models import Port
         sess = self._make_session()
 
-        with patch("apps.core.service_detection.detector._probe_http"), \
+        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
              patch("apps.core.service_detection.detector._nmap_sv", return_value={}):
             detect_services(sess)
 
         p80 = Port.objects.get(session=sess, port=80)
         assert p80.is_web is True
         assert p80.service == "http"
+
+    def test_port_443_probe_result_takes_priority_over_fallback(self):
+        """If HTTP probe succeeds on 443, use probe result — not fallback."""
+        from apps.core.assets.models import Port
+        sess = self._make_session()
+
+        with patch("apps.core.service_detection.detector._probe_http") as mock_probe, \
+             patch("apps.core.service_detection.detector._nmap_sv", return_value={}):
+            mock_probe.side_effect = lambda host, port, scheme: port == 443 and scheme == "https"
+            detect_services(sess)
+
+        p443 = Port.objects.get(session=sess, port=443)
+        assert p443.is_web is True
+        assert p443.service == "https"
 
     # -- Non-standard ports: SSH via nmap -----------------------------------
 
@@ -259,17 +268,15 @@ class TestDetectServices:
 
         assert Port.objects.get(session=sess, port=9999).is_web is False
 
-    def test_nmap_not_called_for_well_known_ports(self):
-        """nmap must never be invoked for well-known web ports."""
+    def test_returns_count_of_updated_ports(self):
         sess = self._make_session()
 
         with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._nmap_sv", return_value={}) as mock_nmap:
-            detect_services(sess)
+             patch("apps.core.service_detection.detector._nmap_sv", return_value={22: "ssh"}):
+            count = detect_services(sess)
 
-        for c in mock_nmap.call_args_list:
-            probed = c.args[1]
-            assert not any(p in _KNOWN_WEB_PORTS for p in probed)
+        # 80→http, 443→https (well-known fallback), 22→ssh (nmap) — all 3 updated
+        assert count == 3
 
     def test_undetectable_non_standard_port_stays_non_web(self):
         from apps.core.scans.models import ScanSession
