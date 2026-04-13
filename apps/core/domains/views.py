@@ -2,6 +2,7 @@ import logging
 
 from django.contrib import messages
 from django.db import transaction
+from django.db.models import Count
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 
@@ -9,8 +10,43 @@ logger = logging.getLogger(__name__)
 
 from apps.core.scans.models import ScanSession
 from apps.core.insights.models import ScanSummary
+from apps.core.queries import latest_session_ids
+from apps.core.findings.models import Finding
 from .models import Domain
 from .forms import DomainForm
+
+
+def _enrich_domains(domains):
+    """Attach last_scan and findings_summary to each Domain object in-place."""
+    domain_names = [d.name for d in domains]
+    if not domain_names:
+        return
+
+    # Latest session per domain (any status) — for Last Scan column
+    latest_sessions = {}
+    for session in ScanSession.objects.filter(
+        domain__in=domain_names
+    ).order_by("domain", "-start_time"):
+        if session.domain not in latest_sessions:
+            latest_sessions[session.domain] = session
+
+    # Open findings from latest completed session — for Findings column
+    latest_ids = latest_session_ids(domains=domain_names)
+    findings_by_domain = {}
+    if latest_ids:
+        for row in (
+            Finding.objects
+            .filter(session_id__in=latest_ids, status="open")
+            .exclude(severity="info")
+            .values("session__domain", "severity")
+            .annotate(count=Count("id"))
+        ):
+            d = row["session__domain"]
+            findings_by_domain.setdefault(d, {})[row["severity"]] = row["count"]
+
+    for domain in domains:
+        domain.last_scan = latest_sessions.get(domain.name)
+        domain.findings_summary = findings_by_domain.get(domain.name, {})
 
 
 @login_required
@@ -24,7 +60,8 @@ def domain_list(request):
     else:
         form = DomainForm()
 
-    domains = Domain.objects.all()
+    domains = list(Domain.objects.all())
+    _enrich_domains(domains)
 
     recurring_domains = set()
     try:
@@ -62,7 +99,8 @@ def domain_delete(request, pk):
                 domain=domain_name, status__in=["pending", "running"]
             ).exists()
             if active:
-                domains = Domain.objects.all()
+                domains = list(Domain.objects.all())
+                _enrich_domains(domains)
                 form = DomainForm()
                 return render(request, "domains/list.html", {
                     "domains": domains,
