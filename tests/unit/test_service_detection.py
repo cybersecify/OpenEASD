@@ -9,6 +9,7 @@ import requests
 from apps.core.service_detection.detector import (
     _probe_http, _parse_nmap_sv_xml, _nmap_sv, detect_services,
     WEB_SERVICES, _KNOWN_WEB_PORTS, _grab_banner,
+    _banner_score, _nmap_score, _port_hint_score, CLASSIFICATION_THRESHOLD,
 )
 
 
@@ -351,3 +352,123 @@ class TestGrabBanner:
                    return_value=mock_sock):
             result = _grab_banner("1.2.3.4", 80)
         assert "HTTP/1.1 200 OK" in result
+
+
+# ---------------------------------------------------------------------------
+# _banner_score
+# ---------------------------------------------------------------------------
+
+class TestBannerScore:
+    def setup_method(self):
+        from apps.core.service_detection.detector import _banner_score
+        self.fn = _banner_score
+
+    def test_ssh_banner_negative(self):
+        assert self.fn("SSH-2.0-OpenSSH_8.9\r\n") == -70
+
+    def test_ssh1_banner_negative(self):
+        assert self.fn("SSH-1.99-OpenSSH_3.9\r\n") == -70
+
+    def test_ftp_banner_negative(self):
+        assert self.fn("220 ProFTPD 1.3.5 Server ready\r\n") == -70
+
+    def test_smtp_ehlo_negative(self):
+        assert self.fn("EHLO mail.example.com\r\n") == -70
+
+    def test_esmtp_negative(self):
+        assert self.fn("220 mail.example.com ESMTP\r\n") == -70
+
+    def test_pop3_positive_ok_negative(self):
+        assert self.fn("+OK POP3 server ready\r\n") == -70
+
+    def test_imap_ok_negative(self):
+        assert self.fn("* OK IMAP4rev1 ready\r\n") == -70
+
+    def test_http_response_positive(self):
+        assert self.fn("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n") == 70
+
+    def test_html_doctype_positive(self):
+        assert self.fn("<!DOCTYPE html><html>") == 70
+
+    def test_html_tag_positive(self):
+        assert self.fn("<html lang='en'>") == 70
+
+    def test_empty_banner_zero(self):
+        assert self.fn("") == 0
+
+    def test_unknown_banner_zero(self):
+        assert self.fn("some random binary garbage \x00\x01\x02") == 0
+
+
+# ---------------------------------------------------------------------------
+# _nmap_score
+# ---------------------------------------------------------------------------
+
+class TestNmapScore:
+    def setup_method(self):
+        from apps.core.service_detection.detector import _nmap_score
+        self.fn = _nmap_score
+
+    def test_http_positive(self):
+        assert self.fn("http", 8080) == 70
+
+    def test_https_positive(self):
+        assert self.fn("https", 443) == 70
+
+    def test_ssl_http_positive(self):
+        assert self.fn("ssl/http", 8443) == 70
+
+    def test_ssh_negative(self):
+        assert self.fn("ssh", 22) == -80
+
+    def test_ftp_negative(self):
+        assert self.fn("ftp", 21) == -80
+
+    def test_smtp_negative(self):
+        assert self.fn("smtp", 25) == -80
+
+    def test_tcpwrapped_zero(self):
+        assert self.fn("tcpwrapped", 443) == 0
+
+    def test_ssl_unknown_on_known_web_port(self):
+        assert self.fn("ssl/unknown", 443) == 40
+
+    def test_ssl_unknown_on_known_web_port_8443(self):
+        assert self.fn("ssl/unknown", 8443) == 40
+
+    def test_ssl_unknown_on_non_web_port(self):
+        assert self.fn("ssl/unknown", 9200) == 10
+
+    def test_empty_string_zero(self):
+        assert self.fn("", 1234) == 0
+
+    def test_unknown_service_zero(self):
+        assert self.fn("unknown", 9999) == 0
+
+
+# ---------------------------------------------------------------------------
+# _port_hint_score
+# ---------------------------------------------------------------------------
+
+class TestPortHintScore:
+    def setup_method(self):
+        from apps.core.service_detection.detector import _port_hint_score
+        self.fn = _port_hint_score
+
+    def test_port_80(self):
+        assert self.fn(80) == 20
+
+    def test_port_443(self):
+        assert self.fn(443) == 20
+
+    def test_port_8080(self):
+        assert self.fn(8080) == 20
+
+    def test_port_8443(self):
+        assert self.fn(8443) == 20
+
+    def test_port_22_zero(self):
+        assert self.fn(22) == 0
+
+    def test_port_9200_zero(self):
+        assert self.fn(9200) == 0

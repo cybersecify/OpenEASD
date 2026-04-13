@@ -61,6 +61,24 @@ _KNOWN_WEB_PORTS: dict[int, str] = {
     8443: "https",
 }
 
+CLASSIFICATION_THRESHOLD = 50
+
+# nmap service names that identify clearly non-web services.
+_NMAP_NON_WEB_SERVICES = frozenset({
+    "ssh", "ftp", "ftps", "smtp", "smtps", "imap", "imaps",
+    "pop3", "pop3s", "telnet", "rdp", "ms-wbt-server",
+    "mysql", "postgresql", "ms-sql-s", "oracle", "mongodb",
+    "redis", "memcached", "ldap", "ldaps", "snmp", "ntp",
+    "sip", "sips", "dns", "domain", "rpcbind", "sunrpc",
+    "netbios-ssn", "microsoft-ds",
+})
+
+# Banner prefixes/substrings that identify clearly non-web services.
+_BANNER_NON_WEB_SIGNALS = ("SSH-2.0-", "SSH-1.", "220 ", "EHLO", "ESMTP", "+OK ", "* OK ", "* BYE")
+
+# Banner substrings that identify web services.
+_BANNER_WEB_SIGNALS = ("HTTP/", "<!DOCTYPE", "<html")
+
 
 # ---------------------------------------------------------------------------
 # HTTP probing
@@ -103,6 +121,58 @@ def _grab_banner(host: str, port: int) -> str:
             return data.decode("utf-8", errors="replace")
     except Exception:
         return ""
+
+
+# ---------------------------------------------------------------------------
+# Scoring helpers
+# ---------------------------------------------------------------------------
+
+def _banner_score(banner: str) -> int:
+    """
+    Score a raw TCP banner.
+
+    Returns +70 for HTTP banners, -70 for SSH/FTP/SMTP banners, 0 otherwise.
+    """
+    if not banner:
+        return 0
+    for signal in _BANNER_WEB_SIGNALS:
+        if signal in banner:
+            return 70
+    for signal in _BANNER_NON_WEB_SIGNALS:
+        if signal in banner:
+            return -70
+    return 0
+
+
+def _nmap_score(nmap_svc: str, port_num: int) -> int:
+    """
+    Score an nmap service name.
+
+    ssl/unknown on a known web port scores higher to preserve CDN/CloudFront
+    detection (those services block most probes but nmap still sees ssl/unknown).
+    tcpwrapped contributes nothing — it carries no protocol information.
+    """
+    if not nmap_svc:
+        return 0
+    if nmap_svc in _NMAP_WEB_SERVICES:
+        return 70
+    if nmap_svc in _NMAP_NON_WEB_SERVICES:
+        return -80
+    if nmap_svc == "ssl/unknown":
+        return 40 if port_num in _KNOWN_WEB_PORTS else 10
+    if nmap_svc == "tcpwrapped":
+        return 0
+    return 0
+
+
+def _port_hint_score(port_num: int) -> int:
+    """
+    Weak bonus for well-known web port numbers.
+
+    Not enough alone to cross CLASSIFICATION_THRESHOLD — requires at least
+    one other positive signal.
+    """
+    return 20 if port_num in _KNOWN_WEB_PORTS else 0
 
 
 # ---------------------------------------------------------------------------
