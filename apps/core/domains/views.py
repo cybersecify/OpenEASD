@@ -102,9 +102,18 @@ def domain_delete(request, pk):
                 domains = list(Domain.objects.all())
                 _enrich_domains(domains)
                 form = DomainForm()
+                recurring_domains = set()
+                try:
+                    from apps.core.scheduler import get_scheduler
+                    for job in get_scheduler().get_jobs():
+                        if job.id.startswith("recurring_"):
+                            recurring_domains.add(job.id[len("recurring_"):])
+                except Exception:
+                    logger.exception("[domain_delete] Failed to fetch recurring scheduled jobs")
                 return render(request, "domains/list.html", {
                     "domains": domains,
                     "form": form,
+                    "recurring_domains": recurring_domains,
                     "delete_error": f"Cannot delete '{domain_name}' — a scan is currently active. Wait for it to finish.",
                 })
             ScanSession.objects.filter(domain=domain_name).delete()
