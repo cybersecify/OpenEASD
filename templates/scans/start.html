@@ -5,31 +5,31 @@
 {% block content %}
 <div class="max-w-xl mx-auto">
   <div class="mb-6">
-    <a href="{% url 'scan-list' %}" class="text-indigo-600 text-sm hover:underline">&larr; All Scans</a>
-    <h1 class="text-2xl font-bold text-gray-900 mt-2">Start Scan</h1>
-    <p class="text-gray-500 text-sm mt-1">Configure and launch a security scan</p>
+    <a href="{% url 'scan-list' %}" class="text-[#30c074] text-sm hover:underline">&larr; All Scans</a>
+    <h1 class="text-2xl font-bold text-[#e8f5ef] font-extrabold tracking-tight mt-2">Start Scan</h1>
+    <p class="text-[#6b9e7e] text-sm mt-1">Configure and launch a security scan</p>
   </div>
 
   {% if no_domains %}
-  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+  <div class="bg-[#0d2614] rounded-xl border border-[rgba(48,192,116,0.12)] p-8 text-center">
     <div class="text-5xl mb-3">🌐</div>
-    <h2 class="text-lg font-semibold text-gray-900 mb-2">No domains added yet</h2>
-    <p class="text-gray-500 text-sm mb-5">
+    <h2 class="text-lg font-semibold text-[#e8f5ef] mb-2">No domains added yet</h2>
+    <p class="text-[#6b9e7e] text-sm mb-5">
       You must add a domain before you can start a scan.
     </p>
     <a href="{% url 'domain-list' %}"
-       class="inline-block px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition-colors">
+       class="inline-block px-5 py-2.5 bg-[#30c074] hover:bg-[#28a863] text-[#022c22] font-bold text-sm font-semibold rounded-lg transition-colors">
       Go to Domains
     </a>
   </div>
   {% else %}
-  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+  <div class="bg-[#0d2614] rounded-xl border border-[rgba(48,192,116,0.12)] p-6"
        x-data="scanStartForm()" x-init="init()">
     <form method="post">
       {% csrf_token %}
 
       {% if form.errors %}
-      <div class="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">
+      <div class="mb-4 bg-[rgba(239,68,68,0.10)] border border-[rgba(239,68,68,0.25)] text-[#fca5a5] px-4 py-3 rounded text-sm">
         {% for field, errors in form.errors.items %}
           {% for error in errors %}
             <p>{{ error }}</p>
@@ -40,7 +40,7 @@
 
       <!-- Domain -->
       <div class="mb-6">
-        <label class="block text-sm font-semibold text-gray-700 mb-1.5">Domain</label>
+        <label class="block text-sm font-semibold text-[#e8f5ef] mb-1.5">Domain</label>
         {{ form.domain }}
         {% if form.domain.errors %}
         <p class="text-red-500 text-xs mt-1.5">{{ form.domain.errors.0 }}</p>
@@ -49,41 +49,41 @@
 
       <!-- Workflow -->
       <div class="mb-6">
-        <label class="block text-sm font-semibold text-gray-700 mb-1.5">Workflow</label>
+        <label class="block text-sm font-semibold text-[#e8f5ef] mb-1.5">Workflow</label>
         {{ form.workflow }}
-        <p class="text-gray-400 text-xs mt-1">Select which tools to run. <a href="{% url 'workflow-list' %}" class="text-indigo-500 hover:underline">Manage workflows</a></p>
+        <p class="text-[#3d6b4f] text-xs mt-1">Select which tools to run. <a href="{% url 'workflow-list' %}" class="text-[#30c074] hover:underline">Manage workflows</a></p>
       </div>
 
       <!-- Schedule Type — card selection -->
       <div class="mb-6">
-        <label class="block text-sm font-semibold text-gray-700 mb-2">When to run</label>
+        <label class="block text-sm font-semibold text-[#e8f5ef] mb-2">When to run</label>
         <div class="grid grid-cols-3 gap-3">
 
           <label @click="schedule = 'now'"
-                 :class="schedule === 'now' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white hover:border-gray-300'"
+                 :class="schedule === 'now' ? 'border-[#30c074] bg-[rgba(48,192,116,0.08)]' : 'border-[rgba(48,192,116,0.15)] bg-[#0d2614] hover:border-[rgba(48,192,116,0.30)]'"
                  class="cursor-pointer rounded-lg border-2 px-4 py-3 text-center transition-all">
             <input type="radio" name="schedule_type" value="now" class="sr-only" x-model="schedule">
             <div class="text-lg mb-1">⚡</div>
-            <div class="text-xs font-semibold text-gray-800">Run now</div>
-            <div class="text-xs text-gray-400 mt-0.5">Immediately</div>
+            <div class="text-xs font-semibold text-[#e8f5ef]">Run now</div>
+            <div class="text-xs text-[#3d6b4f] mt-0.5">Immediately</div>
           </label>
 
           <label @click="schedule = 'once'"
-                 :class="schedule === 'once' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white hover:border-gray-300'"
+                 :class="schedule === 'once' ? 'border-[#30c074] bg-[rgba(48,192,116,0.08)]' : 'border-[rgba(48,192,116,0.15)] bg-[#0d2614] hover:border-[rgba(48,192,116,0.30)]'"
                  class="cursor-pointer rounded-lg border-2 px-4 py-3 text-center transition-all">
             <input type="radio" name="schedule_type" value="once" class="sr-only" x-model="schedule">
             <div class="text-lg mb-1">📅</div>
-            <div class="text-xs font-semibold text-gray-800">Schedule once</div>
-            <div class="text-xs text-gray-400 mt-0.5">Pick a date</div>
+            <div class="text-xs font-semibold text-[#e8f5ef]">Schedule once</div>
+            <div class="text-xs text-[#3d6b4f] mt-0.5">Pick a date</div>
           </label>
 
           <label @click="schedule = 'recurring'"
-                 :class="schedule === 'recurring' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white hover:border-gray-300'"
+                 :class="schedule === 'recurring' ? 'border-[#30c074] bg-[rgba(48,192,116,0.08)]' : 'border-[rgba(48,192,116,0.15)] bg-[#0d2614] hover:border-[rgba(48,192,116,0.30)]'"
                  class="cursor-pointer rounded-lg border-2 px-4 py-3 text-center transition-all">
             <input type="radio" name="schedule_type" value="recurring" class="sr-only" x-model="schedule">
             <div class="text-lg mb-1">🔄</div>
-            <div class="text-xs font-semibold text-gray-800">Recurring</div>
-            <div class="text-xs text-gray-400 mt-0.5">On a schedule</div>
+            <div class="text-xs font-semibold text-[#e8f5ef]">Recurring</div>
+            <div class="text-xs text-[#3d6b4f] mt-0.5">On a schedule</div>
           </label>
 
         </div>
@@ -91,20 +91,20 @@
 
       <!-- Schedule Once -->
       <div class="mb-6" x-show="schedule === 'once'" x-cloak>
-        <div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
-          <label class="block text-sm font-semibold text-gray-700 mb-2">Date &amp; Time
-            <span class="ml-1 text-xs font-normal text-gray-400">(IST, 24h)</span>
+        <div class="rounded-lg border border-[rgba(48,192,116,0.12)] bg-[rgba(0,0,0,0.25)] p-4">
+          <label class="block text-sm font-semibold text-[#e8f5ef] mb-2">Date &amp; Time
+            <span class="ml-1 text-xs font-normal text-[#3d6b4f]">(IST, 24h)</span>
           </label>
           <div class="flex gap-2">
             <input type="date" x-model="onceDate"
-                   class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                   class="flex-1 px-3 py-2 border border-[rgba(48,192,116,0.12)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#30c074] bg-[#0d2614]">
             <select x-model="onceHour"
-                    class="w-20 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                    class="w-20 px-2 py-2 border border-[rgba(48,192,116,0.12)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#30c074] bg-[#0d2614]">
               <template x-for="h in hours" :key="h"><option :value="h" x-text="h"></option></template>
             </select>
-            <span class="flex items-center text-gray-400 font-bold">:</span>
+            <span class="flex items-center text-[#3d6b4f] font-bold">:</span>
             <select x-model="onceMin"
-                    class="w-20 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                    class="w-20 px-2 py-2 border border-[rgba(48,192,116,0.12)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#30c074] bg-[#0d2614]">
               <template x-for="m in minutes" :key="m"><option :value="m" x-text="m"></option></template>
             </select>
           </div>
@@ -117,19 +117,19 @@
 
       <!-- Recurring -->
       <div class="mb-6" x-show="schedule === 'recurring'" x-cloak>
-        <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4">
+        <div class="rounded-lg border border-[rgba(48,192,116,0.12)] bg-[rgba(0,0,0,0.25)] p-4 space-y-4">
 
           <!-- Frequency toggle -->
           <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-2">Frequency</label>
-            <div class="flex rounded-lg border border-gray-300 overflow-hidden bg-white w-fit">
+            <label class="block text-sm font-semibold text-[#e8f5ef] mb-2">Frequency</label>
+            <div class="flex rounded-lg border border-[rgba(48,192,116,0.20)] overflow-hidden bg-[rgba(0,0,0,0.2)] w-fit">
               <button type="button" @click="recurrence = 'daily'"
-                      :class="recurrence === 'daily' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'"
+                      :class="recurrence === 'daily' ? 'bg-[#30c074] text-[#022c22] font-bold' : 'text-[#6b9e7e] hover:bg-[rgba(48,192,116,0.08)]'"
                       class="px-6 py-2 text-sm font-medium transition-colors">
                 Daily
               </button>
               <button type="button" @click="recurrence = 'weekly'"
-                      :class="recurrence === 'weekly' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'"
+                      :class="recurrence === 'weekly' ? 'bg-[#30c074] text-[#022c22] font-bold' : 'text-[#6b9e7e] hover:bg-[rgba(48,192,116,0.08)]'"
                       class="px-6 py-2 text-sm font-medium transition-colors">
                 Weekly
               </button>
@@ -145,17 +145,17 @@
 
           <!-- Time -->
           <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-2">Time
-              <span class="ml-1 text-xs font-normal text-gray-400">(IST, 24h)</span>
+            <label class="block text-sm font-semibold text-[#e8f5ef] mb-2">Time
+              <span class="ml-1 text-xs font-normal text-[#3d6b4f]">(IST, 24h)</span>
             </label>
             <div class="flex items-center gap-2">
               <select x-model="recHour"
-                      class="w-20 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                      class="w-20 px-2 py-2 border border-[rgba(48,192,116,0.12)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#30c074] bg-[#0d2614]">
                 <template x-for="h in hours" :key="h"><option :value="h" x-text="h"></option></template>
               </select>
-              <span class="text-gray-400 font-bold">:</span>
+              <span class="text-[#3d6b4f] font-bold">:</span>
               <select x-model="recMin"
-                      class="w-20 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                      class="w-20 px-2 py-2 border border-[rgba(48,192,116,0.12)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#30c074] bg-[#0d2614]">
                 <template x-for="m in minutes" :key="m"><option :value="m" x-text="m"></option></template>
               </select>
             </div>
@@ -169,7 +169,7 @@
       </div>
 
       <button type="submit"
-              class="w-full bg-indigo-600 text-white py-2.5 px-4 rounded-lg hover:bg-indigo-700 font-semibold text-sm transition-colors"
+              class="w-full bg-[#30c074] hover:bg-[#28a863] text-[#022c22] font-bold py-2.5 px-4 rounded-lg font-semibold text-sm transition-colors"
               x-text="submitLabel"></button>
     </form>
   </div>
