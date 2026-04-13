@@ -5,35 +5,35 @@
 {% block content %}
 
 <div class="mb-8">
-  <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
-  <p class="text-gray-500 text-sm mt-1">Current state of your external attack surface</p>
+  <h1 class="text-2xl font-extrabold text-[#e8f5ef] tracking-tight">Dashboard</h1>
+  <p class="text-[#3d6b4f] text-sm mt-1">Current state of your external attack surface</p>
 </div>
 
 <!-- Current State Cards -->
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
   <a href="{% url 'finding-list' %}?severity=critical"
-     class="bg-red-50 border border-red-200 rounded-lg px-5 py-4 hover:bg-red-100 hover:border-red-300 transition-colors block">
-    <p class="text-xs font-medium text-red-500 uppercase tracking-wide">Critical Now</p>
-    <p class="text-3xl font-bold text-red-700 mt-1">{{ current_critical }}</p>
-    <p class="text-xs text-red-400 mt-1">active findings</p>
+     class="bg-[#0d2614] border border-[rgba(239,68,68,0.20)] rounded-lg px-5 py-4 hover:border-[rgba(239,68,68,0.40)] transition-colors block">
+    <p class="text-xs font-semibold text-[#f87171] uppercase tracking-wide">Critical Now</p>
+    <p class="text-3xl font-extrabold text-[#fca5a5] mt-1 tracking-tight">{{ current_critical }}</p>
+    <p class="text-xs text-[#3d6b4f] mt-1">active findings</p>
   </a>
   <a href="{% url 'finding-list' %}?severity=high"
-     class="bg-orange-50 border border-orange-200 rounded-lg px-5 py-4 hover:bg-orange-100 hover:border-orange-300 transition-colors block">
-    <p class="text-xs font-medium text-orange-500 uppercase tracking-wide">High Now</p>
-    <p class="text-3xl font-bold text-orange-600 mt-1">{{ current_high }}</p>
-    <p class="text-xs text-orange-400 mt-1">active findings</p>
+     class="bg-[#0d2614] border border-[rgba(249,115,22,0.20)] rounded-lg px-5 py-4 hover:border-[rgba(249,115,22,0.40)] transition-colors block">
+    <p class="text-xs font-semibold text-[#fb923c] uppercase tracking-wide">High Now</p>
+    <p class="text-3xl font-extrabold text-[#fdba74] mt-1 tracking-tight">{{ current_high }}</p>
+    <p class="text-xs text-[#3d6b4f] mt-1">active findings</p>
   </a>
   <a href="{% url 'domain-list' %}"
-     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
-    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Domains</p>
-    <p class="text-3xl font-bold text-gray-900 mt-1">{{ active_domain_count }}</p>
-    <p class="text-xs text-gray-400 mt-1">monitored</p>
+     class="bg-[#0d2614] border border-[rgba(48,192,116,0.12)] rounded-lg px-5 py-4 hover:border-[rgba(48,192,116,0.25)] transition-colors block">
+    <p class="text-xs font-semibold text-[#6b9e7e] uppercase tracking-wide">Domains</p>
+    <p class="text-3xl font-extrabold text-[#e8f5ef] mt-1 tracking-tight">{{ active_domain_count }}</p>
+    <p class="text-xs text-[#3d6b4f] mt-1">monitored</p>
   </a>
   <a href="{% url 'scan-list' %}?status=running"
-     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
-    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Scans Running</p>
-    <p class="text-3xl font-bold text-gray-900 mt-1">{{ running_count }}</p>
-    <p class="text-xs text-gray-400 mt-1">
+     class="bg-[#0d2614] border border-[rgba(48,192,116,0.12)] rounded-lg px-5 py-4 hover:border-[rgba(48,192,116,0.25)] transition-colors block">
+    <p class="text-xs font-semibold text-[#6b9e7e] uppercase tracking-wide">Scans Running</p>
+    <p class="text-3xl font-extrabold text-[#e8f5ef] mt-1 tracking-tight">{{ running_count }}</p>
+    <p class="text-xs text-[#3d6b4f] mt-1">
       {% if running_count > 0 %}
       <span class="inline-flex items-center gap-1">
         <span class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse inline-block"></span>in progress
@@ -49,80 +49,80 @@
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
   {% if latest_scan_uuid %}
   <a href="{% url 'scan-detail' latest_scan_uuid %}#subdomains"
-     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
+     class="bg-[#0d2614] border border-[rgba(48,192,116,0.12)] rounded-lg px-5 py-4 hover:border-[rgba(48,192,116,0.25)] transition-colors block">
   {% else %}
-  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+  <div class="bg-[#0d2614] border border-[rgba(48,192,116,0.12)] rounded-lg px-5 py-4">
   {% endif %}
-    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Active Subdomains</p>
-    <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.subdomains }}</p>
-    <p class="text-xs text-gray-400 mt-1">discovered</p>
+    <p class="text-xs font-semibold text-[#6b9e7e] uppercase tracking-wide">Active Subdomains</p>
+    <p class="text-3xl font-extrabold text-[#e8f5ef] mt-1 tracking-tight">{{ asset_counts.subdomains }}</p>
+    <p class="text-xs text-[#3d6b4f] mt-1">discovered</p>
   {% if latest_scan_uuid %}</a>{% else %}</div>{% endif %}
 
   {% if latest_scan_uuid %}
   <a href="{% url 'scan-detail' latest_scan_uuid %}#ips"
-     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
+     class="bg-[#0d2614] border border-[rgba(48,192,116,0.12)] rounded-lg px-5 py-4 hover:border-[rgba(48,192,116,0.25)] transition-colors block">
   {% else %}
-  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+  <div class="bg-[#0d2614] border border-[rgba(48,192,116,0.12)] rounded-lg px-5 py-4">
   {% endif %}
-    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Public IPs</p>
-    <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.ips }}</p>
-    <p class="text-xs text-gray-400 mt-1">resolved</p>
+    <p class="text-xs font-semibold text-[#6b9e7e] uppercase tracking-wide">Public IPs</p>
+    <p class="text-3xl font-extrabold text-[#e8f5ef] mt-1 tracking-tight">{{ asset_counts.ips }}</p>
+    <p class="text-xs text-[#3d6b4f] mt-1">resolved</p>
   {% if latest_scan_uuid %}</a>{% else %}</div>{% endif %}
 
   {% if latest_scan_uuid %}
   <a href="{% url 'scan-detail' latest_scan_uuid %}#ports"
-     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
+     class="bg-[#0d2614] border border-[rgba(48,192,116,0.12)] rounded-lg px-5 py-4 hover:border-[rgba(48,192,116,0.25)] transition-colors block">
   {% else %}
-  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+  <div class="bg-[#0d2614] border border-[rgba(48,192,116,0.12)] rounded-lg px-5 py-4">
   {% endif %}
-    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Open Ports</p>
-    <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.ports }}</p>
-    <p class="text-xs text-gray-400 mt-1">across all hosts</p>
+    <p class="text-xs font-semibold text-[#6b9e7e] uppercase tracking-wide">Open Ports</p>
+    <p class="text-3xl font-extrabold text-[#e8f5ef] mt-1 tracking-tight">{{ asset_counts.ports }}</p>
+    <p class="text-xs text-[#3d6b4f] mt-1">across all hosts</p>
   {% if latest_scan_uuid %}</a>{% else %}</div>{% endif %}
 
   {% if latest_scan_uuid %}
   <a href="{% url 'scan-detail' latest_scan_uuid %}#urls"
-     class="bg-white border border-gray-200 rounded-lg px-5 py-4 hover:bg-gray-50 hover:border-gray-300 transition-colors block">
+     class="bg-[#0d2614] border border-[rgba(48,192,116,0.12)] rounded-lg px-5 py-4 hover:border-[rgba(48,192,116,0.25)] transition-colors block">
   {% else %}
-  <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
+  <div class="bg-[#0d2614] border border-[rgba(48,192,116,0.12)] rounded-lg px-5 py-4">
   {% endif %}
-    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Web URLs</p>
-    <p class="text-3xl font-bold text-gray-900 mt-1">{{ asset_counts.urls }}</p>
-    <p class="text-xs text-gray-400 mt-1">live HTTP/HTTPS</p>
+    <p class="text-xs font-semibold text-[#6b9e7e] uppercase tracking-wide">Web URLs</p>
+    <p class="text-3xl font-extrabold text-[#e8f5ef] mt-1 tracking-tight">{{ asset_counts.urls }}</p>
+    <p class="text-xs text-[#3d6b4f] mt-1">live HTTP/HTTPS</p>
   {% if latest_scan_uuid %}</a>{% else %}</div>{% endif %}
 </div>
 
 <!-- Domain Status -->
-<div class="bg-white rounded-lg shadow mb-6">
-  <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+<div class="bg-[#0d2614] rounded-lg border border-[rgba(48,192,116,0.12)] mb-6">
+  <div class="px-6 py-4 border-b border-[rgba(48,192,116,0.12)] flex items-center justify-between">
     <div>
-      <h2 class="font-semibold text-gray-700">Domain Status</h2>
-      <p class="text-xs text-gray-400 mt-0.5">Latest scan results per domain</p>
+      <h2 class="font-semibold text-[#e8f5ef]">Domain Status</h2>
+      <p class="text-xs text-[#3d6b4f] mt-0.5">Latest scan results per domain</p>
     </div>
-    <a href="{% url 'domain-list' %}" class="text-indigo-600 text-sm hover:underline">Manage domains</a>
+    <a href="{% url 'domain-list' %}" class="text-[#30c074] text-sm hover:underline">Manage domains</a>
   </div>
 
   {% if domain_status %}
-  <table class="min-w-full divide-y divide-gray-100">
-    <thead class="bg-gray-50">
+  <table class="min-w-full">
+    <thead class="bg-[rgba(0,0,0,0.35)]">
       <tr>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Scan</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Findings</th>
-        <th class="px-6 py-3 text-center text-xs font-medium text-yellow-600 uppercase">&#916; New</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+        <th class="px-6 py-3 text-left text-xs font-semibold text-[#3d6b4f] uppercase">Domain</th>
+        <th class="px-6 py-3 text-left text-xs font-semibold text-[#3d6b4f] uppercase">Last Scan</th>
+        <th class="px-6 py-3 text-left text-xs font-semibold text-[#3d6b4f] uppercase">Findings</th>
+        <th class="px-6 py-3 text-center text-xs font-semibold text-[#ca8a04] uppercase">&#916; New</th>
+        <th class="px-6 py-3 text-left text-xs font-semibold text-[#3d6b4f] uppercase">Status</th>
         <th class="px-6 py-3"></th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-gray-100">
+    <tbody>
       {% for item in domain_status %}
-      <tr class="hover:bg-gray-50">
-        <td class="px-6 py-3 text-sm font-medium text-gray-900 font-mono">{{ item.domain.name }}</td>
-        <td class="px-6 py-3 text-xs text-gray-500">
+      <tr class="border-t border-[rgba(48,192,116,0.05)] hover:bg-[rgba(48,192,116,0.025)]">
+        <td class="px-6 py-3 text-sm font-medium text-[#e8f5ef] font-mono">{{ item.domain.name }}</td>
+        <td class="px-6 py-3 text-xs text-[#6b9e7e]">
           {% if item.summary %}
             {{ item.summary.scan_date|date:"M d, H:i" }}
           {% else %}
-            <span class="text-gray-300">Never scanned</span>
+            <span class="text-[#1e3d2a]">Never scanned</span>
           {% endif %}
         </td>
         <td class="px-6 py-4 text-sm">
@@ -130,42 +130,42 @@
           <div class="flex flex-wrap gap-1">
             {% if item.summary.critical_count %}
             <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=critical"
-               class="bg-red-50 text-red-600 text-xs font-semibold px-1.5 py-0.5 rounded hover:underline">{{ item.summary.critical_count }} crit</a>
+               class="bg-[rgba(239,68,68,0.12)] text-[#fca5a5] text-xs font-semibold px-1.5 py-0.5 rounded hover:underline">{{ item.summary.critical_count }} crit</a>
             {% endif %}
             {% if item.summary.high_count %}
             <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=high"
-               class="bg-orange-50 text-orange-600 text-xs font-semibold px-1.5 py-0.5 rounded hover:underline">{{ item.summary.high_count }} high</a>
+               class="bg-[rgba(249,115,22,0.12)] text-[#fdba74] text-xs font-semibold px-1.5 py-0.5 rounded hover:underline">{{ item.summary.high_count }} high</a>
             {% endif %}
             {% if item.summary.medium_count %}
             <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=medium"
-               class="bg-yellow-50 text-yellow-700 text-xs font-semibold px-1.5 py-0.5 rounded hover:underline">{{ item.summary.medium_count }} med</a>
+               class="bg-[rgba(234,179,8,0.08)] text-[#fde047] text-xs font-semibold px-1.5 py-0.5 rounded hover:underline">{{ item.summary.medium_count }} med</a>
             {% endif %}
             {% if item.summary.low_count %}
             <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=low"
-               class="bg-slate-100 text-slate-600 text-xs font-semibold px-1.5 py-0.5 rounded hover:underline">{{ item.summary.low_count }} low</a>
+               class="bg-[rgba(48,192,116,0.10)] text-[#6ee7b7] text-xs font-semibold px-1.5 py-0.5 rounded hover:underline">{{ item.summary.low_count }} low</a>
             {% endif %}
           </div>
           {% else %}
-          <span class="text-gray-300">—</span>
+          <span class="text-[#1e3d2a]">—</span>
           {% endif %}
         </td>
         <td class="px-6 py-4 text-center">
           {% if item.summary.new_exposures %}
-          <span class="bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-0.5 rounded-full">+{{ item.summary.new_exposures }}</span>
+          <span class="bg-[rgba(234,179,8,0.15)] text-[#fde047] text-xs font-semibold px-2 py-0.5 rounded-full">+{{ item.summary.new_exposures }}</span>
           {% else %}
-          <span class="text-gray-300 text-sm">—</span>
+          <span class="text-[#1e3d2a] text-sm">—</span>
           {% endif %}
         </td>
         <td class="px-6 py-3 text-sm">
           {% if item.latest_session %}
             {% include "partials/status_badge.html" with status=item.latest_session.status %}
           {% else %}
-            <span class="text-gray-300 text-xs">—</span>
+            <span class="text-[#1e3d2a] text-xs">—</span>
           {% endif %}
         </td>
         <td class="px-6 py-3 text-right">
           <a href="{% url 'scan-start' %}?domain={{ item.domain.name }}"
-             class="text-xs bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-700">
+             class="text-xs bg-[#30c074] text-[#022c22] font-bold px-3 py-1 rounded hover:bg-[#28a863]">
             Scan
           </a>
         </td>
@@ -174,43 +174,41 @@
     </tbody>
   </table>
   {% else %}
-  <div class="px-6 py-12 text-center text-gray-400">
+  <div class="px-6 py-12 text-center text-[#3d6b4f]">
     <p class="text-lg">No domains added yet.</p>
-    <a href="{% url 'domain-list' %}" class="mt-3 inline-block text-indigo-600 hover:underline text-sm">
-      Add your first domain to get started
-    </a>
+    <a href="{% url 'domain-list' %}" class="mt-3 inline-block text-[#30c074] hover:underline text-sm">Add a domain →</a>
   </div>
   {% endif %}
 </div>
 
 <!-- Urgent Findings (critical and high — all sources) -->
 {% if urgent_findings %}
-<div class="bg-white rounded-lg shadow">
-  <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+<div class="bg-[#0d2614] rounded-lg border border-[rgba(48,192,116,0.12)] mb-6">
+  <div class="px-6 py-4 border-b border-[rgba(48,192,116,0.12)] flex items-center justify-between">
     <div>
-      <h2 class="font-semibold text-gray-700">Urgent Findings</h2>
-      <p class="text-xs text-gray-400 mt-0.5">Critical and high — from latest scan per domain</p>
+      <h2 class="font-semibold text-[#e8f5ef]">Urgent Findings</h2>
+      <p class="text-xs text-[#3d6b4f] mt-0.5">Critical and high — all sources</p>
     </div>
-    <a href="{% url 'finding-list' %}" class="text-indigo-600 text-sm hover:underline">View all</a>
+    <a href="{% url 'finding-list' %}?severity=critical" class="text-[#30c074] text-sm hover:underline">View all findings →</a>
   </div>
-  <table class="min-w-full divide-y divide-gray-100">
-    <thead class="bg-gray-50">
+  <table class="min-w-full">
+    <thead class="bg-[rgba(0,0,0,0.35)]">
       <tr>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Finding</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Severity</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Detected</th>
+        <th class="px-6 py-3 text-left text-xs font-semibold text-[#3d6b4f] uppercase">Finding</th>
+        <th class="px-6 py-3 text-left text-xs font-semibold text-[#3d6b4f] uppercase">Domain</th>
+        <th class="px-6 py-3 text-left text-xs font-semibold text-[#3d6b4f] uppercase">Source</th>
+        <th class="px-6 py-3 text-left text-xs font-semibold text-[#3d6b4f] uppercase">Severity</th>
+        <th class="px-6 py-3 text-left text-xs font-semibold text-[#3d6b4f] uppercase">Detected</th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-gray-100">
+    <tbody>
       {% for f in urgent_findings %}
-      <tr class="hover:bg-gray-50">
-        <td class="px-6 py-3 text-sm text-gray-800 max-w-xs truncate">{{ f.title }}</td>
-        <td class="px-6 py-3 text-sm font-mono text-gray-600">{{ f.session.domain }}</td>
-        <td class="px-6 py-3 text-xs text-gray-500 uppercase">{{ f.source }}</td>
+      <tr class="border-t border-[rgba(48,192,116,0.05)] hover:bg-[rgba(48,192,116,0.025)]">
+        <td class="px-6 py-3 text-sm text-[#e8f5ef] max-w-xs truncate">{{ f.title }}</td>
+        <td class="px-6 py-3 text-sm font-mono text-[#6b9e7e]">{{ f.session.domain }}</td>
+        <td class="px-6 py-3 text-xs text-[#6b9e7e] uppercase">{{ f.source }}</td>
         <td class="px-6 py-3">{% include "partials/severity_badge.html" with severity=f.severity %}</td>
-        <td class="px-6 py-3 text-sm text-gray-500">{{ f.discovered_at|date:"M d, H:i" }}</td>
+        <td class="px-6 py-3 text-sm text-[#3d6b4f]">{{ f.discovered_at|date:"M d, H:i" }}</td>
       </tr>
       {% endfor %}
     </tbody>
