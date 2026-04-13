@@ -1,11 +1,11 @@
 {% if severity == "critical" %}
-  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Critical</span>
+  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[rgba(239,68,68,0.14)] text-[#fca5a5]">Critical</span>
 {% elif severity == "high" %}
-  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">High</span>
+  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[rgba(249,115,22,0.14)] text-[#fdba74]">High</span>
 {% elif severity == "medium" %}
-  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Medium</span>
+  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[rgba(234,179,8,0.10)] text-[#fde047]">Medium</span>
 {% elif severity == "low" %}
-  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Low</span>
+  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[rgba(48,192,116,0.12)] text-[#6ee7b7]">Low</span>
 {% else %}
-  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">{{ severity }}</span>
+  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[rgba(148,163,184,0.10)] text-[#94a3b8]">{{ severity }}</span>
 {% endif %}
