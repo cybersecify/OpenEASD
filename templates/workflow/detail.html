@@ -30,12 +30,12 @@
     <div>
       <label class="block text-sm font-medium text-[#e8f5ef] mb-1">Name</label>
       <input type="text" name="name" value="{{ workflow.name }}" required
-             class="w-full px-3 py-2 border border-[rgba(48,192,116,0.12)] rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-[rgba(0,0,0,0.15)] text-[#e8f5ef]">
+             class="w-full px-3 py-2 border border-[rgba(48,192,116,0.12)] rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#30c074] bg-[rgba(0,0,0,0.15)] text-[#e8f5ef]">
     </div>
     <div>
       <label class="block text-sm font-medium text-[#e8f5ef] mb-1">Description</label>
       <textarea name="description" rows="2" placeholder="Optional description"
-                class="w-full px-3 py-2 border border-[rgba(48,192,116,0.12)] rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-[rgba(0,0,0,0.15)] text-[#e8f5ef]">{{ workflow.description }}</textarea>
+                class="w-full px-3 py-2 border border-[rgba(48,192,116,0.12)] rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#30c074] bg-[rgba(0,0,0,0.15)] text-[#e8f5ef]">{{ workflow.description }}</textarea>
     </div>
     <div class="flex items-center gap-2">
       <input type="checkbox" name="is_default" id="is_default" {% if workflow.is_default %}checked{% endif %}
@@ -62,7 +62,7 @@
     </div>
 
     <template x-if="allWarnings().length > 0">
-      <div class="mt-4 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded text-sm">
+      <div class="mt-4 bg-[rgba(234,179,8,0.10)] border border-[rgba(234,179,8,0.25)] text-[#fde047] px-4 py-3 rounded text-sm">
         <span class="font-semibold">Dependency warning:</span> Some selected tools need upstream tools that are not included.
         They will run but may produce no results.
       </div>
@@ -94,8 +94,8 @@
           </a>
           <span class="text-xs px-2 py-0.5 rounded
             {% if run.status == 'completed' %}bg-[rgba(48,192,116,0.12)] text-[#6ee7b7]
-            {% elif run.status == 'failed' %}bg-red-100 text-red-700
-            {% elif run.status == 'running' %}bg-yellow-100 text-yellow-700
+            {% elif run.status == 'failed' %}bg-[rgba(239,68,68,0.12)] text-[#fca5a5]
+            {% elif run.status == 'running' %}bg-[rgba(234,179,8,0.10)] text-[#fde047]
             {% else %}bg-[rgba(255,255,255,0.05)] text-[#1e3d2a]{% endif %}">
             {{ run.status|upper }}
           </span>

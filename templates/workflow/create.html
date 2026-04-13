@@ -20,12 +20,12 @@
     <div>
       <label class="block text-sm font-medium text-[#e8f5ef] mb-1">Name</label>
       <input type="text" name="name" required placeholder="e.g. Quick Scan"
-             class="w-full px-3 py-2 border border-[rgba(48,192,116,0.12)] rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-[rgba(0,0,0,0.15)] text-[#e8f5ef]">
+             class="w-full px-3 py-2 border border-[rgba(48,192,116,0.12)] rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#30c074] bg-[rgba(0,0,0,0.15)] text-[#e8f5ef]">
     </div>
     <div>
       <label class="block text-sm font-medium text-[#e8f5ef] mb-1">Description</label>
       <textarea name="description" rows="2" placeholder="Optional description"
-                class="w-full px-3 py-2 border border-[rgba(48,192,116,0.12)] rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-[rgba(0,0,0,0.15)] text-[#e8f5ef]"></textarea>
+                class="w-full px-3 py-2 border border-[rgba(48,192,116,0.12)] rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#30c074] bg-[rgba(0,0,0,0.15)] text-[#e8f5ef]"></textarea>
     </div>
     <div class="flex items-center gap-2">
       <input type="checkbox" name="is_default" id="is_default" class="rounded border-[rgba(48,192,116,0.12)] text-[#30c074]">
@@ -52,7 +52,7 @@
 
     <!-- Dependency warning banner -->
     <template x-if="allWarnings().length > 0">
-      <div class="mt-4 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded text-sm">
+      <div class="mt-4 bg-[rgba(234,179,8,0.10)] border border-[rgba(234,179,8,0.25)] text-[#fde047] px-4 py-3 rounded text-sm">
         <span class="font-semibold">Dependency warning:</span> Some selected tools need upstream tools that are not included.
         They will run but may produce no results.
       </div>
