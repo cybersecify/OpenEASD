@@ -38,21 +38,17 @@
 
     <div class="grid grid-cols-4 gap-4">
       {% for sev, count in vuln_counts.items %}
-      <div class="rounded-md p-4 text-center
-        {% if sev == 'critical' %}bg-[rgba(239,68,68,0.10)] border border-[rgba(239,68,68,0.20)]
-        {% elif sev == 'high' %}bg-[rgba(249,115,22,0.10)] border border-[rgba(249,115,22,0.20)]
-        {% elif sev == 'medium' %}bg-[rgba(234,179,8,0.08)] border border-[rgba(234,179,8,0.20)]
-        {% else %}bg-[rgba(48,192,116,0.08)] border border-[rgba(255,255,255,0.15)]{% endif %}">
+      <div class="rounded-md p-4 text-center bg-[#111111] border border-[rgba(255,255,255,0.08)]
+        {% if sev == 'critical' %}border-t-2 border-t-[#f87171]
+        {% elif sev == 'high' %}border-t-2 border-t-[#fb923c]
+        {% elif sev == 'medium' %}border-t-2 border-t-[#eab308]
+        {% else %}border-t-2 border-t-[#30c074]{% endif %}">
         <p class="text-2xl font-bold
           {% if sev == 'critical' %}text-[#fca5a5]
           {% elif sev == 'high' %}text-[#fdba74]
           {% elif sev == 'medium' %}text-[#fde047]
           {% else %}text-[#6ee7b7]{% endif %}">{{ count }}</p>
-        <p class="text-xs font-semibold uppercase mt-1
-          {% if sev == 'critical' %}text-[#f87171]
-          {% elif sev == 'high' %}text-[#fb923c]
-          {% elif sev == 'medium' %}text-[#ca8a04]
-          {% else %}text-[#30c074]{% endif %}">{{ sev }}</p>
+        <p class="text-xs font-semibold uppercase mt-1 text-white/50">{{ sev }}</p>
       </div>
       {% endfor %}
     </div>
