@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="mb-6">
-  <h1 class="text-2xl font-bold text-[#e8f5ef] font-extrabold tracking-tight">Insights</h1>
+  <h1 class="text-2xl text-[#e8f5ef] font-extrabold tracking-tight">Insights</h1>
   <p class="text-[#3d6b4f] text-sm mt-1">Trends, patterns, and historical analysis across all scans</p>
 </div>
 
@@ -315,8 +315,8 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
-        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 }, color: '#6b9e7e' } } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0, color: '#6b9e7e' }, grid: { color: 'rgba(48,192,116,0.08)' } }, x: { ticks: { color: '#6b9e7e' }, grid: { color: 'rgba(48,192,116,0.08)' } } }
       }
     });
   }
@@ -341,7 +341,7 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
+          plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 }, color: '#6b9e7e' } } }
         }
       });
     }

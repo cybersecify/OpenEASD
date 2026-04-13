@@ -5,7 +5,7 @@
 {% block content %}
 <div class="mb-6">
   <a href="{% url 'scan-list' %}" class="text-[#30c074] text-sm hover:underline">&larr; All Scans</a>
-  <h1 class="text-2xl font-bold text-[#e8f5ef] font-extrabold tracking-tight mt-2">{{ session.domain }}</h1>
+  <h1 class="text-2xl text-[#e8f5ef] font-extrabold tracking-tight mt-2">{{ session.domain }}</h1>
   <p class="text-[#3d6b4f] text-sm">Scan #{{ session.id }} &middot; {{ session.start_time|date:"M d, Y H:i" }} IST</p>
 </div>
 
