@@ -137,3 +137,47 @@ class TestInsightsView:
         )
         resp = auth_client.get(reverse("insights"))
         assert b"ghost.com" not in resp.content
+
+
+@pytest.mark.django_db
+class TestInsightsKPIContext:
+    def _get_context(self, auth_client):
+        from django.urls import reverse
+        resp = auth_client.get(reverse("insights"))
+        assert resp.status_code == 200
+        return resp.context
+
+    def test_kpi_open_critical_counts_open_critical_only(self, auth_client, db):
+        from apps.core.scans.models import ScanSession
+        from apps.core.findings.models import Finding
+        session = ScanSession.objects.create(domain="example.com", scan_type="full")
+        Finding.objects.create(session=session, source="nmap", target="1.2.3.4",
+                               check_type="cve", severity="critical", title="CVE-A", status="open")
+        Finding.objects.create(session=session, source="nmap", target="1.2.3.4",
+                               check_type="cve", severity="critical", title="CVE-B", status="resolved")
+        ctx = self._get_context(auth_client)
+        assert ctx["kpi_open_critical"] == 1
+
+    def test_kpi_open_high_counts_open_high_only(self, auth_client, db):
+        from apps.core.scans.models import ScanSession
+        from apps.core.findings.models import Finding
+        session = ScanSession.objects.create(domain="example.com", scan_type="full")
+        Finding.objects.create(session=session, source="nmap", target="1.2.3.4",
+                               check_type="cve", severity="high", title="High-A", status="open")
+        Finding.objects.create(session=session, source="nmap", target="1.2.3.4",
+                               check_type="cve", severity="high", title="High-B", status="acknowledged")
+        ctx = self._get_context(auth_client)
+        assert ctx["kpi_open_high"] == 1
+
+    def test_kpi_new_and_fixed_from_latest_summary(self, auth_client, db, domain, scan_summary):
+        # scan_summary fixture: new_exposures=3, removed_exposures=0
+        ctx = self._get_context(auth_client)
+        assert ctx["kpi_new"] == 3
+        assert ctx["kpi_fixed"] == 0
+
+    def test_kpi_zero_when_no_scans(self, auth_client, db):
+        ctx = self._get_context(auth_client)
+        assert ctx["kpi_open_critical"] == 0
+        assert ctx["kpi_open_high"] == 0
+        assert ctx["kpi_new"] == 0
+        assert ctx["kpi_fixed"] == 0

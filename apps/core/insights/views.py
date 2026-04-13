@@ -28,6 +28,12 @@ def insights(request):
     )
     summaries = list(summaries)
 
+    # ----- KPI counts -----
+    kpi_open_critical = Finding.objects.filter(severity="critical", status="open").count()
+    kpi_open_high = Finding.objects.filter(severity="high", status="open").count()
+    kpi_new = summaries[-1].new_exposures if summaries else 0
+    kpi_fixed = summaries[-1].removed_exposures if summaries else 0
+
     # ----- Finding trend (existing) -----
     scan_trend = [
         {
@@ -144,6 +150,10 @@ def insights(request):
         "top_services": top_services,
         "severity_distribution": severity_distribution,
         "chart_data": chart_data,
+        "kpi_open_critical": kpi_open_critical,
+        "kpi_open_high": kpi_open_high,
+        "kpi_new": kpi_new,
+        "kpi_fixed": kpi_fixed,
     })
 
 
