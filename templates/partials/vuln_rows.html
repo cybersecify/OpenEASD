@@ -9,13 +9,12 @@
   <td class="px-6 py-4 text-sm" id="finding-status-{{ vuln.obj.id }}">
     {% include "partials/finding_status_cell.html" with finding=vuln.obj %}
   </td>
-  <td class="px-6 py-4 text-sm text-gray-500">{{ vuln.session.domain }}</td>
-  <td class="px-6 py-4 text-sm">
-    <a href="{% url 'scan-detail' vuln.session.uuid %}" class="text-indigo-600 hover:underline">View Scan</a>
+  <td class="px-6 py-4 text-sm text-center">
+    <a href="{% url 'scan-detail' vuln.session.uuid %}" class="text-indigo-500 hover:text-indigo-700" title="View scan">↗</a>
   </td>
 </tr>
 {% empty %}
 <tr>
-  <td colspan="7" class="px-6 py-8 text-center text-gray-400 text-sm">No findings found.</td>
+  <td colspan="6" class="px-6 py-8 text-center text-gray-400 text-sm">No findings found.</td>
 </tr>
 {% endfor %}
