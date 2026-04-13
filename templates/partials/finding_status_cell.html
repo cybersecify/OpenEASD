@@ -3,10 +3,10 @@
           hx-post="{% url 'finding-update-status' finding.id %}"
           hx-target="#finding-status-{{ finding.id }}"
           hx-swap="innerHTML"
-          class="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          class="text-xs border border-[rgba(48,192,116,0.20)] rounded px-2 py-1 bg-[rgba(0,0,0,0.3)] text-[#e8f5ef] focus:outline-none focus:ring-1 focus:ring-[#30c074]">
     {% for value, label in status_choices %}
     <option value="{{ value }}" {% if finding.status == value %}selected{% endif %}>{{ label }}</option>
     {% endfor %}
   </select>
-  {% if saved %}<span class="text-xs text-green-600" x-data x-init="setTimeout(() => $el.remove(), 2000)">Saved</span>{% endif %}
+  {% if saved %}<span class="text-xs text-[#30c074]" x-data x-init="setTimeout(() => $el.remove(), 2000)">Saved</span>{% endif %}
 </div>

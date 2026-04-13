@@ -3,20 +3,20 @@
 {% block title %}Health{% endblock %}
 
 {% block content %}
-<div class="max-w-sm mx-auto bg-white rounded-lg shadow p-6">
-  <h1 class="text-xl font-bold text-gray-900 mb-4">System Health</h1>
+<div class="max-w-sm mx-auto bg-[#0d2614] rounded-lg border border-[rgba(48,192,116,0.12)] p-6">
+  <h1 class="text-xl font-bold text-[#e8f5ef] mb-4">System Health</h1>
   <dl class="space-y-2 text-sm">
     <div class="flex justify-between">
-      <dt class="text-gray-500">Service</dt>
-      <dd class="font-medium text-gray-900">{{ service }}</dd>
+      <dt class="text-[#6b9e7e]">Service</dt>
+      <dd class="font-medium text-[#e8f5ef]">{{ service }}</dd>
     </div>
     <div class="flex justify-between">
-      <dt class="text-gray-500">Version</dt>
-      <dd class="font-medium text-gray-900">{{ version }}</dd>
+      <dt class="text-[#6b9e7e]">Version</dt>
+      <dd class="font-medium text-[#e8f5ef]">{{ version }}</dd>
     </div>
     <div class="flex justify-between">
-      <dt class="text-gray-500">Database</dt>
-      <dd class="font-medium {% if db_status == 'connected' %}text-green-600{% else %}text-red-600{% endif %}">
+      <dt class="text-[#6b9e7e]">Database</dt>
+      <dd class="font-medium {% if db_status == 'connected' %}text-[#30c074]{% else %}text-[#fca5a5]{% endif %}">
         {{ db_status }}
       </dd>
     </div>
