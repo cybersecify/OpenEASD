@@ -62,6 +62,31 @@ class TestDashboardView:
         resp = auth_client.get(reverse("dashboard"))
         assert b"No MX records found" in resp.content
 
+    def test_sidebar_present_in_dashboard(self, auth_client):
+        resp = auth_client.get(reverse("dashboard"))
+        assert b"OpenEASD" in resp.content
+        assert b"Findings" in resp.content
+        assert b"Workflows" in resp.content
+        assert b"Logout" in resp.content
+
+    def test_sidebar_badge_shown_when_critical_findings(self, auth_client, db):
+        from apps.core.scans.models import ScanSession
+        from apps.core.findings.models import Finding
+        session = ScanSession.objects.create(domain="example.com", scan_type="full")
+        Finding.objects.create(
+            session=session, source="nmap", target="1.2.3.4",
+            check_type="cve", severity="critical", title="CVE-X", status="open",
+        )
+        resp = auth_client.get(reverse("dashboard"))
+        # The badge count should appear in the response
+        assert b"bg-red-600" in resp.content
+
+    def test_sidebar_running_indicator_shown_when_scan_running(self, auth_client, db):
+        from apps.core.scans.models import ScanSession
+        ScanSession.objects.create(domain="example.com", scan_type="full", status="running")
+        resp = auth_client.get(reverse("dashboard"))
+        assert b"animate-pulse" in resp.content
+
 
 @pytest.mark.django_db
 class TestDashboardQueryCorrectness:
