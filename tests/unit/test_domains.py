@@ -224,3 +224,33 @@ class TestDomainListEnrichment:
     def test_enrich_empty_list(self):
         from apps.core.domains.views import _enrich_domains
         _enrich_domains([])  # must not raise
+
+    def test_last_scan_date_rendered(self, auth_client, domain, completed_session):
+        resp = auth_client.get(reverse("domain-list"))
+        assert resp.status_code == 200
+        # Status sub-text rendered
+        assert b"completed" in resp.content
+
+    def test_never_scanned_text_rendered(self, auth_client, domain):
+        resp = auth_client.get(reverse("domain-list"))
+        assert resp.status_code == 200
+        assert b"Never scanned" in resp.content
+
+    def test_findings_badges_rendered(self, auth_client, domain, completed_session):
+        from apps.core.findings.models import Finding
+        Finding.objects.create(
+            session=completed_session, source="web_checker", target="example.com",
+            check_type="cors", severity="critical", status="open",
+            title="X", description="X", remediation="X",
+        )
+        resp = auth_client.get(reverse("domain-list"))
+        assert b"critical" in resp.content
+
+    def test_findings_column_shows_dash_when_clean(self, auth_client, domain, completed_session):
+        # Clean domain (no open findings) shows em dash
+        resp = auth_client.get(reverse("domain-list"))
+        assert "—".encode("utf-8") in resp.content
+
+    def test_confirm_delete_colspan_is_6(self, auth_client, domain):
+        resp = auth_client.get(reverse("domain-list"))
+        assert b'colspan="6"' in resp.content
