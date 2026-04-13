@@ -220,6 +220,70 @@ class TestScanDeltaModel:
 
 
 # ---------------------------------------------------------------------------
+# Template filter tests
+# ---------------------------------------------------------------------------
+
+class TestScanDurationLabel:
+    """Unit tests for the scan_duration_label template filter."""
+
+    def _make_scan(self, status, start_offset_seconds=-300, end_offset_seconds=None):
+        """Build a mock ScanSession without hitting the DB."""
+        from unittest.mock import MagicMock
+        from django.utils import timezone
+        import datetime
+        scan = MagicMock()
+        scan.status = status
+        scan.start_time = timezone.now() - datetime.timedelta(seconds=abs(start_offset_seconds))
+        if end_offset_seconds is not None:
+            scan.end_time = scan.start_time + datetime.timedelta(seconds=end_offset_seconds)
+        else:
+            scan.end_time = None
+        return scan
+
+    def test_completed_scan_returns_took(self):
+        from apps.core.scans.templatetags.scan_tags import scan_duration_label
+        scan = self._make_scan("completed", end_offset_seconds=492)  # 8m 12s
+        result = scan_duration_label(scan)
+        assert result == "took 8m 12s"
+
+    def test_failed_scan_returns_after(self):
+        from apps.core.scans.templatetags.scan_tags import scan_duration_label
+        scan = self._make_scan("failed", end_offset_seconds=63)  # 1m 03s
+        result = scan_duration_label(scan)
+        assert result == "after 1m 03s"
+
+    def test_running_scan_returns_running(self):
+        from apps.core.scans.templatetags.scan_tags import scan_duration_label
+        import datetime
+        from unittest.mock import patch
+        from django.utils import timezone
+        scan = self._make_scan("running", start_offset_seconds=221)  # 3m 41s ago
+        fixed_now = scan.start_time + datetime.timedelta(seconds=221)
+        with patch("apps.core.scans.templatetags.scan_tags.timezone") as mock_tz:
+            mock_tz.now.return_value = fixed_now
+            result = scan_duration_label(scan)
+        assert result == "running 3m 41s"
+
+    def test_pending_scan_returns_empty(self):
+        from apps.core.scans.templatetags.scan_tags import scan_duration_label
+        scan = self._make_scan("pending")
+        result = scan_duration_label(scan)
+        assert result == ""
+
+    def test_no_end_time_returns_empty(self):
+        from apps.core.scans.templatetags.scan_tags import scan_duration_label
+        scan = self._make_scan("completed", end_offset_seconds=None)
+        result = scan_duration_label(scan)
+        assert result == ""
+
+    def test_sub_minute_duration(self):
+        from apps.core.scans.templatetags.scan_tags import scan_duration_label
+        scan = self._make_scan("completed", end_offset_seconds=45)
+        result = scan_duration_label(scan)
+        assert result == "took 45s"
+
+
+# ---------------------------------------------------------------------------
 # View tests
 # ---------------------------------------------------------------------------
 
