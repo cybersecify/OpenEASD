@@ -4,19 +4,45 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}OpenEASD{% endblock %} — Attack Surface Detection</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <style>[x-cloak] { display: none !important; }</style>
+  <style>
+    [x-cloak] { display: none !important; }
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    /* Dark mode global form input overrides (for Django widget-rendered inputs) */
+    input[type="text"], input[type="password"], input[type="date"],
+    input[type="email"], input[type="number"], input[type="search"],
+    select, textarea {
+      background-color: rgba(0,0,0,0.3) !important;
+      border-color: rgba(48,192,116,0.20) !important;
+      color: #e8f5ef !important;
+      font-family: 'Inter', system-ui, sans-serif !important;
+    }
+    input[type="text"]::placeholder, input[type="password"]::placeholder,
+    input[type="search"]::placeholder { color: #3d6b4f !important; }
+    input[type="text"]:focus, input[type="password"]:focus,
+    input[type="date"]:focus, select:focus, textarea:focus {
+      outline: none !important;
+      border-color: #30c074 !important;
+      box-shadow: 0 0 0 2px rgba(48,192,116,0.15) !important;
+    }
+    select option { background-color: #0d2614; color: #e8f5ef; }
+    input[type="checkbox"] { accent-color: #30c074; }
+  </style>
 </head>
-<body class="bg-gray-50 text-gray-900 min-h-screen flex">
+<body class="bg-[#0a1a0f] text-[#e8f5ef] min-h-screen flex"
+      style="background-image: radial-gradient(ellipse at 70% -10%, rgba(48,192,116,0.06) 0%, transparent 55%);">
 
   <!-- Sidebar -->
-  <aside class="w-56 bg-slate-900 flex flex-col min-h-screen flex-shrink-0">
+  <aside class="w-56 bg-[#050e08] flex flex-col min-h-screen flex-shrink-0 border-r border-[rgba(48,192,116,0.12)]">
 
     <!-- Logo -->
-    <div class="px-4 py-4 border-b border-slate-800">
-      <a href="{% url 'dashboard' %}" class="font-bold text-white text-sm tracking-tight">⬡ OpenEASD</a>
+    <div class="px-4 py-4 border-b border-[rgba(48,192,116,0.12)]">
+      <a href="{% url 'dashboard' %}" class="font-extrabold text-[#e8f5ef] text-sm tracking-tight flex items-center gap-2">
+        <span class="text-[#30c074]">⬡</span> OpenEASD
+      </a>
     </div>
 
     <!-- Nav links -->
@@ -25,22 +51,22 @@
 
       <a href="{% url 'dashboard' %}"
          class="flex items-center gap-2 px-4 py-2 text-sm border-l-2
-           {% if n == 'dashboard' %}bg-slate-800 text-white border-indigo-500
-           {% else %}text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 border-transparent{% endif %}">
+           {% if n == 'dashboard' %}bg-[rgba(48,192,116,0.08)] text-[#e8f5ef] border-[#30c074]
+           {% else %}text-[#1e3d2a] hover:text-[#6b9e7e] hover:bg-[rgba(48,192,116,0.04)] border-transparent{% endif %}">
         Dashboard
       </a>
 
       <a href="{% url 'domain-list' %}"
          class="flex items-center gap-2 px-4 py-2 text-sm border-l-2
-           {% if n == 'domain-list' or n == 'domain-toggle' or n == 'domain-delete' %}bg-slate-800 text-white border-indigo-500
-           {% else %}text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 border-transparent{% endif %}">
+           {% if n == 'domain-list' or n == 'domain-toggle' or n == 'domain-delete' %}bg-[rgba(48,192,116,0.08)] text-[#e8f5ef] border-[#30c074]
+           {% else %}text-[#1e3d2a] hover:text-[#6b9e7e] hover:bg-[rgba(48,192,116,0.04)] border-transparent{% endif %}">
         Domains
       </a>
 
       <a href="{% url 'scan-list' %}"
          class="flex items-center justify-between px-4 py-2 text-sm border-l-2
-           {% if n == 'scan-list' or n == 'scan-detail' or n == 'scan-start' or n == 'scan-status-fragment' or n == 'scan-stop' or n == 'scan-delete' or n == 'scheduled-jobs' %}bg-slate-800 text-white border-indigo-500
-           {% else %}text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 border-transparent{% endif %}">
+           {% if n == 'scan-list' or n == 'scan-detail' or n == 'scan-start' or n == 'scan-status-fragment' or n == 'scan-stop' or n == 'scan-delete' or n == 'scheduled-jobs' %}bg-[rgba(48,192,116,0.08)] text-[#e8f5ef] border-[#30c074]
+           {% else %}text-[#1e3d2a] hover:text-[#6b9e7e] hover:bg-[rgba(48,192,116,0.04)] border-transparent{% endif %}">
         <span>Scans</span>
         {% if sidebar_running_count > 0 %}
         <span class="flex items-center gap-1 text-xs text-blue-400">
@@ -51,8 +77,8 @@
 
       <a href="{% url 'finding-list' %}"
          class="flex items-center justify-between px-4 py-2 text-sm border-l-2
-           {% if n == 'finding-list' or n == 'finding-update-status' %}bg-slate-800 text-white border-indigo-500
-           {% else %}text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 border-transparent{% endif %}">
+           {% if n == 'finding-list' or n == 'finding-update-status' %}bg-[rgba(48,192,116,0.08)] text-[#e8f5ef] border-[#30c074]
+           {% else %}text-[#1e3d2a] hover:text-[#6b9e7e] hover:bg-[rgba(48,192,116,0.04)] border-transparent{% endif %}">
         <span>Findings</span>
         {% if sidebar_finding_badge > 0 %}
         <span class="bg-red-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">{{ sidebar_finding_badge }}</span>
@@ -61,15 +87,15 @@
 
       <a href="{% url 'insights' %}"
          class="flex items-center gap-2 px-4 py-2 text-sm border-l-2
-           {% if n == 'insights' %}bg-slate-800 text-white border-indigo-500
-           {% else %}text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 border-transparent{% endif %}">
+           {% if n == 'insights' %}bg-[rgba(48,192,116,0.08)] text-[#e8f5ef] border-[#30c074]
+           {% else %}text-[#1e3d2a] hover:text-[#6b9e7e] hover:bg-[rgba(48,192,116,0.04)] border-transparent{% endif %}">
         Insights
       </a>
 
       <a href="{% url 'workflow-list' %}"
          class="flex items-center gap-2 px-4 py-2 text-sm border-l-2
-           {% if n == 'workflow-list' or n == 'workflow-create' or n == 'workflow-detail' or n == 'workflow-delete' or n == 'workflow-toggle-step' %}bg-slate-800 text-white border-indigo-500
-           {% else %}text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 border-transparent{% endif %}">
+           {% if n == 'workflow-list' or n == 'workflow-create' or n == 'workflow-detail' or n == 'workflow-delete' or n == 'workflow-toggle-step' %}bg-[rgba(48,192,116,0.08)] text-[#e8f5ef] border-[#30c074]
+           {% else %}text-[#1e3d2a] hover:text-[#6b9e7e] hover:bg-[rgba(48,192,116,0.04)] border-transparent{% endif %}">
         Workflows
       </a>
 
@@ -77,10 +103,10 @@
     {% endwith %}
 
     <!-- Logout -->
-    <div class="px-4 py-3 border-t border-slate-800">
+    <div class="px-4 py-3 border-t border-[rgba(48,192,116,0.12)]">
       <form method="post" action="{% url 'logout' %}">
         {% csrf_token %}
-        <button type="submit" class="text-slate-500 hover:text-slate-300 text-xs font-medium">Logout</button>
+        <button type="submit" class="text-[#1e3d2a] hover:text-[#6b9e7e] text-xs font-medium">Logout</button>
       </form>
     </div>
 
@@ -96,12 +122,12 @@
           {% for message in messages %}
           <div x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 5000)"
                class="px-4 py-3 rounded-lg text-sm flex items-center justify-between
-                 {% if message.tags == 'success' %}bg-green-50 border border-green-200 text-green-700
-                 {% elif message.tags == 'error' %}bg-red-50 border border-red-200 text-red-700
-                 {% elif message.tags == 'warning' %}bg-yellow-50 border border-yellow-200 text-yellow-700
-                 {% else %}bg-blue-50 border border-blue-200 text-blue-700{% endif %}">
+                 {% if message.tags == 'success' %}bg-[rgba(48,192,116,0.10)] border border-[rgba(48,192,116,0.25)] text-[#6ee7b7]
+                 {% elif message.tags == 'error' %}bg-[rgba(239,68,68,0.10)] border border-[rgba(239,68,68,0.25)] text-[#fca5a5]
+                 {% elif message.tags == 'warning' %}bg-[rgba(234,179,8,0.10)] border border-[rgba(234,179,8,0.25)] text-[#fde047]
+                 {% else %}bg-[rgba(59,130,246,0.10)] border border-[rgba(59,130,246,0.25)] text-[#93c5fd]{% endif %}">
             <span>{{ message }}</span>
-            <button @click="show = false" class="text-gray-400 hover:text-gray-600 ml-4">&times;</button>
+            <button @click="show = false" class="text-[#3d6b4f] hover:text-[#6b9e7e] ml-4">&times;</button>
           </div>
           {% endfor %}
         </div>
