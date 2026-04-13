@@ -469,9 +469,18 @@ class TestScanListCards:
     def test_count_completed_excludes_running(self, auth_client):
         baseline_resp = auth_client.get(reverse("scan-list"))
         baseline = baseline_resp.context["count_completed"]
+        self._make_session("completed", domain="completed-included.com")
         self._make_session("running", domain="running-excluded.com")
         resp = auth_client.get(reverse("scan-list"))
-        assert resp.context["count_completed"] == baseline
+        assert resp.context["count_completed"] == baseline + 1
+
+    def test_count_failed_counts_correctly(self, auth_client):
+        baseline_resp = auth_client.get(reverse("scan-list"))
+        baseline = baseline_resp.context["count_failed"]
+        self._make_session("failed", domain="failed1.com")
+        self._make_session("failed", domain="failed2.com")
+        resp = auth_client.get(reverse("scan-list"))
+        assert resp.context["count_failed"] == baseline + 2
 
     def test_status_card_links_present(self, auth_client):
         resp = auth_client.get(reverse("scan-list"))
