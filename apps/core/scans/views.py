@@ -388,9 +388,16 @@ def vulnerability_list(request):
         return qs
 
     # Default: restrict to latest completed session per domain (no duplicates across runs)
+    latest_ids = latest_session_ids()
     base_qs = Finding.objects.select_related("session")
     if not session_id:
-        base_qs = base_qs.filter(session_id__in=latest_session_ids())
+        base_qs = base_qs.filter(session_id__in=latest_ids)
+
+    # Summary card counts — always across latest sessions, open status only
+    count_open_critical = Finding.objects.filter(session_id__in=latest_ids, status="open", severity="critical").count()
+    count_open_high     = Finding.objects.filter(session_id__in=latest_ids, status="open", severity="high").count()
+    count_open_medium   = Finding.objects.filter(session_id__in=latest_ids, status="open", severity="medium").count()
+    count_open_low      = Finding.objects.filter(session_id__in=latest_ids, status="open", severity="low").count()
 
     qs = _filter(
         base_qs
@@ -428,6 +435,10 @@ def vulnerability_list(request):
         "domain": domain,
         "status_filter": status_filter,
         "status_choices": STATUS_CHOICES,
+        "count_open_critical": count_open_critical,
+        "count_open_high": count_open_high,
+        "count_open_medium": count_open_medium,
+        "count_open_low": count_open_low,
     })
 
 

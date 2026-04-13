@@ -309,6 +309,66 @@ class TestScanViews:
         assert b"Old Finding" not in resp.content
 
 
+@pytest.mark.django_db
+class TestFindingsPageCards:
+    """Severity summary cards — count_open_* context variables."""
+
+    def _make_session(self, domain="cards.com"):
+        from apps.core.scans.models import ScanSession
+        from django.utils import timezone
+        return ScanSession.objects.create(
+            domain=domain, scan_type="full", status="completed",
+            end_time=timezone.now()
+        )
+
+    def _finding(self, session, severity, status="open"):
+        from apps.core.findings.models import Finding
+        return Finding.objects.create(
+            session=session, source="domain_security", target=session.domain,
+            check_type="dns", severity=severity, title=f"{severity} finding",
+            description="d", remediation="r", status=status,
+        )
+
+    def test_count_vars_in_context(self, auth_client):
+        resp = auth_client.get(reverse("finding-list"))
+        assert resp.status_code == 200
+        assert "count_open_critical" in resp.context
+        assert "count_open_high" in resp.context
+        assert "count_open_medium" in resp.context
+        assert "count_open_low" in resp.context
+
+    def test_count_open_critical_excludes_resolved(self, auth_client):
+        session = self._make_session("excl-resolved.com")
+        self._finding(session, "critical", status="resolved")
+        resp = auth_client.get(reverse("finding-list"))
+        assert resp.context["count_open_critical"] == 0
+
+    def test_count_open_critical_excludes_acknowledged(self, auth_client):
+        session = self._make_session("excl-ack.com")
+        self._finding(session, "critical", status="acknowledged")
+        resp = auth_client.get(reverse("finding-list"))
+        assert resp.context["count_open_critical"] == 0
+
+    def test_count_open_high_counts_correctly(self, auth_client):
+        session = self._make_session("count-high.com")
+        self._finding(session, "high")
+        self._finding(session, "high")
+        self._finding(session, "medium")
+        resp = auth_client.get(reverse("finding-list"))
+        assert resp.context["count_open_high"] == 2
+
+    def test_severity_card_link_present(self, auth_client):
+        resp = auth_client.get(reverse("finding-list"))
+        assert b"?severity=critical" in resp.content
+        assert b"?severity=high" in resp.content
+        assert b"?severity=medium" in resp.content
+        assert b"?severity=low" in resp.content
+
+    def test_selected_card_has_ring(self, auth_client):
+        resp = auth_client.get(reverse("finding-list") + "?severity=critical")
+        assert b"ring-red-400" in resp.content
+
+
 # ---------------------------------------------------------------------------
 # Scheduling tests — Run Now / Schedule Once / Recurring
 # ---------------------------------------------------------------------------
