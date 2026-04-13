@@ -125,6 +125,20 @@ class TestInsightsView:
         assert resp.status_code == 200
         assert b"example.com" in resp.content
 
+    def test_insights_shows_section_headers(self, auth_client, domain, scan_summary):
+        resp = auth_client.get(reverse("insights"))
+        assert b"Security Posture" in resp.content
+        assert b"Remediation Progress" in resp.content
+        assert b"Where to Focus" in resp.content
+        assert b"Asset Coverage" in resp.content
+
+    def test_insights_shows_kpi_cards(self, auth_client, domain, scan_summary):
+        resp = auth_client.get(reverse("insights"))
+        assert b"Open Critical" in resp.content
+        assert b"Open High" in resp.content
+        assert b"New This Scan" in resp.content
+        assert b"Fixed This Scan" in resp.content
+
     def test_insights_only_shows_active_domain_data(self, auth_client, db, completed_session):
         """Summaries for unregistered domains must not appear."""
         from apps.core.insights.models import ScanSummary
