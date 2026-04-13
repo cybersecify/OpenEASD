@@ -138,6 +138,53 @@ class TestDashboardQueryCorrectness:
         assert resp.context["current_critical"] == 0
 
 
+# ---------------------------------------------------------------------------
+# Dashboard redesign tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestDashboardRedesign:
+    def _make_domain_with_summary(self, db, name="example.com", critical=0, high=0,
+                                   medium=0, low=0, new_exposures=0):
+        from apps.core.domains.models import Domain
+        from apps.core.scans.models import ScanSession
+        from apps.core.insights.models import ScanSummary
+        from django.utils import timezone
+        Domain.objects.get_or_create(name=name, defaults={"is_primary": True, "is_active": True})
+        session = ScanSession.objects.create(
+            domain=name, scan_type="full", status="completed", end_time=timezone.now()
+        )
+        ScanSummary.objects.create(
+            session=session, domain=name, scan_date=timezone.now(),
+            critical_count=critical, high_count=high, medium_count=medium,
+            low_count=low, total_findings=critical + high + medium + low,
+            new_exposures=new_exposures, removed_exposures=0,
+        )
+        return session
+
+    def test_delta_new_shown_when_positive(self, auth_client, db):
+        self._make_domain_with_summary(db, new_exposures=3)
+        resp = auth_client.get("/")
+        assert resp.status_code == 200
+        assert b"+3" in resp.content
+
+    def test_delta_new_not_shown_when_zero(self, auth_client, db):
+        self._make_domain_with_summary(db, new_exposures=0)
+        resp = auth_client.get("/")
+        assert b"+0" not in resp.content
+
+    def test_domain_table_no_separate_crit_column(self, auth_client, db):
+        self._make_domain_with_summary(db)
+        resp = auth_client.get("/")
+        assert b">Crit<" not in resp.content
+
+    def test_inline_badges_shown_for_domain_with_findings(self, auth_client, db):
+        self._make_domain_with_summary(db, critical=2, high=5)
+        resp = auth_client.get("/")
+        assert b"2 crit" in resp.content
+        assert b"5 high" in resp.content
+
+
 @pytest.mark.django_db
 class TestHealthCheck:
     def test_health_check_authenticated(self, auth_client):

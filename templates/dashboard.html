@@ -108,10 +108,8 @@
       <tr>
         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Scan</th>
-        <th class="px-6 py-3 text-center text-xs font-medium text-red-500 uppercase">Crit</th>
-        <th class="px-6 py-3 text-center text-xs font-medium text-orange-500 uppercase">High</th>
-        <th class="px-6 py-3 text-center text-xs font-medium text-yellow-600 uppercase">Med</th>
-        <th class="px-6 py-3 text-center text-xs font-medium text-blue-500 uppercase">Low</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Findings</th>
+        <th class="px-6 py-3 text-center text-xs font-medium text-yellow-600 uppercase">&#916; New</th>
         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
         <th class="px-6 py-3"></th>
       </tr>
@@ -127,25 +125,36 @@
             <span class="text-gray-300">Never scanned</span>
           {% endif %}
         </td>
-        <td class="px-6 py-3 text-center text-sm font-semibold {% if item.summary.critical_count > 0 %}text-red-600{% else %}text-gray-300{% endif %}">
-          {% if item.summary.critical_count > 0 and item.latest_session %}
-          <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=critical" class="hover:underline">{{ item.summary.critical_count }}</a>
-          {% else %}{{ item.summary.critical_count|default:"—" }}{% endif %}
+        <td class="px-6 py-4 text-sm">
+          {% if item.summary %}
+          <div class="flex flex-wrap gap-1">
+            {% if item.summary.critical_count %}
+            <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=critical"
+               class="bg-red-50 text-red-600 text-xs font-semibold px-1.5 py-0.5 rounded hover:underline">{{ item.summary.critical_count }} crit</a>
+            {% endif %}
+            {% if item.summary.high_count %}
+            <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=high"
+               class="bg-orange-50 text-orange-600 text-xs font-semibold px-1.5 py-0.5 rounded hover:underline">{{ item.summary.high_count }} high</a>
+            {% endif %}
+            {% if item.summary.medium_count %}
+            <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=medium"
+               class="bg-yellow-50 text-yellow-700 text-xs font-semibold px-1.5 py-0.5 rounded hover:underline">{{ item.summary.medium_count }} med</a>
+            {% endif %}
+            {% if item.summary.low_count %}
+            <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=low"
+               class="bg-slate-100 text-slate-600 text-xs font-semibold px-1.5 py-0.5 rounded hover:underline">{{ item.summary.low_count }} low</a>
+            {% endif %}
+          </div>
+          {% else %}
+          <span class="text-gray-300">—</span>
+          {% endif %}
         </td>
-        <td class="px-6 py-3 text-center text-sm font-semibold {% if item.summary.high_count > 0 %}text-orange-500{% else %}text-gray-300{% endif %}">
-          {% if item.summary.high_count > 0 and item.latest_session %}
-          <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=high" class="hover:underline">{{ item.summary.high_count }}</a>
-          {% else %}{{ item.summary.high_count|default:"—" }}{% endif %}
-        </td>
-        <td class="px-6 py-3 text-center text-sm font-semibold {% if item.summary.medium_count > 0 %}text-yellow-600{% else %}text-gray-300{% endif %}">
-          {% if item.summary.medium_count > 0 and item.latest_session %}
-          <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=medium" class="hover:underline">{{ item.summary.medium_count }}</a>
-          {% else %}{{ item.summary.medium_count|default:"—" }}{% endif %}
-        </td>
-        <td class="px-6 py-3 text-center text-sm font-semibold {% if item.summary.low_count > 0 %}text-blue-500{% else %}text-gray-300{% endif %}">
-          {% if item.summary.low_count > 0 and item.latest_session %}
-          <a href="{% url 'finding-list' %}?session_id={{ item.latest_session.id }}&severity=low" class="hover:underline">{{ item.summary.low_count }}</a>
-          {% else %}{{ item.summary.low_count|default:"—" }}{% endif %}
+        <td class="px-6 py-4 text-center">
+          {% if item.summary.new_exposures %}
+          <span class="bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-0.5 rounded-full">+{{ item.summary.new_exposures }}</span>
+          {% else %}
+          <span class="text-gray-300 text-sm">—</span>
+          {% endif %}
         </td>
         <td class="px-6 py-3 text-sm">
           {% if item.latest_session %}
