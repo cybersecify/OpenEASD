@@ -490,7 +490,7 @@ class TestScanListCards:
 
     def test_selected_card_has_ring(self, auth_client):
         resp = auth_client.get(reverse("scan-list") + "?status=completed")
-        assert b"ring-green-400" in resp.content
+        assert b"ring-[rgba(48,192,116,0.50)]" in resp.content
 
 
 # ---------------------------------------------------------------------------

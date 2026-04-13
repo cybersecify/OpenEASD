@@ -5,61 +5,61 @@
 {% block content %}
 <div class="mb-6 flex items-center justify-between">
   <div>
-    <h1 class="text-2xl font-bold text-gray-900">Scheduled Scans</h1>
-    <p class="text-gray-500 text-sm mt-1">Pending one-time and recurring scan jobs</p>
+    <h1 class="text-2xl font-bold text-[#e8f5ef] font-extrabold tracking-tight">Scheduled Scans</h1>
+    <p class="text-[#6b9e7e] text-sm mt-1">Pending one-time and recurring scan jobs</p>
   </div>
   <a href="{% url 'scan-start' %}"
-     class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 text-sm font-medium">
+     class="bg-[#30c074] text-[#022c22] font-bold px-4 py-2 rounded-md hover:bg-[#28a863] text-sm font-medium">
     + New Scan
   </a>
 </div>
 
-<div class="bg-white rounded-lg shadow overflow-hidden">
+<div class="bg-[#0d2614] rounded-lg border border-[rgba(48,192,116,0.12)] overflow-hidden">
   {% if jobs %}
-  <table class="min-w-full divide-y divide-gray-100">
-    <thead class="bg-gray-50">
+  <table class="min-w-full">
+    <thead class="bg-[rgba(0,0,0,0.35)]">
       <tr>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Next Run (IST)</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Frequency</th>
-        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-[#6b9e7e] uppercase">Domain</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-[#6b9e7e] uppercase">Type</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-[#6b9e7e] uppercase">Next Run (IST)</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-[#6b9e7e] uppercase">Frequency</th>
+        <th class="px-6 py-3 text-right text-xs font-medium text-[#6b9e7e] uppercase">Actions</th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-gray-100">
+    <tbody>
       {% for job in jobs %}
       <tbody x-data="{ confirmCancel: false }">
-      <tr class="hover:bg-gray-50">
+      <tr class="hover:bg-[rgba(48,192,116,0.025)]">
 
-        <td class="px-6 py-4 text-sm font-mono font-medium text-gray-900">
+        <td class="px-6 py-4 text-sm font-mono font-medium text-[#e8f5ef]">
           {{ job.domain }}
         </td>
 
         <td class="px-6 py-4 text-sm">
           {% if job.job_type == "recurring" %}
-          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[rgba(48,192,116,0.10)] text-[#30c074]">
             Recurring
           </span>
           {% elif job.job_type == "one-time" %}
-          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[rgba(234,179,8,0.10)] text-[#fde047]">
             One-time
           </span>
           {% else %}
-          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[rgba(48,192,116,0.10)] text-[#6b9e7e]">
             {{ job.job_type }}
           </span>
           {% endif %}
         </td>
 
-        <td class="px-6 py-4 text-sm text-gray-500">
+        <td class="px-6 py-4 text-sm text-[#6b9e7e]">
           {% if job.next_run_time %}
             {{ job.next_run_time|date:"M d, Y H:i" }}
           {% else %}
-            <span class="text-gray-300 italic">No upcoming run</span>
+            <span class="text-[#1e3d2a] italic">No upcoming run</span>
           {% endif %}
         </td>
 
-        <td class="px-6 py-4 text-sm text-gray-500">
+        <td class="px-6 py-4 text-sm text-[#6b9e7e]">
           {{ job.frequency }}
         </td>
 
@@ -67,12 +67,12 @@
           <button @click="confirmCancel = true" x-show="!confirmCancel" class="text-red-500 hover:text-red-700 text-sm font-medium">Cancel</button>
         </td>
       </tr>
-      <tr x-show="confirmCancel" x-cloak class="bg-red-50">
+      <tr x-show="confirmCancel" x-cloak class="bg-[rgba(239,68,68,0.08)]">
         <td colspan="5" class="px-6 py-3">
           <div class="flex items-center justify-between">
-            <p class="text-sm text-red-700">Cancel scheduled scan for <span class="font-bold">{{ job.domain }}</span>?</p>
+            <p class="text-sm text-[#fca5a5]">Cancel scheduled scan for <span class="font-bold">{{ job.domain }}</span>?</p>
             <div class="flex items-center gap-3">
-              <button @click="confirmCancel = false" class="text-sm text-gray-600 hover:text-gray-800">No, keep</button>
+              <button @click="confirmCancel = false" class="text-sm text-[#6b9e7e] hover:text-[#e8f5ef]">No, keep</button>
               <form method="post" action="{% url 'cancel-scheduled-job' job.job_id %}">
                 {% csrf_token %}
                 <button type="submit" class="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700">Yes, cancel</button>
@@ -87,10 +87,10 @@
   </table>
 
   {% else %}
-  <div class="px-6 py-12 text-center text-gray-400">
+  <div class="px-6 py-12 text-center text-[#3d6b4f]">
     <p class="text-lg">No scheduled scans.</p>
     <p class="text-sm mt-1">
-      Use <a href="{% url 'scan-start' %}" class="text-indigo-600 hover:underline">Start Scan</a>
+      Use <a href="{% url 'scan-start' %}" class="text-[#30c074] hover:underline">Start Scan</a>
       to schedule a one-time or recurring scan.
     </p>
   </div>

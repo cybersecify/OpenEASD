@@ -4,76 +4,76 @@
 
 {% block content %}
 <div class="mb-4">
-  <h1 class="text-2xl font-bold text-gray-900">Scans</h1>
-  <p class="text-gray-500 text-sm mt-1">Scan history and scheduled jobs</p>
+  <h1 class="text-2xl font-bold text-[#e8f5ef] font-extrabold tracking-tight">Scans</h1>
+  <p class="text-[#3d6b4f] text-sm mt-1">Scan history and scheduled jobs</p>
 </div>
 
 <!-- Status summary cards -->
 <div class="grid grid-cols-3 gap-4 mb-4">
   <a href="?status=running{% if domain %}&domain={{ domain|urlencode }}{% endif %}"
-     class="bg-white border border-blue-200 rounded-lg p-4 cursor-pointer hover:shadow-md transition-shadow {% if status_filter == 'running' %}ring-2 ring-blue-400{% endif %}">
-    <div class="text-xs font-semibold text-blue-500 uppercase tracking-wide">Running</div>
-    <div class="text-3xl font-bold text-blue-600 my-1">{{ count_running }}</div>
-    <div class="text-xs text-slate-400">active scans</div>
+     class="bg-[#0d2614] border border-[rgba(59,130,246,0.20)] rounded-lg p-4 cursor-pointer hover:border-[rgba(59,130,246,0.40)] transition-colors {% if status_filter == 'running' %}ring-2 ring-[rgba(59,130,246,0.50)]{% endif %}">
+    <div class="text-xs font-semibold text-blue-400 uppercase tracking-wide">Running</div>
+    <div class="text-3xl font-extrabold text-[#93c5fd] my-1 tracking-tight">{{ count_running }}</div>
+    <div class="text-xs text-[#3d6b4f]">active scans</div>
   </a>
   <a href="?status=completed{% if domain %}&domain={{ domain|urlencode }}{% endif %}"
-     class="bg-white border border-green-200 rounded-lg p-4 cursor-pointer hover:shadow-md transition-shadow {% if status_filter == 'completed' %}ring-2 ring-green-400{% endif %}">
-    <div class="text-xs font-semibold text-green-600 uppercase tracking-wide">Completed</div>
-    <div class="text-3xl font-bold text-green-700 my-1">{{ count_completed }}</div>
-    <div class="text-xs text-slate-400">finished scans</div>
+     class="bg-[#0d2614] border border-[rgba(48,192,116,0.20)] rounded-lg p-4 cursor-pointer hover:border-[rgba(48,192,116,0.40)] transition-colors {% if status_filter == 'completed' %}ring-2 ring-[rgba(48,192,116,0.50)]{% endif %}">
+    <div class="text-xs font-semibold text-[#30c074] uppercase tracking-wide">Completed</div>
+    <div class="text-3xl font-extrabold text-[#6ee7b7] my-1 tracking-tight">{{ count_completed }}</div>
+    <div class="text-xs text-[#3d6b4f]">finished scans</div>
   </a>
   <a href="?status=failed{% if domain %}&domain={{ domain|urlencode }}{% endif %}"
-     class="bg-white border border-red-200 rounded-lg p-4 cursor-pointer hover:shadow-md transition-shadow {% if status_filter == 'failed' %}ring-2 ring-red-400{% endif %}">
-    <div class="text-xs font-semibold text-red-500 uppercase tracking-wide">Failed</div>
-    <div class="text-3xl font-bold text-red-600 my-1">{{ count_failed }}</div>
-    <div class="text-xs text-slate-400">errored scans</div>
+     class="bg-[#0d2614] border border-[rgba(239,68,68,0.20)] rounded-lg p-4 cursor-pointer hover:border-[rgba(239,68,68,0.40)] transition-colors {% if status_filter == 'failed' %}ring-2 ring-[rgba(239,68,68,0.50)]{% endif %}">
+    <div class="text-xs font-semibold text-[#f87171] uppercase tracking-wide">Failed</div>
+    <div class="text-3xl font-extrabold text-[#fca5a5] my-1 tracking-tight">{{ count_failed }}</div>
+    <div class="text-xs text-[#3d6b4f]">errored scans</div>
   </a>
 </div>
 
 <!-- Scheduled Jobs (shown only if any exist) -->
 {% if scheduled %}
-<div class="bg-white rounded-lg shadow mb-6">
-  <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+<div class="bg-[#0d2614] rounded-lg border border-[rgba(48,192,116,0.12)] mb-6">
+  <div class="px-6 py-4 border-b border-[rgba(48,192,116,0.12)] flex items-center justify-between">
     <div>
-      <h2 class="font-semibold text-gray-700">Scheduled Jobs</h2>
-      <p class="text-xs text-gray-400 mt-0.5">Pending one-time and recurring scans</p>
+      <h2 class="font-semibold text-[#e8f5ef]">Scheduled Jobs</h2>
+      <p class="text-xs text-[#3d6b4f] mt-0.5">Pending one-time and recurring scans</p>
     </div>
   </div>
-  <table class="min-w-full divide-y divide-gray-100">
-    <thead class="bg-gray-50">
+  <table class="min-w-full">
+    <thead class="bg-[rgba(0,0,0,0.35)]">
       <tr>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Next Run (IST)</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Frequency</th>
-        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-[#6b9e7e] uppercase">Domain</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-[#6b9e7e] uppercase">Type</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-[#6b9e7e] uppercase">Next Run (IST)</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-[#6b9e7e] uppercase">Frequency</th>
+        <th class="px-6 py-3 text-right text-xs font-medium text-[#6b9e7e] uppercase">Actions</th>
       </tr>
     </thead>
       {% for job in scheduled %}
       <tbody x-data="{ confirmCancel: false }">
-      <tr class="hover:bg-gray-50">
-        <td class="px-6 py-3 text-sm font-mono font-medium text-gray-900">{{ job.domain }}</td>
+      <tr class="hover:bg-[rgba(48,192,116,0.025)]">
+        <td class="px-6 py-3 text-sm font-mono font-medium text-[#e8f5ef]">{{ job.domain }}</td>
         <td class="px-6 py-3 text-sm">
           {% if job.job_type == "recurring" %}
-          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">Recurring</span>
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[rgba(48,192,116,0.10)] text-[#30c074]">Recurring</span>
           {% else %}
-          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">One-time</span>
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[rgba(234,179,8,0.10)] text-[#fde047]">One-time</span>
           {% endif %}
         </td>
-        <td class="px-6 py-3 text-sm text-gray-500">
-          {% if job.next_run_time %}{{ job.next_run_time|date:"M d, Y H:i" }}{% else %}<span class="text-gray-300 italic">—</span>{% endif %}
+        <td class="px-6 py-3 text-sm text-[#6b9e7e]">
+          {% if job.next_run_time %}{{ job.next_run_time|date:"M d, Y H:i" }}{% else %}<span class="text-[#1e3d2a] italic">—</span>{% endif %}
         </td>
-        <td class="px-6 py-3 text-sm text-gray-500">{{ job.frequency }}</td>
+        <td class="px-6 py-3 text-sm text-[#6b9e7e]">{{ job.frequency }}</td>
         <td class="px-6 py-3 text-right">
           <button @click="confirmCancel = true" x-show="!confirmCancel" class="text-red-500 hover:text-red-700 text-sm">Cancel</button>
         </td>
       </tr>
-      <tr x-show="confirmCancel" x-cloak class="bg-red-50">
+      <tr x-show="confirmCancel" x-cloak class="bg-[rgba(239,68,68,0.08)]">
         <td colspan="5" class="px-6 py-3">
           <div class="flex items-center justify-between">
-            <p class="text-sm text-red-700">Cancel scheduled scan for <span class="font-bold">{{ job.domain }}</span>?</p>
+            <p class="text-sm text-[#fca5a5]">Cancel scheduled scan for <span class="font-bold">{{ job.domain }}</span>?</p>
             <div class="flex items-center gap-3">
-              <button @click="confirmCancel = false" class="text-sm text-gray-600 hover:text-gray-800">No, keep</button>
+              <button @click="confirmCancel = false" class="text-sm text-[#6b9e7e] hover:text-[#e8f5ef]">No, keep</button>
               <form method="post" action="{% url 'cancel-scheduled-job' job.job_id %}">
                 {% csrf_token %}
                 <button type="submit" class="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700">Yes, cancel</button>
@@ -89,19 +89,19 @@
 {% endif %}
 
 <!-- Filters -->
-<div class="bg-white rounded-lg shadow mb-4 px-6 py-4">
+<div class="bg-[#0d2614] rounded-lg border border-[rgba(48,192,116,0.12)] mb-4 px-6 py-4">
   <form class="flex gap-4 items-end"
         hx-get="{% url 'scan-list' %}"
         hx-target="#scan-table-body"
         hx-trigger="change, input delay:400ms from:[name=domain]">
     <div class="flex-1">
-      <label class="block text-xs font-medium text-gray-500 mb-1">Domain</label>
+      <label class="block text-xs font-medium text-[#6b9e7e] mb-1">Domain</label>
       <input type="text" name="domain" value="{{ domain }}" placeholder="Filter by domain"
-             class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+             class="w-full px-3 py-2 border border-[rgba(48,192,116,0.12)] rounded-md text-sm bg-[#0d2614] text-[#e8f5ef] focus:outline-none focus:ring-2 focus:ring-[#30c074]">
     </div>
     <div>
-      <label class="block text-xs font-medium text-gray-500 mb-1">Status</label>
-      <select name="status" class="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      <label class="block text-xs font-medium text-[#6b9e7e] mb-1">Status</label>
+      <select name="status" class="px-3 py-2 border border-[rgba(48,192,116,0.12)] rounded-md text-sm bg-[#0d2614] text-[#e8f5ef] focus:outline-none focus:ring-2 focus:ring-[#30c074]">
         <option value="">All</option>
         <option value="pending" {% if status_filter == "pending" %}selected{% endif %}>Pending</option>
         <option value="running" {% if status_filter == "running" %}selected{% endif %}>Running</option>
@@ -111,28 +111,28 @@
       </select>
     </div>
     <div class="shrink-0 self-end">
-      <a href="{% url 'scan-list' %}" class="text-xs text-gray-400 hover:text-gray-600">Clear filters</a>
+      <a href="{% url 'scan-list' %}" class="text-xs text-[#3d6b4f] hover:text-[#6b9e7e]">Clear filters</a>
     </div>
   </form>
 </div>
 
 <!-- Scan History -->
-<div class="bg-white rounded-lg shadow overflow-hidden">
-  <div class="px-6 py-4 border-b border-gray-200">
-    <h2 class="font-semibold text-gray-700">Scan History</h2>
+<div class="bg-[#0d2614] rounded-lg border border-[rgba(48,192,116,0.12)] overflow-hidden">
+  <div class="px-6 py-4 border-b border-[rgba(48,192,116,0.12)]">
+    <h2 class="font-semibold text-[#e8f5ef]">Scan History</h2>
   </div>
-  <table class="min-w-full divide-y divide-gray-200">
-    <thead class="bg-gray-50">
+  <table class="min-w-full">
+    <thead class="bg-[rgba(0,0,0,0.35)]">
       <tr>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Findings</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">When</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-[#6b9e7e] uppercase">Domain</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-[#6b9e7e] uppercase">Type</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-[#6b9e7e] uppercase">Status</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-[#6b9e7e] uppercase">Findings</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-[#6b9e7e] uppercase">When</th>
         <th class="px-6 py-3"></th>
       </tr>
     </thead>
-    <tbody id="scan-table-body" class="bg-white divide-y divide-gray-200">
+    <tbody id="scan-table-body" class="bg-[#0d2614]">
       {% include "partials/scan_rows.html" %}
     </tbody>
   </table>
