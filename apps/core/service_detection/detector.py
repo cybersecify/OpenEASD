@@ -118,39 +118,49 @@ def _parse_nmap_sv_xml(xml_str: str) -> dict[int, str]:
     return services
 
 
-def _nmap_sv(ip: str, ports: list[int]) -> dict[int, str]:
+def _nmap_sv(ip: str, ports: list[int], hostname: str | None = None) -> dict[int, str]:
     """
     Run ``nmap -sV`` on the given IP for the specified ports.
+
+    When a hostname is provided (and differs from the IP), nmap uses it as
+    the scan target so it appears in TLS SNI during version probes — critical
+    for CDN/virtual-hosted services that reject connections without a valid
+    SNI name.  ``-Pn`` skips host discovery so nmap scans the resolved IP
+    even if ICMP is blocked.
+
     Returns {port_num: service_name} — empty dict on any failure.
     """
-    binary = getattr(settings, "TOOL_NMAP", "/opt/homebrew/bin/nmap")
+    binary  = getattr(settings, "TOOL_NMAP", "/opt/homebrew/bin/nmap")
     port_str = ",".join(str(p) for p in sorted(ports))
+    # Use hostname as scan target when available so nmap sets SNI correctly.
+    target  = hostname if hostname and hostname != ip else ip
     cmd = [
         binary,
-        "-sV", "--version-intensity", "2",  # balanced: covers most services without being slow
+        "-sV", "--version-intensity", "2",
+        "-Pn",           # skip host discovery — we know the host is up
         "-p", port_str,
         "--open",
-        "-oX", "-",   # XML to stdout
+        "-oX", "-",      # XML to stdout
         "--host-timeout", "30s",
-        ip,
+        target,
     ]
-    logger.debug(f"[service_detection] nmap fallback: {' '.join(cmd)}")
+    logger.debug(f"[service_detection] nmap: {' '.join(cmd)}")
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=NMAP_TIMEOUT
         )
-        if result.returncode not in (0, 1):  # 1 = no hosts up (still valid XML)
+        if result.returncode not in (0, 1):
             logger.debug(
-                f"[service_detection] nmap exited {result.returncode} for {ip}: "
+                f"[service_detection] nmap exited {result.returncode} for {target}: "
                 f"{result.stderr[:200]}"
             )
         return _parse_nmap_sv_xml(result.stdout)
     except FileNotFoundError:
         logger.warning(f"[service_detection] nmap binary not found: {binary}")
     except subprocess.TimeoutExpired:
-        logger.warning(f"[service_detection] nmap timed out for {ip}:{port_str}")
+        logger.warning(f"[service_detection] nmap timed out for {target}:{port_str}")
     except Exception as e:
-        logger.warning(f"[service_detection] nmap error for {ip}: {e}")
+        logger.warning(f"[service_detection] nmap error for {target}: {e}")
     return {}
 
 
@@ -209,12 +219,17 @@ def detect_services(session) -> int:
     # ── Step 2: nmap -sV for still-unresolved ports ───────────────────────
     still_unresolved: list = []
     if unresolved:
-        by_ip: dict[str, list] = {}
+        # Group by (ip, hostname) so each nmap call uses the right SNI name.
+        # Ports on the same IP but different subdomains get separate nmap calls.
+        by_target: dict[tuple[str, str], list] = {}
         for p in unresolved:
-            by_ip.setdefault(p.address, []).append(p)
+            hostname = p.address
+            if p.ip_address and p.ip_address.subdomain:
+                hostname = p.ip_address.subdomain.subdomain
+            by_target.setdefault((p.address, hostname), []).append(p)
 
-        for ip, ports in by_ip.items():
-            nmap_services = _nmap_sv(ip, [p.port for p in ports])
+        for (ip, hostname), ports in by_target.items():
+            nmap_services = _nmap_sv(ip, [p.port for p in ports], hostname=hostname)
 
             for p in ports:
                 nmap_svc = nmap_services.get(p.port, "")
@@ -224,14 +239,14 @@ def detect_services(session) -> int:
                     is_web   = True
                     nmap_svc = "https" if p.port in {443, 8443} else "http"
                     logger.debug(
-                        f"[service_detection:{session.id}] {ip}:{p.port} — "
+                        f"[service_detection:{session.id}] {hostname}:{p.port} — "
                         f"nmap={nmap_svc!r}, assuming {nmap_svc}"
                     )
 
                 if is_web or nmap_svc:
                     results[p.id] = (nmap_svc, is_web)
                     logger.debug(
-                        f"[service_detection:{session.id}] {ip}:{p.port} → "
+                        f"[service_detection:{session.id}] {hostname}:{p.port} → "
                         f"{nmap_svc or 'unknown'} (nmap, web={is_web})"
                     )
                 else:
