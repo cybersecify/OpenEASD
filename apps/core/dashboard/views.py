@@ -79,15 +79,6 @@ def dashboard(request):
         ).select_related("session").order_by("-discovered_at")[:8]
     )
 
-    # Also include high-severity nmap CVEs
-    urgent_cves = list(
-        Finding.objects.filter(
-            session_id__in=latest_completed_ids,
-            source="nmap",
-            severity__in=["critical", "high"],
-        ).select_related("session").order_by("-discovered_at")[:8]
-    )
-
     # Asset counts across latest completed scans (the current attack surface).
     # 4 queries (one per model) is the ORM minimum — they query different tables.
     asset_counts = {
@@ -111,7 +102,6 @@ def dashboard(request):
         "running_count": running_count,
         "active_domain_count": len(active_domains),
         "urgent_findings": urgent_findings,
-        "urgent_cves": urgent_cves,
         "asset_counts": asset_counts,
         "latest_scan_uuid": latest_completed_session.uuid if latest_completed_session else None,
     })

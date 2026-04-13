@@ -184,6 +184,48 @@ class TestDashboardRedesign:
         assert b"2 crit" in resp.content
         assert b"5 high" in resp.content
 
+    def test_urgent_cves_not_in_context(self, auth_client, db):
+        resp = auth_client.get("/")
+        assert "urgent_cves" not in resp.context
+
+    def test_urgent_findings_shows_source_column(self, auth_client, db):
+        from apps.core.scans.models import ScanSession
+        from apps.core.findings.models import Finding
+        from apps.core.domains.models import Domain
+        from django.utils import timezone
+        Domain.objects.get_or_create(name="example.com", defaults={"is_active": True})
+        session = ScanSession.objects.create(
+            domain="example.com", scan_type="full", status="completed",
+            end_time=timezone.now()
+        )
+        Finding.objects.create(
+            session=session, source="web_checker", target="example.com",
+            check_type="missing_header", severity="high", title="Missing HSTS",
+            description="X", remediation="X",
+        )
+        resp = auth_client.get("/")
+        assert b"Source" in resp.content
+        assert b"web_checker" in resp.content
+
+    def test_urgent_findings_uses_session_domain(self, auth_client, db):
+        from apps.core.scans.models import ScanSession
+        from apps.core.findings.models import Finding
+        from apps.core.domains.models import Domain
+        from django.utils import timezone
+        Domain.objects.get_or_create(name="example.com", defaults={"is_active": True})
+        session = ScanSession.objects.create(
+            domain="example.com", scan_type="full", status="completed",
+            end_time=timezone.now()
+        )
+        Finding.objects.create(
+            session=session, source="nmap", target="1.2.3.4:443",
+            check_type="cve", severity="critical", title="CVE-2023-1234",
+            description="X", remediation="X",
+            extra={"cve": "CVE-2023-1234", "cvss_score": 9.8},
+        )
+        resp = auth_client.get("/")
+        assert b"example.com" in resp.content
+
 
 @pytest.mark.django_db
 class TestHealthCheck:
