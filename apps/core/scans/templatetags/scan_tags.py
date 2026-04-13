@@ -22,7 +22,7 @@ def scan_duration_label(scan):
     else:
         return ""
 
-    total_seconds = int(delta.total_seconds())
+    total_seconds = max(0, int(delta.total_seconds()))
     minutes, seconds = divmod(total_seconds, 60)
     if minutes:
         return f"{prefix} {minutes}m {seconds:02d}s"

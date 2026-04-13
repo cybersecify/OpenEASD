@@ -282,6 +282,12 @@ class TestScanDurationLabel:
         result = scan_duration_label(scan)
         assert result == "took 45s"
 
+    def test_negative_delta_returns_zero_duration(self):
+        from apps.core.scans.templatetags.scan_tags import scan_duration_label
+        scan = self._make_scan("completed", end_offset_seconds=-5)  # end_time before start_time
+        result = scan_duration_label(scan)
+        assert result == "took 0s"
+
 
 # ---------------------------------------------------------------------------
 # View tests
