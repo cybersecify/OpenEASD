@@ -310,7 +310,7 @@ def detect_services(session) -> int:
 
         # Step 2: HTTP probing — skip when banner is clearly non-web (saves 4 probes)
         http_svc = ""
-        if b_score >= -50:
+        if b_score > -70:  # skip HTTP probing only for confirmed non-web banners (score == -70)
             if _probe_http(hostname, port_num, "https"):
                 score += 80
                 http_svc = "https"

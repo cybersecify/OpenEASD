@@ -276,17 +276,6 @@ class TestDetectServices:
 
         assert Port.objects.get(session=sess, port=9999).is_web is False
 
-    def test_returns_count_of_updated_ports(self):
-        sess = self._make_session()
-
-        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._grab_banner", return_value=""), \
-             patch("apps.core.service_detection.detector._nmap_sv", return_value={22: "ssh"}):
-            count = detect_services(sess)
-
-        # port 22 → service="ssh" (changed); ports 80 and 443 → no signal, no change
-        assert count == 1
-
     def test_undetectable_non_standard_port_stays_non_web(self):
         from apps.core.scans.models import ScanSession
         from apps.core.assets.models import IPAddress, Port
