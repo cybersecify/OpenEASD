@@ -327,7 +327,6 @@ class TestGrabBanner:
         assert result == "SSH-2.0-OpenSSH_8.9\r\n"
 
     def test_returns_empty_on_connection_refused(self):
-        import socket
         from apps.core.service_detection.detector import _grab_banner
         with patch("apps.core.service_detection.detector.socket.create_connection",
                    side_effect=ConnectionRefusedError()):

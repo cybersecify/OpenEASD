@@ -99,7 +99,6 @@ def _grab_banner(host: str, port: int) -> str:
     """
     try:
         with socket.create_connection((host, port), timeout=BANNER_TIMEOUT) as sock:
-            sock.settimeout(BANNER_TIMEOUT)
             data = sock.recv(BANNER_READ_BYTES)
             return data.decode("utf-8", errors="replace")
     except Exception:
