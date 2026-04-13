@@ -1,12 +1,21 @@
 """Service detection — classifies ports as web or non-web.
 
-Probing strategy (in order of preference):
-  1. HTTPS request with subdomain hostname  (CDN/SNI compatible)
-  2. HTTP  request with subdomain hostname
-  3. HTTPS request with raw IP              (handles CDN SNI rejection)
-  4. HTTP  request with raw IP
-  5. nmap -sV fallback for any still-unresolved ports — accurate service
-     fingerprinting; one nmap call per IP, all unresolved ports batched.
+Classification strategy:
+
+  Step 1 — Well-known ports classified by port number (deterministic, no probing):
+    80, 8080       → http  (web)
+    443, 8443      → https (web)
+    Port number is authoritative for these — probing CDNs/firewalls is unreliable.
+
+  Step 2 — Non-standard ports: HTTP probing
+    2a. HTTPS + subdomain hostname  (CDN/SNI compatible)
+    2b. HTTP  + subdomain hostname
+    2c. HTTPS + raw IP              (CDN SNI rejection fallback)
+    2d. HTTP  + raw IP
+
+  Step 3 — Non-standard ports still unresolved: nmap -sV fallback
+    Batched per IP; handles ssh/ftp/smtp etc. accurately.
+    Treats tcpwrapped / ssl/unknown as web if on a known-web port.
 
 Primary output:  Port.is_web (True/False)
 Secondary output: Port.service (e.g. "https", "http", "ssh", ...)
@@ -41,12 +50,14 @@ _NMAP_WEB_SERVICES = frozenset({
     "ipp",           # CUPS / IPP — HTTP-based
 })
 
-# Ports that are almost exclusively used for web traffic.
-# When nmap returns "tcpwrapped" (firewall intercepts before service responds)
-# on these ports we treat them as web rather than silently dropping them —
-# the cost of a false positive here is low, but missing them means nuclei /
-# web_checker / httpx never scan them.
-_WEB_ONLY_PORTS = frozenset({80, 443, 8080, 8443})
+# Well-known web ports — classified deterministically by port number in Step 1.
+# port → default service name
+_KNOWN_WEB_PORTS: dict[int, str] = {
+    80:   "http",
+    443:  "https",
+    8080: "http",
+    8443: "https",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -162,11 +173,24 @@ def detect_services(session) -> int:
         logger.info(f"[service_detection:{session.id}] No open ports")
         return 0
 
-    # ── Phase 1: HTTP probing ─────────────────────────────────────────────
     results: dict[int, tuple[str, bool]] = {}  # port.id → (service, is_web)
-    unresolved: list = []
+    non_standard: list = []
 
+    # ── Step 1: well-known ports — deterministic, no probing ─────────────
     for p in open_ports:
+        if p.port in _KNOWN_WEB_PORTS:
+            service = _KNOWN_WEB_PORTS[p.port]
+            results[p.id] = (service, True)
+            logger.debug(
+                f"[service_detection:{session.id}] {p.address}:{p.port} → "
+                f"{service} (well-known port)"
+            )
+        else:
+            non_standard.append(p)
+
+    # ── Step 2: HTTP probing for non-standard ports ───────────────────────
+    unresolved: list = []
+    for p in non_standard:
         ip       = p.address
         port_num = p.port
         hostname = ip
@@ -180,7 +204,6 @@ def detect_services(session) -> int:
         elif _probe_http(hostname, port_num, "http"):
             service, is_web = "http", True
         elif hostname != ip:
-            # Retry with raw IP — handles CDN SNI rejection
             if _probe_http(ip, port_num, "https"):
                 service, is_web = "https", True
             elif _probe_http(ip, port_num, "http"):
@@ -195,39 +218,33 @@ def detect_services(session) -> int:
         else:
             unresolved.append(p)
 
-    # ── Phase 2: nmap -sV fallback for unresolved ports ──────────────────
+    # ── Step 3: nmap -sV for non-standard ports still unresolved ─────────
     if unresolved:
-        # Group unresolved ports by IP for batched nmap calls
         by_ip: dict[str, list] = {}
         for p in unresolved:
             by_ip.setdefault(p.address, []).append(p)
 
         for ip, ports in by_ip.items():
-            port_nums = [p.port for p in ports]
-            nmap_services = _nmap_sv(ip, port_nums)
+            nmap_services = _nmap_sv(ip, [p.port for p in ports])
 
             for p in ports:
                 nmap_svc = nmap_services.get(p.port, "")
                 is_web   = nmap_svc in _NMAP_WEB_SERVICES
 
-                # Last-resort: tcpwrapped or ssl/unknown on a well-known web port.
-                # - tcpwrapped: firewall intercepted before the service responded.
-                # - ssl/unknown: nmap completed TLS but couldn't identify the app
-                #   (client-cert required, strict WAF, some load balancers).
-                # Treat as web so httpx/nuclei/web_checker still pick it up.
-                if not is_web and nmap_svc in {"tcpwrapped", "ssl/unknown"} and p.port in _WEB_ONLY_PORTS:
-                    is_web  = True
-                    nmap_svc = "https" if p.port in {443, 8443} else "http"
+                # tcpwrapped / ssl/unknown: nmap connected but couldn't fingerprint.
+                # Shouldn't normally hit for non-standard ports, but handle it anyway.
+                if not is_web and nmap_svc in {"tcpwrapped", "ssl/unknown"}:
+                    is_web   = True
+                    nmap_svc = "https"
                     logger.debug(
                         f"[service_detection:{session.id}] {ip}:{p.port} — "
-                        f"tcpwrapped on well-known web port, assuming {nmap_svc}"
+                        f"{nmap_svc} on non-standard port, assuming https"
                     )
 
-                service = nmap_svc
-                results[p.id] = (service, is_web)
+                results[p.id] = (nmap_svc, is_web)
                 logger.debug(
                     f"[service_detection:{session.id}] {ip}:{p.port} → "
-                    f"{service or 'unknown'} (nmap fallback, web={is_web})"
+                    f"{nmap_svc or 'unknown'} (nmap fallback, web={is_web})"
                 )
 
     # ── Persist ───────────────────────────────────────────────────────────
@@ -240,6 +257,6 @@ def detect_services(session) -> int:
 
     logger.info(
         f"[service_detection:{session.id}] {updated}/{len(open_ports)} ports classified "
-        f"({len(unresolved)} via nmap fallback)"
+        f"({len(non_standard)} non-standard probed, {len(unresolved)} via nmap fallback)"
     )
     return updated

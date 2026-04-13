@@ -1,13 +1,14 @@
 """Unit tests for apps/core/service_detection — HTTP probes + nmap -sV fallback."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 from textwrap import dedent
 
 import pytest
 import requests
 
 from apps.core.service_detection.detector import (
-    _probe_http, _parse_nmap_sv_xml, _nmap_sv, detect_services, WEB_SERVICES,
+    _probe_http, _parse_nmap_sv_xml, _nmap_sv, detect_services,
+    WEB_SERVICES, _KNOWN_WEB_PORTS,
 )
 
 
@@ -30,7 +31,7 @@ class TestProbeHttp:
 
 
 # ---------------------------------------------------------------------------
-# WEB_SERVICES constant
+# WEB_SERVICES / _KNOWN_WEB_PORTS
 # ---------------------------------------------------------------------------
 
 class TestWebServices:
@@ -42,6 +43,17 @@ class TestWebServices:
 
     def test_ssh_is_not_web(self):
         assert "ssh" not in WEB_SERVICES
+
+
+class TestKnownWebPorts:
+    def test_standard_ports_present(self):
+        assert _KNOWN_WEB_PORTS[80]   == "http"
+        assert _KNOWN_WEB_PORTS[443]  == "https"
+        assert _KNOWN_WEB_PORTS[8080] == "http"
+        assert _KNOWN_WEB_PORTS[8443] == "https"
+
+    def test_ssh_not_known_web(self):
+        assert 22 not in _KNOWN_WEB_PORTS
 
 
 # ---------------------------------------------------------------------------
@@ -146,31 +158,40 @@ class TestDetectServices:
                             port=443, protocol="tcp", state="open", source="naabu")
         return sess
 
-    def test_https_port_classified_as_web(self):
+    # -- Well-known ports: classified by port number, no probing at all -----
+
+    def test_port_443_always_web_no_probing(self):
+        """Port 443 must be https/web regardless of probe results."""
         from apps.core.assets.models import Port
         sess = self._make_session()
 
-        with patch("apps.core.service_detection.detector._probe_http") as mock_http, \
-             patch("apps.core.service_detection.detector._nmap_sv", return_value={}):
-            mock_http.side_effect = lambda host, port, scheme: scheme == "https" and port == 443
+        with patch("apps.core.service_detection.detector._probe_http") as mock_probe, \
+             patch("apps.core.service_detection.detector._nmap_sv") as mock_nmap:
             detect_services(sess)
 
         p443 = Port.objects.get(session=sess, port=443)
         assert p443.is_web is True
         assert p443.service == "https"
+        # well-known ports must not be passed to probing or nmap
+        for c in mock_probe.call_args_list:
+            assert c.args[1] not in _KNOWN_WEB_PORTS
+        for c in mock_nmap.call_args_list:
+            assert not any(p in _KNOWN_WEB_PORTS for p in c.args[1])
 
-    def test_http_port_classified_as_web(self):
+    def test_port_80_always_web_no_probing(self):
+        """Port 80 must be http/web regardless of probe results."""
         from apps.core.assets.models import Port
         sess = self._make_session()
 
-        with patch("apps.core.service_detection.detector._probe_http") as mock_http, \
+        with patch("apps.core.service_detection.detector._probe_http"), \
              patch("apps.core.service_detection.detector._nmap_sv", return_value={}):
-            mock_http.side_effect = lambda host, port, scheme: port == 80 and scheme == "http"
             detect_services(sess)
 
         p80 = Port.objects.get(session=sess, port=80)
         assert p80.is_web is True
         assert p80.service == "http"
+
+    # -- Non-standard ports: SSH via nmap -----------------------------------
 
     def test_ssh_port_classified_as_non_web(self):
         from apps.core.assets.models import Port
@@ -184,109 +205,98 @@ class TestDetectServices:
         assert p22.is_web is False
         assert p22.service == "ssh"
 
-    def test_nmap_fallback_classifies_https(self):
-        """When HTTP probes fail, nmap -sV should detect https and mark is_web=True."""
-        from apps.core.assets.models import Port
-        sess = self._make_session()
+    # -- Non-standard ports: nmap fallback ----------------------------------
+
+    def test_nmap_fallback_non_standard_https(self):
+        """nmap should classify non-standard HTTPS ports correctly."""
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import IPAddress, Port
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                            port=9443, protocol="tcp", state="open", source="naabu")
 
         with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
              patch("apps.core.service_detection.detector._nmap_sv",
-                   return_value={443: "https", 22: "ssh", 80: "http"}):
+                   return_value={9443: "https"}):
             detect_services(sess)
 
-        assert Port.objects.get(session=sess, port=443).is_web is True
-        assert Port.objects.get(session=sess, port=443).service == "https"
-        assert Port.objects.get(session=sess, port=80).is_web is True
-        assert Port.objects.get(session=sess, port=22).is_web is False
+        p = Port.objects.get(session=sess, port=9443)
+        assert p.is_web is True
+        assert p.service == "https"
 
-    def test_nmap_fallback_ssl_tunnel(self):
-        """nmap tunnel=ssl + name=http is normalised to ssl/http and treated as web."""
-        from apps.core.assets.models import Port
-        sess = self._make_session()
+    def test_nmap_fallback_ssl_tunnel_non_standard(self):
+        """tunnel=ssl + name=http on non-standard port → ssl/http → web."""
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import IPAddress, Port
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                            port=9443, protocol="tcp", state="open", source="naabu")
 
         with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
              patch("apps.core.service_detection.detector._nmap_sv",
-                   return_value={443: "ssl/http"}):  # as normalised by _parse_nmap_sv_xml
+                   return_value={9443: "ssl/http"}):
             detect_services(sess)
 
-        p443 = Port.objects.get(session=sess, port=443)
-        assert p443.is_web is True
-        assert p443.service == "ssl/http"
+        p = Port.objects.get(session=sess, port=9443)
+        assert p.is_web is True
+        assert p.service == "ssl/http"
 
-    def test_nmap_fallback_unknown_service_stays_non_web(self):
-        """If nmap returns an unknown service, port stays non-web."""
-        from apps.core.assets.models import Port
-        sess = self._make_session()
+    def test_nmap_fallback_unknown_stays_non_web(self):
+        """Unknown nmap service on non-standard port stays non-web."""
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import IPAddress, Port
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                            port=9999, protocol="tcp", state="open", source="naabu")
 
         with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
              patch("apps.core.service_detection.detector._nmap_sv",
-                   return_value={22: "unknown", 80: "unknown", 443: "unknown"}):
+                   return_value={9999: "unknown"}):
             detect_services(sess)
 
-        assert Port.objects.get(session=sess, port=443).is_web is False
+        assert Port.objects.get(session=sess, port=9999).is_web is False
 
-    def test_nmap_fallback_not_called_when_http_succeeds(self):
-        """nmap should not be invoked when HTTP probing resolves all ports."""
+    def test_nmap_not_called_for_well_known_ports(self):
+        """nmap must never be invoked for well-known web ports."""
         sess = self._make_session()
 
-        with patch("apps.core.service_detection.detector._probe_http", return_value=True), \
-             patch("apps.core.service_detection.detector._nmap_sv") as mock_nmap:
+        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.service_detection.detector._nmap_sv", return_value={}) as mock_nmap:
             detect_services(sess)
 
-        mock_nmap.assert_not_called()
+        for c in mock_nmap.call_args_list:
+            probed = c.args[1]
+            assert not any(p in _KNOWN_WEB_PORTS for p in probed)
+
+    def test_undetectable_non_standard_port_stays_non_web(self):
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import IPAddress, Port
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                            port=9999, protocol="tcp", state="open", source="naabu")
+
+        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.service_detection.detector._nmap_sv", return_value={}):
+            detect_services(sess)
+
+        assert Port.objects.get(session=sess, port=9999).is_web is False
+        assert Port.objects.get(session=sess, port=9999).service == ""
 
     def test_returns_count_of_updated_ports(self):
         sess = self._make_session()
 
-        with patch("apps.core.service_detection.detector._probe_http") as mock_http, \
-             patch("apps.core.service_detection.detector._nmap_sv", return_value={}):
-            mock_http.side_effect = lambda host, port, scheme: port in (80, 443)
+        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.service_detection.detector._nmap_sv", return_value={22: "ssh"}):
             count = detect_services(sess)
 
-        assert count == 2
+        # 80→http, 443→https (well-known), 22→ssh (nmap) — all 3 updated
+        assert count == 3
 
     def test_empty_session(self):
         from apps.core.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
         assert detect_services(sess) == 0
-
-    def test_ssl_unknown_on_443_treated_as_web(self):
-        """ssl/unknown on port 443 (client cert / WAF) should be treated as https/web."""
-        from apps.core.assets.models import Port
-        sess = self._make_session()
-
-        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._nmap_sv",
-                   return_value={443: "ssl/unknown", 22: "ssl/unknown"}):
-            detect_services(sess)
-
-        assert Port.objects.get(session=sess, port=443).is_web is True
-        assert Port.objects.get(session=sess, port=443).service == "https"
-        assert Port.objects.get(session=sess, port=22).is_web is False  # not a web-only port
-
-    def test_tcpwrapped_on_443_treated_as_web(self):
-        """tcpwrapped on port 443 should be treated as https/web (firewall intercept)."""
-        from apps.core.assets.models import Port
-        sess = self._make_session()
-
-        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._nmap_sv",
-                   return_value={443: "tcpwrapped", 80: "tcpwrapped", 22: "tcpwrapped"}):
-            detect_services(sess)
-
-        assert Port.objects.get(session=sess, port=443).is_web is True
-        assert Port.objects.get(session=sess, port=443).service == "https"
-        assert Port.objects.get(session=sess, port=80).is_web is True
-        assert Port.objects.get(session=sess, port=80).service == "http"
-        assert Port.objects.get(session=sess, port=22).is_web is False  # not a web-only port
-
-    def test_undetectable_port_stays_non_web(self):
-        from apps.core.assets.models import Port
-        sess = self._make_session()
-
-        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._nmap_sv", return_value={}):
-            detect_services(sess)
-
-        assert Port.objects.get(session=sess, port=22).is_web is False
-        assert Port.objects.get(session=sess, port=22).service == ""
