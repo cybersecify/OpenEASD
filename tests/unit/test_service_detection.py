@@ -378,7 +378,7 @@ class TestBannerScore:
     def test_esmtp_negative(self):
         assert self.fn("220 mail.example.com ESMTP\r\n") == -70
 
-    def test_pop3_positive_ok_negative(self):
+    def test_pop3_ok_greeting_negative(self):
         assert self.fn("+OK POP3 server ready\r\n") == -70
 
     def test_imap_ok_negative(self):
@@ -399,6 +399,10 @@ class TestBannerScore:
     def test_unknown_banner_zero(self):
         assert self.fn("some random binary garbage \x00\x01\x02") == 0
 
+    def test_web_signal_takes_priority_over_non_web(self):
+        # If banner contains both HTTP/ and a non-web signal, web wins (checked first)
+        assert self.fn("HTTP/1.1 200 OK\r\n220 ") == 70
+
 
 # ---------------------------------------------------------------------------
 # _nmap_score
@@ -417,6 +421,9 @@ class TestNmapScore:
 
     def test_ssl_http_positive(self):
         assert self.fn("ssl/http", 8443) == 70
+
+    def test_ssl_https_positive(self):
+        assert self.fn("ssl/https", 443) == 70
 
     def test_ssh_negative(self):
         assert self.fn("ssh", 22) == -80

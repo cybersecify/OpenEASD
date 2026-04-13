@@ -161,7 +161,7 @@ def _nmap_score(nmap_svc: str, port_num: int) -> int:
     if nmap_svc == "ssl/unknown":
         return 40 if port_num in _KNOWN_WEB_PORTS else 10
     if nmap_svc == "tcpwrapped":
-        return 0
+        return 0  # no protocol information — intentionally neutral (was a false-positive source)
     return 0
 
 
