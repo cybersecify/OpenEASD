@@ -1,20 +1,20 @@
 {% for vuln in vulns %}
-<tr class="hover:bg-gray-50">
-  <td class="px-6 py-4 text-sm text-gray-900">{{ vuln.title }}</td>
-  <td class="px-6 py-4 text-sm font-mono text-gray-500">{{ vuln.host }}</td>
+<tr class="border-t border-[rgba(48,192,116,0.05)] hover:bg-[rgba(48,192,116,0.025)]">
+  <td class="px-6 py-4 text-sm text-[#e8f5ef]">{{ vuln.title }}</td>
+  <td class="px-6 py-4 text-sm font-mono text-[#6b9e7e]">{{ vuln.host }}</td>
   <td class="px-6 py-4 text-sm">
     {% include "partials/severity_badge.html" with severity=vuln.severity %}
   </td>
-  <td class="px-6 py-4 text-sm text-gray-500">{{ vuln.source|upper }}</td>
+  <td class="px-6 py-4 text-sm text-[#6b9e7e]">{{ vuln.source|upper }}</td>
   <td class="px-6 py-4 text-sm" id="finding-status-{{ vuln.obj.id }}">
     {% include "partials/finding_status_cell.html" with finding=vuln.obj %}
   </td>
   <td class="px-6 py-4 text-sm text-center">
-    <a href="{% url 'scan-detail' vuln.session.uuid %}" class="text-indigo-500 hover:text-indigo-700" title="View scan" aria-label="View scan">↗</a>
+    <a href="{% url 'scan-detail' vuln.session.uuid %}" class="text-[#30c074] hover:text-[#6ee7b7]" title="View scan" aria-label="View scan">↗</a>
   </td>
 </tr>
 {% empty %}
 <tr>
-  <td colspan="6" class="px-6 py-8 text-center text-gray-400 text-sm">No findings found.</td>
+  <td colspan="6" class="px-6 py-8 text-center text-[#3d6b4f] text-sm">No findings found.</td>
 </tr>
 {% endfor %}

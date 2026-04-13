@@ -438,7 +438,7 @@ class TestFindingsPageCards:
 
     def test_selected_card_has_ring(self, auth_client):
         resp = auth_client.get(reverse("finding-list") + "?severity=critical")
-        assert b"ring-red-400" in resp.content
+        assert b"ring-[rgba(239,68,68,0.50)]" in resp.content
 @pytest.mark.django_db
 class TestScanListCards:
     """Status summary cards — count_* context variables."""
