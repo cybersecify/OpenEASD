@@ -1,22 +1,25 @@
-"""Service detection — classifies ports as web or non-web.
+"""Service detection — classifies ports as web or non-web using confidence scoring.
 
-Classification strategy (most accurate first, fallback last):
+Classification strategy (highest signal first):
 
-  Step 1 — HTTP probing (all ports)
-    1a. HTTPS + subdomain hostname  (CDN/SNI compatible)
-    1b. HTTP  + subdomain hostname
-    1c. HTTPS + raw IP              (CDN SNI rejection fallback)
-    1d. HTTP  + raw IP
+  Step 1 — Banner grab (all ports, cheapest signal)
+    Raw TCP read: SSH/FTP/SMTP banner → score −70, skip HTTP probing
+                  HTTP banner → score +70, run 1 HTTP probe to confirm
+                  Empty/unknown → proceed to HTTP probing
 
-  Step 2 — nmap -sV for still-unresolved ports
-    Batched per IP; accurately fingerprints ssh/ftp/smtp/https etc.
-    Treats tcpwrapped / ssl/unknown on known-web ports as web.
+  Step 2 — HTTP probing (skipped when banner strongly non-web)
+    HTTPS + hostname (score +80), HTTP + hostname (score +80)
+    HTTPS + raw IP (score +60), HTTP + raw IP (score +60)
+    Stops at first success.
 
-  Step 3 — Well-known port fallback (last resort)
-    80, 8080  → http  (web)
-    443, 8443 → https (web)
-    Only applied when both probing and nmap fail to classify the port
-    (e.g. CloudFront blocking all probes on port 443).
+  Step 3 — nmap -sV for still-unresolved ports
+    Batched per (IP, hostname). Known web → +70, known non-web → −80.
+    tcpwrapped → 0 (no information). ssl/unknown → +40 (known web port) or +10.
+
+  Step 4 — Well-known port hint (always applied)
+    80, 443, 8080, 8443 → +20
+
+Final: score >= CLASSIFICATION_THRESHOLD (50) → is_web=True
 
 Primary output:  Port.is_web (True/False)
 Secondary output: Port.service (e.g. "https", "http", "ssh", ...)
@@ -265,9 +268,17 @@ def _nmap_sv(ip: str, ports: list[int], hostname: str | None = None) -> dict[int
 
 def detect_services(session) -> int:
     """
-    Classify all open ports as web or non-web and set Port.service.
+    Classify all open ports as web or non-web using confidence scoring.
 
-    Returns the count of ports updated in the database.
+    Each port accumulates a score from independent signals:
+      banner grab → +70 (HTTP) or −70 (SSH/FTP/SMTP)
+      HTTP probe  → +80 (hostname) or +60 (IP fallback)
+      nmap -sV    → +70 (web service) or −80 (non-web service)
+      port hint   → +20 for 80/443/8080/8443
+
+    score >= CLASSIFICATION_THRESHOLD (50) → is_web=True
+
+    Returns the count of ports whose service or is_web changed.
     """
     from apps.core.assets.models import Port
 
@@ -279,10 +290,12 @@ def detect_services(session) -> int:
         logger.info(f"[service_detection:{session.id}] No open ports")
         return 0
 
-    results: dict[int, tuple[str, bool]] = {}  # port.id → (service, is_web)
+    scores: dict[int, int] = {}         # port.id → accumulated score
+    http_services: dict[int, str] = {}  # port.id → service name from HTTP probe
+    nmap_results: dict[int, str] = {}   # port.id → service name from nmap
+    needs_nmap: list = []
 
-    # ── Step 1: HTTP probing (all ports) ──────────────────────────────────
-    unresolved: list = []
+    # ── Steps 1+2: Banner grab then HTTP probing ──────────────────────────────
     for p in open_ports:
         ip       = p.address
         port_num = p.port
@@ -290,34 +303,46 @@ def detect_services(session) -> int:
         if p.ip_address and p.ip_address.subdomain:
             hostname = p.ip_address.subdomain.subdomain
 
-        service, is_web = "", False
+        # Step 1: banner grab — cheapest signal, runs first
+        banner  = _grab_banner(hostname, port_num)
+        b_score = _banner_score(banner)
+        score   = b_score
 
-        if _probe_http(hostname, port_num, "https"):
-            service, is_web = "https", True
-        elif _probe_http(hostname, port_num, "http"):
-            service, is_web = "http", True
-        elif hostname != ip:
-            if _probe_http(ip, port_num, "https"):
-                service, is_web = "https", True
-            elif _probe_http(ip, port_num, "http"):
-                service, is_web = "http", True
+        # Step 2: HTTP probing — skip when banner is clearly non-web (saves 4 probes)
+        http_svc = ""
+        if b_score >= -50:
+            if _probe_http(hostname, port_num, "https"):
+                score += 80
+                http_svc = "https"
+            elif _probe_http(hostname, port_num, "http"):
+                score += 80
+                http_svc = "http"
+            elif hostname != ip:
+                if _probe_http(ip, port_num, "https"):
+                    score += 60
+                    http_svc = "https"
+                elif _probe_http(ip, port_num, "http"):
+                    score += 60
+                    http_svc = "http"
 
-        if is_web:
-            results[p.id] = (service, is_web)
-            logger.debug(
-                f"[service_detection:{session.id}] {hostname}:{port_num} → "
-                f"{service} (http probe)"
-            )
-        else:
-            unresolved.append(p)
+        # Step 4: port hint — always applied
+        score += _port_hint_score(port_num)
 
-    # ── Step 2: nmap -sV for still-unresolved ports ───────────────────────
-    still_unresolved: list = []
-    if unresolved:
-        # Group by (ip, hostname) so each nmap call uses the right SNI name.
-        # Ports on the same IP but different subdomains get separate nmap calls.
+        scores[p.id]        = score
+        http_services[p.id] = http_svc
+
+        logger.debug(
+            f"[service_detection:{session.id}] {hostname}:{port_num} "
+            f"banner_score={b_score} http_svc={http_svc!r} score_so_far={score}"
+        )
+
+        if not http_svc:
+            needs_nmap.append(p)
+
+    # ── Step 3: nmap -sV — only for ports not resolved by HTTP ───────────────
+    if needs_nmap:
         by_target: dict[tuple[str, str], list] = {}
-        for p in unresolved:
+        for p in needs_nmap:
             hostname = p.address
             if p.ip_address and p.ip_address.subdomain:
                 hostname = p.ip_address.subdomain.subdomain
@@ -325,48 +350,39 @@ def detect_services(session) -> int:
 
         for (ip, hostname), ports in by_target.items():
             nmap_services = _nmap_sv(ip, [p.port for p in ports], hostname=hostname)
-
             for p in ports:
                 nmap_svc = nmap_services.get(p.port, "")
-                is_web   = nmap_svc in _NMAP_WEB_SERVICES
+                nmap_results[p.id] = nmap_svc
+                n_score = _nmap_score(nmap_svc, p.port)
+                scores[p.id] += n_score
+                logger.debug(
+                    f"[service_detection:{session.id}] {hostname}:{p.port} "
+                    f"nmap={nmap_svc!r} nmap_score={n_score} total={scores[p.id]}"
+                )
 
-                if not is_web and nmap_svc in {"tcpwrapped", "ssl/unknown"}:
-                    is_web   = True
-                    nmap_svc = "https" if p.port in {443, 8443} else "http"
-                    logger.debug(
-                        f"[service_detection:{session.id}] {hostname}:{p.port} — "
-                        f"nmap={nmap_svc!r}, assuming {nmap_svc}"
-                    )
-
-                if is_web or nmap_svc:
-                    results[p.id] = (nmap_svc, is_web)
-                    logger.debug(
-                        f"[service_detection:{session.id}] {hostname}:{p.port} → "
-                        f"{nmap_svc or 'unknown'} (nmap, web={is_web})"
-                    )
-                else:
-                    still_unresolved.append(p)
-
-    # ── Step 3: well-known port fallback (last resort) ────────────────────
-    for p in still_unresolved:
-        if p.port in _KNOWN_WEB_PORTS:
-            service = _KNOWN_WEB_PORTS[p.port]
-            results[p.id] = (service, True)
-            logger.debug(
-                f"[service_detection:{session.id}] {p.address}:{p.port} → "
-                f"{service} (well-known port fallback)"
-            )
-
-    # ── Persist ───────────────────────────────────────────────────────────
+    # ── Persist ───────────────────────────────────────────────────────────────
     updated = 0
     for p in open_ports:
-        service, is_web = results.get(p.id, ("", False))
+        score  = scores[p.id]
+        is_web = score >= CLASSIFICATION_THRESHOLD
+
+        # Determine service name: HTTP probe wins, then nmap, then port default
+        service = http_services.get(p.id, "") or nmap_results.get(p.id, "")
+        # Sanitise ambiguous nmap names: if classified web but name is uninformative,
+        # use the port-based default
+        if is_web and service in {"ssl/unknown", "tcpwrapped", ""}:
+            service = _KNOWN_WEB_PORTS.get(p.port, "https" if p.port in {443, 8443} else "http")
+
+        logger.info(
+            f"[service_detection:{session.id}] {p.address}:{p.port} "
+            f"score={score} → {'web' if is_web else 'non-web'} service={service!r}"
+        )
+
         if service != p.service or is_web != p.is_web:
             Port.objects.filter(id=p.id).update(service=service, is_web=is_web)
             updated += 1
 
     logger.info(
-        f"[service_detection:{session.id}] {updated}/{len(open_ports)} ports classified "
-        f"({len(unresolved)} to nmap, {len(still_unresolved)} to well-known fallback)"
+        f"[service_detection:{session.id}] {updated}/{len(open_ports)} ports classified"
     )
     return updated
