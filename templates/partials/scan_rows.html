@@ -1,3 +1,4 @@
+{% load scan_tags %}
 {% for scan in scans %}
 <tbody x-data="{ confirmDelete: false }">
 <tr class="hover:bg-gray-50">
@@ -14,7 +15,12 @@
     {% include "partials/status_badge.html" with status=scan.status %}
   </td>
   <td class="px-6 py-4 text-sm text-gray-900">{{ scan.total_findings }}</td>
-  <td class="px-6 py-4 text-sm text-gray-500">{{ scan.start_time|date:"M d, Y H:i" }}</td>
+  <td class="px-6 py-4 text-sm">
+    <div class="text-gray-500">{{ scan.start_time|date:"M d, Y H:i" }}</div>
+    {% with label=scan|scan_duration_label %}
+    {% if label %}<div class="text-xs text-slate-400">{{ label }}</div>{% endif %}
+    {% endwith %}
+  </td>
   <td class="px-6 py-4 text-right">
     <span x-show="!confirmDelete" class="flex items-center justify-end gap-3">
       <a href="{% url 'scan-detail' scan.uuid %}" class="text-indigo-600 hover:underline text-sm">View</a>
