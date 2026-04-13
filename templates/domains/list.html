@@ -67,7 +67,7 @@
         <td class="px-6 py-4 text-sm font-mono font-medium text-[#e8f5ef]">
           {{ domain.name }}
           {% if domain.name in recurring_domains %}
-          <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-violet-100 text-violet-700">scheduled</span>
+          <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-[rgba(234,179,8,0.10)] text-[#fde047]">scheduled</span>
           {% endif %}
         </td>
         <td class="px-6 py-4 text-sm">
@@ -79,8 +79,8 @@
         </td>
         <td class="px-6 py-4 text-sm">
           {% if domain.is_active %}
-          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
-            <span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span> Active
+          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-[rgba(48,192,116,0.12)] text-[#6ee7b7]">
+            <span class="w-1.5 h-1.5 bg-[#30c074] rounded-full"></span> Active
           </span>
           {% else %}
           <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-[rgba(48,192,116,0.06)] text-[#6b9e7e]">
@@ -91,7 +91,7 @@
         <td class="px-6 py-4 text-sm">
           {% if domain.last_scan %}
           <div class="text-[#6b9e7e]">{{ domain.last_scan.start_time|date:"M d, Y H:i" }}</div>
-          <div class="text-xs text-slate-400">{{ domain.last_scan.status }}</div>
+          <div class="text-xs text-[#3d6b4f]">{{ domain.last_scan.status }}</div>
           {% else %}
           <span class="text-[#3d6b4f] italic">Never scanned</span>
           {% endif %}
@@ -100,10 +100,10 @@
           {% with fs=domain.findings_summary %}
           {% if fs %}
           <div class="flex flex-wrap gap-1">
-            {% if fs.critical %}<span class="bg-red-50 text-red-600 text-xs font-semibold px-1.5 py-0.5 rounded">{{ fs.critical }} critical</span>{% endif %}
-            {% if fs.high %}<span class="bg-orange-50 text-orange-600 text-xs font-semibold px-1.5 py-0.5 rounded">{{ fs.high }} high</span>{% endif %}
-            {% if fs.medium %}<span class="bg-yellow-50 text-yellow-700 text-xs font-semibold px-1.5 py-0.5 rounded">{{ fs.medium }} medium</span>{% endif %}
-            {% if fs.low %}<span class="bg-slate-100 text-slate-600 text-xs font-semibold px-1.5 py-0.5 rounded">{{ fs.low }} low</span>{% endif %}
+            {% if fs.critical %}<span class="bg-[rgba(239,68,68,0.12)] text-[#fca5a5] text-xs font-semibold px-1.5 py-0.5 rounded">{{ fs.critical }} critical</span>{% endif %}
+            {% if fs.high %}<span class="bg-[rgba(249,115,22,0.12)] text-[#fdba74] text-xs font-semibold px-1.5 py-0.5 rounded">{{ fs.high }} high</span>{% endif %}
+            {% if fs.medium %}<span class="bg-[rgba(234,179,8,0.10)] text-[#fde047] text-xs font-semibold px-1.5 py-0.5 rounded">{{ fs.medium }} medium</span>{% endif %}
+            {% if fs.low %}<span class="bg-[rgba(148,163,184,0.10)] text-[#94a3b8] text-xs font-semibold px-1.5 py-0.5 rounded">{{ fs.low }} low</span>{% endif %}
           </div>
           {% else %}
           <span class="text-[#3d6b4f]">—</span>
