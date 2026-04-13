@@ -212,19 +212,24 @@ class TestDashboardRedesign:
         from apps.core.findings.models import Finding
         from apps.core.domains.models import Domain
         from django.utils import timezone
-        Domain.objects.get_or_create(name="example.com", defaults={"is_active": True})
+        # Use a distinct domain name not shared with other fixtures
+        Domain.objects.get_or_create(name="nmap-target.io", defaults={"is_active": True})
         session = ScanSession.objects.create(
-            domain="example.com", scan_type="full", status="completed",
+            domain="nmap-target.io", scan_type="full", status="completed",
             end_time=timezone.now()
         )
+        # target is an IP:port — should NOT appear as the domain column value
         Finding.objects.create(
-            session=session, source="nmap", target="1.2.3.4:443",
+            session=session, source="nmap", target="10.0.0.1:443",
             check_type="cve", severity="critical", title="CVE-2023-1234",
             description="X", remediation="X",
             extra={"cve": "CVE-2023-1234", "cvss_score": 9.8},
         )
         resp = auth_client.get("/")
-        assert b"example.com" in resp.content
+        # Apex domain (from session) must appear in the urgent findings section
+        assert b"nmap-target.io" in resp.content
+        # Raw IP:port must NOT appear as a domain value
+        assert b"10.0.0.1:443" not in resp.content
 
 
 @pytest.mark.django_db
