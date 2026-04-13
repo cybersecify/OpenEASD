@@ -4,42 +4,42 @@
 
 {% block content %}
 <div class="flex items-center justify-between mb-6">
-  <h1 class="text-2xl font-bold text-gray-900">Workflows</h1>
-  <a href="{% url 'workflow-create' %}" class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm hover:bg-indigo-700">+ New Workflow</a>
+  <h1 class="text-2xl font-extrabold tracking-tight text-[#e8f5ef]">Workflows</h1>
+  <a href="{% url 'workflow-create' %}" class="bg-[#30c074] text-[#022c22] font-bold px-4 py-2 rounded-md text-sm hover:bg-[#28a863]">+ New Workflow</a>
 </div>
 
 {% if workflows %}
 <div class="space-y-4">
   {% for wf in workflows %}
   <div x-data="{ confirmDelete: false }">
-    <div class="bg-white rounded-lg shadow px-6 py-5 flex items-center justify-between">
+    <div class="bg-[#0d2614] rounded-lg border border-[rgba(48,192,116,0.12)] px-6 py-5 flex items-center justify-between">
       <div>
         <div class="flex items-center gap-3">
-          <a href="{% url 'workflow-detail' wf.pk %}" class="font-semibold text-gray-900 hover:text-indigo-600">{{ wf.name }}</a>
-          {% if wf.is_default %}<span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">Default</span>{% endif %}
+          <a href="{% url 'workflow-detail' wf.pk %}" class="text-[#e8f5ef] hover:text-[#30c074]">{{ wf.name }}</a>
+          {% if wf.is_default %}<span class="text-xs bg-[rgba(48,192,116,0.10)] text-[#30c074] px-2 py-0.5 rounded-full">Default</span>{% endif %}
         </div>
-        {% if wf.description %}<p class="text-sm text-gray-500 mt-1">{{ wf.description }}</p>{% endif %}
+        {% if wf.description %}<p class="text-sm text-[#6b9e7e] mt-1">{{ wf.description }}</p>{% endif %}
         <div class="flex gap-2 mt-2 flex-wrap">
           {% for step in wf.steps.all %}
-          <span class="text-xs px-2 py-0.5 rounded {% if step.enabled %}bg-green-100 text-green-700{% else %}bg-gray-100 text-gray-400 line-through{% endif %}">
+          <span class="text-xs px-2 py-0.5 rounded {% if step.enabled %}bg-[rgba(48,192,116,0.12)] text-[#6ee7b7]{% else %}bg-[rgba(255,255,255,0.05)] text-[#1e3d2a] line-through{% endif %}">
             {{ step.tool }}
           </span>
           {% endfor %}
         </div>
       </div>
       <div class="flex items-center gap-4">
-        <span class="text-sm text-gray-400">{{ wf.runs.count }} run{{ wf.runs.count|pluralize }}</span>
+        <span class="text-sm text-[#3d6b4f]">{{ wf.runs.count }} run{{ wf.runs.count|pluralize }}</span>
         {% if not wf.is_default %}
         <button @click="confirmDelete = true" x-show="!confirmDelete" class="text-xs text-red-500 hover:text-red-700">Delete</button>
         {% endif %}
       </div>
     </div>
-    <div x-show="confirmDelete" x-cloak class="bg-red-50 border border-red-200 rounded-lg px-6 py-3 mt-1 flex items-center justify-between">
-      <p class="text-sm text-red-700">
+    <div x-show="confirmDelete" x-cloak class="bg-[rgba(239,68,68,0.08)] border border-[rgba(239,68,68,0.20)] rounded-lg px-6 py-3 mt-1 flex items-center justify-between">
+      <p class="text-sm text-[#fca5a5]">
         Delete <span class="font-bold">{{ wf.name }}</span>? This will remove the workflow configuration.
       </p>
       <div class="flex items-center gap-3">
-        <button @click="confirmDelete = false" class="text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+        <button @click="confirmDelete = false" class="text-sm text-[#6b9e7e]">Cancel</button>
         <form method="post" action="{% url 'workflow-delete' wf.pk %}">
           {% csrf_token %}
           <button type="submit" class="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700">Yes, delete</button>
@@ -50,9 +50,9 @@
   {% endfor %}
 </div>
 {% else %}
-<div class="bg-white rounded-lg shadow px-6 py-12 text-center text-gray-400">
+<div class="bg-[#0d2614] rounded-lg border border-[rgba(48,192,116,0.12)] px-6 py-12 text-center text-[#3d6b4f]">
   <p class="mb-4">No workflows yet.</p>
-  <a href="{% url 'workflow-create' %}" class="text-indigo-600 hover:underline">Create your first workflow</a>
+  <a href="{% url 'workflow-create' %}" class="text-[#30c074] hover:underline">Create your first workflow</a>
 </div>
 {% endif %}
 {% endblock %}
