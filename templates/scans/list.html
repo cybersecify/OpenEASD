@@ -49,7 +49,6 @@
         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-gray-100">
       {% for job in scheduled %}
       <tbody x-data="{ confirmCancel: false }">
       <tr class="hover:bg-gray-50">
@@ -85,7 +84,6 @@
       </tr>
       </tbody>
       {% endfor %}
-    </tbody>
   </table>
 </div>
 {% endif %}
