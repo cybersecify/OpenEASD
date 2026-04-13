@@ -23,6 +23,7 @@ Secondary output: Port.service (e.g. "https", "http", "ssh", ...)
 """
 
 import logging
+import socket
 import subprocess
 
 import defusedxml.ElementTree as ET
@@ -78,6 +79,31 @@ def _probe_http(host: str, port: int, scheme: str) -> bool:
         return True
     except requests.RequestException:
         return False
+
+
+# ---------------------------------------------------------------------------
+# Banner grabbing
+# ---------------------------------------------------------------------------
+
+BANNER_TIMEOUT = 3
+BANNER_READ_BYTES = 512
+
+
+def _grab_banner(host: str, port: int) -> str:
+    """
+    Open a raw TCP connection and read the first bytes the server sends.
+
+    Returns the decoded banner string, or "" on any failure (timeout,
+    refused, no data). Used to detect SSH/FTP/SMTP before wasting HTTP
+    probe attempts on them.
+    """
+    try:
+        with socket.create_connection((host, port), timeout=BANNER_TIMEOUT) as sock:
+            sock.settimeout(BANNER_TIMEOUT)
+            data = sock.recv(BANNER_READ_BYTES)
+            return data.decode("utf-8", errors="replace")
+    except Exception:
+        return ""
 
 
 # ---------------------------------------------------------------------------

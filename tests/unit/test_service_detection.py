@@ -8,7 +8,7 @@ import requests
 
 from apps.core.service_detection.detector import (
     _probe_http, _parse_nmap_sv_xml, _nmap_sv, detect_services,
-    WEB_SERVICES, _KNOWN_WEB_PORTS,
+    WEB_SERVICES, _KNOWN_WEB_PORTS, _grab_banner,
 )
 
 
@@ -307,3 +307,48 @@ class TestDetectServices:
         from apps.core.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
         assert detect_services(sess) == 0
+
+
+# ---------------------------------------------------------------------------
+# _grab_banner
+# ---------------------------------------------------------------------------
+
+class TestGrabBanner:
+    def test_returns_banner_on_successful_connect(self):
+        import socket
+        from apps.core.service_detection.detector import _grab_banner
+        mock_sock = MagicMock()
+        mock_sock.recv.return_value = b"SSH-2.0-OpenSSH_8.9\r\n"
+        mock_sock.__enter__ = lambda s: s
+        mock_sock.__exit__ = MagicMock(return_value=False)
+        with patch("apps.core.service_detection.detector.socket.create_connection",
+                   return_value=mock_sock):
+            result = _grab_banner("1.2.3.4", 22)
+        assert result == "SSH-2.0-OpenSSH_8.9\r\n"
+
+    def test_returns_empty_on_connection_refused(self):
+        import socket
+        from apps.core.service_detection.detector import _grab_banner
+        with patch("apps.core.service_detection.detector.socket.create_connection",
+                   side_effect=ConnectionRefusedError()):
+            result = _grab_banner("1.2.3.4", 22)
+        assert result == ""
+
+    def test_returns_empty_on_timeout(self):
+        import socket
+        from apps.core.service_detection.detector import _grab_banner
+        with patch("apps.core.service_detection.detector.socket.create_connection",
+                   side_effect=socket.timeout()):
+            result = _grab_banner("1.2.3.4", 9999)
+        assert result == ""
+
+    def test_decodes_bytes_ignoring_errors(self):
+        from apps.core.service_detection.detector import _grab_banner
+        mock_sock = MagicMock()
+        mock_sock.recv.return_value = b"\xff\xfe HTTP/1.1 200 OK"
+        mock_sock.__enter__ = lambda s: s
+        mock_sock.__exit__ = MagicMock(return_value=False)
+        with patch("apps.core.service_detection.detector.socket.create_connection",
+                   return_value=mock_sock):
+            result = _grab_banner("1.2.3.4", 80)
+        assert "HTTP/1.1 200 OK" in result
