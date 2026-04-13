@@ -37,6 +37,7 @@ _SERVICE_TAG_MAP = {
     "ldaps":         "ldap",
     "vnc":           "vnc",
     "rdp":           "rdp",
+    "ms-wbt-server": "rdp",
     "elasticsearch": "elasticsearch",
     "memcached":     "memcached",
     "smb":           "smb",

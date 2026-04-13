@@ -126,6 +126,13 @@ def test_build_tags_rdp():
     assert "rdp" in tags
 
 
+def test_build_tags_ms_wbt_server_maps_to_rdp():
+    """nmap names RDP as ms-wbt-server — must map to rdp tag."""
+    ports = [_port("ms-wbt-server")]
+    tags = _build_tags(ports)
+    assert "rdp" in tags
+
+
 def test_build_tags_elasticsearch():
     ports = [_port("elasticsearch")]
     tags = _build_tags(ports)
