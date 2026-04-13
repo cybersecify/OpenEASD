@@ -439,6 +439,49 @@ class TestFindingsPageCards:
     def test_selected_card_has_ring(self, auth_client):
         resp = auth_client.get(reverse("finding-list") + "?severity=critical")
         assert b"ring-red-400" in resp.content
+@pytest.mark.django_db
+class TestScanListCards:
+    """Status summary cards — count_* context variables."""
+
+    def _make_session(self, status, domain="cards-scan.com"):
+        from apps.core.scans.models import ScanSession
+        from django.utils import timezone
+        return ScanSession.objects.create(
+            domain=domain, scan_type="full", status=status,
+            end_time=timezone.now() if status in ("completed", "failed") else None,
+        )
+
+    def test_count_vars_in_context(self, auth_client):
+        resp = auth_client.get(reverse("scan-list"))
+        assert resp.status_code == 200
+        assert "count_running" in resp.context
+        assert "count_completed" in resp.context
+        assert "count_failed" in resp.context
+
+    def test_count_running_counts_correctly(self, auth_client):
+        baseline_resp = auth_client.get(reverse("scan-list"))
+        baseline = baseline_resp.context["count_running"]
+        self._make_session("running", domain="r1.com")
+        self._make_session("running", domain="r2.com")
+        resp = auth_client.get(reverse("scan-list"))
+        assert resp.context["count_running"] == baseline + 2
+
+    def test_count_completed_excludes_running(self, auth_client):
+        baseline_resp = auth_client.get(reverse("scan-list"))
+        baseline = baseline_resp.context["count_completed"]
+        self._make_session("running", domain="running-excluded.com")
+        resp = auth_client.get(reverse("scan-list"))
+        assert resp.context["count_completed"] == baseline
+
+    def test_status_card_links_present(self, auth_client):
+        resp = auth_client.get(reverse("scan-list"))
+        assert b"?status=running" in resp.content
+        assert b"?status=completed" in resp.content
+        assert b"?status=failed" in resp.content
+
+    def test_selected_card_has_ring(self, auth_client):
+        resp = auth_client.get(reverse("scan-list") + "?status=completed")
+        assert b"ring-green-400" in resp.content
 
 
 # ---------------------------------------------------------------------------

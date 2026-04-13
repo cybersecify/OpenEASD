@@ -168,11 +168,18 @@ def scan_list(request):
     except Exception:
         logger.exception("[scan_list] Failed to fetch scheduled jobs")
 
+    count_running   = ScanSession.objects.filter(status="running").count()
+    count_completed = ScanSession.objects.filter(status="completed").count()
+    count_failed    = ScanSession.objects.filter(status="failed").count()
+
     return render(request, "scans/list.html", {
         "scans": page,
         "domain": domain,
         "status_filter": status_filter,
         "scheduled": scheduled,
+        "count_running": count_running,
+        "count_completed": count_completed,
+        "count_failed": count_failed,
     })
 
 
