@@ -1,4 +1,8 @@
-"""Naabu binary execution — top 100 TCP port scan against IPs."""
+"""Naabu binary execution — TCP port scan against IPs.
+
+Port scan settings are configurable via Django admin (NaabuConfig model).
+Defaults: top 100 ports, rate 1000 pps, 900s timeout.
+"""
 
 import json
 import logging
@@ -19,22 +23,45 @@ def collect(session, targets: list[str]) -> list[dict]:
     if not targets:
         return []
 
+    from .models import NaabuConfig
+    config = NaabuConfig.get()
+
     binary = getattr(settings, "TOOL_NAABU", "naabu")
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("\n".join(targets))
         tmp = f.name
 
-    cmd = [binary, "-list", tmp, "-top-ports", "100", "-json", "-silent"]
-    logger.info(f"[naabu:{session.id}] Scanning {len(targets)} targets (top 100 TCP)")
+    cmd = [binary, "-list", tmp, "-json", "-silent"]
+
+    # Port selection: custom_ports overrides top_ports
+    if config.custom_ports.strip():
+        cmd += ["-p", config.custom_ports.strip()]
+    elif config.top_ports == "full":
+        cmd += ["-p", "-"]
+    else:
+        cmd += ["-top-ports", config.top_ports]
+
+    cmd += ["-rate", str(config.rate)]
+
+    if config.exclude_ports.strip():
+        cmd += ["-exclude-ports", config.exclude_ports.strip()]
+
+    logger.info(
+        f"[naabu:{session.id}] Scanning {len(targets)} targets "
+        f"(ports={config.custom_ports.strip() or config.top_ports}, "
+        f"rate={config.rate})"
+    )
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=config.scan_timeout
+        )
     except FileNotFoundError:
         logger.error(f"[naabu:{session.id}] Binary not found: {binary}")
         return []
     except subprocess.TimeoutExpired:
-        logger.error(f"[naabu:{session.id}] Timed out")
+        logger.error(f"[naabu:{session.id}] Timed out after {config.scan_timeout}s")
         return []
     finally:
         os.unlink(tmp)
