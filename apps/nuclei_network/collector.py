@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 
 from django.conf import settings
+from apps.core.assets.models import Port
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +78,6 @@ def collect(session) -> list[dict]:
 
     Returns list of raw nuclei JSON records (one per finding).
     """
-    from apps.core.assets.models import Port
-
     ports = list(Port.objects.filter(session=session, state="open", is_web=False))
     if not ports:
         logger.info(f"[nuclei_network:{session.id}] No non-web ports to scan")

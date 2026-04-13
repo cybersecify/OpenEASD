@@ -182,7 +182,7 @@ def mock_session():
 
 
 @patch("apps.nuclei_network.collector.subprocess.run")
-@patch("apps.core.assets.models.Port")
+@patch("apps.nuclei_network.collector.Port")
 def test_collect_builds_correct_command(MockPort, mock_run, mock_session):
     port = MagicMock()
     port.address = "1.2.3.4"
@@ -210,7 +210,7 @@ def test_collect_builds_correct_command(MockPort, mock_run, mock_session):
 
 
 @patch("apps.nuclei_network.collector.subprocess.run")
-@patch("apps.core.assets.models.Port")
+@patch("apps.nuclei_network.collector.Port")
 def test_collect_no_ports_returns_empty(MockPort, mock_run, mock_session):
     MockPort.objects.filter.return_value = []
     result = collect(mock_session)
