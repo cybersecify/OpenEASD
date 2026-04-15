@@ -2,9 +2,12 @@
 
 import json
 import logging
+import os
 import re
 import subprocess
+import tempfile
 
+import yaml
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -22,8 +25,26 @@ def collect(session) -> list[dict]:
         logger.error(f"[subfinder:{session.id}] Invalid domain: {domain!r}")
         return []
 
+    from .models import SubfinderConfig
+    config = SubfinderConfig.get()
+    provider_config = config.build_provider_config()
+
     binary = getattr(settings, "TOOL_SUBFINDER", "subfinder")
     cmd = [binary, "-d", domain, "-json", "-silent"]
+
+    # Write temp provider config if any API keys are set
+    provider_tmp = None
+    if provider_config:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
+            yaml.dump(provider_config, f)
+            provider_tmp = f.name
+        cmd += ["-provider-config", provider_tmp]
+        logger.info(
+            f"[subfinder:{session.id}] Using providers: {', '.join(provider_config)}"
+        )
+
     logger.info(f"[subfinder:{session.id}] Running: {' '.join(cmd)}")
 
     try:
@@ -34,6 +55,9 @@ def collect(session) -> list[dict]:
     except subprocess.TimeoutExpired:
         logger.error(f"[subfinder:{session.id}] Timed out")
         return []
+    finally:
+        if provider_tmp:
+            os.unlink(provider_tmp)
 
     if result.returncode != 0:
         logger.warning(f"[subfinder:{session.id}] Exited with code {result.returncode}")

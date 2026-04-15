@@ -1,5 +1,7 @@
 """OpenEASD URL Configuration."""
 
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
 
@@ -12,4 +14,4 @@ urlpatterns = [
     path("insights/", include("apps.core.insights.urls")),
     path("reports/", include("apps.core.reports.urls")),
     path("", include("apps.core.dashboard.urls")),
-]
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
