@@ -11,7 +11,7 @@ import WorkflowDetailPage from './pages/WorkflowDetailPage.jsx';
 import InsightsPage from './pages/InsightsPage.jsx';
 
 function NotFound() {
-  return <div style={{padding: '2rem', color: '#c9d1d9'}}>404 - Page not found</div>;
+  return <div className="p-8 text-body">404 - Page not found</div>;
 }
 
 function navigate(path) {
