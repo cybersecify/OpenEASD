@@ -157,12 +157,32 @@ export default function ScanDetailPage() {
               <button key={t} onClick={() => { setTab(t); setPage(1); setSchemeFilter(''); setStatusFilter(''); }}
                 className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors capitalize
                   ${t === tab ? 'border-brand text-brand' : 'border-transparent text-dim hover:text-body'}`}>
-                {t} ({(tabData[t] || []).length})
+                {t} ({t === 'urls' ? filteredUrls.length : (tabData[t] || []).length})
               </button>
             ))}
           </div>
 
           <div className="bg-card border border-rim rounded-xl overflow-hidden">
+            {tab === 'urls' && (
+              <div className="flex gap-3 px-4 pt-4 pb-2 flex-wrap">
+                <select
+                  value={schemeFilter}
+                  onChange={e => { setSchemeFilter(e.target.value); setPage(1); }}
+                  className="field w-32"
+                >
+                  <option value="">All schemes</option>
+                  <option value="https">https</option>
+                  <option value="http">http</option>
+                </select>
+                <input
+                  type="text"
+                  value={statusFilter}
+                  onChange={e => { setStatusFilter(e.target.value.trim()); setPage(1); }}
+                  placeholder="Status code…"
+                  className="field w-36"
+                />
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-sm">
                 {tab === 'subdomains' && <>
@@ -210,20 +230,38 @@ export default function ScanDetailPage() {
                   </tbody>
                 </>}
                 {tab === 'urls' && <>
-                  <thead><tr>{['URL', 'Status', 'Title', 'Server'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr></thead>
+                  <thead>
+                    <tr>
+                      {['Scheme', 'URL', 'Status', 'Title', 'Server', 'Size'].map(h =>
+                        <th key={h} className="tbl-th">{h}</th>
+                      )}
+                    </tr>
+                  </thead>
                   <tbody>
-                    {paged.length === 0
-                      ? <tr><td colSpan={4} className="tbl-td text-center text-dim py-8">None found.</td></tr>
-                      : paged.map(u => (
-                        <tr key={u.id} className="hover:bg-hover">
-                          <td className="tbl-td font-mono text-brand text-xs max-w-xs truncate">
-                            <a href={u.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{u.url}</a>
-                          </td>
-                          <td className="tbl-td text-dim">{u.status_code || '—'}</td>
-                          <td className="tbl-td text-body text-xs max-w-xs truncate">{u.title || '—'}</td>
-                          <td className="tbl-td text-dim text-xs">{u.web_server || '—'}</td>
-                        </tr>
-                      ))}
+                    {paged.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="tbl-td text-center text-dim py-8">
+                          {(schemeFilter || statusFilter) ? 'No URLs match the current filters.' : 'No URLs discovered yet.'}
+                        </td>
+                      </tr>
+                    ) : paged.map(u => (
+                      <tr key={u.id} className="hover:bg-hover">
+                        <td className="tbl-td">
+                          <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold uppercase ${SCHEME_CLS[u.scheme] ?? 'bg-gray-800/60 text-gray-400 border border-gray-700'}`}>
+                            {u.scheme || '—'}
+                          </span>
+                        </td>
+                        <td className="tbl-td font-mono text-brand text-xs max-w-xs truncate">
+                          <a href={u.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{u.url}</a>
+                        </td>
+                        <td className={`tbl-td font-mono font-semibold ${statusColor(u.status_code)}`}>
+                          {u.status_code || '—'}
+                        </td>
+                        <td className="tbl-td text-body text-xs max-w-xs truncate">{u.title || '—'}</td>
+                        <td className="tbl-td text-dim text-xs">{u.web_server || '—'}</td>
+                        <td className="tbl-td text-dim text-xs">{fmtSize(u.content_length)}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </>}
                 {tab === 'findings' && <>
