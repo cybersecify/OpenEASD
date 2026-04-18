@@ -176,6 +176,7 @@ export default function ScanDetailPage() {
                 </select>
                 <input
                   type="text"
+                  inputMode="numeric"
                   value={statusFilter}
                   onChange={e => { setStatusFilter(e.target.value.trim()); setPage(1); }}
                   placeholder="Status code…"
