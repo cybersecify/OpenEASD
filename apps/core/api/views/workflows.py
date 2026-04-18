@@ -84,9 +84,10 @@ def api_workflow_detail(request, pk):
         Workflow.objects.prefetch_related("steps", "runs__step_results"), pk=pk
     )
     tool_choices = get_tool_choices()
+    tool_phases = get_tool_phases()
     enabled_tools = {s.tool: s.enabled for s in workflow.steps.all()}
     tool_steps = [
-        {"key": key, "label": label, "enabled": enabled_tools.get(key, False)}
+        {"key": key, "label": label, "enabled": enabled_tools.get(key, False), "phase": tool_phases.get(key, 99)}
         for key, label in tool_choices
     ]
 
@@ -174,7 +175,7 @@ def api_workflow_toggle_step(request, pk, tool):
     step, _ = WorkflowStep.objects.get_or_create(
         workflow=workflow,
         tool=tool,
-        defaults={"order": get_tool_phases().get(tool, 99)},
+        defaults={"order": get_tool_phases().get(tool, 99), "enabled": False},
     )
     step.enabled = not step.enabled
     step.save()

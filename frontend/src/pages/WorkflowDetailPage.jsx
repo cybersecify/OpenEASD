@@ -90,7 +90,7 @@ export default function WorkflowDetailPage() {
                   <tr><td colSpan={4} className="tbl-td text-center text-dim py-8">No steps.</td></tr>
                 ) : steps.map(s => (
                   <tr key={s.key} className="hover:bg-hover transition-colors">
-                    <td className="tbl-td text-dim text-xs">{s.key}</td>
+                    <td className="tbl-td text-dim text-xs">{s.phase ?? s.key}</td>
                     <td className="tbl-td text-lit font-medium">{s.label || s.key}</td>
                     <td className="tbl-td"><Badge value={s.enabled !== false ? 'active' : 'inactive'} /></td>
                     <td className="tbl-td">
