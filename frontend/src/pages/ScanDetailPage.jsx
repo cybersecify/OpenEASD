@@ -55,6 +55,8 @@ export default function ScanDetailPage() {
   const [page, setPage] = useState(1);
   const [notification, setNotification] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [schemeFilter, setSchemeFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   const { data, loading, error, refetch } = useFetch(uuid ? `/scans/${uuid}/` : null, [uuid]);
 
@@ -102,9 +104,16 @@ export default function ScanDetailPage() {
     return (order[a.severity] ?? 5) - (order[b.severity] ?? 5);
   });
 
-  const tabData  = { subdomains, ips, ports, urls, findings };
-  const items    = tabData[tab] || [];
-  const paged    = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const tabData = { subdomains, ips, ports, urls, findings };
+
+  const filteredUrls = urls.filter(u => {
+    if (schemeFilter && u.scheme !== schemeFilter) return false;
+    if (statusFilter && !String(u.status_code ?? '').startsWith(statusFilter)) return false;
+    return true;
+  });
+
+  const items      = tab === 'urls' ? filteredUrls : (tabData[tab] || []);
+  const paged      = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const totalPages = Math.ceil(items.length / PAGE_SIZE);
 
   return (
