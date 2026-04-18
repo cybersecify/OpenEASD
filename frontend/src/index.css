@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  /* Severity badges */
+  .badge-critical { @apply bg-red-900/40 text-red-400 border border-red-800; }
+  .badge-high     { @apply bg-orange-900/40 text-orange-400 border border-orange-800; }
+  .badge-medium   { @apply bg-yellow-900/40 text-yellow-400 border border-yellow-800; }
+  .badge-low      { @apply bg-blue-900/40 text-blue-400 border border-blue-800; }
+  .badge-info     { @apply bg-gray-800/60 text-gray-400 border border-gray-700; }
+
+  /* Finding status */
+  .badge-open           { @apply bg-red-900/40 text-red-400 border border-red-800; }
+  .badge-acknowledged   { @apply bg-yellow-900/40 text-yellow-400 border border-yellow-800; }
+  .badge-fixed          { @apply bg-green-900/40 text-green-400 border border-green-800; }
+  .badge-false_positive { @apply bg-gray-800/60 text-gray-400 border border-gray-700; }
+  .badge-wont_fix       { @apply bg-gray-800/60 text-gray-400 border border-gray-700; }
+
+  /* Scan status */
+  .badge-pending   { @apply bg-gray-800/60 text-gray-400 border border-gray-700; }
+  .badge-running   { @apply bg-blue-900/40 text-blue-400 border border-blue-800; }
+  .badge-completed { @apply bg-green-900/40 text-green-400 border border-green-800; }
+  .badge-failed    { @apply bg-red-900/40 text-red-400 border border-red-800; }
+  .badge-cancelled { @apply bg-gray-800/60 text-gray-400 border border-gray-700; }
+  .badge-scheduled { @apply bg-yellow-900/40 text-yellow-400 border border-yellow-800; }
+
+  /* Generic / domain status */
+  .badge-active   { @apply bg-green-900/40 text-green-400 border border-green-800; }
+  .badge-inactive { @apply bg-gray-800/60 text-gray-400 border border-gray-700; }
+  .badge-idle     { @apply bg-gray-800/60 text-gray-400 border border-gray-700; }
+  .badge-web      { @apply bg-blue-900/40 text-blue-400 border border-blue-800; }
+
+  /* Table */
+  .tbl-th { @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap border-b border-rim; }
+  .tbl-td { @apply px-4 py-3 align-middle text-sm border-b border-rim/30; }
+
+  /* Form inputs */
+  .field { @apply w-full bg-canvas border border-rim rounded-md px-3 py-2 text-sm text-body placeholder-dim focus:outline-none focus:border-brand transition-colors; }
+
+  /* Buttons */
+  .btn-primary { @apply bg-brand text-canvas font-semibold text-sm px-4 py-2 rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-default transition-opacity; }
+  .btn-ghost   { @apply bg-transparent border border-rim text-body text-sm px-3 py-1.5 rounded-md hover:border-brand hover:text-brand transition-colors disabled:opacity-50 disabled:cursor-default; }
+  .btn-danger  { @apply bg-transparent border border-rim text-body text-sm px-3 py-1.5 rounded-md hover:border-red-500 hover:text-red-400 transition-colors disabled:opacity-50 disabled:cursor-default; }
+}
