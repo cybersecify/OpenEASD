@@ -19,6 +19,27 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+function fmtSize(bytes) {
+  if (bytes == null) return '—';
+  if (bytes === 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1_048_576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1_048_576).toFixed(1)} MB`;
+}
+
+function statusColor(code) {
+  if (!code) return 'text-dim';
+  if (code < 300) return 'text-green-400';
+  if (code < 400) return 'text-yellow-400';
+  if (code < 500) return 'text-orange-400';
+  return 'text-red-400';
+}
+
+const SCHEME_CLS = {
+  https: 'bg-blue-900/40 text-blue-400 border border-blue-800',
+  http:  'bg-yellow-900/40 text-yellow-400 border border-yellow-800',
+};
+
 function StatCard({ label, value, danger }) {
   return (
     <div className={`border rounded-lg px-4 py-3 text-center ${danger ? 'border-red-800 bg-red-900/10' : 'border-rim bg-card'}`}>
