@@ -154,7 +154,7 @@ export default function ScanDetailPage() {
         <div>
           <div className="flex gap-0.5 border-b border-rim mb-4">
             {TABS.map(t => (
-              <button key={t} onClick={() => { setTab(t); setPage(1); }}
+              <button key={t} onClick={() => { setTab(t); setPage(1); setSchemeFilter(''); setStatusFilter(''); }}
                 className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors capitalize
                   ${t === tab ? 'border-brand text-brand' : 'border-transparent text-dim hover:text-body'}`}>
                 {t} ({(tabData[t] || []).length})
