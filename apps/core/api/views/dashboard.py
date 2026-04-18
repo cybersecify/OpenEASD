@@ -1,7 +1,7 @@
 from django.db.models import Max
 
 from apps.core.api.decorators import api_login_required
-from apps.core.api.serializers import api_response, serialize_scan_session_brief, serialize_finding
+from apps.core.api.serializers import api_response
 from apps.core.scans.models import ScanSession
 from apps.core.findings.models import Finding
 from apps.core.domains.models import Domain
@@ -15,7 +15,7 @@ def api_dashboard(request):
     active_domains = list(Domain.objects.filter(is_active=True))
     domain_names = [d.name for d in active_domains]
 
-    # Latest summary per domain — resolved by ID to avoid scan_date collisions
+    # Latest summary per domain
     latest_summary_ids = list(
         ScanSummary.objects
         .filter(domain__in=domain_names)
@@ -28,7 +28,7 @@ def api_dashboard(request):
         for s in ScanSummary.objects.filter(id__in=latest_summary_ids)
     }
 
-    # Latest session per domain — resolved by ID to avoid start_time collisions
+    # Latest session per domain
     latest_session_ids = list(
         ScanSession.objects
         .filter(domain__in=domain_names)
@@ -41,7 +41,7 @@ def api_dashboard(request):
         for s in ScanSession.objects.filter(id__in=latest_session_ids)
     }
 
-    # Latest completed session per domain (for asset counts — independent of latest session)
+    # Latest completed session per domain (for asset counts)
     latest_completed_ids = list(
         ScanSession.objects
         .filter(domain__in=domain_names, status="completed")
@@ -50,21 +50,24 @@ def api_dashboard(request):
         .values_list("latest_id", flat=True)
     )
 
-    domain_status = []
     current_critical = 0
     current_high = 0
+    domain_status = []
 
     for domain in active_domains:
         summary = summaries.get(domain.name)
         session = sessions.get(domain.name)
-        domain_status.append({
-            "domain": domain,
-            "summary": summary,
-            "latest_session": session,
-        })
         if summary:
             current_critical += summary.critical_count
             current_high += summary.high_count
+        domain_status.append({
+            "id": domain.id,
+            "domain": domain.name,
+            "scan_status": session.status if session else "idle",
+            "last_scan": session.start_time.isoformat() if session and session.start_time else None,
+            "critical": summary.critical_count if summary else 0,
+            "high": summary.high_count if summary else 0,
+        })
 
     running_count = ScanSession.objects.filter(status__in=["pending", "running"]).count()
 
@@ -76,47 +79,30 @@ def api_dashboard(request):
     )
 
     asset_counts = {
-        "subdomains": Subdomain.objects.filter(
-            session_id__in=latest_completed_ids, is_active=True
-        ).count(),
+        "subdomains": Subdomain.objects.filter(session_id__in=latest_completed_ids, is_active=True).count(),
         "ips": IPAddress.objects.filter(session_id__in=latest_completed_ids).count(),
         "ports": Port.objects.filter(session_id__in=latest_completed_ids).count(),
         "urls": URL.objects.filter(session_id__in=latest_completed_ids).count(),
     }
 
-    latest_completed_session = (
-        ScanSession.objects.filter(id__in=latest_completed_ids).order_by("-id").first()
-    )
-
     return api_response({
-        "domain_status": [
+        "kpi_domains": len(active_domains),
+        "kpi_active_scans": running_count,
+        "kpi_critical": current_critical,
+        "kpi_high": current_high,
+        "kpi_subdomains": asset_counts["subdomains"],
+        "kpi_ips": asset_counts["ips"],
+        "kpi_ports": asset_counts["ports"],
+        "kpi_urls": asset_counts["urls"],
+        "domain_status": domain_status,
+        "urgent_findings": [
             {
-                "domain": {
-                    "id": d["domain"].id,
-                    "name": d["domain"].name,
-                    "is_active": d["domain"].is_active,
-                    "is_primary": d["domain"].is_primary,
-                },
-                "summary": {
-                    "critical_count": d["summary"].critical_count,
-                    "high_count": d["summary"].high_count,
-                    "medium_count": d["summary"].medium_count,
-                    "low_count": d["summary"].low_count,
-                    "total_findings": d["summary"].total_findings,
-                    "new_exposures": d["summary"].new_exposures,
-                    "removed_exposures": d["summary"].removed_exposures,
-                } if d["summary"] else None,
-                "latest_session": serialize_scan_session_brief(d["latest_session"]) if d["latest_session"] else None,
+                "id": f.id,
+                "severity": f.severity,
+                "title": f.title,
+                "domain": f.session.domain,
+                "source": f.source,
             }
-            for d in domain_status
+            for f in urgent_findings
         ],
-        "kpi": {
-            "critical": current_critical,
-            "high": current_high,
-            "running_scans": running_count,
-            "active_domains": len(active_domains),
-        },
-        "urgent_findings": [serialize_finding(f) for f in urgent_findings],
-        "asset_counts": asset_counts,
-        "latest_scan_uuid": str(latest_completed_session.uuid) if latest_completed_session else None,
     })

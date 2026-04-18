@@ -2,17 +2,19 @@ import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../api/client.js';
 
 export function useFetch(path, deps = []) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [data,       setData]       = useState(null);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState(null);
+  const [pagination, setPagination] = useState(null);
 
   const fetch = useCallback(async () => {
-    if (!path) return;
+    if (!path) { setLoading(false); return; }
     setLoading(true);
     setError(null);
     try {
       const res = await apiFetch(path, { method: 'GET' });
       setData(res.data);
+      setPagination(res.pagination || null);
     } catch (e) {
       setError(e.message);
       if (e.status === 401) {
@@ -25,5 +27,5 @@ export function useFetch(path, deps = []) {
 
   useEffect(() => { fetch(); }, [fetch]);
 
-  return { data, loading, error, refetch: fetch };
+  return { data, loading, error, pagination, refetch: fetch };
 }

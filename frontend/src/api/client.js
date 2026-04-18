@@ -5,10 +5,11 @@ function getCookie(name) {
 
 export async function apiFetch(path, options = {}) {
   const csrf = getCookie('csrftoken');
+  const isWrite = options.method && options.method !== 'GET' && options.method !== 'HEAD';
   const res = await fetch(`/api${path}`, {
     credentials: 'include',
     headers: {
-      'Content-Type': 'application/json',
+      ...(isWrite ? { 'Content-Type': 'application/json' } : {}),
       ...(csrf ? { 'X-CSRFToken': csrf } : {}),
       ...(options.headers || {}),
     },

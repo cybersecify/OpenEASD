@@ -22,7 +22,7 @@ export default function WorkflowDetailPage() {
   const [toggling, setToggling] = useState(null);
 
   useEffect(() => {
-    if (data) { setName(data.name || ''); setDesc(data.description || ''); }
+    if (data?.workflow) { setName(data.workflow.name || ''); setDesc(data.workflow.description || ''); }
   }, [data]);
 
   function notify(msg, type = 'success') { setNotification({ message: msg, type, key: Date.now() }); }
@@ -45,7 +45,9 @@ export default function WorkflowDetailPage() {
   if (error)   return <Layout><div className="text-red-400 p-4">Error: {error}</div></Layout>;
   if (!data)   return <Layout><div /></Layout>;
 
-  const { steps = [], recent_runs = [], is_default } = data;
+  const workflow    = data.workflow    || {};
+  const steps       = data.tool_steps  || [];
+  const recent_runs = data.recent_runs || [];
 
   return (
     <Layout>
@@ -53,8 +55,8 @@ export default function WorkflowDetailPage() {
       <div className="space-y-6 max-w-3xl">
         <div>
           <button onClick={() => navigate('/workflows')} className="text-dim text-xs hover:text-body mb-1 block">← Workflows</button>
-          <h1 className="text-lit text-xl font-bold">{data.name}</h1>
-          {is_default && <span className="text-brand text-xs font-semibold">Default workflow</span>}
+          <h1 className="text-lit text-xl font-bold">{workflow.name}</h1>
+          {workflow.is_default && <span className="text-brand text-xs font-semibold">Default workflow</span>}
         </div>
 
         {/* Edit form */}
@@ -87,17 +89,17 @@ export default function WorkflowDetailPage() {
                 {steps.length === 0 ? (
                   <tr><td colSpan={4} className="tbl-td text-center text-dim py-8">No steps.</td></tr>
                 ) : steps.map(s => (
-                  <tr key={s.tool_key} className="hover:bg-hover transition-colors">
-                    <td className="tbl-td text-dim text-xs">{s.phase ?? '—'}</td>
-                    <td className="tbl-td text-lit font-medium">{s.label || s.tool_key}</td>
+                  <tr key={s.key} className="hover:bg-hover transition-colors">
+                    <td className="tbl-td text-dim text-xs">{s.key}</td>
+                    <td className="tbl-td text-lit font-medium">{s.label || s.key}</td>
                     <td className="tbl-td"><Badge value={s.enabled !== false ? 'active' : 'inactive'} /></td>
                     <td className="tbl-td">
                       <button
-                        onClick={() => handleToggle(s.tool_key)}
-                        disabled={toggling === s.tool_key}
+                        onClick={() => handleToggle(s.key)}
+                        disabled={toggling === s.key}
                         className="btn-ghost text-xs"
                       >
-                        {toggling === s.tool_key ? '…' : s.enabled !== false ? 'Disable' : 'Enable'}
+                        {toggling === s.key ? '…' : s.enabled !== false ? 'Disable' : 'Enable'}
                       </button>
                     </td>
                   </tr>
@@ -116,12 +118,16 @@ export default function WorkflowDetailPage() {
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-sm">
                 <thead>
-                  <tr>{['Domain', 'Status', 'Started', 'Finished'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr>
+                  <tr>{['Scan', 'Status', 'Started', 'Finished'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr>
                 </thead>
                 <tbody>
-                  {recent_runs.map((r, i) => (
-                    <tr key={i} className="hover:bg-hover transition-colors">
-                      <td className="tbl-td font-mono text-lit">{r.domain || '—'}</td>
+                  {recent_runs.map(r => (
+                    <tr key={r.id} className="hover:bg-hover transition-colors">
+                      <td className="tbl-td font-mono text-lit">
+                        {r.session_uuid
+                          ? <button onClick={() => navigate(`/scans/${r.session_uuid}`)} className="text-brand hover:underline font-mono text-xs">{r.session_uuid.slice(0, 8)}…</button>
+                          : '—'}
+                      </td>
                       <td className="tbl-td"><Badge value={r.status} /></td>
                       <td className="tbl-td text-dim">{fmtDate(r.started_at)}</td>
                       <td className="tbl-td text-dim">{fmtDate(r.finished_at)}</td>

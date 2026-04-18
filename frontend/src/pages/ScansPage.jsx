@@ -23,15 +23,15 @@ export default function ScansPage() {
   const [busyIds, setBusyIds] = useState(new Set());
 
   const { data: domainsData } = useFetch('/domains/');
-  const { data, loading, error, refetch } = useFetch(
+  const { data: scansData, pagination, loading, error, refetch } = useFetch(
     `/scans/?domain=${domain}&status=${status}&page=${page}`,
     [domain, status, page],
   );
+  const { data: scheduledData, refetch: refetchScheduled } = useFetch('/scheduled/');
 
-  const scans      = data?.scans || data?.results || (Array.isArray(data) ? data : []);
-  const pagination = data?.pagination || null;
-  const scheduled  = data?.scheduled_jobs || [];
-  const domains    = domainsData || [];
+  const scans     = Array.isArray(scansData) ? scansData : [];
+  const scheduled = scheduledData || [];
+  const domains   = domainsData || [];
 
   function notify(msg, type = 'success') { setNotification({ message: msg, type, key: Date.now() }); }
   function busy(id) { return busyIds.has(id); }
@@ -54,7 +54,7 @@ export default function ScansPage() {
   }
 
   async function handleCancelJob(jobId) {
-    try { await apiPost(`/scheduled/${jobId}/cancel/`); notify('Job cancelled.'); refetch(); }
+    try { await apiPost(`/scheduled/${jobId}/cancel/`); notify('Job cancelled.'); refetchScheduled(); }
     catch (e) { notify(e.message || 'Cancel failed.', 'error'); }
   }
 
@@ -74,7 +74,7 @@ export default function ScansPage() {
         <div className="flex gap-3 flex-wrap">
           <select value={domain} onChange={e => { setDomain(e.target.value); setPage(1); }} className="field w-52">
             <option value="">All domains</option>
-            {domains.map(d => <option key={d.id} value={d.domain}>{d.domain}</option>)}
+            {domains.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
           </select>
           <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} className="field w-40">
             <option value="">All statuses</option>
@@ -101,28 +101,25 @@ export default function ScansPage() {
                   <tbody>
                     {scans.length === 0 ? (
                       <tr><td colSpan={5} className="tbl-td text-center text-dim py-10">No scans yet.</td></tr>
-                    ) : scans.map(s => {
-                      const id = s.uuid || s.id;
-                      return (
-                        <tr key={id} className={`hover:bg-hover transition-colors ${busy(id) ? 'opacity-50' : ''}`}>
-                          <td className="tbl-td text-lit font-mono font-medium">{s.domain || '—'}</td>
-                          <td className="tbl-td"><Badge value={s.status} /></td>
-                          <td className="tbl-td text-dim">{fmtDate(s.started_at || s.created_at)}</td>
-                          <td className="tbl-td text-body">{s.finding_count ?? '—'}</td>
-                          <td className="tbl-td">
-                            <span className="inline-flex gap-1.5 items-center flex-wrap">
-                              <button onClick={() => navigate(`/scans/${id}`)} className="btn-ghost">View</button>
-                              {s.status === 'running' && (
-                                <ConfirmButton label="Stop" confirmLabel="Stop scan?" onConfirm={() => handleStop(id)} disabled={busy(id)} />
-                              )}
-                              {['completed', 'failed', 'cancelled'].includes(s.status) && (
-                                <ConfirmButton label="Delete" onConfirm={() => handleDelete(id)} disabled={busy(id)} />
-                              )}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    ) : scans.map(s => (
+                      <tr key={s.uuid} className={`hover:bg-hover transition-colors ${busy(s.uuid) ? 'opacity-50' : ''}`}>
+                        <td className="tbl-td text-lit font-mono font-medium">{s.domain_name || '—'}</td>
+                        <td className="tbl-td"><Badge value={s.status} /></td>
+                        <td className="tbl-td text-dim">{fmtDate(s.start_time)}</td>
+                        <td className="tbl-td text-body">{s.total_findings ?? '—'}</td>
+                        <td className="tbl-td">
+                          <span className="inline-flex gap-1.5 items-center flex-wrap">
+                            <button onClick={() => navigate(`/scans/${s.uuid}`)} className="btn-ghost">View</button>
+                            {s.status === 'running' && (
+                              <ConfirmButton label="Stop" confirmLabel="Stop scan?" onConfirm={() => handleStop(s.uuid)} disabled={busy(s.uuid)} />
+                            )}
+                            {['completed', 'failed', 'cancelled'].includes(s.status) && (
+                              <ConfirmButton label="Delete" onConfirm={() => handleDelete(s.uuid)} disabled={busy(s.uuid)} />
+                            )}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -144,15 +141,16 @@ export default function ScansPage() {
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-sm">
                 <thead>
-                  <tr>{['Domain', 'Scheduled At', 'Actions'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr>
+                  <tr>{['Domain', 'Type', 'Next Run', 'Actions'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {scheduled.map(j => (
-                    <tr key={j.id} className="hover:bg-hover transition-colors">
-                      <td className="tbl-td font-mono text-lit">{j.domain || j.name || '—'}</td>
-                      <td className="tbl-td text-dim">{fmtDate(j.next_run_time || j.scheduled_at)}</td>
+                    <tr key={j.job_id} className="hover:bg-hover transition-colors">
+                      <td className="tbl-td font-mono text-lit">{j.domain || '—'}</td>
+                      <td className="tbl-td text-dim text-xs">{j.job_type || '—'}</td>
+                      <td className="tbl-td text-dim">{fmtDate(j.next_run_time)}</td>
                       <td className="tbl-td">
-                        <ConfirmButton label="Cancel" confirmLabel="Cancel job?" onConfirm={() => handleCancelJob(j.id)} />
+                        <ConfirmButton label="Cancel" confirmLabel="Cancel job?" onConfirm={() => handleCancelJob(j.job_id)} />
                       </td>
                     </tr>
                   ))}

@@ -8,6 +8,11 @@ import { navigate } from '../App.jsx';
 import { apiPost } from '../api/client.js';
 import { useFetch } from '../hooks/useFetch.js';
 
+function findingTotal(summary) {
+  if (!summary || typeof summary !== 'object') return 0;
+  return Object.values(summary).reduce((s, n) => s + (n || 0), 0);
+}
+
 function AddDomainForm({ onAdded }) {
   const [domain,  setDomain]  = useState('');
   const [saving,  setSaving]  = useState(false);
@@ -18,11 +23,11 @@ function AddDomainForm({ onAdded }) {
     if (!domain.trim()) { setErr('Domain is required.'); return; }
     setSaving(true); setErr(null);
     try {
-      await apiPost('/domains/', { domain: domain.trim() });
+      await apiPost('/domains/', { name: domain.trim() });
       setDomain('');
       onAdded();
     } catch (e) {
-      setErr(e.data?.detail || e.message || 'Failed to add domain.');
+      setErr(e.message || 'Failed to add domain.');
     } finally { setSaving(false); }
   }
 
@@ -60,9 +65,9 @@ export default function DomainsPage() {
     finally { setBusy(id, false); }
   }
 
-  async function handleDelete(id, domain) {
+  async function handleDelete(id, name) {
     setBusy(id, true);
-    try { await apiPost(`/domains/${id}/delete/`); notify(`"${domain}" deleted.`); refetch(); }
+    try { await apiPost(`/domains/${id}/delete/`); notify(`"${name}" deleted.`); refetch(); }
     catch (e) { notify(e.message || 'Delete failed.', 'error'); }
     finally { setBusy(id, false); }
   }
@@ -90,18 +95,20 @@ export default function DomainsPage() {
                     <tr><td colSpan={5} className="tbl-td text-center text-dim py-10">No domains yet.</td></tr>
                   ) : domains.map(d => (
                     <tr key={d.id} className={`hover:bg-hover transition-colors ${busy(d.id) ? 'opacity-50' : ''}`}>
-                      <td className="tbl-td text-lit font-mono font-medium">{d.domain}</td>
+                      <td className="tbl-td text-lit font-mono font-medium">{d.name}</td>
                       <td className="tbl-td"><Badge value={d.is_active ? 'active' : 'inactive'} /></td>
-                      <td className="tbl-td text-dim">{d.last_scan_at ? new Date(d.last_scan_at).toLocaleDateString() : '—'}</td>
-                      <td className="tbl-td text-dim">{d.finding_count ?? '—'}</td>
+                      <td className="tbl-td text-dim">
+                        {d.last_scan?.start_time ? new Date(d.last_scan.start_time).toLocaleDateString() : '—'}
+                      </td>
+                      <td className="tbl-td text-dim">{findingTotal(d.findings_summary) || '—'}</td>
                       <td className="tbl-td">
                         <span className="inline-flex gap-1.5 items-center flex-wrap">
-                          <button onClick={() => navigate(`/scans/start?domain=${d.domain}`)} className="btn-ghost">Scan</button>
-                          <button onClick={() => navigate('/scans?domain=' + d.domain)} className="btn-ghost">History</button>
+                          <button onClick={() => navigate(`/scans/start?domain=${d.name}`)} className="btn-ghost">Scan</button>
+                          <button onClick={() => navigate('/scans?domain=' + d.name)} className="btn-ghost">History</button>
                           <button onClick={() => handleToggle(d.id)} disabled={busy(d.id)} className="btn-ghost">
                             {d.is_active ? 'Deactivate' : 'Activate'}
                           </button>
-                          <ConfirmButton label="Delete" disabled={busy(d.id)} onConfirm={() => handleDelete(d.id, d.domain)} />
+                          <ConfirmButton label="Delete" disabled={busy(d.id)} onConfirm={() => handleDelete(d.id, d.name)} />
                         </span>
                       </td>
                     </tr>

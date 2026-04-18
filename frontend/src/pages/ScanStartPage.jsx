@@ -32,7 +32,7 @@ export default function ScanStartPage() {
     if (!domain) { setError('Select a domain.'); return; }
     setError(null); setSubmitting(true);
     try {
-      const body = { domain };
+      const body = { domain, schedule_type: scheduled ? 'once' : 'now' };
       if (workflowId) body.workflow_id = Number(workflowId);
       if (scheduled && schedTime) body.scheduled_at = schedTime;
       await apiPost('/scans/start/', body);
@@ -59,7 +59,7 @@ export default function ScanStartPage() {
                 <select value={domain} onChange={e => setDomain(e.target.value)} required className="field">
                   <option value="">— select domain —</option>
                   {domains.filter(d => d.is_active).map(d => (
-                    <option key={d.id} value={d.domain}>{d.domain}</option>
+                    <option key={d.id} value={d.name}>{d.name}</option>
                   ))}
                 </select>
               </div>

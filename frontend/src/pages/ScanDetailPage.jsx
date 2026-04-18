@@ -11,6 +11,7 @@ import { useFetch } from '../hooks/useFetch.js';
 import { usePolling } from '../hooks/usePolling.js';
 
 const TABS = ['subdomains', 'ips', 'ports', 'urls', 'findings'];
+const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
 const PAGE_SIZE = 50;
 
 function fmtDate(iso) {
@@ -34,8 +35,13 @@ export default function ScanDetailPage() {
   const [notification, setNotification] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const { data: statusData } = usePolling(uuid ? `/scans/${uuid}/status/` : null, 3000);
   const { data, loading, error, refetch } = useFetch(uuid ? `/scans/${uuid}/` : null, [uuid]);
+
+  // Stop polling once scan reaches a terminal state
+  const currentStatus = data?.session?.status;
+  const pollPath = uuid && currentStatus && !TERMINAL.has(currentStatus)
+    ? `/scans/${uuid}/status/` : null;
+  const { data: statusData } = usePolling(pollPath, 3000);
 
   function notify(msg, type = 'success') { setNotification({ message: msg, type, key: Date.now() }); }
 
@@ -56,19 +62,28 @@ export default function ScanDetailPage() {
   if (error)   return <Layout><div className="text-red-400 p-4">Error: {error}</div></Layout>;
   if (!data)   return <Layout><div /></Layout>;
 
-  const currentStatus = statusData?.status || data.status;
-  const isRunning = currentStatus === 'running';
+  const session     = data.session || {};
+  const liveStatus  = statusData?.session?.status || session.status;
+  const isRunning   = liveStatus === 'running';
+  const assetCounts = statusData?.asset_counts || data.asset_counts || {};
+  const vulnCounts  = statusData?.vuln_counts  || data.vuln_counts  || {};
 
-  const {
-    domain, started_at, finished_at, workflow_name,
-    subdomain_count = 0, ip_count = 0, port_count = 0, url_count = 0,
-    critical_count = 0, finding_count = 0,
-    subdomains = [], ips = [], ports = [], urls = [], findings = [],
-  } = data;
+  const subdomains = data.subdomains || [];
+  const ips        = data.ips        || [];
+  const ports      = data.ports      || [];
+  const urls       = data.urls       || [];
+  const findings   = [
+    ...(data.nmap_findings    || []),
+    ...(data.domain_findings  || []),
+    ...(data.other_findings   || []),
+  ].sort((a, b) => {
+    const order = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+    return (order[a.severity] ?? 5) - (order[b.severity] ?? 5);
+  });
 
-  const tabData   = { subdomains, ips, ports, urls, findings };
-  const items     = tabData[tab] || [];
-  const paged     = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const tabData  = { subdomains, ips, ports, urls, findings };
+  const items    = tabData[tab] || [];
+  const paged    = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const totalPages = Math.ceil(items.length / PAGE_SIZE);
 
   return (
@@ -80,14 +95,13 @@ export default function ScanDetailPage() {
         <div className="flex items-start justify-between flex-wrap gap-3">
           <div>
             <button onClick={() => navigate('/scans')} className="text-dim text-xs hover:text-body mb-1 block">← Scans</button>
-            <h1 className="text-lit text-xl font-bold font-mono">{domain}</h1>
+            <h1 className="text-lit text-xl font-bold font-mono">{session.domain_name}</h1>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <Badge value={currentStatus} />
-              {workflow_name && <span className="text-xs text-dim">{workflow_name}</span>}
+              <Badge value={liveStatus} />
               {isRunning && <Spinner size={14} />}
             </div>
             <p className="text-dim text-xs mt-1">
-              Started: {fmtDate(started_at)}{finished_at && <> · Finished: {fmtDate(finished_at)}</>}
+              Started: {fmtDate(session.start_time)}{session.end_time && <> · Finished: {fmtDate(session.end_time)}</>}
             </p>
           </div>
           <span className="inline-flex gap-1.5 items-center">
@@ -98,12 +112,12 @@ export default function ScanDetailPage() {
 
         {/* Stats */}
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-          <StatCard label="Subdomains" value={subdomain_count} />
-          <StatCard label="IPs"        value={ip_count} />
-          <StatCard label="Ports"      value={port_count} />
-          <StatCard label="URLs"       value={url_count} />
-          <StatCard label="Critical"   value={critical_count} danger />
-          <StatCard label="Findings"   value={finding_count} />
+          <StatCard label="Subdomains" value={assetCounts.subdomains_total} />
+          <StatCard label="IPs"        value={assetCounts.ips} />
+          <StatCard label="Ports"      value={assetCounts.ports} />
+          <StatCard label="URLs"       value={assetCounts.urls} />
+          <StatCard label="Critical"   value={vulnCounts.critical} danger />
+          <StatCard label="Findings"   value={session.total_findings} />
         </div>
 
         {/* Tabs */}
@@ -122,59 +136,62 @@ export default function ScanDetailPage() {
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-sm">
                 {tab === 'subdomains' && <>
-                  <thead><tr>{['Subdomain', 'Active', 'IPs'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr></thead>
+                  <thead><tr>{['Subdomain', 'Active', 'Discovered'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr></thead>
                   <tbody>
                     {paged.length === 0
                       ? <tr><td colSpan={3} className="tbl-td text-center text-dim py-8">None found.</td></tr>
-                      : paged.map((s, i) => (
-                        <tr key={i} className="hover:bg-hover">
-                          <td className="tbl-td font-mono text-lit">{s.subdomain || s.hostname || s}</td>
+                      : paged.map(s => (
+                        <tr key={s.id} className="hover:bg-hover">
+                          <td className="tbl-td font-mono text-lit">{s.subdomain}</td>
                           <td className="tbl-td"><Badge value={s.is_active ? 'active' : 'inactive'} /></td>
-                          <td className="tbl-td text-dim text-xs">{(s.ips || []).join(', ') || '—'}</td>
+                          <td className="tbl-td text-dim text-xs">{fmtDate(s.discovered_at)}</td>
                         </tr>
                       ))}
                   </tbody>
                 </>}
                 {tab === 'ips' && <>
-                  <thead><tr>{['IP', 'PTR'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr></thead>
+                  <thead><tr>{['IP', 'Version', 'Source'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr></thead>
                   <tbody>
                     {paged.length === 0
-                      ? <tr><td colSpan={2} className="tbl-td text-center text-dim py-8">None found.</td></tr>
-                      : paged.map((ip, i) => (
-                        <tr key={i} className="hover:bg-hover">
-                          <td className="tbl-td font-mono text-lit">{ip.ip || ip}</td>
-                          <td className="tbl-td text-dim text-xs font-mono">{ip.ptr || '—'}</td>
+                      ? <tr><td colSpan={3} className="tbl-td text-center text-dim py-8">None found.</td></tr>
+                      : paged.map(ip => (
+                        <tr key={ip.id} className="hover:bg-hover">
+                          <td className="tbl-td font-mono text-lit">{ip.address}</td>
+                          <td className="tbl-td text-dim text-xs">v{ip.version}</td>
+                          <td className="tbl-td text-dim text-xs">{ip.source || '—'}</td>
                         </tr>
                       ))}
                   </tbody>
                 </>}
                 {tab === 'ports' && <>
-                  <thead><tr>{['Host', 'Port', 'Service', 'Web?'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr></thead>
+                  <thead><tr>{['Host', 'Port', 'Service', 'Version', 'Web?'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr></thead>
                   <tbody>
                     {paged.length === 0
-                      ? <tr><td colSpan={4} className="tbl-td text-center text-dim py-8">None found.</td></tr>
-                      : paged.map((p, i) => (
-                        <tr key={i} className="hover:bg-hover">
-                          <td className="tbl-td font-mono text-dim text-xs">{p.ip || '—'}</td>
-                          <td className="tbl-td font-mono text-lit font-semibold">{p.port}</td>
+                      ? <tr><td colSpan={5} className="tbl-td text-center text-dim py-8">None found.</td></tr>
+                      : paged.map(p => (
+                        <tr key={p.id} className="hover:bg-hover">
+                          <td className="tbl-td font-mono text-dim text-xs">{p.address}</td>
+                          <td className="tbl-td font-mono text-lit font-semibold">{p.port}/{p.protocol}</td>
                           <td className="tbl-td text-dim">{p.service || '—'}</td>
+                          <td className="tbl-td text-dim text-xs">{p.version || '—'}</td>
                           <td className="tbl-td">{p.is_web ? <Badge value="web" /> : <span className="text-dim">—</span>}</td>
                         </tr>
                       ))}
                   </tbody>
                 </>}
                 {tab === 'urls' && <>
-                  <thead><tr>{['URL', 'Status', 'Title'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr></thead>
+                  <thead><tr>{['URL', 'Status', 'Title', 'Server'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr></thead>
                   <tbody>
                     {paged.length === 0
-                      ? <tr><td colSpan={3} className="tbl-td text-center text-dim py-8">None found.</td></tr>
-                      : paged.map((u, i) => (
-                        <tr key={i} className="hover:bg-hover">
+                      ? <tr><td colSpan={4} className="tbl-td text-center text-dim py-8">None found.</td></tr>
+                      : paged.map(u => (
+                        <tr key={u.id} className="hover:bg-hover">
                           <td className="tbl-td font-mono text-brand text-xs max-w-xs truncate">
-                            <a href={u.url || u} target="_blank" rel="noopener noreferrer" className="hover:underline">{u.url || u}</a>
+                            <a href={u.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{u.url}</a>
                           </td>
                           <td className="tbl-td text-dim">{u.status_code || '—'}</td>
                           <td className="tbl-td text-body text-xs max-w-xs truncate">{u.title || '—'}</td>
+                          <td className="tbl-td text-dim text-xs">{u.web_server || '—'}</td>
                         </tr>
                       ))}
                   </tbody>
@@ -184,8 +201,8 @@ export default function ScanDetailPage() {
                   <tbody>
                     {paged.length === 0
                       ? <tr><td colSpan={4} className="tbl-td text-center text-dim py-8">None found.</td></tr>
-                      : paged.map((f, i) => (
-                        <tr key={i} className="hover:bg-hover">
+                      : paged.map(f => (
+                        <tr key={f.id} className="hover:bg-hover">
                           <td className="tbl-td"><Badge value={f.severity} /></td>
                           <td className="tbl-td text-body font-medium max-w-xs truncate">{f.title}</td>
                           <td className="tbl-td font-mono text-dim text-xs">{f.target}</td>

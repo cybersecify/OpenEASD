@@ -52,14 +52,13 @@ export default function FindingsPage() {
   const [notification, setNotification] = useState(null);
 
   const { data: domainsData } = useFetch('/domains/');
-  const { data, loading, error, refetch } = useFetch(
+  const { data, loading, error, pagination, refetch } = useFetch(
     `/scans/findings/?severity=${severity}&status=${status}&domain=${domain}&page=${page}`,
     [severity, status, domain, page],
   );
 
-  const findings   = data?.findings || data?.results || (Array.isArray(data) ? data : []);
-  const pagination = data?.pagination || null;
-  const domains    = domainsData || [];
+  const findings = Array.isArray(data) ? data : [];
+  const domains  = domainsData || [];
 
   function notify(msg, type = 'success') { setNotification({ message: msg, type, key: Date.now() }); }
 
@@ -84,7 +83,7 @@ export default function FindingsPage() {
           </select>
           <select value={domain} onChange={e => { setDomain(e.target.value); setPage(1); }} className="field w-52">
             <option value="">All domains</option>
-            {domains.map(d => <option key={d.id} value={d.domain}>{d.domain}</option>)}
+            {domains.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
           </select>
         </div>
 
@@ -111,7 +110,7 @@ export default function FindingsPage() {
                           <StatusEditor findingId={f.id} current={f.status || 'open'}
                             onUpdated={() => { notify('Status updated.'); refetch(); }} />
                         </td>
-                        <td className="tbl-td text-dim text-xs">{fmtDate(f.created_at)}</td>
+                        <td className="tbl-td text-dim text-xs">{fmtDate(f.discovered_at)}</td>
                       </tr>
                     ))}
                   </tbody>
