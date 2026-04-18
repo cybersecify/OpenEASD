@@ -3,6 +3,7 @@ import LoginPage from './pages/LoginPage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import DomainsPage from './pages/DomainsPage.jsx';
 import ScansPage from './pages/ScansPage.jsx';
+import ScanStartPage from './pages/ScanStartPage.jsx';
 import ScanDetailPage from './pages/ScanDetailPage.jsx';
 import FindingsPage from './pages/FindingsPage.jsx';
 import WorkflowsPage from './pages/WorkflowsPage.jsx';
@@ -33,6 +34,7 @@ export default function App() {
   if (path === '/') return <DashboardPage />;
   if (path === '/domains') return <DomainsPage />;
   if (path === '/scans') return <ScansPage />;
+  if (path === '/scans/start') return <ScanStartPage />;
   if (path.startsWith('/scans/') && path.length > 8) return <ScanDetailPage />;
   if (path === '/findings') return <FindingsPage />;
   if (path === '/workflows') return <WorkflowsPage />;
