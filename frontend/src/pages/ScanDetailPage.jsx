@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Layout } from '../components/Layout.jsx';
 import { Badge } from '../components/Badge.jsx';
 import { Spinner } from '../components/Spinner.jsx';
@@ -65,6 +65,22 @@ export default function ScanDetailPage() {
   const pollPath = uuid && currentStatus && !TERMINAL.has(currentStatus)
     ? `/scans/${uuid}/status/` : null;
   const { data: statusData } = usePolling(pollPath, 3000);
+
+  // When polling detects the scan reaching a terminal state, reload full data
+  // so tabs (subdomains, IPs, ports, URLs, findings) show the completed results.
+  const prevPollStatusRef = useRef(null);
+  useEffect(() => {
+    const pollStatus = statusData?.session?.status;
+    if (
+      pollStatus &&
+      TERMINAL.has(pollStatus) &&
+      prevPollStatusRef.current &&
+      !TERMINAL.has(prevPollStatusRef.current)
+    ) {
+      refetch();
+    }
+    prevPollStatusRef.current = pollStatus;
+  }, [statusData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function notify(msg, type = 'success') { setNotification({ message: msg, type, key: Date.now() }); }
 
