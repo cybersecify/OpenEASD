@@ -1,23 +1,12 @@
 import React from 'react';
-import { navigate } from '../App.jsx';
 
-export function Pagination({ pagination, basePath, params = {} }) {
-  if (!pagination || pagination.total_pages <= 1) return null;
-
-  const buildUrl = (page) => {
-    const p = new URLSearchParams({ ...params, page });
-    return `${basePath}?${p.toString()}`;
-  };
-
+export function Pagination({ page, totalPages, onPage }) {
+  if (!totalPages || totalPages <= 1) return null;
   return (
-    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '1rem' }}>
-      {pagination.has_previous && (
-        <button onClick={() => navigate(buildUrl(pagination.page - 1))}>← Prev</button>
-      )}
-      <span>Page {pagination.page} of {pagination.total_pages} ({pagination.count} total)</span>
-      {pagination.has_next && (
-        <button onClick={() => navigate(buildUrl(pagination.page + 1))}>Next →</button>
-      )}
+    <div className="flex items-center justify-center gap-2 py-2">
+      <button onClick={() => onPage(page - 1)} disabled={page <= 1} className="btn-ghost">← Prev</button>
+      <span className="text-sm text-dim">Page {page} of {totalPages}</span>
+      <button onClick={() => onPage(page + 1)} disabled={page >= totalPages} className="btn-ghost">Next →</button>
     </div>
   );
 }
