@@ -169,12 +169,12 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/dnsx/` | 3 | No | DNS resolution, public IP filtering |
 | `apps/naabu/` | 4 | No | Port scanning (top 100 TCP) |
 | `apps/core/service_detection/` | 5 | No | nmap -sV enriches Port.service + is_web |
-| `apps/httpx/` | 6 | No | Web probing, URL discovery |
 | `apps/nmap/` | 7 | Yes | NSE vulners CVE scan (non-web ports) |
 | `apps/tls_checker/` | 7 | Yes | TLS/cert analysis (all ports) |
 | `apps/ssh_checker/` | 7 | Yes | SSH config analysis |
-| `apps/nuclei/` | 8 | Yes | Web vuln scan (community templates) |
-| `apps/web_checker/` | 8 | Yes | Security headers, cookies, CORS |
+| `apps/httpx/` | 8 | No | Web probing, URL discovery |
+| `apps/nuclei/` | 9 | Yes | Web vuln scan (community templates) |
+| `apps/web_checker/` | 9 | Yes | Security headers, cookies, CORS |
 
 ### Tool app structure
 ```
@@ -198,12 +198,12 @@ Phase 2  subfinder          → Subdomain (passive enumeration)
 Phase 3  dnsx               → IPAddress (public-only filter)
 Phase 4  naabu              → Port (top 100 TCP scan)
 Phase 5  service_detection  → enriches Port.service + Port.is_web
-Phase 6  httpx              → URL (web probing, CDN-aware via SNI)
 Phase 7  nmap               → Finding (CVEs on non-web ports, is_web=False)
 Phase 7  tls_checker        → Finding (cipher/cert/protocol on all ports)
 Phase 7  ssh_checker        → Finding (SSH config on service="ssh" ports)
-Phase 8  nuclei             → Finding (web vulns via templates on URLs)
-Phase 8  web_checker        → Finding (headers, cookies, CORS on URLs)
+Phase 8  httpx              → URL (web probing, CDN-aware via SNI)
+Phase 9  nuclei             → Finding (web vulns via templates on URLs)
+Phase 9  web_checker        → Finding (headers, cookies, CORS on URLs)
 ```
 
 ### Scan flow
