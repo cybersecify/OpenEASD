@@ -62,6 +62,9 @@ cd frontend && npm install && npm run dev
 - New API data → add endpoint to `apps/core/api/views/` + wire in `apps/core/api/urls.py`
 - Shared UI primitives → `frontend/src/components/`
 - Don't add CORS headers — always use same-origin (Vite proxy in dev, Django serves in prod)
+- Legacy HTMX/Alpine/Django-template stack is **retired**. All UI is the React SPA.
+- SPA catch-all in `openeasd/urls.py` serves `frontend/dist/index.html` for all non-API paths.
+- Run `cd frontend && npm run build` to update the production bundle before deployment.
 
 ## Scheduler
 - Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (uses `TIME_ZONE` in settings, default 02:00)
