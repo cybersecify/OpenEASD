@@ -9,7 +9,7 @@ class HttpxConfig(AppConfig):
     tool_meta = {
         "label": "HTTPx (Web Probe)",
         "runner": "apps.httpx.scanner.run_httpx",
-        "phase": 6,
+        "phase": 8,
         "requires": ["naabu"],
         "produces_findings": False,
     }

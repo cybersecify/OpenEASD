@@ -53,13 +53,13 @@ INSTALLED_APPS = [
     "apps.dnsx",
     "apps.naabu",
     # Web tools — disabled for non-web focus (re-enable for full scan)
-    # "apps.httpx",
+    "apps.httpx",
     "apps.nmap",
     "apps.tls_checker",
     "apps.ssh_checker",
-    # "apps.nuclei",
+    "apps.nuclei",
     "apps.nuclei_network",
-    # "apps.web_checker",
+    "apps.web_checker",
 ]
 
 MIDDLEWARE = [
@@ -86,7 +86,6 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
-                "apps.core.dashboard.context_processors.sidebar_counts",
             ],
         },
     },
