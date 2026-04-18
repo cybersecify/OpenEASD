@@ -23,19 +23,45 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
   `uv run pytest tests/ --ignore=tests/unit/test_domain_security.py`
 
 ## Stack
+
+### Backend
 - Django 5+ with plain Django views (no DRF, no Celery, no Redis)
-- HTMX — server-driven UI updates (form submits, polling, partial HTML swaps)
-- Alpine.js — client-side UI state (modals, dropdowns, tabs, toggles, local form state)
-- Chart.js — visualizations, loaded via CDN only on pages that need it
-- Tailwind CSS via CDN (no build step)
+- Pure Django REST API under `/api/` — `JsonResponse` only, no third-party API libs
 - Huey — lightweight task queue for background scan execution
 - `django-apscheduler` for daily automated scans (starts in `SchedulerConfig.ready()`)
 - SQLite database (dev), configurable via `DB_NAME` env var
 
+### Frontend (React SPA — new primary UI)
+- **React 18 + Vite** — `frontend/` directory, builds to `frontend/dist/`
+- Vanilla popstate-based router in `App.jsx` (no react-router)
+- CSRF-aware `apiFetch` in `src/api/client.js` — uses session auth + `X-CSRFToken` header
+- `useFetch` / `usePolling` hooks for data fetching and live scan status (3s poll)
+- Shared components: `Badge`, `Spinner`, `Pagination`, `ConfirmButton`, `Notification`
+- Dark theme throughout: bg `#0d1117`, card `#161b22`, border `#30363d`, accent `#30c074`
+- **Dev:** Vite proxy forwards `/api/` → Django on port 8000 (no CORS config needed)
+- **Prod:** `npm run build` → `frontend/dist/` → served by Django `STATICFILES_DIRS`
+
+### Legacy HTML stack (still intact, runs in parallel)
+- HTMX — server-driven UI updates (form submits, polling, partial HTML swaps)
+- Alpine.js — client-side UI state (modals, dropdowns, tabs, toggles)
+- Tailwind CSS via CDN (no build step)
+- Chart.js — visualizations via CDN
+
+### Frontend dev setup
+```bash
+# Terminal 1 — Django
+uv run manage.py runserver
+
+# Terminal 2 — Vite dev server (proxies /api/ to Django)
+cd frontend && npm install && npm run dev
+# App runs at http://localhost:5173
+```
+
 ### Frontend rules
-- Reach for **Alpine.js first** for client-side interactivity
-- Use **HTMX** when the server needs to compute/return new HTML
-- Load page-specific JS (Chart.js, etc.) inside the page template, not `base.html`
+- New interactive features → React pages in `frontend/src/pages/`
+- New API data → add endpoint to `apps/core/api/views/` + wire in `apps/core/api/urls.py`
+- Shared UI primitives → `frontend/src/components/`
+- Don't add CORS headers — always use same-origin (Vite proxy in dev, Django serves in prod)
 
 ## Scheduler
 - Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (uses `TIME_ZONE` in settings, default 02:00)
@@ -58,11 +84,11 @@ Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TO
 
 ## Architecture
 
-### Core infrastructure — `apps/core/` (12 sub-apps)
+### Core infrastructure — `apps/core/` (13 sub-apps)
 
 | App | Label | Purpose |
 |---|---|---|
-| `dashboard/` | `core` | Dashboard page, health check |
+| `dashboard/` | `core` | Dashboard page, health check (legacy HTML) |
 | `domains/` | `domains` | Domain model, CRUD views |
 | `assets/` | `assets` | Network assets: Subdomain, IPAddress, Port |
 | `web_assets/` | `web_assets` | Web assets: URL |
@@ -74,6 +100,36 @@ Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TO
 | `notifications/` | `alerts` | Slack/Teams alert dispatcher |
 | `insights/` | `insights` | ScanSummary, FindingTypeSummary, charts |
 | `reports/` | `reports` | CSV + PDF export |
+| `api/` | — | Pure Django REST API — `JsonResponse` views, serializers, auth decorator |
+
+### REST API module — `apps/core/api/`
+
+```
+apps/core/api/
+    __init__.py
+    decorators.py     — api_login_required (returns 401 JSON, not redirect)
+    serializers.py    — serialize_* functions + api_response() helper
+    urls.py           — all /api/ routes
+    views/
+        auth.py       — /api/auth/user|login|logout/
+        dashboard.py  — /api/dashboard/
+        domains.py    — /api/domains/ CRUD
+        scans.py      — /api/scans/ + findings + scheduled jobs
+        workflows.py  — /api/workflows/ CRUD + /tools/ registry endpoint
+        insights.py   — /api/insights/
+```
+
+**Standard response envelope:**
+```json
+{"ok": true, "data": {...}, "errors": null, "pagination": {...}}
+```
+
+**Auth:** Session-based (no tokens). React sends `X-CSRFToken` header from `csrftoken` cookie.
+
+**Adding a new API endpoint:**
+1. Add view function to the relevant `apps/core/api/views/*.py`
+2. Wire URL in `apps/core/api/urls.py`
+3. Consume in `frontend/src/api/client.js` or a page component
 
 ### Tool auto-registration
 
@@ -189,16 +245,48 @@ class Finding(models.Model):
 **SQLite quirk:** Don't use `Max("extra__cvss_score")` or other aggregations on JSON-extracted fields — Django/SQLite fails. Group in Python instead.
 
 ## URL layout
-- `/` → dashboard
+
+### REST API (`/api/`)
+```
+GET  /api/auth/user/                      — current user info
+POST /api/auth/login/                     — session login
+POST /api/auth/logout/                    — session logout
+GET  /api/dashboard/                      — KPIs, domain status, urgent findings
+GET  /api/domains/                        — list domains (enriched)
+POST /api/domains/                        — add domain
+POST /api/domains/<pk>/toggle/            — activate/deactivate
+POST /api/domains/<pk>/delete/            — delete domain + all scan data
+GET  /api/scans/                          — paginated scan list (?domain=&status=&page=)
+POST /api/scans/start/                    — start/schedule scan
+GET  /api/scans/<uuid>/                   — full scan detail (assets + findings)
+GET  /api/scans/<uuid>/status/            — lightweight status (React polls every 3s)
+POST /api/scans/<uuid>/stop/              — cancel running scan
+POST /api/scans/<uuid>/delete/            — delete scan session
+GET  /api/scans/findings/                 — paginated findings (?severity=&domain=&status=&source=)
+POST /api/scans/findings/<id>/status/     — update finding lifecycle status
+GET  /api/scheduled/                      — scheduled jobs list
+POST /api/scheduled/<job_id>/cancel/      — cancel scheduled job
+GET  /api/workflows/                      — list workflows
+POST /api/workflows/create/               — create workflow
+GET  /api/workflows/tools/                — all registered tool choices (for create form)
+GET  /api/workflows/<pk>/                 — workflow detail + tool_steps + recent runs
+POST /api/workflows/<pk>/update/          — update workflow name/tools
+POST /api/workflows/<pk>/delete/          — delete workflow
+POST /api/workflows/<pk>/steps/<tool>/toggle/ — toggle single tool step
+GET  /api/insights/                       — trends, top hosts, asset growth, KPIs
+```
+
+### Legacy HTML routes (still active)
+- `/` → dashboard (Django template)
 - `/health/` → health check
 - `/domains/` → domain CRUD
 - `/scans/` → scan list
-- `/scans/start/` → start scan (domain + workflow selection)
-- `/scans/<uuid>/` → scan detail with live HTMX polling
-- `/scans/findings/` → unified finding list (filters: severity, session, domain)
-- `/scans/scheduled/` → scheduled jobs list
-- `/workflows/` → workflow list/create/detail (with dependency validation)
-- `/insights/` → trends, charts, tool breakdown
+- `/scans/start/` → start scan
+- `/scans/<uuid>/` → scan detail with HTMX polling
+- `/scans/findings/` → finding list
+- `/scans/scheduled/` → scheduled jobs
+- `/workflows/` → workflow list/create/detail
+- `/insights/` → trends, charts
 - `/reports/<uuid>/csv/` → CSV export
 - `/reports/<uuid>/pdf/` → PDF export
 - `/admin/` → Django admin
@@ -226,4 +314,4 @@ class Finding(models.Model):
 | `tests/unit/test_service_detection.py` | 16 | XML parsing, Port enrichment, is_web |
 | `tests/integration/test_scan_flow.py` | 13 | Full pipeline (mocked) + delete cascade |
 
-**Total: 381 tests** (340 fast + 41 slow domain_security)
+**Total: ~555 tests** (~514 fast + 41 slow domain_security)
