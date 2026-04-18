@@ -38,7 +38,7 @@ export default function App() {
   if (path.startsWith('/scans/') && path.length > 8) return <ScanDetailPage />;
   if (path === '/findings') return <FindingsPage />;
   if (path === '/workflows') return <WorkflowsPage />;
-  if (path.startsWith('/workflows/') && path.length > 12) return <WorkflowDetailPage />;
+  if (path.startsWith('/workflows/') && path.length > 11) return <WorkflowDetailPage />;
   if (path === '/insights') return <InsightsPage />;
   return <NotFound />;
 }
