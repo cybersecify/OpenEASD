@@ -280,15 +280,6 @@ class TestTlsAnalyzerUnencrypted:
         assert unencrypted[0].severity == "critical"
         assert "REDIS" in unencrypted[0].title
 
-    def test_http_web_port_finding(self):
-        sess, port_fk = self._make_port("http", 80)
-        results = [_make_result(port_fk, port=80, service="http",
-                                has_tls=False, is_web=True, scheme="http",
-                                tls_version="", cipher_name="")]
-        findings = analyze(sess, results)
-        f = next(f for f in findings if f.check_type == "unencrypted_service")
-        assert "HTTP" in f.title
-
     def test_inherently_insecure_creates_finding(self):
         sess, port_fk = self._make_port("telnet", 23)
         results = [_make_result(port_fk, port=23, service="telnet",
@@ -297,15 +288,6 @@ class TestTlsAnalyzerUnencrypted:
         findings = analyze(sess, results)
         f = next(f for f in findings if f.check_type == "unencrypted_service")
         assert "TELNET" in f.title
-
-    def test_https_no_finding(self):
-        sess, port_fk = self._make_port("https", 443)
-        results = [_make_result(port_fk, port=443, has_tls=True, is_web=True,
-                                scheme="https", tls_version="TLSv1.3",
-                                cipher_name="ECDHE-RSA-AES256-GCM-SHA384")]
-        findings = analyze(sess, results)
-        assert not any(f.check_type == "unencrypted_service" for f in findings)
-
 
 @pytest.mark.django_db
 class TestTlsAnalyzerCipherSuites:
@@ -625,47 +607,6 @@ class TestTlsAnalyzerCertDeep:
         assert not any(f.check_type == "untrusted_ca" for f in findings)
 
 
-@pytest.mark.django_db
-class TestTlsAnalyzerHsts:
-    def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
-        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
-        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
-        p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
-                                port=443, protocol="tcp", state="open",
-                                service="https", source="naabu")
-        return sess, p
-
-    def test_hsts_missing_https_web_high(self):
-        sess, port_fk = self._make_port()
-        results = [_make_result(port_fk, has_tls=True, is_web=True, scheme="https",
-                                hsts_header=None)]
-        findings = analyze(sess, results)
-        f = next((f for f in findings if f.check_type == "hsts_missing"), None)
-        assert f is not None and f.severity == "high"
-
-    def test_hsts_present_no_finding(self):
-        sess, port_fk = self._make_port()
-        results = [_make_result(port_fk, has_tls=True, is_web=True, scheme="https",
-                                hsts_header="max-age=31536000; includeSubDomains; preload")]
-        findings = analyze(sess, results)
-        assert not any(f.check_type == "hsts_missing" for f in findings)
-
-    def test_hsts_not_checked_for_non_web(self):
-        sess, port_fk = self._make_port()
-        results = [_make_result(port_fk, has_tls=True, is_web=False, hsts_header=None)]
-        findings = analyze(sess, results)
-        assert not any(f.check_type == "hsts_missing" for f in findings)
-
-    def test_hsts_not_checked_when_no_tls(self):
-        sess, port_fk = self._make_port()
-        results = [_make_result(port_fk, has_tls=False, is_web=True, scheme="http",
-                                hsts_header=None, tls_version="", cipher_name="")]
-        findings = analyze(sess, results)
-        assert not any(f.check_type == "hsts_missing" for f in findings)
-
-
 # ---------------------------------------------------------------------------
 # Collector integration — mocked probes, DB required
 # ---------------------------------------------------------------------------
@@ -699,35 +640,6 @@ class TestTlsCollector:
                            url="http://www.example.com:80",
                            host="www.example.com", port_number=80, scheme="http", source="httpx")
         return sess
-
-    @pytest.mark.skipif(
-        "apps.httpx" not in __import__("django.conf", fromlist=["settings"]).settings.INSTALLED_APPS,
-        reason="Web tools disabled — TLS checker skips web ports"
-    )
-    def test_https_web_port_no_probe(self):
-        sess = self._make_session()
-        with patch("apps.tls_checker.collector._probe_tls") as mock_probe:
-            with patch("apps.tls_checker.collector._probe_tls_details", return_value=None):
-                with patch("apps.tls_checker.collector._check_legacy_protocol_support", return_value={}):
-                    results = collect(sess)
-        https_result = next(r for r in results if r["port"] == 443)
-        assert https_result["has_tls"] is True
-        assert https_result["is_web"] is True
-        assert not any(c.args[:2] == ("1.2.3.4", 443) for c in mock_probe.call_args_list)
-
-    @pytest.mark.skipif(
-        "apps.httpx" not in __import__("django.conf", fromlist=["settings"]).settings.INSTALLED_APPS,
-        reason="Web tools disabled — TLS checker skips web ports"
-    )
-    def test_http_web_port_has_tls_false(self):
-        sess = self._make_session()
-        with patch("apps.tls_checker.collector._probe_tls"):
-            with patch("apps.tls_checker.collector._probe_tls_details", return_value=None):
-                with patch("apps.tls_checker.collector._check_legacy_protocol_support", return_value={}):
-                    results = collect(sess)
-        http_result = next(r for r in results if r["port"] == 80)
-        assert http_result["has_tls"] is False
-        assert http_result["is_web"] is True
 
     def test_telnet_not_probed(self):
         sess = self._make_session()

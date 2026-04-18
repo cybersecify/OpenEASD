@@ -1,4 +1,4 @@
-"""TLS Checker — probes all open ports for encryption status and configuration.
+"""TLS Checker — probes all non-web open ports for encryption status and configuration.
 
 Checks based on:
   - TLS Hardening Guide (cybersecify.com/blog/tls-hardening-guide)
@@ -8,10 +8,8 @@ Checks based on:
   - MITM Attacks Detection (cybersecify.com/blog/mitm-attacks-detection-prevention)
   - Cryptography Fundamentals (cybersecify.com/blog/cryptography-fundamentals)
 
-Web ports: determined from httpx URL scheme (scheme only, no probing).
-Non-web ports: probed via Python stdlib ssl/smtplib/imaplib/poplib/ftplib.
+Non-web ports only (is_web=False): probed via Python stdlib ssl/smtplib/imaplib/poplib/ftplib.
 Inherently insecure protocols (Telnet, rsh, etc.) always flagged without probing.
-HTTPS ports are also probed for the Strict-Transport-Security (HSTS) header.
 """
 
 import datetime
@@ -389,14 +387,13 @@ def _probe_tls(ip: str, port: int, service: str, hostname: str | None = None) ->
 
 def collect(session) -> list[dict]:
     """
-    Probe all open ports for TLS status and configuration.
+    Probe all non-web open ports for TLS status and configuration.
 
     Returns one result dict per port that requires TLS analysis:
       {
         ip, port, service,
         has_tls:           bool,
         is_web:            bool,
-        scheme:            str | None,       # "http"/"https" for web ports
         inherently_insecure: bool,
         port_fk, url_fk,
         # populated when has_tls=True:
@@ -407,14 +404,12 @@ def collect(session) -> list[dict]:
         cert_self_signed:  bool,
         supports_tls10:    bool,
         supports_tls11:    bool,
-        hsts_header:       str | None,       # Strict-Transport-Security value (HTTPS web ports only)
       }
 
     Ports with unknown services (not in TLS_CAPABLE or INHERENTLY_INSECURE)
-    that are not web ports are omitted — no findings can be generated.
+    are omitted — no findings can be generated.
     """
     from apps.core.assets.models import Port
-    from apps.core.web_assets.models import URL
 
     open_ports = list(
         Port.objects.filter(session=session, state="open", is_web=False)
@@ -422,12 +417,6 @@ def collect(session) -> list[dict]:
     )
     if not open_ports:
         return []
-
-    # Build port_id → URL obj for web ports (need scheme + hostname for HSTS/SAN)
-    url_by_port: dict[int, object] = {}
-    for url in URL.objects.filter(session=session).select_related("port"):
-        if url.port_id:
-            url_by_port[url.port_id] = url
 
     _tls_empty = {
         "tls_version": "", "cipher_name": "", "cipher_bits": 0,
@@ -446,45 +435,13 @@ def collect(session) -> list[dict]:
         port_num = p.port
         service = (p.service or "").lower()
 
-        # Resolve hostname: URL hostname > subdomain > IP fallback
-        url_obj = url_by_port.get(p.id)
-        if url_obj and url_obj.host:
-            host = url_obj.host
-        elif p.ip_address and p.ip_address.subdomain:
+        # Resolve hostname: subdomain > IP fallback
+        if p.ip_address and p.ip_address.subdomain:
             host = p.ip_address.subdomain.subdomain
         else:
             host = ip
 
-        if p.is_web:
-            scheme = url_obj.scheme if url_obj else ""
-            has_tls = scheme == "https"
-            tls_detail: dict = _tls_empty.copy()
-            details = None
-
-            if has_tls or not scheme:
-                # HTTPS confirmed by URL, or no URL — probe with hostname
-                details = _probe_tls_details(ip, port_num, hostname=host)
-                if details and not scheme:
-                    has_tls = True
-                    scheme = "https"
-                if details:
-                    legacy = _check_legacy_protocol_support(ip, port_num)
-                    tls_detail = {**details, **legacy}
-                else:
-                    tls_detail = {**_tls_empty, "supports_tls10": False, "supports_tls11": False}
-                tls_detail["hsts_header"] = _check_hsts(ip, port_num, host)
-            else:
-                tls_detail = {**_tls_empty}
-
-            results.append({
-                "ip": ip, "port": port_num, "service": service,
-                "has_tls": has_tls, "is_web": True, "scheme": scheme,
-                "inherently_insecure": False,
-                "port_fk": p, "url_fk": url_obj,
-                **tls_detail,
-            })
-
-        elif service in INHERENTLY_INSECURE_SERVICES:
+        if service in INHERENTLY_INSECURE_SERVICES:
             logger.debug(f"[tls_checker:{session.id}] {ip}:{port_num} inherently insecure ({service})")
             results.append({
                 "ip": ip, "port": port_num, "service": service,

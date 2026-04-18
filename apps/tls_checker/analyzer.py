@@ -605,70 +605,13 @@ _DEFAULT_TLS_REMEDIATION = (
     "Consult your service documentation for TLS/SSL configuration."
 )
 
-_HTTP_REMEDIATION = (
-    "Redirect all HTTP traffic to HTTPS using a 301 redirect. "
-    "Configure a valid TLS certificate via Let's Encrypt or your CA. "
-    "Set HSTS header (Strict-Transport-Security: max-age=31536000; includeSubDomains; preload) "
-    "after fully migrating to HTTPS."
-)
-
-
-# ---------------------------------------------------------------------------
-# HSTS finding (web HTTPS ports only)
-# ---------------------------------------------------------------------------
-
-def _hsts_finding(result: dict, session) -> list[Finding]:
-    """
-    Return a finding if the Strict-Transport-Security header is absent on an HTTPS port.
-
-    HSTS prevents SSL stripping attacks (as documented in the MITM Attacks blog).
-    Without it, a network attacker can intercept the HTTP redirect and keep the
-    victim on an unencrypted connection even when the server supports HTTPS.
-    """
-    if not result.get("is_web") or not result.get("has_tls"):
-        return []
-
-    hsts = result.get("hsts_header")
-    if hsts:
-        return []
-
-    ip = result["ip"]
-    port_num = result["port"]
-    return [Finding(
-        session=session,
-        source="tls_checker",
-        check_type="hsts_missing",
-        severity="high",
-        title=f"HSTS header missing on {ip}:{port_num}",
-        description=(
-            f"The HTTPS service on {ip}:{port_num} does not set the "
-            f"Strict-Transport-Security (HSTS) header. Without HSTS, browsers "
-            f"can still connect over HTTP, enabling SSL stripping attacks where "
-            f"an attacker intercepts the HTTP-to-HTTPS redirect and downgrades "
-            f"the connection to cleartext. This is a prerequisite for MITM attacks "
-            f"against web clients."
-        ),
-        remediation=(
-            "Add HSTS to all HTTPS responses:\n"
-            "  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload\n"
-            "Ensure all subdomains also support HTTPS before enabling includeSubDomains. "
-            "Consider submitting to the HSTS preload list at hstspreload.org for "
-            "browser-native enforcement before any HTTP request is made."
-        ),
-        port=result["port_fk"],
-        url=result.get("url_fk"),
-        target=f"{ip}:{port_num}",
-        extra={"address": ip, "port_number": port_num, "is_web": True},
-    )]
-
-
 # ---------------------------------------------------------------------------
 # Main analyze function
 # ---------------------------------------------------------------------------
 
 def analyze(session, results: list[dict]) -> list[Finding]:
     """
-    Build Finding objects from TLS probe results.
+    Build Finding objects from TLS probe results (non-web ports only).
 
     For each port result, generates findings across multiple categories:
       - Unencrypted service (no TLS at all)
@@ -676,7 +619,6 @@ def analyze(session, results: list[dict]) -> list[Finding]:
       - TLS 1.3 not supported
       - Weak cipher suites (RC4, 3DES/Blowfish, NULL, EXPORT, SHA-1, CBC, RSA-KEX, anon)
       - Certificate issues (expired, near-expiry, self-signed)
-      - HSTS missing (HTTPS web ports)
     """
     findings: list[Finding] = []
 
@@ -685,30 +627,19 @@ def analyze(session, results: list[dict]) -> list[Finding]:
         port_num = r["port"]
         service = r["service"]
         has_tls = r["has_tls"]
-        is_web = r["is_web"]
         is_inherently_insecure = r["inherently_insecure"]
         port_fk = r["port_fk"]
-        url_fk = r.get("url_fk")
         display_svc = service.upper() if service else f"port {port_num}"
 
         if not has_tls:
             # ── No TLS at all ────────────────────────────────────────────
-            if is_web:
-                title = f"Unencrypted HTTP service on {ip}:{port_num}"
-                description = (
-                    f"The web service on {ip}:{port_num} is accessible over plain HTTP. "
-                    f"All traffic — including session cookies, form data, and API calls — "
-                    f"is transmitted in cleartext, enabling interception and SSL stripping attacks."
-                )
-                remediation = _HTTP_REMEDIATION
-            elif is_inherently_insecure:
+            if is_inherently_insecure:
                 title = f"Insecure protocol {display_svc} on {ip}:{port_num}"
                 description = (
                     f"{display_svc} on {ip}:{port_num} is an inherently insecure protocol "
                     f"with no TLS support. All data — including credentials — is transmitted "
                     f"in plaintext and is trivially interceptable."
                 )
-                remediation = _TLS_REMEDIATION.get(service, _DEFAULT_TLS_REMEDIATION)
             else:
                 title = f"Unencrypted {display_svc} on {ip}:{port_num}"
                 description = (
@@ -716,7 +647,7 @@ def analyze(session, results: list[dict]) -> list[Finding]:
                     f"Sensitive data exchanged over this service is exposed to interception "
                     f"and man-in-the-middle attacks."
                 )
-                remediation = _TLS_REMEDIATION.get(service, _DEFAULT_TLS_REMEDIATION)
+            remediation = _TLS_REMEDIATION.get(service, _DEFAULT_TLS_REMEDIATION)
 
             findings.append(Finding(
                 session=session,
@@ -727,11 +658,9 @@ def analyze(session, results: list[dict]) -> list[Finding]:
                 description=description,
                 remediation=remediation,
                 port=port_fk,
-                url=url_fk,
                 target=f"{ip}:{port_num}",
                 extra={
                     "service": service, "port_number": port_num, "address": ip,
-                    "is_web": is_web, "scheme": r.get("scheme"),
                     "inherently_insecure": is_inherently_insecure,
                 },
             ))
@@ -745,6 +674,5 @@ def analyze(session, results: list[dict]) -> list[Finding]:
             findings.extend(_san_mismatch_findings(r, session))
             findings.extend(_sct_findings(r, session))
             findings.extend(_untrusted_ca_findings(r, session))
-            findings.extend(_hsts_finding(r, session))
 
     return findings

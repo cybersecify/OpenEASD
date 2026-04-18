@@ -299,7 +299,7 @@ def collect(session) -> list[dict]:
 
     # Match by service name OR well-known SSH port (naabu doesn't set service names)
     ssh_ports = list(Port.objects.filter(
-        session=session, state="open",
+        session=session, state="open", is_web=False,
     ).filter(
         db_models.Q(service="ssh") | db_models.Q(port=22)
     ))

@@ -308,7 +308,6 @@ class TestDomainDeleteCascade:
         from apps.core.scans.models import ScanSession
         from apps.core.findings.models import Finding
         from apps.core.insights.models import ScanSummary
-        from django.urls import reverse
 
         domain = Domain.objects.create(name="cascade.com", is_primary=True)
         session = ScanSession.objects.create(
@@ -322,7 +321,8 @@ class TestDomainDeleteCascade:
             scan_date=timezone.now(), total_findings=1, high_count=1
         )
 
-        auth_client.post(reverse("domain-delete", args=[domain.pk]))
+        auth_client.post(f"/api/domains/{domain.pk}/delete/",
+                         content_type="application/json")
 
         assert not Domain.objects.filter(name="cascade.com").exists()
         assert not ScanSession.objects.filter(domain="cascade.com").exists()
@@ -336,7 +336,6 @@ class TestDomainDeleteCascade:
         from apps.core.assets.models import Subdomain, IPAddress, Port
         from apps.core.web_assets.models import URL
         from apps.core.findings.models import Finding
-        from django.urls import reverse
 
         domain = Domain.objects.create(name="cascade.com", is_primary=True)
         session = ScanSession.objects.create(
@@ -353,7 +352,8 @@ class TestDomainDeleteCascade:
             extra={"cve": "CVE-2024-6387", "cvss_score": 8.1, "address": "1.2.3.4", "port_number": 22},
         )
 
-        auth_client.post(reverse("domain-delete", args=[domain.pk]))
+        auth_client.post(f"/api/domains/{domain.pk}/delete/",
+                         content_type="application/json")
 
         # All asset types must be gone
         assert Subdomain.objects.filter(session=session).count() == 0

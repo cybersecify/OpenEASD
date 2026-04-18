@@ -414,6 +414,20 @@ class TestSshCollector:
         assert len(results) == 1
         assert results[0]["probe_success"] is False
 
+    def test_web_ports_skipped(self):
+        """Ports with is_web=True must not be probed even if they run on port 22."""
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import IPAddress, Port
+        sess = ScanSession.objects.create(domain="webonly.com", scan_type="full")
+        ip = IPAddress.objects.create(session=sess, address="5.6.7.8", version=4, source="dnsx")
+        Port.objects.create(session=sess, ip_address=ip, address="5.6.7.8",
+                            port=22, protocol="tcp", state="open",
+                            service="ssh", is_web=True, source="naabu")
+        with patch("apps.ssh_checker.collector._probe_ssh") as mock_probe:
+            results = collect(sess)
+        assert results == []
+        mock_probe.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Scanner orchestrator
