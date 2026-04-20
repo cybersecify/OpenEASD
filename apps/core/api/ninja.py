@@ -124,3 +124,6 @@ api.add_router("/scheduled", scheduled_router)
 
 from apps.core.workflows.api import router as workflows_router
 api.add_router("/workflows", workflows_router)
+
+from apps.core.insights.api import router as insights_router
+api.add_router("/insights", insights_router)
