@@ -7,9 +7,11 @@ from django.urls import path, include, re_path
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.generic import TemplateView
 
+from apps.core.api.ninja import api
+
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("api/", include("apps.core.api.urls")),
+    path("api/", api.urls),
     path("reports/", include("apps.core.reports.urls")),
     re_path(
         r'^(?!api/|admin|static/|media/).*$',
