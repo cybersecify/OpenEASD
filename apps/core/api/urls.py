@@ -5,7 +5,8 @@ from apps.core.api.views.domains import api_domain_list, api_domain_toggle, api_
 from apps.core.api.views.scans import (
     api_scan_list, api_scan_start, api_scan_detail, api_scan_status,
     api_scan_stop, api_scan_delete, api_vulnerability_list,
-    api_finding_update_status, api_scheduled_list, api_scheduled_cancel
+    api_finding_update_status, api_scheduled_list, api_scheduled_cancel,
+    api_url_list,
 )
 from apps.core.api.views.workflows import (
     api_workflow_list, api_workflow_create, api_workflow_detail,
@@ -29,6 +30,7 @@ urlpatterns = [
     path("scans/", api_scan_list, name="api-scan-list"),
     path("scans/start/", api_scan_start, name="api-scan-start"),
     path("scans/findings/", api_vulnerability_list, name="api-vulnerability-list"),
+    path("scans/urls/", api_url_list, name="api-url-list"),
     path("scans/findings/<int:finding_id>/status/", api_finding_update_status, name="api-finding-update-status"),
     path("scans/<uuid:session_uuid>/", api_scan_detail, name="api-scan-detail"),
     path("scans/<uuid:session_uuid>/status/", api_scan_status, name="api-scan-status"),

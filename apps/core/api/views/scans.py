@@ -403,6 +403,50 @@ def api_finding_update_status(request, finding_id):
 
 
 @api_login_required
+def api_url_list(request):
+    from apps.core.web_assets.models import URL
+    from apps.core.queries import latest_session_ids
+
+    domain = request.GET.get("domain", "").strip()
+    session_uuid = request.GET.get("session_uuid", "").strip()
+    scheme = request.GET.get("scheme", "").strip()
+    status_code = request.GET.get("status_code", "").strip()
+
+    if session_uuid:
+        session = get_object_or_404(ScanSession, uuid=session_uuid)
+        qs = URL.objects.filter(session=session)
+    else:
+        latest_ids = latest_session_ids()
+        qs = URL.objects.filter(session_id__in=latest_ids)
+        if domain:
+            qs = qs.filter(session__domain__icontains=domain)
+
+    if scheme:
+        qs = qs.filter(scheme=scheme)
+    if status_code:
+        try:
+            qs = qs.filter(status_code=int(status_code))
+        except ValueError:
+            pass
+
+    qs = qs.select_related("port", "subdomain").order_by("url")
+
+    paginator = Paginator(qs, 50)
+    page = paginator.get_page(request.GET.get("page"))
+
+    return api_response(
+        data=[serialize_url(u) for u in page],
+        pagination={
+            "page": page.number,
+            "total_pages": paginator.num_pages,
+            "count": paginator.count,
+            "has_next": page.has_next(),
+            "has_previous": page.has_previous(),
+        },
+    )
+
+
+@api_login_required
 def api_scheduled_list(request):
     from apps.core.scheduler import get_scheduler
 
