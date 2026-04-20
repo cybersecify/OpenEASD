@@ -29,7 +29,7 @@ export default function ScansPage() {
   );
   const { data: scheduledData, refetch: refetchScheduled } = useFetch('/scheduled/');
 
-  const scans     = Array.isArray(scansData) ? scansData : [];
+  const scans     = scansData?.results ?? [];
   const scheduled = scheduledData || [];
   const domains   = domainsData || [];
 
