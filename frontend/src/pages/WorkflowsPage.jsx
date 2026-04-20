@@ -30,7 +30,7 @@ function CreateWorkflowForm({ onCreated }) {
       const res = await apiPost('/workflows/create/', {
         name: name.trim(), description: desc.trim(), is_default: isDef, tools: selected,
       });
-      onCreated(res.data);
+      onCreated(res);
       setName(''); setDesc(''); setDef(false); setSel([]);
     } catch (e) { setErr(e.message); }
     finally { setSaving(false); }

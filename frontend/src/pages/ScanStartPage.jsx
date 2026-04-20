@@ -38,7 +38,7 @@ export default function ScanStartPage() {
       await apiPost('/scans/start/', body);
       navigate('/scans');
     } catch (err) {
-      setError(err.data?.detail || err.message || 'Failed to start scan.');
+      setError(err.data?.error?.message || err.message || 'Failed to start scan.');
     } finally { setSubmitting(false); }
   }
 
