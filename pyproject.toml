@@ -58,6 +58,7 @@ build-backend = "setuptools.build_meta"
 
 [dependency-groups]
 dev = [
+    "pyflakes>=3.4.0",
     "pytest>=9.0.3",
     "pytest-django>=4.12.0",
 ]

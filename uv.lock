@@ -877,6 +877,7 @@ prod = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "pyflakes" },
     { name = "pytest" },
     { name = "pytest-django" },
 ]
@@ -909,6 +910,7 @@ provides-extras = ["dev", "prod"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "pyflakes", specifier = ">=3.4.0" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-django", specifier = ">=4.12.0" },
 ]

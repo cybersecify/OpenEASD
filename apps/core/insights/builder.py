@@ -10,13 +10,13 @@ All tool finding models must have a `severity` field with values:
 
 import logging
 
-from django.db.models import Count, F, Max
+from django.db.models import Count, Max
 from django.utils import timezone as django_tz
 
 from apps.core.constants import SEVERITY_RANK
 from apps.core.domains.models import Domain
 from apps.core.queries import latest_session_ids
-from apps.core.scans.models import ScanDelta, ScanSession
+from apps.core.scans.models import ScanDelta
 from .models import ScanSummary, FindingTypeSummary
 
 logger = logging.getLogger(__name__)

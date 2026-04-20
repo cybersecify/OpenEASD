@@ -11,7 +11,6 @@ from apps.core.assets.models import IPAddress, Port, Subdomain
 from apps.core.domains.models import Domain
 from apps.core.findings.models import Finding
 from apps.core.insights.models import FindingTypeSummary, ScanSummary
-from apps.core.scans.models import ScanSession
 from apps.core.web_assets.models import URL
 
 router = Router(auth=auth_bearer)

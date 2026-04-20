@@ -69,7 +69,6 @@ class _InspectTransport(paramiko.Transport):
     def _parse_kex_init(self, m):
         # Peek at the raw message to extract server algorithm lists
         # before the parent method consumes and negotiates them
-        saved_pos = m.get_so_far()  # bytes consumed so far
         parsed = self._really_parse_kex_init(m, ignore_first_byte=False)
 
         self.server_kex_algorithms = parsed.get("kex_algo_list", [])

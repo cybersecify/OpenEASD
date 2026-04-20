@@ -9,7 +9,6 @@ from django.shortcuts import render
 from apps.core.assets.models import IPAddress, Port, Subdomain
 from apps.core.web_assets.models import URL
 from apps.core.domains.models import Domain
-from apps.core.scans.models import ScanSession
 from apps.core.findings.models import Finding
 from .models import FindingTypeSummary, ScanSummary
 
