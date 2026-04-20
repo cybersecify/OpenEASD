@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "apps.core.notifications",
     "apps.core.insights",
     "apps.core.reports",
+    "apps.core.api.tokens",
     "apps.domain_security",
     "apps.subfinder",
     "apps.amass",
