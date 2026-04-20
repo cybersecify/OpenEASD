@@ -114,3 +114,6 @@ api.add_router("/auth", auth_router)
 
 from apps.core.dashboard.api import router as dashboard_router
 api.add_router("/dashboard", dashboard_router)
+
+from apps.core.domains.api import router as domains_router
+api.add_router("/domains", domains_router)
