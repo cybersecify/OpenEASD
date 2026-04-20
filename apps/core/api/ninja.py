@@ -121,3 +121,6 @@ api.add_router("/domains", domains_router)
 from apps.core.scans.api import router as scans_router, scheduled_router
 api.add_router("/scans", scans_router)
 api.add_router("/scheduled", scheduled_router)
+
+from apps.core.workflows.api import router as workflows_router
+api.add_router("/workflows", workflows_router)
