@@ -2,6 +2,7 @@ import React from 'react';
 import { navigate } from '../App.jsx';
 import { useFetch } from '../hooks/useFetch.js';
 import { apiPost } from '../api/client.js';
+import { auth } from '../auth.js';
 
 const NAV = [
   { label: 'Dashboard', path: '/' },
@@ -55,7 +56,8 @@ export function Layout({ children }) {
         <div className="px-3 py-3 border-t border-rim">
           <button
             onClick={async () => {
-              try { await apiPost('/auth/logout/'); } catch (_) {}
+              try { await apiPost('/auth/logout/', { refresh: auth.getRefresh() }); } catch (_) {}
+              auth.clear();
               navigate('/login');
             }}
             className="w-full text-left px-3 py-2 rounded-md text-sm text-dim hover:text-body hover:bg-hover transition-colors"
