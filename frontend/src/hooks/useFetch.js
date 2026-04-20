@@ -13,12 +13,23 @@ export function useFetch(path, deps = []) {
     setError(null);
     try {
       const res = await apiFetch(path, { method: 'GET' });
-      setData(res.data);
-      setPagination(res.pagination || null);
+      setData(res);
+      // Auto-extract pagination when embedded in flat response
+      if (res && typeof res === 'object' && !Array.isArray(res) && 'page' in res) {
+        setPagination({
+          page:        res.page,
+          total_pages: res.total_pages,
+          count:       res.total,
+          has_next:    res.has_next,
+          has_previous: res.has_previous,
+        });
+      } else {
+        setPagination(null);
+      }
     } catch (e) {
-      setError(e.message);
-      if (e.status === 401) {
-        window.location.href = '/login';
+      // 401 is handled in apiFetch (clears tokens + redirects) — don't set error for it
+      if (e.status !== 401) {
+        setError(e.message);
       }
     } finally {
       setLoading(false);
