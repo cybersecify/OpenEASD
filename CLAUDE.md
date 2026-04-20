@@ -26,7 +26,8 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 
 ### Backend
 - Django 5+ with plain Django views (no DRF, no Celery, no Redis)
-- Pure Django REST API under `/api/` — `JsonResponse` only, no third-party API libs
+- **Django Ninja** REST API under `/api/` — Schema-based, auto-docs at `/api/docs`
+- **JWT Bearer auth** — access + refresh tokens, JTI blacklist in `BlacklistedToken` model
 - Huey — lightweight task queue for background scan execution
 - `django-apscheduler` for daily automated scans (starts in `SchedulerConfig.ready()`)
 - SQLite database (dev), configurable via `DB_NAME` env var
@@ -34,7 +35,8 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 ### Frontend (React SPA — new primary UI)
 - **React 18 + Vite** — `frontend/` directory, builds to `frontend/dist/`
 - Vanilla popstate-based router in `App.jsx` (no react-router)
-- CSRF-aware `apiFetch` in `src/api/client.js` — uses session auth + `X-CSRFToken` header
+- JWT `apiFetch` in `src/api/client.js` — sends `Authorization: Bearer <token>` header; 401 clears tokens and redirects to `/login`
+- `auth.js` — isolated localStorage helpers (`getToken`, `setTokens`, `clear`, `isLoggedIn`)
 - `useFetch` / `usePolling` hooks for data fetching and live scan status (3s poll)
 - Shared components: `Badge`, `Spinner`, `Pagination`, `ConfirmButton`, `Notification`
 - Dark theme throughout: bg `#0d1117`, card `#161b22`, border `#30363d`, accent `#30c074`
@@ -59,7 +61,7 @@ cd frontend && npm install && npm run dev
 
 ### Frontend rules
 - New interactive features → React pages in `frontend/src/pages/`
-- New API data → add endpoint to `apps/core/api/views/` + wire in `apps/core/api/urls.py`
+- New API data → add endpoint to the relevant `apps/core/<module>/api.py` router + wire in `apps/core/api/ninja.py`
 - Shared UI primitives → `frontend/src/components/`
 - Don't add CORS headers — always use same-origin (Vite proxy in dev, Django serves in prod)
 - Legacy HTMX/Alpine/Django-template stack is **retired**. All UI is the React SPA.
@@ -80,18 +82,21 @@ cd frontend && npm install && npm run dev
 ProjectDiscovery tools installed via `pdtm` at `~/.pdtm/go/bin/`:
 - `subfinder`, `dnsx`, `naabu`, `httpx`, `nuclei`
 
+OWASP/other tools:
+- `amass` — active subdomain enumeration (install separately: `go install -v github.com/owasp-amass/amass/v4/...@master`)
+
 System binary:
 - `nmap` (Homebrew at `/opt/homebrew/bin/nmap`)
 
-Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_NMAP`, `TOOL_NUCLEI` env vars.
+Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_NMAP`, `TOOL_NUCLEI`, `TOOL_AMASS` env vars.
 
 ## Architecture
 
-### Core infrastructure — `apps/core/` (13 sub-apps)
+### Core infrastructure — `apps/core/` (14 sub-apps)
 
 | App | Label | Purpose |
 |---|---|---|
-| `dashboard/` | `core` | Dashboard page, health check (legacy HTML) |
+| `dashboard/` | `core` | Dashboard page, health check |
 | `domains/` | `domains` | Domain model, CRUD views |
 | `assets/` | `assets` | Network assets: Subdomain, IPAddress, Port |
 | `web_assets/` | `web_assets` | Web assets: URL |
@@ -103,35 +108,44 @@ Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TO
 | `notifications/` | `alerts` | Slack/Teams alert dispatcher |
 | `insights/` | `insights` | ScanSummary, FindingTypeSummary, charts |
 | `reports/` | `reports` | CSV + PDF export |
-| `api/` | — | Pure Django REST API — `JsonResponse` views, serializers, auth decorator |
+| `api/` | — | Django Ninja API — routers, JWT auth, error handlers |
+| `api/tokens/` | `api_tokens` | BlacklistedToken model for JWT JTI blacklist |
 
 ### REST API module — `apps/core/api/`
 
 ```
 apps/core/api/
     __init__.py
-    decorators.py     — api_login_required (returns 401 JSON, not redirect)
-    serializers.py    — serialize_* functions + api_response() helper
-    urls.py           — all /api/ routes
-    views/
-        auth.py       — /api/auth/user|login|logout/
-        dashboard.py  — /api/dashboard/
-        domains.py    — /api/domains/ CRUD
-        scans.py      — /api/scans/ + findings + scheduled jobs
-        workflows.py  — /api/workflows/ CRUD + /tools/ registry endpoint
-        insights.py   — /api/insights/
+    auth.py           — JWT helpers: create_access_token, create_refresh_token,
+                        decode_token, AuthBearer (Ninja HttpBearer subclass)
+    ninja.py          — NinjaAPI instance, auth_router (/auth/login|logout|refresh|user),
+                        error handlers, router registration
+    tokens/
+        models.py     — BlacklistedToken(jti, expires_at) for refresh token invalidation
+
+Per-module routers (each file exports a `router = Router(auth=auth_bearer)`):
+    apps/core/dashboard/api.py   — /api/dashboard/
+    apps/core/domains/api.py     — /api/domains/ CRUD
+    apps/core/scans/api.py       — /api/scans/ + findings
+    apps/core/workflows/api.py   — /api/workflows/ CRUD + /tools/
+    apps/core/insights/api.py    — /api/insights/
+    (scheduled router in scans/api.py) — /api/scheduled/
 ```
 
-**Standard response envelope:**
+**Response format:** Flat JSON — no envelope wrapper.
 ```json
-{"ok": true, "data": {...}, "errors": null, "pagination": {...}}
+{"id": 1, "domain": "example.com", ...}           // success
+{"error": {"code": "NOT_FOUND", "message": "..."}} // error
 ```
 
-**Auth:** Session-based (no tokens). React sends `X-CSRFToken` header from `csrftoken` cookie.
+**Auth:** JWT Bearer tokens. React stores tokens in `localStorage` via `auth.js`.
+- Access token: short-lived, sent as `Authorization: Bearer <token>`
+- Refresh token: long-lived, sent in POST body to `/api/auth/refresh/`
+- Logout: blacklists refresh token JTI in `BlacklistedToken`
 
 **Adding a new API endpoint:**
-1. Add view function to the relevant `apps/core/api/views/*.py`
-2. Wire URL in `apps/core/api/urls.py`
+1. Add endpoint function to the relevant `apps/core/<module>/api.py` router
+2. Register the router in `apps/core/api/ninja.py` if it's a new module
 3. Consume in `frontend/src/api/client.js` or a page component
 
 ### Tool auto-registration
@@ -160,18 +174,20 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (11 registered tools)
+### Tool apps (13 registered tools)
 
 | App | Phase | produces_findings | Description |
 |---|---|---|---|
 | `apps/domain_security/` | 1 | Yes | DNS, email, RDAP checks |
 | `apps/subfinder/` | 2 | No | Passive subdomain enumeration |
+| `apps/amass/` | 2 | No | Active subdomain enumeration |
 | `apps/dnsx/` | 3 | No | DNS resolution, public IP filtering |
 | `apps/naabu/` | 4 | No | Port scanning (top 100 TCP) |
 | `apps/core/service_detection/` | 5 | No | nmap -sV enriches Port.service + is_web |
 | `apps/nmap/` | 7 | Yes | NSE vulners CVE scan (non-web ports) |
 | `apps/tls_checker/` | 7 | Yes | TLS/cert analysis (all ports) |
 | `apps/ssh_checker/` | 7 | Yes | SSH config analysis |
+| `apps/nuclei_network/` | 7 | Yes | Network protocol vuln scan (319 templates, non-web) |
 | `apps/httpx/` | 8 | No | Web probing, URL discovery |
 | `apps/nuclei/` | 9 | Yes | Web vuln scan (community templates) |
 | `apps/web_checker/` | 9 | Yes | Security headers, cookies, CORS |
@@ -195,12 +211,14 @@ any subset of tools.
 ```
 Phase 1  domain_security    → Finding (DNS/email/RDAP)
 Phase 2  subfinder          → Subdomain (passive enumeration)
+Phase 2  amass              → Subdomain (active enumeration)
 Phase 3  dnsx               → IPAddress (public-only filter)
 Phase 4  naabu              → Port (top 100 TCP scan)
 Phase 5  service_detection  → enriches Port.service + Port.is_web
 Phase 7  nmap               → Finding (CVEs on non-web ports, is_web=False)
 Phase 7  tls_checker        → Finding (cipher/cert/protocol on all ports)
 Phase 7  ssh_checker        → Finding (SSH config on service="ssh" ports)
+Phase 7  nuclei_network     → Finding (network protocol vulns, non-web ports)
 Phase 8  httpx              → URL (web probing, CDN-aware via SNI)
 Phase 9  nuclei             → Finding (web vulns via templates on URLs)
 Phase 9  web_checker        → Finding (headers, cookies, CORS on URLs)
@@ -251,9 +269,10 @@ class Finding(models.Model):
 
 ### REST API (`/api/`)
 ```
-GET  /api/auth/user/                      — current user info
-POST /api/auth/login/                     — session login
-POST /api/auth/logout/                    — session logout
+POST /api/auth/login/                     — JWT login → {access, refresh}
+POST /api/auth/logout/                    — blacklist refresh token JTI
+POST /api/auth/refresh/                   — exchange refresh → new access token
+GET  /api/auth/user/                      — current user info (requires access token)
 GET  /api/dashboard/                      — KPIs, domain status, urgent findings
 GET  /api/domains/                        — list domains (enriched)
 POST /api/domains/                        — add domain
@@ -279,20 +298,12 @@ POST /api/workflows/<pk>/steps/<tool>/toggle/ — toggle single tool step
 GET  /api/insights/                       — trends, top hosts, asset growth, KPIs
 ```
 
-### Legacy HTML routes (still active)
-- `/` → dashboard (Django template)
-- `/health/` → health check
-- `/domains/` → domain CRUD
-- `/scans/` → scan list
-- `/scans/start/` → start scan
-- `/scans/<uuid>/` → scan detail with HTMX polling
-- `/scans/findings/` → finding list
-- `/scans/scheduled/` → scheduled jobs
-- `/workflows/` → workflow list/create/detail
-- `/insights/` → trends, charts
-- `/reports/<uuid>/csv/` → CSV export
-- `/reports/<uuid>/pdf/` → PDF export
+### Other routes
+- `/reports/<uuid>/csv/` → CSV export (Django view, `login_required`)
+- `/reports/<uuid>/pdf/` → PDF export (Django view, `login_required`)
 - `/admin/` → Django admin
+- `/api/docs` → Django Ninja auto-generated OpenAPI docs
+- `/*` → React SPA catch-all (`frontend/dist/index.html`)
 
 ## Tests
 
@@ -306,15 +317,20 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | `tests/unit/test_domains.py` | 15 | Domain CRUD |
 | `tests/unit/test_httpx.py` | 11 | JSON parser, Port lookup, Subdomain link |
 | `tests/unit/test_insights.py` | 11 | Insights builder + view |
+| `tests/unit/test_jwt_auth.py` | 26 | JWT create/decode, AuthBearer, BlacklistedToken model |
 | `tests/unit/test_naabu.py` | 9 | JSON parser, FK to IPAddress |
 | `tests/unit/test_nmap.py` | 21 | Severity mapping, vulners XML parser, web/non-web exclusion |
+| `tests/unit/test_reports.py` | 15 | CSV export content/structure, PDF export (mocked pisa) |
 | `tests/unit/test_scans.py` | 55 | ScanSession, scheduling, scan_start views |
+| `tests/unit/test_scheduler.py` | 15 | reap_stuck_scans, purge_expired_tokens, daily_scan |
 | `tests/unit/test_subfinder.py` | 11 | JSON parser, dedup, hostname normalization |
 | `tests/unit/test_tls_checker.py` | 77 | Cert parsing, ciphers, protocols, HSTS, collector, scanner |
 | `tests/unit/test_ssh_checker.py` | 33 | SSH probe, host key, kex/cipher/MAC, auth, collector |
 | `tests/unit/test_nuclei.py` | 25 | CVE parsing, severity, dedup, URL linking, collector |
 | `tests/unit/test_web_checker.py` | 34 | Headers, cookies, CORS, disclosure, collector |
 | `tests/unit/test_service_detection.py` | 16 | XML parsing, Port enrichment, is_web |
+| `tests/unit/test_workflow_runner.py` | 20 | run_workflow, service_detection injection, step failure, cancellation |
 | `tests/integration/test_scan_flow.py` | 13 | Full pipeline (mocked) + delete cascade |
+| `tests/test_api_endpoints.py` | 71 | Smoke tests for all 35 API endpoints (auth + payload shape) |
 
-**Total: ~555 tests** (~514 fast + 41 slow domain_security)
+**Total: ~598 tests** (~557 fast + 41 slow domain_security)

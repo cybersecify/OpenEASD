@@ -25,11 +25,12 @@ Existing commercial tools (Shodan, Censys, AttackSurfaceMapper) are expensive, c
 A self-hosted web platform that automatically discovers and monitors an organization's external attack surface. Users add domains, and OpenEASD:
 
 1. Checks domain security posture (DNS, email, RDAP)
-2. Discovers all subdomains
+2. Discovers all subdomains (passive + active)
 3. Resolves them to IP addresses
 4. Scans for open ports
 5. Classifies web vs non-web services
-6. Detects known vulnerabilities (CVEs) on non-web ports
+6. Detects known vulnerabilities (CVEs, network protocols, TLS, SSH)
+7. Scans web services for security headers, cookies, CORS, and web vulnerabilities
 
 **Core capabilities:**
 - Add domains and run on-demand or scheduled scans
@@ -38,11 +39,13 @@ A self-hosted web platform that automatically discovers and monitors an organiza
 - Export reports (CSV, PDF)
 - Get alerted via Slack/Teams when new issues are found
 - See trends and insights over time
+- JWT-authenticated REST API with OpenAPI docs
 
 ## Where
 
 - **Deployment:** Self-hosted (local machine, VPS, Docker)
-- **Access:** Web browser (dashboard)
+- **Access:** Web browser (React SPA at `/`)
+- **API:** REST API at `/api/` with Swagger UI at `/api/docs`
 - **Distribution:** Open source on GitHub
 
 ## When
@@ -52,46 +55,59 @@ A self-hosted web platform that automatically discovers and monitors an organiza
 **v0.1 — Foundation**
 - Web dashboard with domain management
 - Domain security scanning (DNS, email, RDAP checks)
-- Subdomain discovery
+- Subdomain discovery (subfinder)
 - Scheduled daily scans
 - Insights and trend tracking
 - Slack/Teams alerting
 
 **v0.2 — Full Pipeline + Stability**
-- Complete 6-phase scan pipeline (domain security → subfinder → dnsx → naabu → httpx → nmap)
+- Complete scan pipeline (domain security → subfinder → dnsx → naabu → service detection → nmap → tls_checker → ssh_checker → httpx → nuclei → web_checker)
 - Unified finding model across all tools
 - Finding lifecycle tracking (open, acknowledged, resolved, false positive)
 - CSV and PDF report export
-- Async task queue (no more silent thread crashes)
+- Async task queue via Huey (no more silent thread crashes)
 - Configurable scan workflows (enable/disable tools)
-- 240 automated tests
 - Performance improvements (query optimization)
+
+**v0.3 — React SPA + Modern UI**
+- Full React 18 + Vite frontend replacing HTMX/Alpine legacy stack
+- Dark theme throughout
+- Live scan progress with per-tool step tracking
+- Workflow management UI (create, edit, toggle steps)
+- Paginated findings with filtering by severity/source/status
+- Insights page with trend charts
+
+**v0.4 — Network Vuln Expansion + Active Recon**
+- Amass integration for active subdomain enumeration (Phase 2)
+- Nuclei Network scanner for network protocol vulnerabilities (Phase 7, 319 templates)
+- Nuclei Network runs after service detection, targets non-web ports
+
+**v1.0 — Stable Public Release**
+- Django Ninja REST API replacing plain JsonResponse views
+- JWT Bearer authentication (access + refresh tokens, JTI blacklist)
+- Auto-generated OpenAPI docs at `/api/docs`
+- `main.py` single-command launcher (auto-migrate, first-run admin creation)
+- ~598 automated tests covering all modules
+- Dead code cleanup — removed 5 legacy orphaned app directories
 
 ### Planned
 
-**v0.3 — Deployment Ready**
+**v1.1 — Deployment Ready**
 - Docker Compose setup (one-command deploy)
-- Environment configuration guide
-- README with install/usage instructions
-- LICENSE file
-- `.env.example` for easy configuration
+- Environment configuration guide (`.env.example`)
+- Production deployment guide (nginx + gunicorn)
+- GitHub Actions CI pipeline
 
-**v0.4 — Web Vulnerability Scanning**
-- Re-enable Nuclei scanner for web ports
-- Web-specific findings (XSS, SQLi, misconfigurations)
-- SSL/TLS certificate checking
-
-**v0.5 — Collaboration + Usability**
+**v1.2 — Collaboration + Usability**
 - Finding assignment to team members
 - Comments on findings
 - Email notifications
 - Dashboard customization
 
-**v1.0 — Stable Public Release**
-- Stable architecture (no breaking changes)
-- Complete documentation
-- Contributor guidelines
-- Production deployment guide
+**v1.3 — Advanced Scanning**
+- Custom Nuclei template support
+- Scan diff view (visual delta between scans)
+- Asset tagging and grouping
 
 ---
 
