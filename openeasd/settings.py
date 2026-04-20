@@ -13,6 +13,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = config("SECRET_KEY", default="django-insecure-change-me-in-production")
 
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 60
+JWT_REFRESH_TOKEN_EXPIRE_DAYS = 7
+
 DEBUG = config("DEBUG", default=False, cast=bool)
 
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,0.0.0.0").split(",")
