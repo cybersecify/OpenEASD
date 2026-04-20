@@ -12,7 +12,9 @@ def user(db):
 
 @pytest.fixture
 def auth_client(client, user):
-    client.login(username="testuser", password="testpass123")
+    from apps.core.api.auth import create_access_token
+    token = create_access_token(user.id)
+    client.defaults["HTTP_AUTHORIZATION"] = f"Bearer {token}"
     return client
 
 

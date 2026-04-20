@@ -875,6 +875,12 @@ prod = [
     { name = "gunicorn" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-django" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.11" },
@@ -900,6 +906,12 @@ requires-dist = [
     { name = "xhtml2pdf", specifier = ">=0.2.15" },
 ]
 provides-extras = ["dev", "prod"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.0.3" },
+    { name = "pytest-django", specifier = ">=4.12.0" },
+]
 
 [[package]]
 name = "oscrypto"
