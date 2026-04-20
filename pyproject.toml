@@ -27,6 +27,8 @@ dependencies = [
     # Task queue
     "huey>=2.5",
     "defusedxml>=0.7.1",
+    "django-ninja>=1.6.2",
+    "pyjwt>=2.12.1",
 ]
 
 [project.optional-dependencies]
