@@ -117,3 +117,7 @@ api.add_router("/dashboard", dashboard_router)
 
 from apps.core.domains.api import router as domains_router
 api.add_router("/domains", domains_router)
+
+from apps.core.scans.api import router as scans_router, scheduled_router
+api.add_router("/scans", scans_router)
+api.add_router("/scheduled", scheduled_router)
