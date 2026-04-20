@@ -111,3 +111,6 @@ def get_user(request):
 
 
 api.add_router("/auth", auth_router)
+
+from apps.core.dashboard.api import router as dashboard_router
+api.add_router("/dashboard", dashboard_router)
