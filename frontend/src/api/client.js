@@ -1,20 +1,24 @@
-function getCookie(name) {
-  const match = document.cookie.match(new RegExp('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)'));
-  return match ? decodeURIComponent(match[2]) : null;
-}
+import { auth } from '../auth.js';
 
 export async function apiFetch(path, options = {}) {
-  const csrf = getCookie('csrftoken');
+  const token  = auth.getToken();
   const isWrite = options.method && options.method !== 'GET' && options.method !== 'HEAD';
+
   const res = await fetch(`/api${path}`, {
-    credentials: 'include',
     headers: {
       ...(isWrite ? { 'Content-Type': 'application/json' } : {}),
-      ...(csrf ? { 'X-CSRFToken': csrf } : {}),
+      ...(token    ? { 'Authorization': `Bearer ${token}` } : {}),
       ...(options.headers || {}),
     },
     ...options,
   });
+
+  // 401 — clear tokens and redirect; throw so callers can ignore
+  if (res.status === 401) {
+    auth.clear();
+    window.location.href = '/login';
+    throw Object.assign(new Error('Unauthorized'), { status: 401 });
+  }
 
   let data;
   try {
@@ -23,15 +27,9 @@ export async function apiFetch(path, options = {}) {
     throw new Error(`HTTP ${res.status}: non-JSON response`);
   }
 
-  if (!res.ok || !data.ok) {
-    const err = new Error(
-      typeof data.errors === 'string'
-        ? data.errors
-        : JSON.stringify(data.errors) || `HTTP ${res.status}`
-    );
-    err.status = res.status;
-    err.data = data;
-    throw err;
+  if (!res.ok) {
+    const message = data?.error?.message || `HTTP ${res.status}`;
+    throw Object.assign(new Error(message), { status: res.status, data });
   }
 
   return data;
