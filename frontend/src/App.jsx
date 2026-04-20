@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { auth } from './auth.js';
 import LoginPage from './pages/LoginPage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import DomainsPage from './pages/DomainsPage.jsx';
@@ -29,6 +30,12 @@ export default function App() {
     window.addEventListener('popstate', handler);
     return () => window.removeEventListener('popstate', handler);
   }, []);
+
+  // Guard: redirect to /login if no token
+  if (path !== '/login' && !auth.isLoggedIn()) {
+    navigate('/login');
+    return null;
+  }
 
   if (path === '/login') return <LoginPage />;
   if (path === '/') return <DashboardPage />;
