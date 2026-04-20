@@ -69,7 +69,7 @@ def login(request, data: LoginRequest):
 
     user = authenticate(request, username=data.username, password=data.password)
     if user is None:
-        raise HttpError(400, "Invalid credentials")
+        raise HttpError(401, "Invalid credentials")
     return {
         "access": create_access_token(user.id),
         "refresh": create_refresh_token(user.id),
@@ -92,7 +92,7 @@ def logout(request, data: LogoutRequest):
             BlacklistedToken.objects.get_or_create(jti=jti, defaults={"expires_at": expires_at})
     except Exception:
         pass  # token already invalid — logout is idempotent
-    return {"ok": True}
+    return {"message": "logged out"}
 
 
 @auth_router.post("/refresh/")

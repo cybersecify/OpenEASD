@@ -15,7 +15,7 @@ export function useFetch(path, deps = []) {
       const res = await apiFetch(path, { method: 'GET' });
       setData(res);
       // Auto-extract pagination when embedded in flat response
-      if (res && typeof res === 'object' && !Array.isArray(res) && 'page' in res) {
+      if (res && typeof res === 'object' && !Array.isArray(res) && 'page' in res && 'total_pages' in res && 'has_next' in res) {
         setPagination({
           page:        res.page,
           total_pages: res.total_pages,

@@ -54,6 +54,17 @@ def start_scheduler():
         misfire_grace_time=300,
     )
 
+    # Purge expired blacklisted JWT refresh tokens (runs daily at 03:00)
+    scheduler.add_job(
+        purge_expired_blacklisted_tokens,
+        trigger=CronTrigger(hour=3, minute=0),
+        id="purge_blacklisted_tokens",
+        name="Purge expired blacklisted JWT tokens",
+        jobstore="default",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
     scheduler.start()
     logger.info(
         f"Scheduler started — daily scan at {settings.SCAN_DAILY_HOUR:02d}:{settings.SCAN_DAILY_MINUTE:02d} IST"
@@ -141,3 +152,18 @@ def reap_stuck_scans():
         stuck.update(status="failed", end_time=django_tz.now())
         logger.warning(f"[watchdog] Reaped {count} stuck scan(s)")
     return count
+
+
+# ---------------------------------------------------------------------------
+# JWT token cleanup
+# ---------------------------------------------------------------------------
+
+def purge_expired_blacklisted_tokens():
+    """Delete expired rows from BlacklistedToken to keep the table small."""
+    from apps.core.api.tokens.models import BlacklistedToken
+
+    cutoff = django_tz.now()
+    deleted, _ = BlacklistedToken.objects.filter(expires_at__lt=cutoff).delete()
+    if deleted:
+        logger.info(f"[token_purge] Deleted {deleted} expired blacklisted token(s)")
+    return deleted

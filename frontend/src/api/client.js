@@ -13,10 +13,12 @@ export async function apiFetch(path, options = {}) {
     ...options,
   });
 
-  // 401 — clear tokens and redirect; throw so callers can ignore
+  // 401 — clear tokens and redirect, except on the login endpoint itself
   if (res.status === 401) {
-    auth.clear();
-    window.location.href = '/login';
+    if (path !== '/auth/login/') {
+      auth.clear();
+      window.location.replace('/login');
+    }
     throw Object.assign(new Error('Unauthorized'), { status: 401 });
   }
 

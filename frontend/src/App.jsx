@@ -31,9 +31,9 @@ export default function App() {
     return () => window.removeEventListener('popstate', handler);
   }, []);
 
-  // Guard: redirect to /login if no token
+  // Guard: redirect to /login if no token (replace avoids adding to history)
   if (path !== '/login' && !auth.isLoggedIn()) {
-    navigate('/login');
+    window.location.replace('/login');
     return null;
   }
 

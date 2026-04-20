@@ -48,7 +48,9 @@ def decode_token(token: str, expected_type: str):
         from apps.core.api.tokens.models import BlacklistedToken
 
         jti = payload.get("jti")
-        if jti and BlacklistedToken.objects.filter(jti=jti).exists():
+        if not jti:
+            return None  # reject refresh tokens without jti
+        if BlacklistedToken.objects.filter(jti=jti).exists():
             return None
 
     return user_id, payload
