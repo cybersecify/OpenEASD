@@ -9,7 +9,7 @@ from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
-from ninja import Router, Schema
+from ninja import Router, Schema, Status
 from ninja.errors import HttpError
 
 from apps.core.api.auth import auth_bearer
@@ -207,7 +207,7 @@ def start_scan(request, data: ScanStartRequest):
         if session is None:
             raise HttpError(409, "A scan is already running for this domain.")
         run_scan_task(session.id)
-        return 201, {"uuid": str(session.uuid)}
+        return Status(201, {"uuid": str(session.uuid)})
 
     elif data.schedule_type == "once":
         if not data.scheduled_at:
@@ -217,7 +217,7 @@ def start_scan(request, data: ScanStartRequest):
         except ValueError:
             raise HttpError(400, "Invalid ISO datetime format for scheduled_at")
         _schedule_once(domain, scheduled_at)
-        return 201, {"scheduled_at": scheduled_at.isoformat()}
+        return Status(201, {"scheduled_at": scheduled_at.isoformat()})
 
     elif data.schedule_type == "recurring":
         try:
@@ -225,7 +225,7 @@ def start_scan(request, data: ScanStartRequest):
         except ValueError:
             raise HttpError(400, "recurrence_time must be HH:MM format")
         _schedule_recurring(domain, data.recurrence, recurrence_time)
-        return 201, {"recurrence": data.recurrence}
+        return Status(201, {"recurrence": data.recurrence})
 
     raise HttpError(400, "schedule_type must be 'now', 'once', or 'recurring'")
 

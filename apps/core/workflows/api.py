@@ -4,7 +4,7 @@ import logging
 
 from django.shortcuts import get_object_or_404
 
-from ninja import Router, Schema
+from ninja import Router, Schema, Status
 from ninja.errors import HttpError
 
 from apps.core.api.auth import auth_bearer
@@ -90,7 +90,7 @@ def create_workflow(request, data: WorkflowIn):
             order=tool_phases.get(tool, 99),
             enabled=True,
         )
-    return 201, _serialize_workflow(workflow)
+    return Status(201, _serialize_workflow(workflow))
 
 
 @router.get("/{pk}/")

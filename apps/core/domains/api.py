@@ -6,7 +6,7 @@ from django.db import transaction
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
 
-from ninja import Router, Schema
+from ninja import Router, Schema, Status
 from ninja.errors import HttpError
 
 from apps.core.api.auth import auth_bearer
@@ -97,7 +97,7 @@ def create_domain(request, data: DomainIn):
     domain = Domain.objects.create(name=name)
     domain.last_scan = None
     domain.findings_summary = {}
-    return 201, _serialize_domain(domain)
+    return Status(201, _serialize_domain(domain))
 
 
 @router.post("/{pk}/toggle/")
