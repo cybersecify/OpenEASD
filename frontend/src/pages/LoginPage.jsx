@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { apiPost } from '../api/client.js';
+import { auth } from '../auth.js';
 import { navigate } from '../App.jsx';
 
 export default function LoginPage() {
@@ -13,10 +14,11 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await apiPost('/auth/login/', { username, password });
+      const res = await apiPost('/auth/login/', { username, password });
+      auth.setTokens(res.access, res.refresh);
       navigate('/');
     } catch (err) {
-      setError(err.data?.detail || err.message || 'Login failed');
+      setError(err.data?.error?.message || err.message || 'Login failed');
     } finally {
       setLoading(false);
     }
