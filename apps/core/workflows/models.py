@@ -50,6 +50,7 @@ class WorkflowRun(models.Model):
         ("running", "Running"),
         ("completed", "Completed"),
         ("partial", "Partial"),
+        ("cancelled", "Cancelled"),
         ("failed", "Failed"),
     ]
 

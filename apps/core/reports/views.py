@@ -1,11 +1,12 @@
 """Report export views — CSV and PDF."""
 
 import csv
+import functools
 from io import BytesIO
 
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
 from django.db.models import Count
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.template.loader import get_template
 from django.utils import timezone
@@ -17,7 +18,28 @@ from apps.core.findings.models import Finding
 from apps.core.scans.models import ScanSession
 
 
-@login_required
+def _report_auth_required(view_func):
+    """Accept Django session auth OR JWT access token via ?token= query param."""
+    @functools.wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if request.user.is_authenticated:
+            return view_func(request, *args, **kwargs)
+        token = request.GET.get('token', '')
+        if token:
+            from apps.core.api.auth import decode_token
+            result = decode_token(token, 'access')
+            if result is not None:
+                user_id, _ = result
+                try:
+                    request.user = User.objects.get(id=user_id, is_active=True)
+                    return view_func(request, *args, **kwargs)
+                except User.DoesNotExist:
+                    pass
+        return HttpResponseRedirect('/login')
+    return wrapper
+
+
+@_report_auth_required
 def export_findings_csv(request, session_uuid):
     """Export all findings for a scan session as CSV."""
     session = get_object_or_404(ScanSession, uuid=session_uuid)
@@ -42,7 +64,7 @@ def export_findings_csv(request, session_uuid):
     return response
 
 
-@login_required
+@_report_auth_required
 def export_scan_pdf(request, session_uuid):
     """Export a scan report as PDF."""
     session = get_object_or_404(ScanSession, uuid=session_uuid)

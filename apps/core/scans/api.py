@@ -14,7 +14,7 @@ from ninja.errors import HttpError
 
 from apps.core.api.auth import auth_bearer
 from apps.core.constants import SEVERITY_LEVELS
-from apps.core.insights.builder import _rebuild_finding_type_summaries
+from apps.core.insights.builder import rebuild_finding_type_summaries
 from apps.core.queries import latest_session_ids
 from apps.core.scans.models import ScanSession
 from apps.core.scans.views import _parse_job, _schedule_once, _schedule_recurring
@@ -474,7 +474,7 @@ def delete_scan(request, session_uuid: str):
     session = get_object_or_404(ScanSession, uuid=session_uuid)
     session.delete()
     logger.info(f"Scan deleted via API: uuid={session_uuid}")
-    _rebuild_finding_type_summaries()
+    rebuild_finding_type_summaries()
     return {"deleted": session_uuid}
 
 

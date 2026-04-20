@@ -205,6 +205,7 @@ def main():
 
     if args.build or args.build_only:
         build_frontend()
+        collect_static()
 
     if args.build_only:
         print("\n  Done.\n")

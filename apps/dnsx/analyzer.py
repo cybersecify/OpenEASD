@@ -8,13 +8,25 @@ from apps.core.assets.models import IPAddress
 logger = logging.getLogger(__name__)
 
 
+# RFC 6598 Shared Address Space (CGNAT) — not globally routable.
+# Python 3.11's is_private does not cover this range; 3.12+ does.
+_CGNAT = ipaddress.ip_network("100.64.0.0/10")
+
+
 def _is_public(ip_str: str) -> bool:
-    """Return True if IP is publicly routable (not private/loopback/link-local/reserved)."""
+    """Return True if IP is publicly routable (not private/loopback/link-local/reserved/CGNAT)."""
     try:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
         return False
-    return not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast)
+    return not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip in _CGNAT
+    )
 
 
 def analyze(session, records: list[dict], subdomain_index: dict) -> tuple[list[IPAddress], list]:

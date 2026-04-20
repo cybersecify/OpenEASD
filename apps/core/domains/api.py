@@ -12,7 +12,7 @@ from ninja.errors import HttpError
 from apps.core.api.auth import auth_bearer
 from apps.core.domains.models import Domain
 from apps.core.findings.models import Finding
-from apps.core.insights.builder import _rebuild_finding_type_summaries
+from apps.core.insights.builder import rebuild_finding_type_summaries
 from apps.core.insights.models import ScanSummary
 from apps.core.queries import latest_session_ids
 from apps.core.scans.models import ScanSession
@@ -125,5 +125,5 @@ def delete_domain(request, pk: int):
         ScanSummary.objects.filter(domain=domain_name).delete()
         domain.delete()
 
-    _rebuild_finding_type_summaries()
+    rebuild_finding_type_summaries()
     return {"deleted": domain_name}

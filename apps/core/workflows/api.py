@@ -163,6 +163,8 @@ def update_workflow(request, pk: int, data: WorkflowIn):
 @router.post("/{pk}/delete/")
 def delete_workflow(request, pk: int):
     workflow = get_object_or_404(Workflow, pk=pk)
+    if workflow.is_default:
+        raise HttpError(400, "Cannot delete the default workflow. Set another workflow as default first.")
     name = workflow.name
     workflow.delete()
     return {"deleted": name}

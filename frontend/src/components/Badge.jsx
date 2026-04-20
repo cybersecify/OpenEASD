@@ -17,11 +17,9 @@ const CLS = {
   // finding status
   open:               'bg-red-900/40 text-red-400 border border-red-800',
   acknowledged:       'bg-yellow-900/40 text-yellow-400 border border-yellow-800',
-  fixed:              'bg-green-900/40 text-green-400 border border-green-800',
-  'false-positive':   'bg-gray-800/60 text-gray-400 border border-gray-700',
+  in_progress:        'bg-blue-900/40 text-blue-400 border border-blue-800',
+  resolved:           'bg-green-900/40 text-green-400 border border-green-800',
   false_positive:     'bg-gray-800/60 text-gray-400 border border-gray-700',
-  'wont-fix':         'bg-gray-800/60 text-gray-400 border border-gray-700',
-  wont_fix:           'bg-gray-800/60 text-gray-400 border border-gray-700',
   // domain/misc
   active:   'bg-green-900/40 text-green-400 border border-green-800',
   inactive: 'bg-gray-800/60 text-gray-400 border border-gray-700',

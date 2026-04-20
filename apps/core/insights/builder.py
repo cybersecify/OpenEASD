@@ -60,11 +60,11 @@ def build_insights(session) -> None:
         },
     )
 
-    _rebuild_finding_type_summaries()
+    rebuild_finding_type_summaries()
     logger.info(f"[insights] Summary built for session {session.id}: {total} total findings")
 
 
-def _rebuild_finding_type_summaries() -> None:
+def rebuild_finding_type_summaries() -> None:
     """Recompute global finding type aggregates — latest scan per domain only."""
     from apps.core.findings.models import Finding
 

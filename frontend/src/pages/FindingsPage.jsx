@@ -8,7 +8,7 @@ import { apiPost } from '../api/client.js';
 import { useFetch } from '../hooks/useFetch.js';
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'info'];
-const STATUSES   = ['open', 'acknowledged', 'fixed', 'false_positive', 'wont_fix'];
+const STATUSES   = ['open', 'acknowledged', 'in_progress', 'resolved', 'false_positive'];
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -57,7 +57,7 @@ export default function FindingsPage() {
     [severity, status, domain, page],
   );
 
-  const findings = Array.isArray(data) ? data : [];
+  const findings = data?.findings ?? [];
   const domains  = domainsData || [];
 
   function notify(msg, type = 'success') { setNotification({ message: msg, type, key: Date.now() }); }

@@ -51,6 +51,7 @@ def run_workflow(workflow_run_id: int):
                 break
         tools.insert(insert_at, "service_detection")
 
+    cancelled = False
     try:
         for order, tool in enumerate(tools, start=1):
             step_result = WorkflowStepResult.objects.create(
@@ -67,7 +68,7 @@ def run_workflow(workflow_run_id: int):
                 step_result.status = "skipped"
                 step_result.finished_at = django_tz.now()
                 step_result.save(update_fields=["status", "finished_at"])
-                # Skip remaining steps
+                cancelled = True
                 break
 
             logger.info(f"[workflow:{run.id}] Running step {order}/{len(tools)}: {tool}")
@@ -87,8 +88,10 @@ def run_workflow(workflow_run_id: int):
             step_result.finished_at = django_tz.now()
             step_result.save(update_fields=["status", "findings_count", "error", "finished_at"])
 
-        # Check if any step failed — mark as partial failure
-        if WorkflowStepResult.objects.filter(run=run, status="failed").exists():
+        # Set final run status
+        if cancelled:
+            run.status = "cancelled"
+        elif WorkflowStepResult.objects.filter(run=run, status="failed").exists():
             run.status = "partial"
         else:
             run.status = "completed"

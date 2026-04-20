@@ -49,6 +49,7 @@ class ScanDelta(models.Model):
         ("removed", "Removed"),
     ]
     CHANGE_CATEGORY_CHOICES = [
+        ("finding", "Finding"),
         ("domain_finding", "Domain Finding"),
     ]
 

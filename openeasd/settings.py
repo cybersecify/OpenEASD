@@ -181,6 +181,7 @@ TOOL_NAABU = config("TOOL_NAABU", default=f"{_PDTM_BIN}/naabu")
 TOOL_HTTPX = config("TOOL_HTTPX", default=f"{_PDTM_BIN}/httpx")
 TOOL_NMAP = config("TOOL_NMAP", default="nmap")
 TOOL_NUCLEI = config("TOOL_NUCLEI", default=f"{_PDTM_BIN}/nuclei")
+TOOL_AMASS = config("TOOL_AMASS", default="amass")
 
 # Logging
 LOGGING = {

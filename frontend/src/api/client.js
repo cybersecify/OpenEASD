@@ -1,24 +1,52 @@
 import { auth } from '../auth.js';
 
-export async function apiFetch(path, options = {}) {
-  const token  = auth.getToken();
-  const isWrite = options.method && options.method !== 'GET' && options.method !== 'HEAD';
+async function _tryRefresh() {
+  const refresh = auth.getRefresh();
+  if (!refresh) return false;
+  try {
+    const res = await fetch('/api/auth/refresh/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    auth.setTokens(data.access, refresh);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-  const res = await fetch(`/api${path}`, {
+async function _doFetch(path, options, token) {
+  const isWrite = options.method && options.method !== 'GET' && options.method !== 'HEAD';
+  return fetch(`/api${path}`, {
     headers: {
       ...(isWrite ? { 'Content-Type': 'application/json' } : {}),
-      ...(token    ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...(token   ? { 'Authorization': `Bearer ${token}` } : {}),
       ...(options.headers || {}),
     },
     ...options,
   });
+}
 
-  // 401 — clear tokens and redirect, except on the login endpoint itself
-  if (res.status === 401) {
-    if (path !== '/auth/login/') {
+export async function apiFetch(path, options = {}) {
+  let res = await _doFetch(path, options, auth.getToken());
+
+  // 401 on non-login path — try silent refresh once, then redirect
+  if (res.status === 401 && path !== '/auth/login/') {
+    const refreshed = await _tryRefresh();
+    if (refreshed) {
+      res = await _doFetch(path, options, auth.getToken());
+    }
+    if (res.status === 401) {
       auth.clear();
       window.location.replace('/login');
+      throw Object.assign(new Error('Unauthorized'), { status: 401 });
     }
+  }
+
+  if (res.status === 401) {
     throw Object.assign(new Error('Unauthorized'), { status: 401 });
   }
 

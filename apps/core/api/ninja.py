@@ -1,13 +1,15 @@
 """Central Django Ninja API instance for OpenEASD."""
 
 import datetime
+from django.conf import settings
 from django.http import JsonResponse
 from ninja import NinjaAPI, Router, Schema
 from ninja.errors import HttpError, ValidationError
 
 from apps.core.api.auth import auth_bearer, create_access_token, create_refresh_token, decode_token
 
-api = NinjaAPI(title="OpenEASD API", version="1.0", docs_url="/docs")
+# Expose OpenAPI docs only in development — never in production
+api = NinjaAPI(title="OpenEASD API", version="1.0", docs_url="/docs" if settings.DEBUG else None)
 
 _STATUS_CODES = {
     400: "BAD_REQUEST",

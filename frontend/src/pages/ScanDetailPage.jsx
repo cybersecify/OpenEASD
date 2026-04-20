@@ -7,6 +7,7 @@ import { Notification } from '../components/Notification.jsx';
 import { Pagination } from '../components/Pagination.jsx';
 import { navigate } from '../App.jsx';
 import { apiPost } from '../api/client.js';
+import { auth } from '../auth.js';
 import { useFetch } from '../hooks/useFetch.js';
 import { usePolling } from '../hooks/usePolling.js';
 
@@ -150,8 +151,14 @@ export default function ScanDetailPage() {
               Started: {fmtDate(session.start_time)}{session.end_time && <> · Finished: {fmtDate(session.end_time)}</>}
             </p>
           </div>
-          <span className="inline-flex gap-1.5 items-center">
+          <span className="inline-flex gap-1.5 items-center flex-wrap">
             {isRunning && <ConfirmButton label="Stop" confirmLabel="Stop scan?" onConfirm={handleStop} disabled={busy} />}
+            {liveStatus === 'completed' && (<>
+              <a href={`/reports/${uuid}/csv/?token=${auth.getToken()}`}
+                className="btn-secondary text-xs px-2.5 py-1" download>CSV</a>
+              <a href={`/reports/${uuid}/pdf/?token=${auth.getToken()}`}
+                className="btn-secondary text-xs px-2.5 py-1" download>PDF</a>
+            </>)}
             <ConfirmButton label="Delete" onConfirm={handleDelete} disabled={busy} />
           </span>
         </div>
