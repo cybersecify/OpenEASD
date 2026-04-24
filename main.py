@@ -6,7 +6,7 @@ Usage:
     uv run python main.py --build           # build React frontend first, then run
     uv run python main.py --build-only      # build frontend and exit
     uv run python main.py --port 9000       # custom port (default: 8000)
-    uv run python main.py --no-worker       # web server only, no Huey worker
+    uv run python main.py --no-worker       # web server only, no worker
 
 First run (creates admin user if none exists):
     uv run python main.py --build
