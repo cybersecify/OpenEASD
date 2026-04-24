@@ -29,7 +29,7 @@ dependencies = [
     # XML parsing (safe)
     "defusedxml>=0.7.1",
     # Auth
-    "pyjwt>=2.12.1",
+    "django-ninja-jwt>=5.0",
 ]
 
 [project.optional-dependencies]

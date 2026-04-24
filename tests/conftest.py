@@ -12,8 +12,8 @@ def user(db):
 
 @pytest.fixture
 def auth_client(client, user):
-    from apps.core.api.auth import create_access_token
-    token = create_access_token(user.id)
+    from ninja_jwt.tokens import AccessToken
+    token = AccessToken.for_user(user)
     client.defaults["HTTP_AUTHORIZATION"] = f"Bearer {token}"
     return client
 

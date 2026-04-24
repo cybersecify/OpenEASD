@@ -14,8 +14,6 @@ from django.contrib.auth.models import User
 from django.test import Client
 from django.utils import timezone
 
-from apps.core.api.auth import create_access_token
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

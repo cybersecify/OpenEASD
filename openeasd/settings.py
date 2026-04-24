@@ -13,9 +13,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = config("SECRET_KEY", default="django-insecure-change-me-in-production")
 
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 60
-JWT_REFRESH_TOKEN_EXPIRE_DAYS = 7
-
 DEBUG = config("DEBUG", default=False, cast=bool)
 
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,0.0.0.0").split(",")
@@ -50,7 +47,8 @@ INSTALLED_APPS = [
     "apps.core.notifications",
     "apps.core.insights",
     "apps.core.reports",
-    "apps.core.api.tokens",
+    "ninja_jwt",
+    "ninja_jwt.token_blacklist",
     "apps.domain_security",
     "apps.subfinder",
     "apps.amass",
@@ -232,3 +230,17 @@ CACHES = {
 LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/accounts/login/"
+
+# ninja-jwt token configuration
+from datetime import timedelta  # noqa: E402
+
+NINJA_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": False,
+    "UPDATE_LAST_LOGIN": False,
+}

@@ -358,6 +358,15 @@ wheels = [
 ]
 
 [[package]]
+name = "contextlib2"
+version = "21.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c7/13/37ea7805ae3057992e96ecb1cffa2fa35c2ef4498543b846f90dd2348d8f/contextlib2-21.6.0.tar.gz", hash = "sha256:ab1e2bfe1d01d968e1b7e8d9023bc51ef3509bba217bb730cee3827e1ee82869", size = 43795, upload-time = "2021-06-27T06:54:40.841Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/76/56/6d6872f79d14c0cb02f1646cbb4592eef935857c0951a105874b7b62a0c3/contextlib2-21.6.0-py2.py3-none-any.whl", hash = "sha256:3fbdb64466afd23abaf6c977627b75b6139a5a3e8ce38405c5b413aed7a0471f", size = 13277, upload-time = "2021-06-27T06:54:20.972Z" },
+]
+
+[[package]]
 name = "cryptography"
 version = "46.0.7"
 source = { registry = "https://pypi.org/simple" }
@@ -492,6 +501,62 @@ wheels = [
 ]
 
 [[package]]
+name = "django-ninja-extra"
+version = "0.31.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "asgiref" },
+    { name = "contextlib2" },
+    { name = "django" },
+    { name = "django-ninja" },
+    { name = "injector" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7c/31/8f9f76ef9e1e40fb0e316d89b8d356f9a74d4b4eb149f6b46def4d1ab16e/django_ninja_extra-0.31.4.tar.gz", hash = "sha256:c5efc13bead5e49ac90b83f8739689345c260e412f530d78825740a67a8ca99f", size = 62357, upload-time = "2026-03-31T13:47:06.901Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/74/bc/bd30b4f6625da927b09f810e64f2a29aea83731ba9641cbed1f828986cd5/django_ninja_extra-0.31.4-py3-none-any.whl", hash = "sha256:fb40879364808344e16b690990bbd669dccd0a0f4a2844294bf07ec3eb1b5375", size = 83562, upload-time = "2026-03-31T13:47:05.887Z" },
+]
+
+[[package]]
+name = "django-ninja-jwt"
+version = "5.4.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "django-ninja-extra" },
+    { name = "pydantic-settings" },
+    { name = "pyjwt", extra = ["crypto"] },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3e/15/819d52707db7b9f1fb16f021c961a3d7825c9000061d272b3918658654fd/django_ninja_jwt-5.4.4.tar.gz", hash = "sha256:14b145b89955ac5c89ed23a430dac388118f7bd9479cbb562fc076f1c3e13f6c", size = 40017, upload-time = "2026-01-22T01:53:44.256Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/26/b3/cc46af94ed93537d0680fffe5ca80080a3e9a7f4996051625a04b611689f/django_ninja_jwt-5.4.4-py3-none-any.whl", hash = "sha256:cc27b86542b4255fa21af0dc652aea15b59066ad5f46296f0c6faa193c5e5924", size = 88848, upload-time = "2026-01-22T01:53:42.998Z" },
+]
+
+[[package]]
+name = "django-picklefield"
+version = "3.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/93/03/13114bccbd1ec8c026ac1ff33dae75ae6c6a5632e4769ee9cda283b9f57e/django_picklefield-3.4.0.tar.gz", hash = "sha256:3a1f740536c0e60d0dba43aa89ccdbe86760d4c3f8ec47799eae122baa741d0a", size = 12555, upload-time = "2025-11-27T03:11:53.13Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/79/b7/139eb1419ca7b27fd714925b8d0eed6efb592479dcf2155fed6c0c87c956/django_picklefield-3.4.0-py3-none-any.whl", hash = "sha256:929bcfbae5b48bd22a52bc04521fdfdd152eee36abb9f20228f9480f9df65f45", size = 10031, upload-time = "2025-11-27T03:11:51.937Z" },
+]
+
+[[package]]
+name = "django-q2"
+version = "1.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "django-picklefield" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fc/e6/21375bed54a4be1339f6ee31e4173d361d457dbe91db7bff130b52566126/django_q2-1.9.0.tar.gz", hash = "sha256:ef7facca96fae9c11ddf2c5252d3817975c7a9a6d989fa0d65487d8823d57799", size = 77218, upload-time = "2025-12-04T22:11:29.336Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3e/b7/8282f9815fc9df3187d9303a6f54e0388e02742255dee1fed7b4019a03ae/django_q2-1.9.0-py3-none-any.whl", hash = "sha256:4eded27644b0ffb291839c9f9c12fea6c0dec63ebd891fa6881b0b446098a49d", size = 89615, upload-time = "2025-12-04T22:11:28.079Z" },
+]
+
+[[package]]
 name = "dnspython"
 version = "2.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -554,15 +619,6 @@ wheels = [
 ]
 
 [[package]]
-name = "huey"
-version = "2.6.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/fe/29/3428d52eb8e85025e264a291641a9f9d6407cc1e51d1b630f6ac5815999a/huey-2.6.0.tar.gz", hash = "sha256:8d11f8688999d65266af1425b831f6e3773e99415027177b8734b0ffd5e251f6", size = 221068, upload-time = "2026-01-06T03:01:02.055Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1a/34/fae9ac8f1c3a552fd3f7ff652b94c78d219dedc5fce0c0a4232457760a00/huey-2.6.0-py3-none-any.whl", hash = "sha256:1b9df9d370b49c6d5721ba8a01ac9a787cf86b3bdc584e4679de27b920395c3f", size = 76951, upload-time = "2026-01-06T03:01:00.808Z" },
-]
-
-[[package]]
 name = "idna"
 version = "3.11"
 source = { registry = "https://pypi.org/simple" }
@@ -578,6 +634,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730", size = 20503, upload-time = "2025-10-18T21:55:43.219Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12", size = 7484, upload-time = "2025-10-18T21:55:41.639Z" },
+]
+
+[[package]]
+name = "injector"
+version = "0.24.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/17/6c/de0f64b2b8d7d8cd3206bd6fb54ebb0c7c2e2fe0f2d16103756ff1bf803b/injector-0.24.0.tar.gz", hash = "sha256:e85a75d1516cff2f03170f3fd1219f56acb25c9a05e307819ae0dcde3dad3d3f", size = 55988, upload-time = "2026-01-09T12:10:41.782Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5f/db/953aeee405f1466832f212f61496ee07c29f7f027f7591b71b06bd08a418/injector-0.24.0-py3-none-any.whl", hash = "sha256:47294c7a7fdb811f0d1b442a1e0152bb2fc28b2ccaaba4cba44e5e125e0da2d0", size = 21504, upload-time = "2026-01-09T12:10:40.329Z" },
 ]
 
 [[package]]
@@ -842,7 +907,7 @@ wheels = [
 ]
 
 [[package]]
-name = "openeasd-django"
+name = "openeasd"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [
@@ -852,31 +917,26 @@ dependencies = [
     { name = "django-apscheduler" },
     { name = "django-htmx" },
     { name = "django-ninja" },
+    { name = "django-ninja-jwt" },
+    { name = "django-q2" },
     { name = "dnspython" },
-    { name = "huey" },
     { name = "paramiko" },
-    { name = "pyjwt" },
-    { name = "pyopenssl" },
     { name = "python-decouple" },
     { name = "requests" },
     { name = "xhtml2pdf" },
 ]
 
 [package.optional-dependencies]
-dev = [
-    { name = "black" },
-    { name = "flake8" },
-    { name = "isort" },
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-django" },
-]
 prod = [
     { name = "gunicorn" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "black" },
+    { name = "flake8" },
+    { name = "isort" },
+    { name = "mypy" },
     { name = "pyflakes" },
     { name = "pytest" },
     { name = "pytest-django" },
@@ -884,32 +944,29 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "black", marker = "extra == 'dev'", specifier = ">=23.11" },
     { name = "cryptography", specifier = ">=42.0" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "django", specifier = ">=5.2,<5.3" },
     { name = "django-apscheduler", specifier = ">=0.7.0" },
     { name = "django-htmx", specifier = ">=1.17" },
     { name = "django-ninja", specifier = ">=1.6.2" },
+    { name = "django-ninja-jwt", specifier = ">=5.0" },
+    { name = "django-q2", specifier = ">=1.6" },
     { name = "dnspython", specifier = ">=2.4" },
-    { name = "flake8", marker = "extra == 'dev'", specifier = ">=6.1" },
     { name = "gunicorn", marker = "extra == 'prod'", specifier = ">=21.2" },
-    { name = "huey", specifier = ">=2.5" },
-    { name = "isort", marker = "extra == 'dev'", specifier = ">=5.12" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.7" },
     { name = "paramiko", specifier = ">=3.4" },
-    { name = "pyjwt", specifier = ">=2.12.1" },
-    { name = "pyopenssl", specifier = ">=23.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4" },
-    { name = "pytest-django", marker = "extra == 'dev'", specifier = ">=4.7" },
     { name = "python-decouple", specifier = ">=3.8" },
     { name = "requests", specifier = ">=2.31" },
     { name = "xhtml2pdf", specifier = ">=0.2.15" },
 ]
-provides-extras = ["dev", "prod"]
+provides-extras = ["prod"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "black", specifier = ">=23.11" },
+    { name = "flake8", specifier = ">=6.1" },
+    { name = "isort", specifier = ">=5.12" },
+    { name = "mypy", specifier = ">=1.7" },
     { name = "pyflakes", specifier = ">=3.4.0" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-django", specifier = ">=4.12.0" },
@@ -1223,6 +1280,20 @@ wheels = [
 ]
 
 [[package]]
+name = "pydantic-settings"
+version = "2.14.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/42/98/c8345dccdc31de4228c039a98f6467a941e39558da41c1744fbe29fa5666/pydantic_settings-2.14.0.tar.gz", hash = "sha256:24285fd4b0e0c06507dd9fdfd331ee23794305352aaec8fc4eb92d4047aeb67d", size = 235709, upload-time = "2026-04-20T13:37:40.293Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/01/dd/bebff3040138f00ae8a102d426b27349b9a49acc310fcae7f92112d867e3/pydantic_settings-2.14.0-py3-none-any.whl", hash = "sha256:fc8d5d692eb7092e43c8647c1c35a3ecd00e040fcf02ed86f4cb5458ca62182e", size = 60940, upload-time = "2026-04-20T13:37:38.586Z" },
+]
+
+[[package]]
 name = "pyflakes"
 version = "3.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1283,6 +1354,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/7a/8dd906bd22e79e47397a61742927f6747fe93242ef86645ee9092e610244/pyjwt-2.12.1-py3-none-any.whl", hash = "sha256:28ca37c070cad8ba8cd9790cd940535d40274d22f80ab87f3ac6a713e6e8454c", size = 29726, upload-time = "2026-03-13T19:27:35.677Z" },
 ]
 
+[package.optional-dependencies]
+crypto = [
+    { name = "cryptography" },
+]
+
 [[package]]
 name = "pynacl"
 version = "1.6.2"
@@ -1316,19 +1392,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/48/47/e761c254f410c023a469284a9bc210933e18588ca87706ae93002c05114c/pynacl-1.6.2-cp38-abi3-win32.whl", hash = "sha256:5811c72b473b2f38f7e2a3dc4f8642e3a3e9b5e7317266e4ced1fba85cae41aa", size = 227421, upload-time = "2026-01-01T17:32:33.076Z" },
     { url = "https://files.pythonhosted.org/packages/41/ad/334600e8cacc7d86587fe5f565480fde569dfb487389c8e1be56ac21d8ac/pynacl-1.6.2-cp38-abi3-win_amd64.whl", hash = "sha256:62985f233210dee6548c223301b6c25440852e13d59a8b81490203c3227c5ba0", size = 239754, upload-time = "2026-01-01T17:32:34.557Z" },
     { url = "https://files.pythonhosted.org/packages/29/7d/5945b5af29534641820d3bd7b00962abbbdfee84ec7e19f0d5b3175f9a31/pynacl-1.6.2-cp38-abi3-win_arm64.whl", hash = "sha256:834a43af110f743a754448463e8fd61259cd4ab5bbedcf70f9dabad1d28a394c", size = 184801, upload-time = "2026-01-01T17:32:36.309Z" },
-]
-
-[[package]]
-name = "pyopenssl"
-version = "26.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/8e/11/a62e1d33b373da2b2c2cd9eb508147871c80f12b1cacde3c5d314922afdd/pyopenssl-26.0.0.tar.gz", hash = "sha256:f293934e52936f2e3413b89c6ce36df66a0b34ae1ea3a053b8c5020ff2f513fc", size = 185534, upload-time = "2026-03-15T14:28:26.353Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fb/7d/d4f7d908fa8415571771b30669251d57c3cf313b36a856e6d7548ae01619/pyopenssl-26.0.0-py3-none-any.whl", hash = "sha256:df94d28498848b98cc1c0ffb8ef1e71e40210d3b0a8064c9d29571ed2904bf81", size = 57969, upload-time = "2026-03-15T14:28:24.864Z" },
 ]
 
 [[package]]
@@ -1445,6 +1508,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e1/97/373dcd5844ec0ea5893e13c39a2c67e7537987ad8de3842fe078db4582fa/python-decouple-3.8.tar.gz", hash = "sha256:ba6e2657d4f376ecc46f77a3a615e058d93ba5e465c01bbe57289bfb7cce680f", size = 9612, upload-time = "2023-03-01T19:38:38.143Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a2/d4/9193206c4563ec771faf2ccf54815ca7918529fe81f6adb22ee6d0e06622/python_decouple-3.8-py3-none-any.whl", hash = "sha256:d0d45340815b25f4de59c974b855bb38d03151d81b037d9e3f463b0c9f8cbd66", size = 9947, upload-time = "2023-03-01T19:38:36.015Z" },
+]
+
+[[package]]
+name = "python-dotenv"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/82/ed/0301aeeac3e5353ef3d94b6ec08bbcabd04a72018415dcb29e588514bba8/python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3", size = 50135, upload-time = "2026-03-01T16:00:26.196Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a", size = 22101, upload-time = "2026-03-01T16:00:25.09Z" },
 ]
 
 [[package]]
