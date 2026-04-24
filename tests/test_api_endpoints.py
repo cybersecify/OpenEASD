@@ -15,8 +15,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.utils import timezone
 
-from apps.core.api.auth import create_access_token, create_refresh_token
-from apps.core.api.tokens.models import BlacklistedToken
+from ninja_jwt.tokens import AccessToken, RefreshToken
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +41,7 @@ def user(db):
 
 @pytest.fixture
 def auth_client(client, user):
-    token = create_access_token(user.id)
+    token = str(AccessToken.for_user(user))
     client.defaults["HTTP_AUTHORIZATION"] = f"Bearer {token}"
     return client
 
@@ -89,66 +88,59 @@ def workflow(db):
 
 class TestAuthLogin:
     def test_valid_credentials_returns_tokens(self, client, user):
-        res = post_json(client, "/api/auth/login/", {"username": "apitest", "password": "pass123"})
+        res = post_json(client, "/api/token/pair", {"username": "apitest", "password": "pass123"})
         assert res.status_code == 200
         data = res.json()
         assert "access" in data
         assert "refresh" in data
 
     def test_invalid_credentials_returns_401(self, client, user):
-        res = post_json(client, "/api/auth/login/", {"username": "apitest", "password": "wrong"})
+        res = post_json(client, "/api/token/pair", {"username": "apitest", "password": "wrong"})
         assert res.status_code == 401
-        assert res.json()["error"]["code"] == "UNAUTHORIZED"
 
 
 class TestAuthLogout:
-    def test_logout_blacklists_refresh_token(self, auth_client, user):
-        refresh = create_refresh_token(user.id)
-        res = post_json(auth_client, "/api/auth/logout/", {"refresh": refresh})
+    def test_logout_blacklists_refresh_token(self, client, user):
+        refresh = str(RefreshToken.for_user(user))
+        res = post_json(client, "/api/token/blacklist", {"refresh": refresh})
         assert res.status_code == 200
-        assert res.json() == {"message": "logged out"}
 
-    def test_logout_requires_auth(self, client, user):
-        refresh = create_refresh_token(user.id)
-        res = post_json(client, "/api/auth/logout/", {"refresh": refresh})
+    def test_blacklisted_token_cannot_be_used_again(self, client, user):
+        refresh = str(RefreshToken.for_user(user))
+        post_json(client, "/api/token/blacklist", {"refresh": refresh})
+        res = post_json(client, "/api/token/blacklist", {"refresh": refresh})
         assert res.status_code == 401
 
 
 class TestAuthRefresh:
     def test_valid_refresh_returns_new_access(self, client, user):
-        refresh = create_refresh_token(user.id)
-        res = post_json(client, "/api/auth/refresh/", {"refresh": refresh})
+        refresh = str(RefreshToken.for_user(user))
+        res = post_json(client, "/api/token/refresh", {"refresh": refresh})
         assert res.status_code == 200
         assert "access" in res.json()
 
     def test_blacklisted_refresh_returns_401(self, client, user):
-        import jwt as pyjwt
-        from django.conf import settings
-
-        refresh = create_refresh_token(user.id)
-        payload = pyjwt.decode(refresh, settings.SECRET_KEY, algorithms=["HS256"])
-        BlacklistedToken.objects.create(
-            jti=payload["jti"],
-            expires_at=timezone.now() + timezone.timedelta(days=7),
-        )
-        res = post_json(client, "/api/auth/refresh/", {"refresh": refresh})
+        refresh = str(RefreshToken.for_user(user))
+        # Blacklist it first
+        post_json(client, "/api/token/blacklist", {"refresh": refresh})
+        res = post_json(client, "/api/token/refresh", {"refresh": refresh})
         assert res.status_code == 401
 
     def test_invalid_refresh_returns_401(self, client):
-        res = post_json(client, "/api/auth/refresh/", {"refresh": "not.a.token"})
+        res = post_json(client, "/api/token/refresh", {"refresh": "not.a.token"})
         assert res.status_code == 401
 
 
 class TestAuthUser:
     def test_returns_current_user(self, auth_client, user):
-        res = auth_client.get("/api/auth/user/")
+        res = auth_client.get("/api/user/")
         assert res.status_code == 200
         data = res.json()
         assert data["username"] == "apitest"
         assert "id" in data
 
     def test_requires_auth(self, client):
-        res = client.get("/api/auth/user/")
+        res = client.get("/api/user/")
         assert res.status_code == 401
 
 

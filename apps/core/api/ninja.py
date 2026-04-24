@@ -8,6 +8,7 @@ from ninja_jwt.routers.obtain import obtain_pair_router   # POST /pair, POST /re
 from ninja_jwt.routers.verify import verify_router        # POST /verify
 from ninja_jwt.routers.blacklist import blacklist_router  # POST /blacklist
 from ninja_jwt.authentication import JWTAuth
+from ninja_jwt.exceptions import AuthenticationFailed as JWTAuthenticationFailed, TokenError
 
 api = NinjaAPI(title="OpenEASD API", version="1.0", docs_url="/docs" if settings.DEBUG else None)
 
@@ -28,6 +29,27 @@ def http_error_handler(request, exc):
     return JsonResponse(
         {"error": {"code": code, "message": str(exc.message)}},
         status=exc.status_code,
+    )
+
+
+@api.exception_handler(JWTAuthenticationFailed)
+def jwt_auth_failed_handler(request, exc):
+    detail = exc.detail
+    if isinstance(detail, dict):
+        message = str(detail.get("detail", "Authentication failed"))
+    else:
+        message = str(detail)
+    return JsonResponse(
+        {"error": {"code": "UNAUTHORIZED", "message": message}},
+        status=exc.status_code,
+    )
+
+
+@api.exception_handler(TokenError)
+def token_error_handler(request, exc):
+    return JsonResponse(
+        {"error": {"code": "UNAUTHORIZED", "message": str(exc)}},
+        status=401,
     )
 
 
