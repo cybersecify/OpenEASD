@@ -37,9 +37,9 @@ prod = [
 ]
 
 [project.scripts]
-openeasd = "apps.scans.management.commands.run_scan:Command"
-openeasd-daily = "apps.scans.management.commands.run_daily_scan:Command"
-openeasd-weekly = "apps.scans.management.commands.run_weekly_scan:Command"
+openeasd = "apps.core.scans.management.commands.run_scan:Command"
+openeasd-daily = "apps.core.scans.management.commands.run_daily_scan:Command"
+openeasd-weekly = "apps.core.scans.management.commands.run_weekly_scan:Command"
 
 [tool.setuptools.packages.find]
 include = ["apps*", "openeasd*"]

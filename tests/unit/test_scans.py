@@ -88,33 +88,33 @@ class TestParseJob:
         return job
 
     def test_recurring_plain_domain(self):
-        from apps.core.scans.views import _parse_job
+        from apps.core.scans.api import _parse_job
         job = self._make_job("recurring_example.com")
         result = _parse_job(job)
         assert result["domain"] == "example.com"
         assert result["job_type"] == "recurring"
 
     def test_recurring_underscored_domain(self):
-        from apps.core.scans.views import _parse_job
+        from apps.core.scans.api import _parse_job
         job = self._make_job("recurring_sub_domain.example.com")
         result = _parse_job(job)
         assert result["domain"] == "sub_domain.example.com"
 
     def test_once_plain_domain(self):
-        from apps.core.scans.views import _parse_job
+        from apps.core.scans.api import _parse_job
         job = self._make_job("once_example.com_" + "a" * 32)
         result = _parse_job(job)
         assert result["domain"] == "example.com"
         assert result["job_type"] == "one-time"
 
     def test_once_underscored_domain(self):
-        from apps.core.scans.views import _parse_job
+        from apps.core.scans.api import _parse_job
         job = self._make_job("once_sub_domain.com_" + "b" * 32)
         result = _parse_job(job)
         assert result["domain"] == "sub_domain.com"
 
     def test_builtin_jobs_return_none(self):
-        from apps.core.scans.views import _parse_job
+        from apps.core.scans.api import _parse_job
         for job_id in ("daily_scan", "watchdog_reap_stuck_scans"):
             job = self._make_job(job_id)
             assert _parse_job(job) is None

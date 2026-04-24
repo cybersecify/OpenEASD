@@ -2,6 +2,7 @@
 
 import datetime
 import logging
+import uuid
 
 from django.core.paginator import Paginator
 from django.db import models
@@ -9,6 +10,8 @@ from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from ninja import Router, Schema, Status
 from ninja.errors import HttpError
 
@@ -17,7 +20,86 @@ from apps.core.constants import SEVERITY_LEVELS
 from apps.core.insights.builder import rebuild_finding_type_summaries
 from apps.core.queries import latest_session_ids
 from apps.core.scans.models import ScanSession
-from apps.core.scans.views import _parse_job, _schedule_once, _schedule_recurring
+from apps.core.scheduler.scheduler import run_scheduled_scan
+
+BUILTIN_JOB_IDS = {"daily_scan", "watchdog_reap_stuck_scans"}
+
+
+def _describe_cron_trigger(trigger):
+    try:
+        for field in trigger.fields:
+            if field.name == "day_of_week" and not field.is_default:
+                return "Weekly (Mondays)"
+        return "Daily"
+    except Exception:
+        return "Recurring"
+
+
+def _parse_job(job):
+    """Convert APScheduler job → dict for API. Returns None for built-in jobs."""
+    if job.id in BUILTIN_JOB_IDS:
+        return None
+    if job.id.startswith("recurring_"):
+        domain = job.id[len("recurring_"):]
+        job_type = "recurring"
+        frequency = _describe_cron_trigger(job.trigger)
+    elif job.id.startswith("once_"):
+        suffix = job.id[len("once_"):]
+        domain = suffix[:-33] if len(suffix) > 33 else suffix
+        job_type = "one-time"
+        frequency = "—"
+    else:
+        domain = job.name
+        job_type = "unknown"
+        frequency = "—"
+    return {
+        "job_id": job.id,
+        "domain": domain,
+        "job_type": job_type,
+        "next_run_time": job.next_run_time,
+        "frequency": frequency,
+    }
+
+
+def _schedule_once(domain, scheduled_at):
+    """Schedule a one-time scan using the shared persistent scheduler."""
+    from apps.core.scheduler import get_scheduler
+
+    job_id = f"once_{domain}_{uuid.uuid4().hex}"
+    get_scheduler().add_job(
+        run_scheduled_scan,
+        args=[domain, "scheduled"],
+        trigger=DateTrigger(run_date=scheduled_at),
+        id=job_id,
+        name=f"One-time scan: {domain}",
+        jobstore="default",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    logger.info(f"One-time scan scheduled: domain={domain} at={scheduled_at}")
+
+
+def _schedule_recurring(domain, recurrence, recurrence_time):
+    """Add or replace a recurring scan job using the shared persistent scheduler."""
+    from apps.core.scheduler import get_scheduler
+
+    if recurrence == "weekly":
+        trigger = CronTrigger(day_of_week="mon", hour=recurrence_time.hour, minute=recurrence_time.minute)
+    else:
+        trigger = CronTrigger(hour=recurrence_time.hour, minute=recurrence_time.minute)
+
+    job_id = f"recurring_{domain}"
+    get_scheduler().add_job(
+        run_scheduled_scan,
+        args=[domain, "recurring"],
+        trigger=trigger,
+        id=job_id,
+        name=f"Recurring {recurrence} scan: {domain}",
+        jobstore="default",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    logger.info(f"Recurring scan scheduled: domain={domain} recurrence={recurrence} time={recurrence_time}")
 
 logger = logging.getLogger(__name__)
 

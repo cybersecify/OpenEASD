@@ -47,21 +47,21 @@ class TestDomainModel:
 class TestDomainListEnrichment:
     def test_last_scan_attached(self, domain, completed_session):
         from apps.core.domains.models import Domain
-        from apps.core.domains.views import _enrich_domains
+        from apps.core.domains.api import _enrich_domains
         domains = list(Domain.objects.all())
         _enrich_domains(domains)
         assert domains[0].last_scan == completed_session
 
     def test_never_scanned_domain_has_no_last_scan(self, domain):
         from apps.core.domains.models import Domain
-        from apps.core.domains.views import _enrich_domains
+        from apps.core.domains.api import _enrich_domains
         domains = list(Domain.objects.all())
         _enrich_domains(domains)
         assert domains[0].last_scan is None
 
     def test_last_scan_shows_any_status(self, domain):
         from apps.core.domains.models import Domain
-        from apps.core.domains.views import _enrich_domains
+        from apps.core.domains.api import _enrich_domains
         from apps.core.scans.models import ScanSession
         running = ScanSession.objects.create(domain="example.com", status="running")
         domains = list(Domain.objects.all())
@@ -70,7 +70,7 @@ class TestDomainListEnrichment:
 
     def test_findings_summary_counts(self, domain, completed_session):
         from apps.core.domains.models import Domain
-        from apps.core.domains.views import _enrich_domains
+        from apps.core.domains.api import _enrich_domains
         from apps.core.findings.models import Finding
         Finding.objects.create(
             session=completed_session, source="web_checker", target="example.com",
@@ -95,7 +95,7 @@ class TestDomainListEnrichment:
 
     def test_findings_excludes_resolved(self, domain, completed_session):
         from apps.core.domains.models import Domain
-        from apps.core.domains.views import _enrich_domains
+        from apps.core.domains.api import _enrich_domains
         from apps.core.findings.models import Finding
         Finding.objects.create(
             session=completed_session, source="web_checker", target="example.com",
@@ -108,7 +108,7 @@ class TestDomainListEnrichment:
 
     def test_findings_excludes_info(self, domain, completed_session):
         from apps.core.domains.models import Domain
-        from apps.core.domains.views import _enrich_domains
+        from apps.core.domains.api import _enrich_domains
         from apps.core.findings.models import Finding
         Finding.objects.create(
             session=completed_session, source="web_checker", target="example.com",
@@ -121,7 +121,7 @@ class TestDomainListEnrichment:
 
     def test_findings_empty_when_no_completed_scan(self, domain):
         from apps.core.domains.models import Domain
-        from apps.core.domains.views import _enrich_domains
+        from apps.core.domains.api import _enrich_domains
         from apps.core.scans.models import ScanSession
         from apps.core.findings.models import Finding
         running = ScanSession.objects.create(domain="example.com", status="running")
@@ -135,5 +135,5 @@ class TestDomainListEnrichment:
         assert domains[0].findings_summary == {}
 
     def test_enrich_empty_list(self):
-        from apps.core.domains.views import _enrich_domains
+        from apps.core.domains.api import _enrich_domains
         _enrich_domains([])  # must not raise
