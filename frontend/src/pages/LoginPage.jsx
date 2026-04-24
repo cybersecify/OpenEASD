@@ -14,7 +14,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const res = await apiPost('/auth/login/', { username, password });
+      const res = await apiPost('/token/pair', { username, password });
       auth.setTokens(res.access, res.refresh);
       navigate('/');
     } catch (err) {

@@ -4,7 +4,7 @@ async function _tryRefresh() {
   const refresh = auth.getRefresh();
   if (!refresh) return false;
   try {
-    const res = await fetch('/api/auth/refresh/', {
+    const res = await fetch('/api/token/refresh', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh }),
@@ -34,7 +34,7 @@ export async function apiFetch(path, options = {}) {
   let res = await _doFetch(path, options, auth.getToken());
 
   // 401 on non-login path — try silent refresh once, then redirect
-  if (res.status === 401 && path !== '/auth/login/') {
+  if (res.status === 401 && path !== '/token/pair') {
     const refreshed = await _tryRefresh();
     if (refreshed) {
       res = await _doFetch(path, options, auth.getToken());

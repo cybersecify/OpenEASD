@@ -56,7 +56,7 @@ export function Layout({ children }) {
         <div className="px-3 py-3 border-t border-rim">
           <button
             onClick={async () => {
-              try { await apiPost('/auth/logout/', { refresh: auth.getRefresh() }); } catch (_) {}
+              try { await apiPost('/token/blacklist', { refresh: auth.getRefresh() }); } catch (_) {}
               auth.clear();
               navigate('/login');
             }}
