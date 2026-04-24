@@ -1,10 +1,11 @@
 # OpenEASD — Ubuntu 24.04 LTS
-# Multi-stage: builder installs tools and builds frontend, runtime is lean.
+# Multi-stage build targeting linux/amd64 (standard server architecture).
+# On Apple Silicon: docker buildx build --platform linux/amd64 -t openeasd .
 
 # ---------------------------------------------------------------------------
-# Stage 1: frontend build
+# Stage 1: frontend build (platform-agnostic — Node runs natively)
 # ---------------------------------------------------------------------------
-FROM ubuntu:24.04 AS frontend-builder
+FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS frontend-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates \
@@ -20,32 +21,43 @@ COPY frontend/ ./
 RUN npm run build
 
 # ---------------------------------------------------------------------------
-# Stage 2: Go tools (subfinder, dnsx, naabu, httpx, nuclei, amass)
+# Stage 2: download pre-built linux/amd64 security tool binaries
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04 AS tools-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates \
+    curl ca-certificates unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Go
-ARG GO_VERSION=1.22.4
-RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
-    | tar -C /usr/local -xz
-ENV PATH="/usr/local/go/bin:${PATH}"
+WORKDIR /tools
 
-# Install ProjectDiscovery tools via pdtm
-RUN go install github.com/projectdiscovery/pdtm/cmd/pdtm@latest
-ENV PATH="/root/go/bin:${PATH}"
+# ProjectDiscovery tool versions — bump as needed
+ARG SUBFINDER_VERSION=2.6.6
+ARG DNSX_VERSION=1.2.1
+ARG NAABU_VERSION=2.3.1
+ARG HTTPX_VERSION=1.6.5
+ARG NUCLEI_VERSION=3.2.9
+ARG AMASS_VERSION=4.2.0
 
-RUN pdtm -install subfinder && \
-    pdtm -install dnsx && \
-    pdtm -install naabu && \
-    pdtm -install httpx && \
-    pdtm -install nuclei
+RUN curl -fsSL "https://github.com/projectdiscovery/subfinder/releases/download/v${SUBFINDER_VERSION}/subfinder_${SUBFINDER_VERSION}_linux_amd64.zip" \
+    -o subfinder.zip && unzip subfinder.zip subfinder && rm subfinder.zip
 
-# Install amass
-RUN go install github.com/owasp-amass/amass/v4/...@master
+RUN curl -fsSL "https://github.com/projectdiscovery/dnsx/releases/download/v${DNSX_VERSION}/dnsx_${DNSX_VERSION}_linux_amd64.zip" \
+    -o dnsx.zip && unzip dnsx.zip dnsx && rm dnsx.zip
+
+RUN curl -fsSL "https://github.com/projectdiscovery/naabu/releases/download/v${NAABU_VERSION}/naabu_${NAABU_VERSION}_linux_amd64.zip" \
+    -o naabu.zip && unzip naabu.zip naabu && rm naabu.zip
+
+RUN curl -fsSL "https://github.com/projectdiscovery/httpx/releases/download/v${HTTPX_VERSION}/httpx_${HTTPX_VERSION}_linux_amd64.zip" \
+    -o httpx.zip && unzip httpx.zip httpx && rm httpx.zip
+
+RUN curl -fsSL "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_amd64.zip" \
+    -o nuclei.zip && unzip nuclei.zip nuclei && rm nuclei.zip
+
+RUN curl -fsSL "https://github.com/owasp-amass/amass/releases/download/v${AMASS_VERSION}/amass_Linux_amd64.zip" \
+    -o amass.zip && unzip amass.zip && mv amass_Linux_amd64/amass . && rm -rf amass.zip amass_Linux_amd64
+
+RUN chmod +x subfinder dnsx naabu httpx nuclei amass
 
 # ---------------------------------------------------------------------------
 # Stage 3: runtime
@@ -56,54 +68,49 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# System packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Python runtime
     python3.12 python3.12-venv python3-pip \
-    # uv (fast Python package manager)
     curl ca-certificates \
-    # nmap (system tool, not pdtm)
     nmap \
-    # PDF rendering dependencies for xhtml2pdf
-    libffi-dev libssl-dev libxml2 libxslt1.1 \
-    # Misc
-    git \
+    # xhtml2pdf / pycairo / svglib build deps
+    build-essential libffi-dev libssl-dev libxml2 libxslt1.1 \
+    libcairo2-dev pkg-config python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"
 
-# Copy Go binaries from tools-builder stage
-COPY --from=tools-builder /root/.pdtm/go/bin/ /usr/local/bin/pdtm-tools/
-COPY --from=tools-builder /root/go/bin/amass /usr/local/bin/amass
-ENV PATH="/usr/local/bin/pdtm-tools:${PATH}"
+# Copy security tool binaries
+COPY --from=tools-builder /tools/ /usr/local/bin/
+ENV PATH="/usr/local/bin:${PATH}"
 
-# Create app directory
 WORKDIR /app
 
-# Install Python dependencies first (cached layer)
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+# Create virtualenv
+RUN uv venv /app/.venv
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="/app/.venv/bin:${PATH}"
 
-# Copy application source
-COPY manage.py main.py ./
-COPY openeasd/ openeasd/
+# Install Python dependencies — copy only what pip needs so this layer is cached
+# unless dependencies change (not every code change)
+COPY pyproject.toml ./
 COPY apps/ apps/
+COPY openeasd/ openeasd/
+RUN uv pip install -e ".[prod]"
+
+# Copy remaining source
+COPY manage.py main.py ./
 COPY templates/ templates/
 COPY config/ config/
 
 # Copy built frontend from frontend-builder stage
 COPY --from=frontend-builder /build/frontend/dist/ frontend/dist/
 
-# Collect static files (SECRET_KEY only needed at runtime, dummy value is fine here)
-RUN SECRET_KEY=build-time-placeholder uv run manage.py collectstatic --noinput
+# Collect static files
+RUN SECRET_KEY=build-time-placeholder python manage.py collectstatic --noinput
 
-# Persistent data directory (SQLite DB, media, logs)
 VOLUME ["/app/data", "/app/logs"]
-
-# Expose Django port
 EXPOSE 8000
 
-# Entrypoint: auto-migrate, create admin if needed, start server + worker
-CMD ["uv", "run", "python", "main.py"]
+CMD ["python", "main.py"]
