@@ -153,9 +153,6 @@ def scan_list(request):
     paginator = Paginator(qs, 25)
     page = paginator.get_page(request.GET.get("page"))
 
-    if request.htmx:
-        return render(request, "partials/scan_rows.html", {"scans": page})
-
     # Scheduled jobs for inline display
     from apps.core.scheduler import get_scheduler
     scheduled = []
@@ -433,9 +430,6 @@ def vulnerability_list(request):
          "host": f.target or f.session.domain, "session": f.session, "obj": f}
         for f in page
     ]
-
-    if request.htmx:
-        return render(request, "partials/vuln_rows.html", {"vulns": vulns})
 
     return render(request, "findings/list.html", {
         "vulns": vulns,
