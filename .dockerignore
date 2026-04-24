@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[oc]
+*.egg-info/
+.venv/
+
+# Node
+frontend/node_modules/
+
+# Git
+.git/
+.gitignore
+
+# Dev / CI
+.env
+.envrc
+tests/
+docs/
+*.md
+PRD.md
+
+# Build artifacts already copied via multi-stage
+frontend/dist/
+
+# Data (mounted as volume at runtime)
+data/
+logs/
+staticfiles/
+
+# macOS
+.DS_Store
