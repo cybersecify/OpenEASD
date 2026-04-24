@@ -27,7 +27,7 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 ### Backend
 - Django 5+ with plain Django views (no DRF, no Celery, no Redis)
 - **Django Ninja** REST API under `/api/` — Schema-based, auto-docs at `/api/docs`
-- **JWT Bearer auth** — access + refresh tokens, JTI blacklist in `BlacklistedToken` model
+- **JWT Bearer auth** — access + refresh tokens via `djangorestframework-simplejwt` (ninja-jwt wrapper); token blacklist handled by simplejwt's built-in `OutstandingToken`/`BlacklistedToken` models
 - Huey — lightweight task queue for background scan execution
 - `django-apscheduler` for daily automated scans (starts in `SchedulerConfig.ready()`)
 - SQLite database (dev), configurable via `DB_NAME` env var
@@ -109,21 +109,16 @@ Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TO
 | `insights/` | `insights` | ScanSummary, FindingTypeSummary, charts |
 | `reports/` | `reports` | CSV + PDF export |
 | `api/` | — | Django Ninja API — routers, JWT auth, error handlers |
-| `api/tokens/` | `api_tokens` | BlacklistedToken model for JWT JTI blacklist |
 
 ### REST API module — `apps/core/api/`
 
 ```
 apps/core/api/
     __init__.py
-    auth.py           — JWT helpers: create_access_token, create_refresh_token,
-                        decode_token, AuthBearer (Ninja HttpBearer subclass)
-    ninja.py          — NinjaAPI instance, auth_router (/auth/login|logout|refresh|user),
-                        error handlers, router registration
-    tokens/
-        models.py     — BlacklistedToken(jti, expires_at) for refresh token invalidation
+    ninja.py          — NinjaAPI instance, ninja-jwt auth routes (/token/pair|refresh|verify|blacklist),
+                        /user/ endpoint, error handlers, router registration
 
-Per-module routers (each file exports a `router = Router(auth=auth_bearer)`):
+Per-module routers (each file exports a `router = Router(auth=JWTAuth())`):
     apps/core/dashboard/api.py   — /api/dashboard/
     apps/core/domains/api.py     — /api/domains/ CRUD
     apps/core/scans/api.py       — /api/scans/ + findings
@@ -138,10 +133,10 @@ Per-module routers (each file exports a `router = Router(auth=auth_bearer)`):
 {"error": {"code": "NOT_FOUND", "message": "..."}} // error
 ```
 
-**Auth:** JWT Bearer tokens. React stores tokens in `localStorage` via `auth.js`.
+**Auth:** JWT Bearer tokens via ninja-jwt (simplejwt). React stores tokens in `localStorage` via `auth.js`.
 - Access token: short-lived, sent as `Authorization: Bearer <token>`
-- Refresh token: long-lived, sent in POST body to `/api/auth/refresh/`
-- Logout: blacklists refresh token JTI in `BlacklistedToken`
+- Refresh token: long-lived, sent in POST body to `/api/token/refresh`
+- Logout: blacklists refresh token via `/api/token/blacklist` (simplejwt OutstandingToken/BlacklistedToken)
 
 **Adding a new API endpoint:**
 1. Add endpoint function to the relevant `apps/core/<module>/api.py` router
@@ -269,10 +264,11 @@ class Finding(models.Model):
 
 ### REST API (`/api/`)
 ```
-POST /api/auth/login/                     — JWT login → {access, refresh}
-POST /api/auth/logout/                    — blacklist refresh token JTI
-POST /api/auth/refresh/                   — exchange refresh → new access token
-GET  /api/auth/user/                      — current user info (requires access token)
+POST /api/token/pair                      — JWT login → {access, refresh}
+POST /api/token/blacklist                 — blacklist refresh token (logout)
+POST /api/token/refresh                   — exchange refresh → new access token
+POST /api/token/verify                    — verify token validity
+GET  /api/user/                           — current user info (requires access token)
 GET  /api/dashboard/                      — KPIs, domain status, urgent findings
 GET  /api/domains/                        — list domains (enriched)
 POST /api/domains/                        — add domain
@@ -317,7 +313,6 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | `tests/unit/test_domains.py` | 15 | Domain CRUD |
 | `tests/unit/test_httpx.py` | 11 | JSON parser, Port lookup, Subdomain link |
 | `tests/unit/test_insights.py` | 11 | Insights builder + view |
-| `tests/unit/test_jwt_auth.py` | 26 | JWT create/decode, AuthBearer, BlacklistedToken model |
 | `tests/unit/test_naabu.py` | 9 | JSON parser, FK to IPAddress |
 | `tests/unit/test_nmap.py` | 21 | Severity mapping, vulners XML parser, web/non-web exclusion |
 | `tests/unit/test_reports.py` | 15 | CSV export content/structure, PDF export (mocked pisa) |
@@ -333,4 +328,4 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | `tests/integration/test_scan_flow.py` | 13 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 71 | Smoke tests for all 35 API endpoints (auth + payload shape) |
 
-**Total: ~598 tests** (~557 fast + 41 slow domain_security)
+**Total: ~572 tests** (~531 fast + 41 slow domain_security)
