@@ -4,7 +4,7 @@ from django.db.models import Max
 
 from ninja import Router
 
-from apps.core.api.auth import auth_bearer
+from ninja_jwt.authentication import JWTAuth
 from apps.core.scans.models import ScanSession
 from apps.core.findings.models import Finding
 from apps.core.domains.models import Domain
@@ -12,7 +12,7 @@ from apps.core.insights.models import ScanSummary
 from apps.core.assets.models import Subdomain, IPAddress, Port
 from apps.core.web_assets.models import URL
 
-router = Router(auth=auth_bearer)
+router = Router(auth=JWTAuth())
 
 
 @router.get("/")

@@ -9,7 +9,7 @@ from django.shortcuts import get_object_or_404
 from ninja import Router, Schema, Status
 from ninja.errors import HttpError
 
-from apps.core.api.auth import auth_bearer
+from ninja_jwt.authentication import JWTAuth
 from apps.core.domains.models import Domain
 from apps.core.findings.models import Finding
 from apps.core.insights.builder import rebuild_finding_type_summaries
@@ -19,7 +19,7 @@ from apps.core.scans.models import ScanSession
 
 logger = logging.getLogger(__name__)
 
-router = Router(auth=auth_bearer)
+router = Router(auth=JWTAuth())
 
 
 def _enrich_domains(domains):

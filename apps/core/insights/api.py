@@ -6,14 +6,14 @@ from django.db.models import Count, F, Max, Q
 
 from ninja import Router
 
-from apps.core.api.auth import auth_bearer
+from ninja_jwt.authentication import JWTAuth
 from apps.core.assets.models import IPAddress, Port, Subdomain
 from apps.core.domains.models import Domain
 from apps.core.findings.models import Finding
 from apps.core.insights.models import FindingTypeSummary, ScanSummary
 from apps.core.web_assets.models import URL
 
-router = Router(auth=auth_bearer)
+router = Router(auth=JWTAuth())
 
 
 def _asset_counts_per_session(session_ids: list) -> dict:

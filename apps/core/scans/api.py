@@ -12,7 +12,7 @@ from django.utils import timezone
 from ninja import Router, Schema, Status
 from ninja.errors import HttpError
 
-from apps.core.api.auth import auth_bearer
+from ninja_jwt.authentication import JWTAuth
 from apps.core.constants import SEVERITY_LEVELS
 from apps.core.insights.builder import rebuild_finding_type_summaries
 from apps.core.queries import latest_session_ids
@@ -21,8 +21,8 @@ from apps.core.scans.views import _parse_job, _schedule_once, _schedule_recurrin
 
 logger = logging.getLogger(__name__)
 
-router = Router(auth=auth_bearer)
-scheduled_router = Router(auth=auth_bearer)
+router = Router(auth=JWTAuth())
+scheduled_router = Router(auth=JWTAuth())
 
 
 # ---------------------------------------------------------------------------

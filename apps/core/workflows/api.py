@@ -7,13 +7,13 @@ from django.shortcuts import get_object_or_404
 from ninja import Router, Schema, Status
 from ninja.errors import HttpError
 
-from apps.core.api.auth import auth_bearer
+from ninja_jwt.authentication import JWTAuth
 from apps.core.workflows.models import Workflow, WorkflowStep
 from apps.core.workflows.registry import get_tool_choices, get_tool_phases, get_tool_requires
 
 logger = logging.getLogger(__name__)
 
-router = Router(auth=auth_bearer)
+router = Router(auth=JWTAuth())
 
 
 def _serialize_workflow(workflow) -> dict:
