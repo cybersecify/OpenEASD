@@ -13,7 +13,7 @@ First run (creates admin user if none exists):
 
 Production (gunicorn):
     gunicorn openeasd.wsgi:application      # web server
-    uv run manage.py run_huey               # worker (separate terminal)
+    uv run manage.py qcluster               # worker (separate terminal)
 """
 
 import argparse
@@ -140,12 +140,12 @@ def run_server(port: int, with_worker: bool):
     procs = []
     try:
         if with_worker:
-            huey = subprocess.Popen(
-                [sys.executable, "manage.py", "run_huey", "--quiet"],
+            worker = subprocess.Popen(
+                [sys.executable, "manage.py", "qcluster"],
                 cwd=BASE_DIR,
             )
-            procs.append(huey)
-            print(f"  ✓ Huey task worker started (PID {huey.pid})")
+            procs.append(worker)
+            print(f"  ✓ Django-Q2 worker started (PID {worker.pid})")
 
         server = subprocess.Popen(
             [sys.executable, "manage.py", "runserver", f"0.0.0.0:{port}"],
@@ -197,7 +197,7 @@ def main():
     parser.add_argument(
         "--no-worker",
         action="store_true",
-        help="Skip starting the Huey task worker",
+        help="Skip starting the Django-Q2 task worker",
     )
     args = parser.parse_args()
 

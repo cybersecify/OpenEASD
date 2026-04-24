@@ -119,7 +119,7 @@ Open http://localhost:8000, log in with `admin/admin`, change the password, add 
 ### Development Mode
 
 ```bash
-# Terminal 1 — Django + Huey worker
+# Terminal 1 — Django + Django-Q2 worker
 uv run python main.py
 
 # Terminal 2 — Vite dev server (proxies /api/ to Django on port 8000)
@@ -133,7 +133,7 @@ cd frontend && npm run dev
 uv run python main.py --build          # npm build then start
 uv run python main.py --build-only     # npm build only
 uv run python main.py --port 9000      # custom port
-uv run python main.py --no-worker      # web server only (no Huey)
+uv run python main.py --no-worker      # web server only (no worker)
 ```
 
 ## API
@@ -193,7 +193,7 @@ uv run pytest tests/
 **Backend:**
 - **Django 5** — Web framework
 - **Django Ninja** — REST API with OpenAPI docs
-- **Huey** — Background task queue
+- **Django-Q2** — Background task queue (ORM broker, tasks stored in Django DB)
 - **SQLite** — Database (dev), configurable via `DB_NAME`
 - **paramiko** — SSH protocol inspection
 - **cryptography** — X.509 certificate analysis

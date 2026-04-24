@@ -25,7 +25,7 @@ dependencies = [
     # Reports (PDF generation)
     "xhtml2pdf>=0.2.15",
     # Task queue
-    "huey>=2.5",
+    "django-q2>=1.6",
     # XML parsing (safe)
     "defusedxml>=0.7.1",
     # Auth

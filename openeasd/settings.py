@@ -36,7 +36,7 @@ INSTALLED_APPS = [
     # Third party
     "django_htmx",
     "django_apscheduler",
-    "huey.contrib.djhuey",
+    "django_q",
     # Local apps
     "apps.core.dashboard",
     "apps.core.assets",
@@ -150,16 +150,14 @@ OPENEASD_LOGS_DIR = BASE_DIR / "logs"
 for _dir in [OPENEASD_DATA_DIR, OPENEASD_LOGS_DIR]:
     _dir.mkdir(parents=True, exist_ok=True)
 
-# Huey task queue — uses a separate SQLite DB to avoid write contention
-HUEY = {
-    "huey_class": "huey.SqliteHuey",
+# Django-Q2 task queue — ORM broker uses the existing Django DB (SQLite)
+Q_CLUSTER = {
     "name": "openeasd",
-    "filename": str(OPENEASD_DATA_DIR / "huey.db"),
-    "immediate": False,  # always queue — scans are too long for synchronous execution
-    "consumer": {
-        "workers": 2,
-        "worker_type": "thread",
-    },
+    "workers": 2,
+    "orm": "default",   # uses Django DB — no Redis needed
+    "timeout": 3600,    # 1 hour — accommodates long full scans
+    "retry": 0,         # no auto-retry; scan pipeline manages its own state
+    "catch_up": False,  # skip missed tasks on worker restart
 }
 
 # Scanner timeouts (seconds) — override in .env if needed
