@@ -153,10 +153,10 @@ for _dir in [OPENEASD_DATA_DIR, OPENEASD_LOGS_DIR]:
 # Django-Q2 task queue — ORM broker uses the existing Django DB (SQLite)
 Q_CLUSTER = {
     "name": "openeasd",
-    "workers": 2,
+    "workers": 1,       # SQLite is single-writer; >1 workers causes race conditions on task pickup
     "orm": "default",   # uses Django DB — no Redis needed
     "timeout": 3600,    # 1 hour — accommodates long full scans
-    "retry": 0,         # no auto-retry; scan pipeline manages its own state
+    "retry": 7200,      # must be > timeout; effectively disables retries for our use case
     "catch_up": False,  # skip missed tasks on worker restart
 }
 
