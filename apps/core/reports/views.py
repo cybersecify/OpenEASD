@@ -26,15 +26,14 @@ def _report_auth_required(view_func):
             return view_func(request, *args, **kwargs)
         token = request.GET.get('token', '')
         if token:
-            from apps.core.api.auth import decode_token
-            result = decode_token(token, 'access')
-            if result is not None:
-                user_id, _ = result
-                try:
-                    request.user = User.objects.get(id=user_id, is_active=True)
-                    return view_func(request, *args, **kwargs)
-                except User.DoesNotExist:
-                    pass
+            try:
+                from ninja_jwt.tokens import AccessToken
+                token_obj = AccessToken(token)
+                user_id = token_obj["user_id"]
+                request.user = User.objects.get(id=user_id, is_active=True)
+                return view_func(request, *args, **kwargs)
+            except Exception:
+                pass
         return HttpResponseRedirect('/login')
     return wrapper
 
