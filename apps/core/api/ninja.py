@@ -1,14 +1,14 @@
 """Central Django Ninja API instance for OpenEASD."""
 
-import datetime
 from django.conf import settings
 from django.http import JsonResponse
-from ninja import NinjaAPI, Router, Schema
+from ninja import NinjaAPI
 from ninja.errors import HttpError, ValidationError
+from ninja_jwt.routers.obtain import obtain_pair_router   # POST /pair, POST /refresh
+from ninja_jwt.routers.verify import verify_router        # POST /verify
+from ninja_jwt.routers.blacklist import blacklist_router  # POST /blacklist
+from ninja_jwt.authentication import JWTAuth
 
-from apps.core.api.auth import auth_bearer, create_access_token, create_refresh_token, decode_token
-
-# Expose OpenAPI docs only in development — never in production
 api = NinjaAPI(title="OpenEASD API", version="1.0", docs_url="/docs" if settings.DEBUG else None)
 
 _STATUS_CODES = {
@@ -46,74 +46,25 @@ def validation_error_handler(request, exc):
 
 
 # ---------------------------------------------------------------------------
-# Auth router
+# ninja-jwt token routes — /api/token/pair, /api/token/refresh, etc.
 # ---------------------------------------------------------------------------
-
-auth_router = Router()
-
-
-class LoginRequest(Schema):
-    username: str
-    password: str
+api.add_router("/token", obtain_pair_router)
+api.add_router("/token", verify_router)
+api.add_router("/token", blacklist_router)
 
 
-class LogoutRequest(Schema):
-    refresh: str
-
-
-class RefreshRequest(Schema):
-    refresh: str
-
-
-@auth_router.post("/login/")
-def login(request, data: LoginRequest):
-    from django.contrib.auth import authenticate
-
-    user = authenticate(request, username=data.username, password=data.password)
-    if user is None:
-        raise HttpError(401, "Invalid credentials")
-    return {
-        "access": create_access_token(user.id),
-        "refresh": create_refresh_token(user.id),
-    }
-
-
-@auth_router.post("/logout/", auth=auth_bearer)
-def logout(request, data: LogoutRequest):
-    from django.conf import settings
-    import jwt as pyjwt
-    from datetime import timezone as dt_timezone
-    from apps.core.api.tokens.models import BlacklistedToken
-
-    try:
-        payload = pyjwt.decode(data.refresh, settings.SECRET_KEY, algorithms=["HS256"])
-        jti = payload.get("jti")
-        exp = payload.get("exp")
-        if jti and exp:
-            expires_at = datetime.datetime.fromtimestamp(exp, tz=dt_timezone.utc)
-            BlacklistedToken.objects.get_or_create(jti=jti, defaults={"expires_at": expires_at})
-    except Exception:
-        pass  # token already invalid — logout is idempotent
-    return {"message": "logged out"}
-
-
-@auth_router.post("/refresh/")
-def refresh_token(request, data: RefreshRequest):
-    result = decode_token(data.refresh, "refresh")
-    if result is None:
-        raise HttpError(401, "Invalid or expired refresh token")
-    user_id, _ = result
-    return {"access": create_access_token(user_id)}
-
-
-@auth_router.get("/user/", auth=auth_bearer)
+# ---------------------------------------------------------------------------
+# Current user endpoint
+# ---------------------------------------------------------------------------
+@api.get("/user/", auth=JWTAuth())
 def get_user(request):
-    user = request.auth
-    return {"id": user.id, "username": user.username, "email": user.email or ""}
+    u = request.auth
+    return {"id": u.id, "username": u.username, "email": u.email or ""}
 
 
-api.add_router("/auth", auth_router)
-
+# ---------------------------------------------------------------------------
+# Module routers (keep exactly as before)
+# ---------------------------------------------------------------------------
 from apps.core.dashboard.api import router as dashboard_router
 api.add_router("/dashboard", dashboard_router)
 
