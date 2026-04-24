@@ -17,7 +17,6 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-BINARY = getattr(settings, "TOOL_NUCLEI", "nuclei")
 TIMEOUT = 3600  # 1 hour max per scan
 
 
@@ -32,6 +31,8 @@ def collect(session) -> list[dict]:
     """
     from apps.core.web_assets.models import URL
 
+    binary = getattr(settings, "TOOL_NUCLEI", "nuclei")
+
     urls = list(URL.objects.filter(session=session).values_list("url", flat=True))
     if not urls:
         logger.info(f"[nuclei:{session.id}] No URLs to scan")
@@ -44,13 +45,13 @@ def collect(session) -> list[dict]:
         f.write("\n".join(targets))
         tmp = f.name
 
-    cmd = [BINARY, "-list", tmp, "-jsonl", "-silent", "-no-color"]
+    cmd = [binary, "-list", tmp, "-jsonl", "-silent", "-no-color"]
     logger.info(f"[nuclei:{session.id}] Scanning {len(targets)} web targets")
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT)
     except FileNotFoundError:
-        logger.error(f"[nuclei:{session.id}] Binary not found: {BINARY}")
+        logger.error(f"[nuclei:{session.id}] Binary not found: {binary}")
         return []
     except subprocess.TimeoutExpired:
         logger.error(f"[nuclei:{session.id}] Timed out after {TIMEOUT}s")

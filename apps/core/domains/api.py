@@ -1,6 +1,7 @@
 """Domains API router."""
 
 import logging
+import re
 
 from django.db import transaction
 from django.db.models import Count
@@ -18,6 +19,11 @@ from apps.core.queries import latest_session_ids
 from apps.core.scans.models import ScanSession
 
 logger = logging.getLogger(__name__)
+
+# RFC 1035 / RFC 1123 hostname validation
+_VALID_HOSTNAME = re.compile(
+    r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$"
+)
 
 router = Router(auth=JWTAuth())
 
@@ -89,9 +95,11 @@ def list_domains(request):
 
 @router.post("/", response={201: dict})
 def create_domain(request, data: DomainIn):
-    name = data.name.strip()
+    name = data.name.strip().lower()
     if not name:
         raise HttpError(400, "Name is required")
+    if not _VALID_HOSTNAME.match(name):
+        raise HttpError(400, "Invalid domain name")
     if Domain.objects.filter(name=name).exists():
         raise HttpError(400, "Domain already exists")
     domain = Domain.objects.create(name=name)

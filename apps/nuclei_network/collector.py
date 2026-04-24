@@ -16,7 +16,6 @@ from apps.core.assets.models import Port
 
 logger = logging.getLogger(__name__)
 
-BINARY = getattr(settings, "TOOL_NUCLEI", "nuclei")
 TIMEOUT = 3600  # 1 hour max per scan
 
 # Baseline tags always included regardless of services found
@@ -79,6 +78,8 @@ def collect(session) -> list[dict]:
 
     Returns list of raw nuclei JSON records (one per finding).
     """
+    binary = getattr(settings, "TOOL_NUCLEI", "nuclei")
+
     ports = list(Port.objects.filter(session=session, state="open", is_web=False))
     if not ports:
         logger.info(f"[nuclei_network:{session.id}] No non-web ports to scan")
@@ -97,7 +98,7 @@ def collect(session) -> list[dict]:
         tmp = f.name
 
     cmd = [
-        BINARY, "-list", tmp,
+        binary, "-list", tmp,
         "-pt", "network,ssl",
         "-tags", ",".join(sorted(tags)),
         "-severity", "critical,high,medium,low",
@@ -107,7 +108,7 @@ def collect(session) -> list[dict]:
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT)
     except FileNotFoundError:
-        logger.error(f"[nuclei_network:{session.id}] Binary not found: {BINARY}")
+        logger.error(f"[nuclei_network:{session.id}] Binary not found: {binary}")
         return []
     except subprocess.TimeoutExpired:
         logger.error(f"[nuclei_network:{session.id}] Timed out after {TIMEOUT}s")

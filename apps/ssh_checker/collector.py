@@ -9,8 +9,8 @@ Checks based on:
   - Authentication methods (password auth, root login)
 
 Uses paramiko.Transport for SSH handshake inspection without authentication.
-Subclasses Transport to capture the server's full KEXINIT algorithm lists
-(paramiko only stores the negotiated result, not the full server offer).
+Tests weak algorithms by making targeted connections with each algorithm
+proposed, then checking whether the server accepts or rejects it.
 """
 
 import logging
@@ -50,52 +50,6 @@ WEAK_MACS = frozenset({
     "hmac-sha1", "hmac-sha1-96",        # SHA-1 — deprecated
     "umac-64@openssh.com",              # 64-bit MAC — insufficient tag length
 })
-
-
-# ---------------------------------------------------------------------------
-# Custom Transport to capture server KEXINIT
-# ---------------------------------------------------------------------------
-
-class _InspectTransport(paramiko.Transport):
-    """Transport subclass that captures the server's full KEXINIT algorithm lists."""
-
-    def __init__(self, *args, **kwargs):
-        self.server_kex_algorithms: list[str] = []
-        self.server_ciphers: list[str] = []
-        self.server_macs: list[str] = []
-        self.server_key_types: list[str] = []
-        super().__init__(*args, **kwargs)
-
-    def _parse_kex_init(self, m):
-        # Peek at the raw message to extract server algorithm lists
-        # before the parent method consumes and negotiates them
-        parsed = self._really_parse_kex_init(m, ignore_first_byte=False)
-
-        self.server_kex_algorithms = parsed.get("kex_algo_list", [])
-        self.server_key_types = parsed.get("server_key_algo_list", [])
-        # In SSH KEXINIT: client_encrypt = server→client, server_encrypt = client→server
-        # For a client, "server_encrypt_algo_list" is what the server offers for encryption
-        self.server_ciphers = list(set(
-            parsed.get("client_encrypt_algo_list", [])
-            + parsed.get("server_encrypt_algo_list", [])
-        ))
-        self.server_macs = list(set(
-            parsed.get("client_mac_algo_list", [])
-            + parsed.get("server_mac_algo_list", [])
-        ))
-
-        # Re-create the message from scratch for the parent to consume
-        # We can't rewind paramiko's Message, so we call super with the
-        # original data. The trick: _parse_kex_init receives the full
-        # message; we need to let the parent process it too.
-        # Actually, we already consumed 'm' via _really_parse_kex_init.
-        # The parent also calls _really_parse_kex_init, so we need a
-        # different approach: override to avoid double-parse.
-        # Instead, replicate the parent's negotiation logic using the
-        # parsed data. But that's too fragile.
-        #
-        # Better approach: save the raw bytes, reconstruct Message, call super.
-        pass  # We handle this differently — see _probe_ssh below
 
 
 def _get_security_options_all(transport: paramiko.Transport):

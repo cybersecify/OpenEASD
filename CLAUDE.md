@@ -295,8 +295,8 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 ```
 
 ### Other routes
-- `/reports/<uuid>/csv/` → CSV export (Django view, `login_required`)
-- `/reports/<uuid>/pdf/` → PDF export (Django view, `login_required`)
+- `/reports/<uuid>/csv/` → CSV export (Django view, `_report_auth_required` — accepts session auth or `?token=<access_token>`)
+- `/reports/<uuid>/pdf/` → PDF export (Django view, `_report_auth_required` — accepts session auth or `?token=<access_token>`)
 - `/admin/` → Django admin
 - `/api/docs` → Django Ninja auto-generated OpenAPI docs
 - `/*` → React SPA catch-all (`frontend/dist/index.html`)

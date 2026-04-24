@@ -2,6 +2,7 @@
 
 import csv
 import functools
+import logging
 from io import BytesIO
 
 from django.contrib.auth.models import User
@@ -17,9 +18,16 @@ from apps.core.web_assets.models import URL
 from apps.core.findings.models import Finding
 from apps.core.scans.models import ScanSession
 
+logger = logging.getLogger(__name__)
+
 
 def _report_auth_required(view_func):
-    """Accept Django session auth OR JWT access token via ?token= query param."""
+    """Accept Django session auth OR JWT access token via ?token= query param.
+
+    The ?token= mechanism is intentional for direct PDF/CSV download links where
+    the browser cannot set an Authorization header. Tokens appear in server access
+    logs — acceptable for a single-user local deployment.
+    """
     @functools.wraps(view_func)
     def wrapper(request, *args, **kwargs):
         if request.user.is_authenticated:
@@ -32,8 +40,8 @@ def _report_auth_required(view_func):
                 user_id = token_obj["user_id"]
                 request.user = User.objects.get(id=user_id, is_active=True)
                 return view_func(request, *args, **kwargs)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Report token auth failed: {exc}")
         return HttpResponseRedirect('/login')
     return wrapper
 

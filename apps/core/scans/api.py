@@ -22,6 +22,14 @@ from apps.core.queries import latest_session_ids
 from apps.core.scans.models import ScanSession
 from apps.core.scheduler.scheduler import run_scheduled_scan
 
+logger = logging.getLogger(__name__)
+
+# RFC 1035 / RFC 1123 hostname validation (shared with domains/api.py)
+import re as _re
+_VALID_HOSTNAME = _re.compile(
+    r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$"
+)
+
 BUILTIN_JOB_IDS = {"daily_scan", "watchdog_reap_stuck_scans"}
 
 
@@ -101,7 +109,6 @@ def _schedule_recurring(domain, recurrence, recurrence_time):
     )
     logger.info(f"Recurring scan scheduled: domain={domain} recurrence={recurrence} time={recurrence_time}")
 
-logger = logging.getLogger(__name__)
 
 router = Router(auth=JWTAuth())
 scheduled_router = Router(auth=JWTAuth())
@@ -269,9 +276,11 @@ class ScanStartRequest(Schema):
 
 @router.post("/start/", response={201: dict})
 def start_scan(request, data: ScanStartRequest):
-    domain = data.domain.strip()
+    domain = data.domain.strip().lower()
     if not domain:
         raise HttpError(400, "domain is required")
+    if not _VALID_HOSTNAME.match(domain):
+        raise HttpError(400, "Invalid domain name")
 
     if data.schedule_type == "now":
         from apps.core.scans.pipeline import create_scan_session
@@ -554,6 +563,8 @@ def stop_scan(request, session_uuid: str):
 @router.post("/{session_uuid}/delete/")
 def delete_scan(request, session_uuid: str):
     session = get_object_or_404(ScanSession, uuid=session_uuid)
+    if session.status in ("pending", "running"):
+        raise HttpError(409, "Cannot delete — scan is currently active. Stop it first.")
     session.delete()
     logger.info(f"Scan deleted via API: uuid={session_uuid}")
     rebuild_finding_type_summaries()

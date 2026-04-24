@@ -908,6 +908,7 @@ dependencies = [
     { name = "dnspython" },
     { name = "paramiko" },
     { name = "python-decouple" },
+    { name = "pyyaml" },
     { name = "requests" },
     { name = "xhtml2pdf" },
 ]
@@ -941,6 +942,7 @@ requires-dist = [
     { name = "gunicorn", marker = "extra == 'prod'", specifier = ">=21.2" },
     { name = "paramiko", specifier = ">=3.4" },
     { name = "python-decouple", specifier = ">=3.8" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.31" },
     { name = "xhtml2pdf", specifier = ">=0.2.15" },
 ]

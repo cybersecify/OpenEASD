@@ -35,7 +35,7 @@ def _get_qualifying_findings(session, threshold_level: int) -> list:
 
     findings = []
     try:
-        for f in Finding.objects.filter(session=session, source="domain_security"):
+        for f in Finding.objects.filter(session=session):
             if SEVERITY_ORDER.get(f.severity, 0) >= threshold_level:
                 findings.append({
                     "severity": f.severity,

@@ -121,6 +121,9 @@ def create_scan_session(domain: str, triggered_by: str = "manual", workflow=None
 
     try:
         with transaction.atomic():
+            # NOTE: select_for_update(nowait=True) is a no-op on SQLite — Django silently
+            # ignores it. Real duplicate-session protection comes from workers=1 in
+            # Q_CLUSTER and the if-active check below, not from DB-level locking.
             active = (
                 ScanSession.objects
                 .select_for_update(nowait=True)

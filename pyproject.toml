@@ -16,6 +16,7 @@ dependencies = [
     # DNS / network
     "dnspython>=2.4",
     "requests>=2.31",
+    "pyyaml>=6.0",
     # Scheduler
     "django-apscheduler>=0.7.0",
     # SSL / crypto / SSH

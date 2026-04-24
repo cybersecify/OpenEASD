@@ -9,7 +9,10 @@ logger = logging.getLogger(__name__)
 _scheduler = None
 
 # A scan running longer than this is considered stuck and will be marked failed.
-SCAN_TIMEOUT_MINUTES = 30
+# Must exceed Q_CLUSTER timeout (3600s = 60 min) so legitimate long scans aren't reaped.
+# Override with SCAN_TIMEOUT_MINUTES env var if needed.
+from decouple import config as _config  # noqa: E402
+SCAN_TIMEOUT_MINUTES = _config("SCAN_TIMEOUT_MINUTES", default=90, cast=int)
 
 
 def get_scheduler():
@@ -109,26 +112,6 @@ def daily_scan():
             continue
         run_scan_task(session.id)
         logger.info(f"[daily_scan] Launched scan for {domain.name} (session {session.id})")
-
-
-def weekly_scan():
-    """Run a full scan for every active domain. Called by APScheduler weekly."""
-    from apps.core.domains.models import Domain
-    from apps.core.scans.pipeline import create_scan_session
-    from apps.core.scans.tasks import run_scan_task
-
-    active_domains = Domain.objects.filter(is_active=True)
-    if not active_domains.exists():
-        logger.info("[weekly_scan] No active domains found")
-        return
-
-    for domain in active_domains:
-        session = create_scan_session(domain.name)
-        if session is None:
-            logger.info(f"[weekly_scan] Skipping {domain.name} — scan already active")
-            continue
-        run_scan_task(session.id)
-        logger.info(f"[weekly_scan] Launched full scan for {domain.name} (session {session.id})")
 
 
 # ---------------------------------------------------------------------------
