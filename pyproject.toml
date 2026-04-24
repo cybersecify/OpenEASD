@@ -1,7 +1,7 @@
 [project]
-name = "openeasd-django"
+name = "openeasd"
 version = "1.0.0"
-description = "OpenEASD - Automated External Attack Surface Detection (Django edition)"
+description = "OpenEASD - Automated External Attack Surface Detection"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
@@ -11,6 +11,7 @@ dependencies = [
     # Web framework
     "django>=5.2,<5.3",
     "django-htmx>=1.17",
+    "django-ninja>=1.6.2",
     # Configuration
     "python-decouple>=3.8",
     # DNS / network
@@ -20,26 +21,18 @@ dependencies = [
     "django-apscheduler>=0.7.0",
     # SSL / crypto / SSH
     "cryptography>=42.0",
-    "pyopenssl>=23.0",
     "paramiko>=3.4",
     # Reports (PDF generation)
     "xhtml2pdf>=0.2.15",
     # Task queue
     "huey>=2.5",
+    # XML parsing (safe)
     "defusedxml>=0.7.1",
-    "django-ninja>=1.6.2",
+    # Auth
     "pyjwt>=2.12.1",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.4",
-    "pytest-django>=4.7",
-    "black>=23.11",
-    "flake8>=6.1",
-    "mypy>=1.7",
-    "isort>=5.12",
-]
 prod = [
     "gunicorn>=21.2",
 ]
@@ -58,9 +51,13 @@ build-backend = "setuptools.build_meta"
 
 [dependency-groups]
 dev = [
-    "pyflakes>=3.4.0",
     "pytest>=9.0.3",
     "pytest-django>=4.12.0",
+    "pyflakes>=3.4.0",
+    "black>=23.11",
+    "flake8>=6.1",
+    "mypy>=1.7",
+    "isort>=5.12",
 ]
 
 [tool.pytest.ini_options]
