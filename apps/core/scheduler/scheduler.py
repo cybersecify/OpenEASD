@@ -159,11 +159,11 @@ def reap_stuck_scans():
 # ---------------------------------------------------------------------------
 
 def purge_expired_blacklisted_tokens():
-    """Delete expired rows from BlacklistedToken to keep the table small."""
-    from apps.core.api.tokens.models import BlacklistedToken
+    """Delete expired OutstandingToken rows (and their BlacklistedToken entries) to keep the table small."""
+    from ninja_jwt.token_blacklist.models import OutstandingToken
 
     cutoff = django_tz.now()
-    deleted, _ = BlacklistedToken.objects.filter(expires_at__lt=cutoff).delete()
+    deleted, _ = OutstandingToken.objects.filter(expires_at__lt=cutoff).delete()
     if deleted:
-        logger.info(f"[token_purge] Deleted {deleted} expired blacklisted token(s)")
+        logger.info(f"[token_purge] Deleted {deleted} expired outstanding token(s)")
     return deleted
