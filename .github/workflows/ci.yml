@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    name: Test & Security Scan
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh && echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Run tests (fast — exclude slow DNS tests)
+        env:
+          SECRET_KEY: "ci-test-secret-key-not-used-in-prod"
+          DEBUG: "True"
+        run: uv run pytest tests/ --ignore=tests/unit/test_domain_security.py -q
+
+      - name: SAST — bandit
+        run: uv run bandit -r apps/ openeasd/ -ll -x tests/
+        # -ll = LOW+ severity only (skip INFO noise); -x = exclude test dirs
+
+      - name: Dependency vulnerability scan — pip-audit
+        run: uv run pip-audit --require-hashes=false
+        # Reports CVEs in installed packages; non-zero exit fails the build
