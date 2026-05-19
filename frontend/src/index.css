@@ -2,6 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :root {
+    --background: 215 28% 7%;
+    --foreground: 210 26% 93%;
+    --card: 214 22% 11%;
+    --card-foreground: 210 26% 93%;
+    --popover: 214 22% 11%;
+    --popover-foreground: 210 26% 93%;
+    --primary: 145 60% 47%;
+    --primary-foreground: 215 28% 7%;
+    --secondary: 214 18% 13%;
+    --secondary-foreground: 210 17% 82%;
+    --muted: 214 18% 13%;
+    --muted-foreground: 211 8% 58%;
+    --accent: 214 18% 13%;
+    --accent-foreground: 210 17% 82%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 210 12% 21%;
+    --input: 210 12% 21%;
+    --ring: 145 60% 47%;
+    --radius: 0.5rem;
+  }
+}
+
 @layer components {
   /* Severity badges */
   .badge-critical { @apply bg-red-900/40 text-red-400 border border-red-800; }
