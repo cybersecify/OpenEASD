@@ -2,7 +2,10 @@ import React, { useState } from 'react';
 import { Layout } from '../components/Layout.jsx';
 import { Spinner } from '../components/Spinner.jsx';
 import { ConfirmButton } from '../components/ConfirmButton.jsx';
-import { Notification } from '../components/Notification.jsx';
+import { toast } from '../components/Notification.jsx';
+import { Button } from '../components/ui/button.jsx';
+import { Card, CardContent } from '../components/ui/card.jsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { navigate } from '../App.jsx';
 import { apiPost } from '../api/client.js';
 import { useFetch } from '../hooks/useFetch.js';
@@ -37,54 +40,54 @@ function CreateWorkflowForm({ onCreated }) {
   }
 
   return (
-    <div className="bg-card border border-rim rounded-xl p-5 mb-5">
-      <h2 className="text-lit text-sm font-semibold mb-4">Create Workflow</h2>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs text-dim mb-1">Name *</label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="Workflow name" className="field" />
-          </div>
-          <div>
-            <label className="block text-xs text-dim mb-1">Description</label>
-            <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Optional" className="field" />
-          </div>
-        </div>
-        <label className="inline-flex items-center gap-2 text-sm text-body cursor-pointer">
-          <input type="checkbox" checked={isDef} onChange={e => setDef(e.target.checked)} className="accent-brand" />
-          Set as default
-        </label>
-        {allTools.length > 0 && (
-          <div>
-            <p className="text-xs text-dim mb-2">Tools</p>
-            <div className="flex flex-wrap gap-2">
-              {allTools.map(tool => (
-                <label key={tool.key}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs cursor-pointer border transition-colors
-                    ${selected.includes(tool.key)
-                      ? 'bg-brand/10 border-brand/40 text-brand'
-                      : 'bg-canvas border-rim text-body hover:border-dim'}`}>
-                  <input type="checkbox" className="hidden" checked={selected.includes(tool.key)} onChange={() => toggleTool(tool.key)} />
-                  {tool.label || tool.key}
-                </label>
-              ))}
+    <Card className="mb-5">
+      <CardContent className="p-5">
+        <h2 className="text-lit text-sm font-semibold mb-4">Create Workflow</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-dim mb-1">Name *</label>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="Workflow name" className="field" />
+            </div>
+            <div>
+              <label className="block text-xs text-dim mb-1">Description</label>
+              <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Optional" className="field" />
             </div>
           </div>
-        )}
-        {err && <p className="text-red-400 text-xs">{err}</p>}
-        <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Creating…' : 'Create Workflow'}</button>
-      </form>
-    </div>
+          <label className="inline-flex items-center gap-2 text-sm text-body cursor-pointer">
+            <input type="checkbox" checked={isDef} onChange={e => setDef(e.target.checked)} className="accent-brand" />
+            Set as default
+          </label>
+          {allTools.length > 0 && (
+            <div>
+              <p className="text-xs text-dim mb-2">Tools</p>
+              <div className="flex flex-wrap gap-2">
+                {allTools.map(tool => (
+                  <label key={tool.key}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs cursor-pointer border transition-colors
+                      ${selected.includes(tool.key)
+                        ? 'bg-brand/10 border-brand/40 text-brand'
+                        : 'bg-canvas border-rim text-body hover:border-dim'}`}>
+                    <input type="checkbox" className="hidden" checked={selected.includes(tool.key)} onChange={() => toggleTool(tool.key)} />
+                    {tool.label || tool.key}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          {err && <p className="text-red-400 text-xs">{err}</p>}
+          <Button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create Workflow'}</Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
 export default function WorkflowsPage() {
   const { data, loading, error, refetch } = useFetch('/workflows/');
-  const [notification, setNotification] = useState(null);
   const [busyIds, setBusyIds] = useState(new Set());
 
   const workflows = data || [];
-  function notify(msg, type = 'success') { setNotification({ message: msg, type, key: Date.now() }); }
   function busy(id) { return busyIds.has(id); }
   function setBusy(id, val) {
     setBusyIds(s => { const ns = new Set(s); val ? ns.add(id) : ns.delete(id); return ns; });
@@ -92,55 +95,54 @@ export default function WorkflowsPage() {
 
   async function handleDelete(id, name) {
     setBusy(id, true);
-    try { await apiPost(`/workflows/${id}/delete/`); notify(`"${name}" deleted.`); refetch(); }
-    catch (e) { notify(e.message || 'Delete failed.', 'error'); }
+    try { await apiPost(`/workflows/${id}/delete/`); toast.success(`"${name}" deleted.`); refetch(); }
+    catch (e) { toast.error(e.message || 'Delete failed.'); }
     finally { setBusy(id, false); }
   }
 
   return (
     <Layout>
-      {notification && <Notification key={notification.key} message={notification.message} type={notification.type} />}
       <div className="space-y-5">
         <div>
           <h1 className="text-lit text-xl font-bold">Workflows</h1>
           <p className="text-dim text-sm mt-0.5">Manage scan workflows and tool configurations</p>
         </div>
-        <CreateWorkflowForm onCreated={() => { notify('Workflow created.'); refetch(); }} />
-        <div className="bg-card border border-rim rounded-xl overflow-hidden">
+        <CreateWorkflowForm onCreated={() => { toast.success('Workflow created.'); refetch(); }} />
+        <Card className="overflow-hidden">
           {loading ? <div className="flex justify-center p-8"><Spinner /></div>
           : error   ? <div className="p-6 text-red-400 text-sm">Error: {error}</div>
           : (
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr>{['Name', 'Default?', 'Tools', 'Description', 'Actions'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>{['Name', 'Default?', 'Tools', 'Description', 'Actions'].map(h => <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>)}</TableRow>
+                </TableHeader>
+                <TableBody>
                   {workflows.length === 0 ? (
-                    <tr><td colSpan={5} className="tbl-td text-center text-dim py-10">No workflows yet.</td></tr>
+                    <TableRow><TableCell colSpan={5} className="px-4 py-10 text-center text-dim">No workflows yet.</TableCell></TableRow>
                   ) : workflows.map(wf => (
-                    <tr key={wf.id} className={`hover:bg-hover transition-colors ${busy(wf.id) ? 'opacity-50' : ''}`}>
-                      <td className="tbl-td text-lit font-medium">{wf.name}</td>
-                      <td className="tbl-td">
+                    <TableRow key={wf.id} className={`hover:bg-hover transition-colors ${busy(wf.id) ? 'opacity-50' : ''}`}>
+                      <TableCell className="px-4 py-3 text-lit font-medium">{wf.name}</TableCell>
+                      <TableCell className="px-4 py-3">
                         {wf.is_default
                           ? <span className="text-brand text-xs font-semibold">Default</span>
                           : <span className="text-dim text-xs">—</span>}
-                      </td>
-                      <td className="tbl-td text-dim">{wf.steps ? wf.steps.filter(s => s.enabled !== false).length : '—'}</td>
-                      <td className="tbl-td text-dim max-w-xs truncate">{wf.description || '—'}</td>
-                      <td className="tbl-td">
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-dim">{wf.steps ? wf.steps.filter(s => s.enabled !== false).length : '—'}</TableCell>
+                      <TableCell className="px-4 py-3 text-dim max-w-xs truncate">{wf.description || '—'}</TableCell>
+                      <TableCell className="px-4 py-3">
                         <span className="inline-flex gap-1.5 items-center">
-                          <button onClick={() => navigate(`/workflows/${wf.id}`)} className="btn-ghost">View</button>
+                          <Button variant="outline" size="sm" onClick={() => navigate(`/workflows/${wf.id}`)}>View</Button>
                           <ConfirmButton label="Delete" disabled={busy(wf.id)} onConfirm={() => handleDelete(wf.id, wf.name)} />
                         </span>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
-        </div>
+        </Card>
       </div>
     </Layout>
   );

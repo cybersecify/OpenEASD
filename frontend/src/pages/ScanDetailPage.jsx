@@ -3,8 +3,11 @@ import { Layout } from '../components/Layout.jsx';
 import { Badge } from '../components/Badge.jsx';
 import { Spinner } from '../components/Spinner.jsx';
 import { ConfirmButton } from '../components/ConfirmButton.jsx';
-import { Notification } from '../components/Notification.jsx';
+import { toast } from '../components/Notification.jsx';
 import { Pagination } from '../components/Pagination.jsx';
+import { Button } from '../components/ui/button.jsx';
+import { Card, CardContent } from '../components/ui/card.jsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { navigate } from '../App.jsx';
 import { apiPost } from '../api/client.js';
 import { auth } from '../auth.js';
@@ -54,7 +57,6 @@ export default function ScanDetailPage() {
   const uuid = window.location.pathname.split('/scans/')[1]?.replace(/\/$/, '');
   const [tab,  setTab]  = useState('subdomains');
   const [page, setPage] = useState(1);
-  const [notification, setNotification] = useState(null);
   const [busy, setBusy] = useState(false);
   const [schemeFilter, setSchemeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -83,19 +85,17 @@ export default function ScanDetailPage() {
     prevPollStatusRef.current = pollStatus;
   }, [statusData]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function notify(msg, type = 'success') { setNotification({ message: msg, type, key: Date.now() }); }
-
   async function handleStop() {
     setBusy(true);
-    try { await apiPost(`/scans/${uuid}/stop/`); notify('Scan stopped.'); refetch(); }
-    catch (e) { notify(e.message || 'Stop failed.', 'error'); }
+    try { await apiPost(`/scans/${uuid}/stop/`); toast.success('Scan stopped.'); refetch(); }
+    catch (e) { toast.error(e.message || 'Stop failed.'); }
     finally { setBusy(false); }
   }
 
   async function handleDelete() {
     setBusy(true);
     try { await apiPost(`/scans/${uuid}/delete/`); navigate('/scans'); }
-    catch (e) { notify(e.message || 'Delete failed.', 'error'); setBusy(false); }
+    catch (e) { toast.error(e.message || 'Delete failed.'); setBusy(false); }
   }
 
   if (loading) return <Layout><div className="flex justify-center items-center h-64"><Spinner size={40} /></div></Layout>;
@@ -135,7 +135,6 @@ export default function ScanDetailPage() {
 
   return (
     <Layout>
-      {notification && <Notification key={notification.key} message={notification.message} type={notification.type} />}
       <div className="space-y-5">
 
         {/* Header */}
@@ -154,10 +153,12 @@ export default function ScanDetailPage() {
           <span className="inline-flex gap-1.5 items-center flex-wrap">
             {isRunning && <ConfirmButton label="Stop" confirmLabel="Stop scan?" onConfirm={handleStop} disabled={busy} />}
             {liveStatus === 'completed' && (<>
-              <a href={`/reports/${uuid}/csv/?token=${auth.getToken()}`}
-                className="btn-secondary text-xs px-2.5 py-1" download>CSV</a>
-              <a href={`/reports/${uuid}/pdf/?token=${auth.getToken()}`}
-                className="btn-secondary text-xs px-2.5 py-1" download>PDF</a>
+              <Button variant="outline" size="sm" asChild>
+                <a href={`/reports/${uuid}/csv/?token=${auth.getToken()}`} download>CSV</a>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <a href={`/reports/${uuid}/pdf/?token=${auth.getToken()}`} download>PDF</a>
+              </Button>
             </>)}
             <ConfirmButton label="Delete" onConfirm={handleDelete} disabled={busy} />
           </span>
@@ -185,7 +186,7 @@ export default function ScanDetailPage() {
             ))}
           </div>
 
-          <div className="bg-card border border-rim rounded-xl overflow-hidden">
+          <Card className="overflow-hidden">
             {tab === 'urls' && (
               <div className="flex gap-3 px-4 pt-4 pb-2 flex-wrap">
                 <select
@@ -207,110 +208,112 @@ export default function ScanDetailPage() {
                 />
               </div>
             )}
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-sm">
-                {tab === 'subdomains' && <>
-                  <thead><tr>{['Subdomain', 'Active', 'Discovered'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr></thead>
-                  <tbody>
-                    {paged.length === 0
-                      ? <tr><td colSpan={3} className="tbl-td text-center text-dim py-8">None found.</td></tr>
-                      : paged.map(s => (
-                        <tr key={s.id} className="hover:bg-hover">
-                          <td className="tbl-td font-mono text-lit">{s.subdomain}</td>
-                          <td className="tbl-td"><Badge value={s.is_active ? 'active' : 'inactive'} /></td>
-                          <td className="tbl-td text-dim text-xs">{fmtDate(s.discovered_at)}</td>
-                        </tr>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  {tab === 'subdomains' && <>
+                    <TableHeader><TableRow>{['Subdomain', 'Active', 'Discovered'].map(h => <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>)}</TableRow></TableHeader>
+                    <TableBody>
+                      {paged.length === 0
+                        ? <TableRow><TableCell colSpan={3} className="px-4 py-8 text-center text-dim">None found.</TableCell></TableRow>
+                        : paged.map(s => (
+                          <TableRow key={s.id} className="hover:bg-hover">
+                            <TableCell className="px-4 py-3 font-mono text-lit">{s.subdomain}</TableCell>
+                            <TableCell className="px-4 py-3"><Badge value={s.is_active ? 'active' : 'inactive'} /></TableCell>
+                            <TableCell className="px-4 py-3 text-dim text-xs">{fmtDate(s.discovered_at)}</TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </>}
+                  {tab === 'ips' && <>
+                    <TableHeader><TableRow>{['IP', 'Version', 'Source'].map(h => <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>)}</TableRow></TableHeader>
+                    <TableBody>
+                      {paged.length === 0
+                        ? <TableRow><TableCell colSpan={3} className="px-4 py-8 text-center text-dim">None found.</TableCell></TableRow>
+                        : paged.map(ip => (
+                          <TableRow key={ip.id} className="hover:bg-hover">
+                            <TableCell className="px-4 py-3 font-mono text-lit">{ip.address}</TableCell>
+                            <TableCell className="px-4 py-3 text-dim text-xs">v{ip.version}</TableCell>
+                            <TableCell className="px-4 py-3 text-dim text-xs">{ip.source || '—'}</TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </>}
+                  {tab === 'ports' && <>
+                    <TableHeader><TableRow>{['Host', 'Port', 'Service', 'Version', 'Web?'].map(h => <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>)}</TableRow></TableHeader>
+                    <TableBody>
+                      {paged.length === 0
+                        ? <TableRow><TableCell colSpan={5} className="px-4 py-8 text-center text-dim">None found.</TableCell></TableRow>
+                        : paged.map(p => (
+                          <TableRow key={p.id} className="hover:bg-hover">
+                            <TableCell className="px-4 py-3 font-mono text-dim text-xs">{p.address}</TableCell>
+                            <TableCell className="px-4 py-3 font-mono text-lit font-semibold">{p.port}/{p.protocol}</TableCell>
+                            <TableCell className="px-4 py-3 text-dim">{p.service || '—'}</TableCell>
+                            <TableCell className="px-4 py-3 text-dim text-xs">{p.version || '—'}</TableCell>
+                            <TableCell className="px-4 py-3">{p.is_web ? <Badge value="web" /> : <span className="text-dim">—</span>}</TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </>}
+                  {tab === 'urls' && <>
+                    <TableHeader>
+                      <TableRow>
+                        {['Scheme', 'URL', 'Status', 'Title', 'Server', 'Size'].map(h =>
+                          <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>
+                        )}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {paged.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="px-4 py-8 text-center text-dim">
+                            {(schemeFilter || statusFilter) ? 'No URLs match the current filters.' : 'No URLs discovered yet.'}
+                          </TableCell>
+                        </TableRow>
+                      ) : paged.map(u => (
+                        <TableRow key={u.id} className="hover:bg-hover">
+                          <TableCell className="px-4 py-3">
+                            <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold uppercase ${SCHEME_CLS[u.scheme] ?? 'bg-gray-800/60 text-gray-400 border border-gray-700'}`}>
+                              {u.scheme || '—'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="px-4 py-3 font-mono text-brand text-xs max-w-xs truncate">
+                            <a href={u.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{u.url}</a>
+                          </TableCell>
+                          <TableCell className={`px-4 py-3 font-mono font-semibold ${statusColor(u.status_code)}`}>
+                            {u.status_code || '—'}
+                          </TableCell>
+                          <TableCell className="px-4 py-3 text-body text-xs max-w-xs truncate">{u.title || '—'}</TableCell>
+                          <TableCell className="px-4 py-3 text-dim text-xs">{u.web_server || '—'}</TableCell>
+                          <TableCell className="px-4 py-3 text-dim text-xs">{fmtSize(u.content_length)}</TableCell>
+                        </TableRow>
                       ))}
-                  </tbody>
-                </>}
-                {tab === 'ips' && <>
-                  <thead><tr>{['IP', 'Version', 'Source'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr></thead>
-                  <tbody>
-                    {paged.length === 0
-                      ? <tr><td colSpan={3} className="tbl-td text-center text-dim py-8">None found.</td></tr>
-                      : paged.map(ip => (
-                        <tr key={ip.id} className="hover:bg-hover">
-                          <td className="tbl-td font-mono text-lit">{ip.address}</td>
-                          <td className="tbl-td text-dim text-xs">v{ip.version}</td>
-                          <td className="tbl-td text-dim text-xs">{ip.source || '—'}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </>}
-                {tab === 'ports' && <>
-                  <thead><tr>{['Host', 'Port', 'Service', 'Version', 'Web?'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr></thead>
-                  <tbody>
-                    {paged.length === 0
-                      ? <tr><td colSpan={5} className="tbl-td text-center text-dim py-8">None found.</td></tr>
-                      : paged.map(p => (
-                        <tr key={p.id} className="hover:bg-hover">
-                          <td className="tbl-td font-mono text-dim text-xs">{p.address}</td>
-                          <td className="tbl-td font-mono text-lit font-semibold">{p.port}/{p.protocol}</td>
-                          <td className="tbl-td text-dim">{p.service || '—'}</td>
-                          <td className="tbl-td text-dim text-xs">{p.version || '—'}</td>
-                          <td className="tbl-td">{p.is_web ? <Badge value="web" /> : <span className="text-dim">—</span>}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </>}
-                {tab === 'urls' && <>
-                  <thead>
-                    <tr>
-                      {['Scheme', 'URL', 'Status', 'Title', 'Server', 'Size'].map(h =>
-                        <th key={h} className="tbl-th">{h}</th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paged.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="tbl-td text-center text-dim py-8">
-                          {(schemeFilter || statusFilter) ? 'No URLs match the current filters.' : 'No URLs discovered yet.'}
-                        </td>
-                      </tr>
-                    ) : paged.map(u => (
-                      <tr key={u.id} className="hover:bg-hover">
-                        <td className="tbl-td">
-                          <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold uppercase ${SCHEME_CLS[u.scheme] ?? 'bg-gray-800/60 text-gray-400 border border-gray-700'}`}>
-                            {u.scheme || '—'}
-                          </span>
-                        </td>
-                        <td className="tbl-td font-mono text-brand text-xs max-w-xs truncate">
-                          <a href={u.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{u.url}</a>
-                        </td>
-                        <td className={`tbl-td font-mono font-semibold ${statusColor(u.status_code)}`}>
-                          {u.status_code || '—'}
-                        </td>
-                        <td className="tbl-td text-body text-xs max-w-xs truncate">{u.title || '—'}</td>
-                        <td className="tbl-td text-dim text-xs">{u.web_server || '—'}</td>
-                        <td className="tbl-td text-dim text-xs">{fmtSize(u.content_length)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </>}
-                {tab === 'findings' && <>
-                  <thead><tr>{['Sev', 'Title', 'Target', 'Source'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr></thead>
-                  <tbody>
-                    {paged.length === 0
-                      ? <tr><td colSpan={4} className="tbl-td text-center text-dim py-8">None found.</td></tr>
-                      : paged.map(f => (
-                        <tr key={f.id} className="hover:bg-hover">
-                          <td className="tbl-td"><Badge value={f.severity} /></td>
-                          <td className="tbl-td text-body font-medium max-w-xs truncate">{f.title}</td>
-                          <td className="tbl-td font-mono text-dim text-xs">{f.target}</td>
-                          <td className="tbl-td text-dim text-xs">{f.source}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </>}
-              </table>
-            </div>
+                    </TableBody>
+                  </>}
+                  {tab === 'findings' && <>
+                    <TableHeader><TableRow>{['Sev', 'Title', 'Target', 'Source'].map(h => <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>)}</TableRow></TableHeader>
+                    <TableBody>
+                      {paged.length === 0
+                        ? <TableRow><TableCell colSpan={4} className="px-4 py-8 text-center text-dim">None found.</TableCell></TableRow>
+                        : paged.map(f => (
+                          <TableRow key={f.id} className="hover:bg-hover">
+                            <TableCell className="px-4 py-3"><Badge value={f.severity} /></TableCell>
+                            <TableCell className="px-4 py-3 text-body font-medium max-w-xs truncate">{f.title}</TableCell>
+                            <TableCell className="px-4 py-3 font-mono text-dim text-xs">{f.target}</TableCell>
+                            <TableCell className="px-4 py-3 text-dim text-xs">{f.source}</TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </>}
+                </Table>
+              </div>
+            </CardContent>
             {totalPages > 1 && (
-              <div className="px-4 py-3 border-t border-rim">
+              <div className="px-4 py-3 border-t border-border">
                 <Pagination page={page} totalPages={totalPages} onPage={setPage} />
               </div>
             )}
-          </div>
+          </Card>
         </div>
       </div>
     </Layout>

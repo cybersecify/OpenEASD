@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout.jsx';
 import { Badge } from '../components/Badge.jsx';
 import { Spinner } from '../components/Spinner.jsx';
-import { Notification } from '../components/Notification.jsx';
+import { toast } from '../components/Notification.jsx';
+import { Button } from '../components/ui/button.jsx';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { navigate } from '../App.jsx';
 import { apiPost } from '../api/client.js';
 import { useFetch } from '../hooks/useFetch.js';
@@ -15,7 +18,6 @@ function fmtDate(iso) {
 export default function WorkflowDetailPage() {
   const id = window.location.pathname.split('/workflows/')[1]?.replace(/\/$/, '');
   const { data, loading, error, refetch } = useFetch(id ? `/workflows/${id}/` : null, [id]);
-  const [notification, setNotification] = useState(null);
   const [name,  setName]  = useState('');
   const [desc,  setDesc]  = useState('');
   const [saving, setSaving] = useState(false);
@@ -25,19 +27,17 @@ export default function WorkflowDetailPage() {
     if (data?.workflow) { setName(data.workflow.name || ''); setDesc(data.workflow.description || ''); }
   }, [data]);
 
-  function notify(msg, type = 'success') { setNotification({ message: msg, type, key: Date.now() }); }
-
   async function handleSave(e) {
     e.preventDefault(); setSaving(true);
-    try { await apiPost(`/workflows/${id}/update/`, { name: name.trim(), description: desc.trim() }); notify('Updated.'); refetch(); }
-    catch (e) { notify(e.message || 'Update failed.', 'error'); }
+    try { await apiPost(`/workflows/${id}/update/`, { name: name.trim(), description: desc.trim() }); toast.success('Updated.'); refetch(); }
+    catch (e) { toast.error(e.message || 'Update failed.'); }
     finally { setSaving(false); }
   }
 
   async function handleToggle(tool) {
     setToggling(tool);
     try { await apiPost(`/workflows/${id}/steps/${tool}/toggle/`); refetch(); }
-    catch (e) { notify(e.message || 'Toggle failed.', 'error'); }
+    catch (e) { toast.error(e.message || 'Toggle failed.'); }
     finally { setToggling(null); }
   }
 
@@ -51,7 +51,6 @@ export default function WorkflowDetailPage() {
 
   return (
     <Layout>
-      {notification && <Notification key={notification.key} message={notification.message} type={notification.type} />}
       <div className="space-y-6 max-w-3xl">
         <div>
           <button onClick={() => navigate('/workflows')} className="text-dim text-xs hover:text-body mb-1 block">← Workflows</button>
@@ -60,83 +59,92 @@ export default function WorkflowDetailPage() {
         </div>
 
         {/* Edit form */}
-        <div className="bg-card border border-rim rounded-xl p-5">
-          <h2 className="text-lit text-sm font-semibold mb-4">Edit</h2>
-          <form onSubmit={handleSave} className="space-y-3">
-            <div>
-              <label className="block text-xs text-dim mb-1">Name</label>
-              <input value={name} onChange={e => setName(e.target.value)} className="field" />
-            </div>
-            <div>
-              <label className="block text-xs text-dim mb-1">Description</label>
-              <input value={desc} onChange={e => setDesc(e.target.value)} className="field" />
-            </div>
-            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving…' : 'Save'}</button>
-          </form>
-        </div>
+        <Card>
+          <CardHeader className="border-b border-border px-4 py-3">
+            <CardTitle className="text-sm font-semibold">Edit</CardTitle>
+          </CardHeader>
+          <CardContent className="p-5">
+            <form onSubmit={handleSave} className="space-y-3">
+              <div>
+                <label className="block text-xs text-dim mb-1">Name</label>
+                <input value={name} onChange={e => setName(e.target.value)} className="field" />
+              </div>
+              <div>
+                <label className="block text-xs text-dim mb-1">Description</label>
+                <input value={desc} onChange={e => setDesc(e.target.value)} className="field" />
+              </div>
+              <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            </form>
+          </CardContent>
+        </Card>
 
         {/* Tool steps */}
-        <div className="bg-card border border-rim rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-rim">
-            <h2 className="text-lit text-sm font-semibold">Tool Steps</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr>{['Phase', 'Tool', 'Status', 'Toggle'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr>
-              </thead>
-              <tbody>
-                {steps.length === 0 ? (
-                  <tr><td colSpan={4} className="tbl-td text-center text-dim py-8">No steps.</td></tr>
-                ) : steps.map(s => (
-                  <tr key={s.key} className="hover:bg-hover transition-colors">
-                    <td className="tbl-td text-dim text-xs">{s.phase ?? s.key}</td>
-                    <td className="tbl-td text-lit font-medium">{s.label || s.key}</td>
-                    <td className="tbl-td"><Badge value={s.enabled !== false ? 'active' : 'inactive'} /></td>
-                    <td className="tbl-td">
-                      <button
-                        onClick={() => handleToggle(s.key)}
-                        disabled={toggling === s.key}
-                        className="btn-ghost text-xs"
-                      >
-                        {toggling === s.key ? '…' : s.enabled !== false ? 'Disable' : 'Enable'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-border px-4 py-3">
+            <CardTitle className="text-sm font-semibold">Tool Steps</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>{['Phase', 'Tool', 'Status', 'Toggle'].map(h => <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>)}</TableRow>
+                </TableHeader>
+                <TableBody>
+                  {steps.length === 0 ? (
+                    <TableRow><TableCell colSpan={4} className="px-4 py-8 text-center text-dim">No steps.</TableCell></TableRow>
+                  ) : steps.map(s => (
+                    <TableRow key={s.key} className="hover:bg-hover transition-colors">
+                      <TableCell className="px-4 py-3 text-dim text-xs">{s.phase ?? s.key}</TableCell>
+                      <TableCell className="px-4 py-3 text-lit font-medium">{s.label || s.key}</TableCell>
+                      <TableCell className="px-4 py-3"><Badge value={s.enabled !== false ? 'active' : 'inactive'} /></TableCell>
+                      <TableCell className="px-4 py-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleToggle(s.key)}
+                          disabled={toggling === s.key}
+                        >
+                          {toggling === s.key ? '…' : s.enabled !== false ? 'Disable' : 'Enable'}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Recent runs */}
         {recent_runs.length > 0 && (
-          <div className="bg-card border border-rim rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-rim">
-              <h2 className="text-lit text-sm font-semibold">Recent Runs</h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr>{['Scan', 'Status', 'Started', 'Finished'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {recent_runs.map(r => (
-                    <tr key={r.id} className="hover:bg-hover transition-colors">
-                      <td className="tbl-td font-mono text-lit">
-                        {r.session_uuid
-                          ? <button onClick={() => navigate(`/scans/${r.session_uuid}`)} className="text-brand hover:underline font-mono text-xs">{r.session_uuid.slice(0, 8)}…</button>
-                          : '—'}
-                      </td>
-                      <td className="tbl-td"><Badge value={r.status} /></td>
-                      <td className="tbl-td text-dim">{fmtDate(r.started_at)}</td>
-                      <td className="tbl-td text-dim">{fmtDate(r.finished_at)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <Card className="overflow-hidden">
+            <CardHeader className="border-b border-border px-4 py-3">
+              <CardTitle className="text-sm font-semibold">Recent Runs</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>{['Scan', 'Status', 'Started', 'Finished'].map(h => <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>)}</TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recent_runs.map(r => (
+                      <TableRow key={r.id} className="hover:bg-hover transition-colors">
+                        <TableCell className="px-4 py-3 font-mono text-lit">
+                          {r.session_uuid
+                            ? <button onClick={() => navigate(`/scans/${r.session_uuid}`)} className="text-brand hover:underline font-mono text-xs">{r.session_uuid.slice(0, 8)}…</button>
+                            : '—'}
+                        </TableCell>
+                        <TableCell className="px-4 py-3"><Badge value={r.status} /></TableCell>
+                        <TableCell className="px-4 py-3 text-dim">{fmtDate(r.started_at)}</TableCell>
+                        <TableCell className="px-4 py-3 text-dim">{fmtDate(r.finished_at)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
     </Layout>

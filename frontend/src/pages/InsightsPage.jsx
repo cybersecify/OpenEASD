@@ -2,6 +2,8 @@ import React from 'react';
 import { Layout } from '../components/Layout.jsx';
 import { Badge } from '../components/Badge.jsx';
 import { Spinner } from '../components/Spinner.jsx';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { useFetch } from '../hooks/useFetch.js';
 
 function fmtDate(iso) {
@@ -20,24 +22,28 @@ function KpiCard({ label, value, colorCls }) {
 
 function DataTable({ title, subtitle, columns, rows, renderRow, emptyMsg = 'No data.' }) {
   return (
-    <div className="bg-card border border-rim rounded-xl overflow-hidden mb-5">
+    <Card className="overflow-hidden mb-5">
       {(title || subtitle) && (
-        <div className="px-4 py-3 border-b border-rim">
-          {title    && <h2 className="text-lit text-sm font-semibold">{title}</h2>}
+        <CardHeader className="border-b border-border px-4 py-3">
+          {title    && <CardTitle className="text-sm font-semibold">{title}</CardTitle>}
           {subtitle && <p className="text-dim text-xs mt-0.5">{subtitle}</p>}
-        </div>
+        </CardHeader>
       )}
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
-          <thead><tr>{columns.map(c => <th key={c} className="tbl-th">{c}</th>)}</tr></thead>
-          <tbody>
-            {rows && rows.length > 0
-              ? rows.map((row, i) => <tr key={i} className="hover:bg-hover transition-colors">{renderRow(row, i)}</tr>)
-              : <tr><td colSpan={columns.length} className="tbl-td text-center text-dim py-8">{emptyMsg}</td></tr>}
-          </tbody>
-        </table>
-      </div>
-    </div>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>{columns.map(c => <TableHead key={c} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{c}</TableHead>)}</TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows && rows.length > 0
+                ? rows.map((row, i) => <TableRow key={i} className="hover:bg-hover transition-colors">{renderRow(row, i)}</TableRow>)
+                : <TableRow><TableCell colSpan={columns.length} className="px-4 py-8 text-center text-dim">{emptyMsg}</TableCell></TableRow>}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -81,8 +87,8 @@ export default function InsightsPage() {
             })}
             renderRow={([sev, cnt]) => (
               <>
-                <td className="tbl-td"><Badge value={sev} /></td>
-                <td className={`tbl-td font-semibold ${SEV_TEXT[sev] || 'text-body'}`}>{cnt}</td>
+                <TableCell className="px-4 py-3"><Badge value={sev} /></TableCell>
+                <TableCell className={`px-4 py-3 font-semibold ${SEV_TEXT[sev] || 'text-body'}`}>{cnt}</TableCell>
               </>
             )}
           />
@@ -94,12 +100,12 @@ export default function InsightsPage() {
           rows={scan_trend} emptyMsg="No scan trend data yet."
           renderRow={row => (
             <>
-              <td className="tbl-td text-lit font-medium">{row.label || '—'}</td>
-              <td className={`tbl-td ${row.critical > 0 ? 'text-red-400 font-semibold' : 'text-dim'}`}>{row.critical ?? 0}</td>
-              <td className={`tbl-td ${row.high > 0 ? 'text-orange-400 font-semibold' : 'text-dim'}`}>{row.high ?? 0}</td>
-              <td className={`tbl-td ${row.medium > 0 ? 'text-yellow-400 font-semibold' : 'text-dim'}`}>{row.medium ?? 0}</td>
-              <td className={`tbl-td ${row.low > 0 ? 'text-blue-400 font-semibold' : 'text-dim'}`}>{row.low ?? 0}</td>
-              <td className="tbl-td text-body font-semibold">{row.total ?? 0}</td>
+              <TableCell className="px-4 py-3 text-lit font-medium">{row.label || '—'}</TableCell>
+              <TableCell className={`px-4 py-3 ${row.critical > 0 ? 'text-red-400 font-semibold' : 'text-dim'}`}>{row.critical ?? 0}</TableCell>
+              <TableCell className={`px-4 py-3 ${row.high > 0 ? 'text-orange-400 font-semibold' : 'text-dim'}`}>{row.high ?? 0}</TableCell>
+              <TableCell className={`px-4 py-3 ${row.medium > 0 ? 'text-yellow-400 font-semibold' : 'text-dim'}`}>{row.medium ?? 0}</TableCell>
+              <TableCell className={`px-4 py-3 ${row.low > 0 ? 'text-blue-400 font-semibold' : 'text-dim'}`}>{row.low ?? 0}</TableCell>
+              <TableCell className="px-4 py-3 text-body font-semibold">{row.total ?? 0}</TableCell>
             </>
           )}
         />
@@ -110,9 +116,9 @@ export default function InsightsPage() {
           rows={delta_trend} emptyMsg="No delta data yet."
           renderRow={row => (
             <>
-              <td className="tbl-td text-lit font-medium">{row.label || '—'}</td>
-              <td className={`tbl-td ${row.new > 0 ? 'text-red-400 font-semibold' : 'text-dim'}`}>{row.new ?? 0}</td>
-              <td className={`tbl-td ${row.removed > 0 ? 'text-brand font-semibold' : 'text-dim'}`}>{row.removed ?? 0}</td>
+              <TableCell className="px-4 py-3 text-lit font-medium">{row.label || '—'}</TableCell>
+              <TableCell className={`px-4 py-3 ${row.new > 0 ? 'text-red-400 font-semibold' : 'text-dim'}`}>{row.new ?? 0}</TableCell>
+              <TableCell className={`px-4 py-3 ${row.removed > 0 ? 'text-brand font-semibold' : 'text-dim'}`}>{row.removed ?? 0}</TableCell>
             </>
           )}
         />
@@ -122,8 +128,8 @@ export default function InsightsPage() {
           columns={['Domain', 'Finding Count']} rows={top_hosts} emptyMsg="No host data."
           renderRow={row => (
             <>
-              <td className="tbl-td font-mono text-lit font-medium">{row.domain}</td>
-              <td className="tbl-td text-brand font-semibold">{row.count}</td>
+              <TableCell className="px-4 py-3 font-mono text-lit font-medium">{row.domain}</TableCell>
+              <TableCell className="px-4 py-3 text-brand font-semibold">{row.count}</TableCell>
             </>
           )}
         />
@@ -134,11 +140,11 @@ export default function InsightsPage() {
           rows={top_finding_types} emptyMsg="No finding type data."
           renderRow={row => (
             <>
-              <td className="tbl-td"><Badge value={row.severity} /></td>
-              <td className="tbl-td text-lit font-medium max-w-xs truncate">{row.title}</td>
-              <td className="tbl-td font-mono text-dim text-xs">{row.check_type || '—'}</td>
-              <td className="tbl-td text-brand font-semibold">{row.occurrence_count}</td>
-              <td className="tbl-td text-dim text-xs">{fmtDate(row.last_seen)}</td>
+              <TableCell className="px-4 py-3"><Badge value={row.severity} /></TableCell>
+              <TableCell className="px-4 py-3 text-lit font-medium max-w-xs truncate">{row.title}</TableCell>
+              <TableCell className="px-4 py-3 font-mono text-dim text-xs">{row.check_type || '—'}</TableCell>
+              <TableCell className="px-4 py-3 text-brand font-semibold">{row.occurrence_count}</TableCell>
+              <TableCell className="px-4 py-3 text-dim text-xs">{fmtDate(row.last_seen)}</TableCell>
             </>
           )}
         />
@@ -149,12 +155,12 @@ export default function InsightsPage() {
             columns={['Service', 'Version', 'CVE Count', 'Max CVSS']} rows={top_services}
             renderRow={row => (
               <>
-                <td className="tbl-td font-mono text-lit font-medium">{row.service || '—'}</td>
-                <td className="tbl-td font-mono text-dim text-xs">{row.version || '—'}</td>
-                <td className={`tbl-td ${row.cve_count > 0 ? 'text-red-400 font-semibold' : 'text-dim'}`}>{row.cve_count ?? 0}</td>
-                <td className={`tbl-td font-semibold ${row.max_cvss >= 7 ? 'text-red-400' : row.max_cvss >= 4 ? 'text-yellow-400' : 'text-dim'}`}>
+                <TableCell className="px-4 py-3 font-mono text-lit font-medium">{row.service || '—'}</TableCell>
+                <TableCell className="px-4 py-3 font-mono text-dim text-xs">{row.version || '—'}</TableCell>
+                <TableCell className={`px-4 py-3 ${row.cve_count > 0 ? 'text-red-400 font-semibold' : 'text-dim'}`}>{row.cve_count ?? 0}</TableCell>
+                <TableCell className={`px-4 py-3 font-semibold ${row.max_cvss >= 7 ? 'text-red-400' : row.max_cvss >= 4 ? 'text-yellow-400' : 'text-dim'}`}>
                   {row.max_cvss != null ? row.max_cvss.toFixed(1) : '—'}
-                </td>
+                </TableCell>
               </>
             )}
           />
@@ -166,12 +172,12 @@ export default function InsightsPage() {
             columns={['Scan', 'Subdomains', 'Active', 'IPs', 'Ports', 'URLs']} rows={asset_growth}
             renderRow={row => (
               <>
-                <td className="tbl-td text-lit font-medium">{row.label || '—'}</td>
-                <td className="tbl-td text-body">{row.subdomains ?? 0}</td>
-                <td className="tbl-td text-brand">{row.active_subdomains ?? 0}</td>
-                <td className="tbl-td text-body">{row.ips ?? 0}</td>
-                <td className="tbl-td text-body">{row.ports ?? 0}</td>
-                <td className="tbl-td text-body">{row.urls ?? 0}</td>
+                <TableCell className="px-4 py-3 text-lit font-medium">{row.label || '—'}</TableCell>
+                <TableCell className="px-4 py-3 text-body">{row.subdomains ?? 0}</TableCell>
+                <TableCell className="px-4 py-3 text-brand">{row.active_subdomains ?? 0}</TableCell>
+                <TableCell className="px-4 py-3 text-body">{row.ips ?? 0}</TableCell>
+                <TableCell className="px-4 py-3 text-body">{row.ports ?? 0}</TableCell>
+                <TableCell className="px-4 py-3 text-body">{row.urls ?? 0}</TableCell>
               </>
             )}
           />
