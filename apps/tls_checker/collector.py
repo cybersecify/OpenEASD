@@ -12,7 +12,7 @@ Non-web ports only (is_web=False): probed via Python stdlib ssl/smtplib/imaplib/
 Inherently insecure protocols (Telnet, rsh, etc.) always flagged without probing.
 """
 
-import ftplib
+import ftplib  # nosec B402 — intentional: probing FTP servers to detect their exposure
 import http.client
 import imaplib
 import logging
