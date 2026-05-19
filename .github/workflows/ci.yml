@@ -39,5 +39,5 @@ jobs:
         # -ll = LOW+ severity only (skip INFO noise); -x = exclude test dirs
 
       - name: Dependency vulnerability scan — pip-audit
-        run: uv run pip-audit --require-hashes=false
+        run: uv run pip-audit
         # Reports CVEs in installed packages; non-zero exit fails the build
