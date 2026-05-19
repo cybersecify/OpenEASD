@@ -2,8 +2,11 @@ import React, { useState } from 'react';
 import { Layout } from '../components/Layout.jsx';
 import { Badge } from '../components/Badge.jsx';
 import { Spinner } from '../components/Spinner.jsx';
-import { Notification } from '../components/Notification.jsx';
 import { ConfirmButton } from '../components/ConfirmButton.jsx';
+import { Button } from '../components/ui/button.jsx';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
+import { toast } from '../components/Notification.jsx';
 import { navigate } from '../App.jsx';
 import { apiPost } from '../api/client.js';
 import { useFetch } from '../hooks/useFetch.js';
@@ -32,27 +35,29 @@ function AddDomainForm({ onAdded }) {
   }
 
   return (
-    <div className="bg-card border border-rim rounded-xl p-5 mb-5">
-      <h2 className="text-lit text-sm font-semibold mb-3">Add Domain</h2>
-      <form onSubmit={handleSubmit} className="flex gap-3 flex-wrap">
-        <input value={domain} onChange={e => setDomain(e.target.value)}
-          placeholder="example.com" className="field flex-1 min-w-48" />
-        <button type="submit" disabled={saving} className="btn-primary">
-          {saving ? 'Adding…' : 'Add Domain'}
-        </button>
-      </form>
-      {err && <p className="text-red-400 text-xs mt-2">{err}</p>}
-    </div>
+    <Card className="mb-5">
+      <CardHeader className="border-b border-border px-5 py-4">
+        <CardTitle className="text-sm font-semibold">Add Domain</CardTitle>
+      </CardHeader>
+      <CardContent className="px-5 py-4">
+        <form onSubmit={handleSubmit} className="flex gap-3 flex-wrap">
+          <input value={domain} onChange={e => setDomain(e.target.value)}
+            placeholder="example.com" className="field flex-1 min-w-48" />
+          <Button type="submit" disabled={saving}>
+            {saving ? 'Adding…' : 'Add Domain'}
+          </Button>
+        </form>
+        {err && <p className="text-red-400 text-xs mt-2">{err}</p>}
+      </CardContent>
+    </Card>
   );
 }
 
 export default function DomainsPage() {
   const { data, loading, error, refetch } = useFetch('/domains/');
-  const [notification, setNotification] = useState(null);
   const [busyIds, setBusyIds] = useState(new Set());
 
   const domains = data || [];
-  function notify(msg, type = 'success') { setNotification({ message: msg, type, key: Date.now() }); }
   function busy(id) { return busyIds.has(id); }
   function setBusy(id, val) {
     setBusyIds(s => { const ns = new Set(s); val ? ns.add(id) : ns.delete(id); return ns; });
@@ -61,63 +66,66 @@ export default function DomainsPage() {
   async function handleToggle(id) {
     setBusy(id, true);
     try { await apiPost(`/domains/${id}/toggle/`); refetch(); }
-    catch (e) { notify(e.message || 'Toggle failed.', 'error'); }
+    catch (e) { toast.error(e.message || 'Toggle failed.'); }
     finally { setBusy(id, false); }
   }
 
   async function handleDelete(id, name) {
     setBusy(id, true);
-    try { await apiPost(`/domains/${id}/delete/`); notify(`"${name}" deleted.`); refetch(); }
-    catch (e) { notify(e.message || 'Delete failed.', 'error'); }
+    try { await apiPost(`/domains/${id}/delete/`); toast.success(`"${name}" deleted.`); refetch(); }
+    catch (e) { toast.error(e.message || 'Delete failed.'); }
     finally { setBusy(id, false); }
   }
 
   return (
     <Layout>
-      {notification && <Notification key={notification.key} message={notification.message} type={notification.type} />}
       <div className="space-y-5">
         <div>
           <h1 className="text-lit text-xl font-bold">Domains</h1>
           <p className="text-dim text-sm mt-0.5">Manage monitored domains</p>
         </div>
-        <AddDomainForm onAdded={() => { notify('Domain added.'); refetch(); }} />
-        <div className="bg-card border border-rim rounded-xl overflow-hidden">
+        <AddDomainForm onAdded={() => { toast.success('Domain added.'); refetch(); }} />
+        <Card className="overflow-hidden">
           {loading ? <div className="flex justify-center p-8"><Spinner /></div>
           : error   ? <div className="p-6 text-red-400 text-sm">Error: {error}</div>
           : (
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr>{['Domain', 'Active', 'Last Scan', 'Findings', 'Actions'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {['Domain', 'Active', 'Last Scan', 'Findings', 'Actions'].map(h => (
+                      <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {domains.length === 0 ? (
-                    <tr><td colSpan={5} className="tbl-td text-center text-dim py-10">No domains yet.</td></tr>
+                    <TableRow><TableCell colSpan={5} className="px-4 py-10 text-center text-dim">No domains yet.</TableCell></TableRow>
                   ) : domains.map(d => (
-                    <tr key={d.id} className={`hover:bg-hover transition-colors ${busy(d.id) ? 'opacity-50' : ''}`}>
-                      <td className="tbl-td text-lit font-mono font-medium">{d.name}</td>
-                      <td className="tbl-td"><Badge value={d.is_active ? 'active' : 'inactive'} /></td>
-                      <td className="tbl-td text-dim">
+                    <TableRow key={d.id} className={`hover:bg-hover transition-colors ${busy(d.id) ? 'opacity-50' : ''}`}>
+                      <TableCell className="px-4 py-3 text-lit font-mono font-medium">{d.name}</TableCell>
+                      <TableCell className="px-4 py-3"><Badge value={d.is_active ? 'active' : 'inactive'} /></TableCell>
+                      <TableCell className="px-4 py-3 text-dim">
                         {d.last_scan?.start_time ? new Date(d.last_scan.start_time).toLocaleDateString() : '—'}
-                      </td>
-                      <td className="tbl-td text-dim">{findingTotal(d.findings_summary) || '—'}</td>
-                      <td className="tbl-td">
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-dim">{findingTotal(d.findings_summary) || '—'}</TableCell>
+                      <TableCell className="px-4 py-3">
                         <span className="inline-flex gap-1.5 items-center flex-wrap">
-                          <button onClick={() => navigate(`/scans/start?domain=${d.name}`)} className="btn-ghost">Scan</button>
-                          <button onClick={() => navigate('/scans?domain=' + d.name)} className="btn-ghost">History</button>
-                          <button onClick={() => handleToggle(d.id)} disabled={busy(d.id)} className="btn-ghost">
+                          <Button variant="outline" size="sm" onClick={() => navigate(`/scans/start?domain=${d.name}`)}>Scan</Button>
+                          <Button variant="outline" size="sm" onClick={() => navigate('/scans?domain=' + d.name)}>History</Button>
+                          <Button variant="outline" size="sm" onClick={() => handleToggle(d.id)} disabled={busy(d.id)}>
                             {d.is_active ? 'Deactivate' : 'Activate'}
-                          </button>
+                          </Button>
                           <ConfirmButton label="Delete" disabled={busy(d.id)} onConfirm={() => handleDelete(d.id, d.name)} />
                         </span>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
-        </div>
+        </Card>
       </div>
     </Layout>
   );
