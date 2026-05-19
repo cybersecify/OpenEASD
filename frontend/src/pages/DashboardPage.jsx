@@ -2,6 +2,9 @@ import React from 'react';
 import { Layout } from '../components/Layout.jsx';
 import { Badge } from '../components/Badge.jsx';
 import { Spinner } from '../components/Spinner.jsx';
+import { Button } from '../components/ui/button.jsx';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { navigate } from '../App.jsx';
 import { useFetch } from '../hooks/useFetch.js';
 
@@ -58,58 +61,70 @@ export default function DashboardPage() {
           <AssetCard label="URLs"       value={kpi_urls} />
         </div>
 
-        <div className="bg-card border border-rim rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-rim">
-            <h2 className="text-lit text-sm font-semibold">Domain Status</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr>{['Domain', 'Status', 'Last Scan', 'Critical', 'High', 'Actions'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr>
-              </thead>
-              <tbody>
-                {domain_status.length === 0 ? (
-                  <tr><td colSpan={6} className="tbl-td text-center text-dim py-8">No domains yet.</td></tr>
-                ) : domain_status.map(d => (
-                  <tr key={d.id} className="hover:bg-hover transition-colors">
-                    <td className="tbl-td text-lit font-mono font-medium">{d.domain}</td>
-                    <td className="tbl-td"><Badge value={d.scan_status || 'idle'} /></td>
-                    <td className="tbl-td text-dim">{d.last_scan ? new Date(d.last_scan).toLocaleDateString() : '—'}</td>
-                    <td className="tbl-td text-red-400 font-semibold">{d.critical ?? 0}</td>
-                    <td className="tbl-td text-orange-400 font-semibold">{d.high ?? 0}</td>
-                    <td className="tbl-td">
-                      <button onClick={() => navigate('/scans?domain=' + d.domain)} className="btn-ghost">View Scans</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-border px-4 py-3">
+            <CardTitle className="text-sm font-semibold">Domain Status</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {['Domain', 'Status', 'Last Scan', 'Critical', 'High', 'Actions'].map(h => (
+                      <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {domain_status.length === 0 ? (
+                    <TableRow><TableCell colSpan={6} className="px-4 py-8 text-center text-dim">No domains yet.</TableCell></TableRow>
+                  ) : domain_status.map(d => (
+                    <TableRow key={d.id} className="hover:bg-hover transition-colors">
+                      <TableCell className="px-4 py-3 text-lit font-mono font-medium">{d.domain}</TableCell>
+                      <TableCell className="px-4 py-3"><Badge value={d.scan_status || 'idle'} /></TableCell>
+                      <TableCell className="px-4 py-3 text-dim">{d.last_scan ? new Date(d.last_scan).toLocaleDateString() : '—'}</TableCell>
+                      <TableCell className="px-4 py-3 text-red-400 font-semibold">{d.critical ?? 0}</TableCell>
+                      <TableCell className="px-4 py-3 text-orange-400 font-semibold">{d.high ?? 0}</TableCell>
+                      <TableCell className="px-4 py-3">
+                        <Button variant="outline" size="sm" onClick={() => navigate('/scans?domain=' + d.domain)}>View Scans</Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
 
         {urgent_findings.length > 0 && (
-          <div className="bg-card border border-rim rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-rim">
-              <h2 className="text-lit text-sm font-semibold">Urgent Findings</h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr>{['Severity', 'Title', 'Domain', 'Source'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {urgent_findings.map(f => (
-                    <tr key={f.id} className="hover:bg-hover transition-colors">
-                      <td className="tbl-td"><Badge value={f.severity} /></td>
-                      <td className="tbl-td text-body font-medium max-w-xs truncate">{f.title}</td>
-                      <td className="tbl-td text-dim font-mono text-xs">{f.domain}</td>
-                      <td className="tbl-td text-dim text-xs">{f.source}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <Card className="overflow-hidden">
+            <CardHeader className="border-b border-border px-4 py-3">
+              <CardTitle className="text-sm font-semibold">Urgent Findings</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      {['Severity', 'Title', 'Domain', 'Source'].map(h => (
+                        <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {urgent_findings.map(f => (
+                      <TableRow key={f.id} className="hover:bg-hover transition-colors">
+                        <TableCell className="px-4 py-3"><Badge value={f.severity} /></TableCell>
+                        <TableCell className="px-4 py-3 text-body font-medium max-w-xs truncate">{f.title}</TableCell>
+                        <TableCell className="px-4 py-3 text-dim font-mono text-xs">{f.domain}</TableCell>
+                        <TableCell className="px-4 py-3 text-dim text-xs">{f.source}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
     </Layout>
