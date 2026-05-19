@@ -33,6 +33,7 @@ dependencies = [
     "lxml>=6.1.0",
     "pypdf>=6.10.2",
     "urllib3>=2.7.0",
+    "idna>=3.15",
 ]
 
 [project.optional-dependencies]
