@@ -3,7 +3,9 @@ import { Layout } from '../components/Layout.jsx';
 import { Badge } from '../components/Badge.jsx';
 import { Spinner } from '../components/Spinner.jsx';
 import { Pagination } from '../components/Pagination.jsx';
-import { Notification } from '../components/Notification.jsx';
+import { Card, CardContent } from '../components/ui/card.jsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
+import { toast } from '../components/Notification.jsx';
 import { apiPost } from '../api/client.js';
 import { useFetch } from '../hooks/useFetch.js';
 
@@ -49,7 +51,6 @@ export default function FindingsPage() {
   const [status,   setStatus]   = useState('open');
   const [domain,   setDomain]   = useState(params.get('domain') || '');
   const [page,     setPage]     = useState(1);
-  const [notification, setNotification] = useState(null);
 
   const { data: domainsData } = useFetch('/domains/');
   const { data, loading, error, pagination, refetch } = useFetch(
@@ -60,18 +61,14 @@ export default function FindingsPage() {
   const findings = data?.findings ?? [];
   const domains  = domainsData || [];
 
-  function notify(msg, type = 'success') { setNotification({ message: msg, type, key: Date.now() }); }
-
   return (
     <Layout>
-      {notification && <Notification key={notification.key} message={notification.message} type={notification.type} />}
       <div className="space-y-5">
         <div>
           <h1 className="text-lit text-xl font-bold">Findings</h1>
           <p className="text-dim text-sm mt-0.5">All findings across all scans</p>
         </div>
 
-        {/* Filters */}
         <div className="flex gap-3 flex-wrap">
           <select value={severity} onChange={e => { setSeverity(e.target.value); setPage(1); }} className="field w-36">
             <option value="">All severities</option>
@@ -87,43 +84,47 @@ export default function FindingsPage() {
           </select>
         </div>
 
-        <div className="bg-card border border-rim rounded-xl overflow-hidden">
+        <Card className="overflow-hidden">
           {loading ? <div className="flex justify-center p-8"><Spinner /></div>
           : error   ? <div className="p-6 text-red-400 text-sm">Error: {error}</div>
           : (
             <>
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr>{['Severity', 'Title', 'Target', 'Source', 'Status', 'Found'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr>
-                  </thead>
-                  <tbody>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      {['Severity', 'Title', 'Target', 'Source', 'Status', 'Found'].map(h => (
+                        <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {findings.length === 0 ? (
-                      <tr><td colSpan={6} className="tbl-td text-center text-dim py-10">No findings.</td></tr>
+                      <TableRow><TableCell colSpan={6} className="px-4 py-10 text-center text-dim">No findings.</TableCell></TableRow>
                     ) : findings.map(f => (
-                      <tr key={f.id} className="hover:bg-hover transition-colors">
-                        <td className="tbl-td"><Badge value={f.severity} /></td>
-                        <td className="tbl-td text-body font-medium max-w-xs truncate">{f.title}</td>
-                        <td className="tbl-td font-mono text-dim text-xs">{f.target}</td>
-                        <td className="tbl-td text-dim text-xs">{f.source}</td>
-                        <td className="tbl-td">
+                      <TableRow key={f.id} className="hover:bg-hover transition-colors">
+                        <TableCell className="px-4 py-3"><Badge value={f.severity} /></TableCell>
+                        <TableCell className="px-4 py-3 text-body font-medium max-w-xs truncate">{f.title}</TableCell>
+                        <TableCell className="px-4 py-3 font-mono text-dim text-xs">{f.target}</TableCell>
+                        <TableCell className="px-4 py-3 text-dim text-xs">{f.source}</TableCell>
+                        <TableCell className="px-4 py-3">
                           <StatusEditor findingId={f.id} current={f.status || 'open'}
-                            onUpdated={() => { notify('Status updated.'); refetch(); }} />
-                        </td>
-                        <td className="tbl-td text-dim text-xs">{fmtDate(f.discovered_at)}</td>
-                      </tr>
+                            onUpdated={() => { toast.success('Status updated.'); refetch(); }} />
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-dim text-xs">{fmtDate(f.discovered_at)}</TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
               {pagination && (
-                <div className="px-4 py-3 border-t border-rim">
+                <div className="px-4 py-3 border-t border-border">
                   <Pagination page={pagination.page} totalPages={pagination.total_pages} onPage={setPage} />
                 </div>
               )}
             </>
           )}
-        </div>
+        </Card>
       </div>
     </Layout>
   );
