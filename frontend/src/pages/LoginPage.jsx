@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Button } from '../components/ui/button.jsx';
 import { apiPost } from '../api/client.js';
 import { auth } from '../auth.js';
 import { navigate } from '../App.jsx';
@@ -44,9 +45,9 @@ export default function LoginPage() {
             <input type="password" value={password} onChange={e => setPassword(e.target.value)}
               autoComplete="current-password" required className="field" />
           </div>
-          <button type="submit" disabled={loading} className="btn-primary w-full mt-2">
+          <Button type="submit" disabled={loading} className="w-full mt-2">
             {loading ? 'Signing in…' : 'Sign in'}
-          </button>
+          </Button>
         </form>
       </div>
     </div>
