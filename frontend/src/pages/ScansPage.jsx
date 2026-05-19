@@ -4,7 +4,10 @@ import { Badge } from '../components/Badge.jsx';
 import { Spinner } from '../components/Spinner.jsx';
 import { Pagination } from '../components/Pagination.jsx';
 import { ConfirmButton } from '../components/ConfirmButton.jsx';
-import { Notification } from '../components/Notification.jsx';
+import { Button } from '../components/ui/button.jsx';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
+import { toast } from '../components/Notification.jsx';
 import { navigate } from '../App.jsx';
 import { apiPost } from '../api/client.js';
 import { useFetch } from '../hooks/useFetch.js';
@@ -19,7 +22,6 @@ export default function ScansPage() {
   const [domain,  setDomain]  = useState(params.get('domain') || '');
   const [status,  setStatus]  = useState('');
   const [page,    setPage]    = useState(1);
-  const [notification, setNotification] = useState(null);
   const [busyIds, setBusyIds] = useState(new Set());
 
   const { data: domainsData } = useFetch('/domains/');
@@ -33,7 +35,6 @@ export default function ScansPage() {
   const scheduled = scheduledData || [];
   const domains   = domainsData || [];
 
-  function notify(msg, type = 'success') { setNotification({ message: msg, type, key: Date.now() }); }
   function busy(id) { return busyIds.has(id); }
   function setBusy(id, val) {
     setBusyIds(s => { const ns = new Set(s); val ? ns.add(id) : ns.delete(id); return ns; });
@@ -41,36 +42,34 @@ export default function ScansPage() {
 
   async function handleStop(uuid) {
     setBusy(uuid, true);
-    try { await apiPost(`/scans/${uuid}/stop/`); notify('Scan stopped.'); refetch(); }
-    catch (e) { notify(e.message || 'Stop failed.', 'error'); }
+    try { await apiPost(`/scans/${uuid}/stop/`); toast.success('Scan stopped.'); refetch(); }
+    catch (e) { toast.error(e.message || 'Stop failed.'); }
     finally { setBusy(uuid, false); }
   }
 
   async function handleDelete(uuid) {
     setBusy(uuid, true);
-    try { await apiPost(`/scans/${uuid}/delete/`); notify('Scan deleted.'); refetch(); }
-    catch (e) { notify(e.message || 'Delete failed.', 'error'); }
+    try { await apiPost(`/scans/${uuid}/delete/`); toast.success('Scan deleted.'); refetch(); }
+    catch (e) { toast.error(e.message || 'Delete failed.'); }
     finally { setBusy(uuid, false); }
   }
 
   async function handleCancelJob(jobId) {
-    try { await apiPost(`/scheduled/${jobId}/cancel/`); notify('Job cancelled.'); refetchScheduled(); }
-    catch (e) { notify(e.message || 'Cancel failed.', 'error'); }
+    try { await apiPost(`/scheduled/${jobId}/cancel/`); toast.success('Job cancelled.'); refetchScheduled(); }
+    catch (e) { toast.error(e.message || 'Cancel failed.'); }
   }
 
   return (
     <Layout>
-      {notification && <Notification key={notification.key} message={notification.message} type={notification.type} />}
       <div className="space-y-5">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-lit text-xl font-bold">Scans</h1>
             <p className="text-dim text-sm mt-0.5">Scan history and scheduled jobs</p>
           </div>
-          <button onClick={() => navigate('/scans/start')} className="btn-primary">+ New Scan</button>
+          <Button onClick={() => navigate('/scans/start')}>+ New Scan</Button>
         </div>
 
-        {/* Filters */}
         <div className="flex gap-3 flex-wrap">
           <select value={domain} onChange={e => { setDomain(e.target.value); setPage(1); }} className="field w-52">
             <option value="">All domains</option>
@@ -84,80 +83,90 @@ export default function ScansPage() {
           </select>
         </div>
 
-        {/* Scans table */}
-        <div className="bg-card border border-rim rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-rim">
-            <h2 className="text-lit text-sm font-semibold">Scan Sessions</h2>
-          </div>
-          {loading ? <div className="flex justify-center p-8"><Spinner /></div>
-          : error   ? <div className="p-6 text-red-400 text-sm">Error: {error}</div>
-          : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr>{['Domain', 'Status', 'Started', 'Findings', 'Actions'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {scans.length === 0 ? (
-                      <tr><td colSpan={5} className="tbl-td text-center text-dim py-10">No scans yet.</td></tr>
-                    ) : scans.map(s => (
-                      <tr key={s.uuid} className={`hover:bg-hover transition-colors ${busy(s.uuid) ? 'opacity-50' : ''}`}>
-                        <td className="tbl-td text-lit font-mono font-medium">{s.domain_name || '—'}</td>
-                        <td className="tbl-td"><Badge value={s.status} /></td>
-                        <td className="tbl-td text-dim">{fmtDate(s.start_time)}</td>
-                        <td className="tbl-td text-body">{s.total_findings ?? '—'}</td>
-                        <td className="tbl-td">
-                          <span className="inline-flex gap-1.5 items-center flex-wrap">
-                            <button onClick={() => navigate(`/scans/${s.uuid}`)} className="btn-ghost">View</button>
-                            {s.status === 'running' && (
-                              <ConfirmButton label="Stop" confirmLabel="Stop scan?" onConfirm={() => handleStop(s.uuid)} disabled={busy(s.uuid)} />
-                            )}
-                            {['completed', 'failed', 'cancelled'].includes(s.status) && (
-                              <ConfirmButton label="Delete" onConfirm={() => handleDelete(s.uuid)} disabled={busy(s.uuid)} />
-                            )}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {pagination && (
-                <div className="px-4 py-3 border-t border-rim">
-                  <Pagination page={pagination.page} totalPages={pagination.total_pages} onPage={setPage} />
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-border px-4 py-3">
+            <CardTitle className="text-sm font-semibold">Scan Sessions</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {loading ? <div className="flex justify-center p-8"><Spinner /></div>
+            : error   ? <div className="p-6 text-red-400 text-sm">Error: {error}</div>
+            : (
+              <>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {['Domain', 'Status', 'Started', 'Findings', 'Actions'].map(h => (
+                          <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {scans.length === 0 ? (
+                        <TableRow><TableCell colSpan={5} className="px-4 py-10 text-center text-dim">No scans yet.</TableCell></TableRow>
+                      ) : scans.map(s => (
+                        <TableRow key={s.uuid} className={`hover:bg-hover transition-colors ${busy(s.uuid) ? 'opacity-50' : ''}`}>
+                          <TableCell className="px-4 py-3 text-lit font-mono font-medium">{s.domain_name || '—'}</TableCell>
+                          <TableCell className="px-4 py-3"><Badge value={s.status} /></TableCell>
+                          <TableCell className="px-4 py-3 text-dim">{fmtDate(s.start_time)}</TableCell>
+                          <TableCell className="px-4 py-3 text-body">{s.total_findings ?? '—'}</TableCell>
+                          <TableCell className="px-4 py-3">
+                            <span className="inline-flex gap-1.5 items-center flex-wrap">
+                              <Button variant="outline" size="sm" onClick={() => navigate(`/scans/${s.uuid}`)}>View</Button>
+                              {s.status === 'running' && (
+                                <ConfirmButton label="Stop" confirmLabel="Stop scan?" onConfirm={() => handleStop(s.uuid)} disabled={busy(s.uuid)} />
+                              )}
+                              {['completed', 'failed', 'cancelled'].includes(s.status) && (
+                                <ConfirmButton label="Delete" onConfirm={() => handleDelete(s.uuid)} disabled={busy(s.uuid)} />
+                              )}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
-              )}
-            </>
-          )}
-        </div>
+                {pagination && (
+                  <div className="px-4 py-3 border-t border-border">
+                    <Pagination page={pagination.page} totalPages={pagination.total_pages} onPage={setPage} />
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
 
-        {/* Scheduled jobs */}
         {scheduled.length > 0 && (
-          <div className="bg-card border border-rim rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-rim">
-              <h2 className="text-lit text-sm font-semibold">Scheduled Jobs</h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr>{['Domain', 'Type', 'Next Run', 'Actions'].map(h => <th key={h} className="tbl-th">{h}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {scheduled.map(j => (
-                    <tr key={j.job_id} className="hover:bg-hover transition-colors">
-                      <td className="tbl-td font-mono text-lit">{j.domain || '—'}</td>
-                      <td className="tbl-td text-dim text-xs">{j.job_type || '—'}</td>
-                      <td className="tbl-td text-dim">{fmtDate(j.next_run_time)}</td>
-                      <td className="tbl-td">
-                        <ConfirmButton label="Cancel" confirmLabel="Cancel job?" onConfirm={() => handleCancelJob(j.job_id)} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <Card className="overflow-hidden">
+            <CardHeader className="border-b border-border px-4 py-3">
+              <CardTitle className="text-sm font-semibold">Scheduled Jobs</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      {['Domain', 'Type', 'Next Run', 'Actions'].map(h => (
+                        <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {scheduled.map(j => (
+                      <TableRow key={j.job_id} className="hover:bg-hover transition-colors">
+                        <TableCell className="px-4 py-3 font-mono text-lit">{j.domain || '—'}</TableCell>
+                        <TableCell className="px-4 py-3 text-dim text-xs">{j.job_type || '—'}</TableCell>
+                        <TableCell className="px-4 py-3 text-dim">{fmtDate(j.next_run_time)}</TableCell>
+                        <TableCell className="px-4 py-3">
+                          <ConfirmButton label="Cancel" confirmLabel="Cancel job?" onConfirm={() => handleCancelJob(j.job_id)} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
     </Layout>
