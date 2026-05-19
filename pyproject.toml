@@ -9,7 +9,7 @@ authors = [
 ]
 dependencies = [
     # Web framework
-    "django>=5.2,<5.3",
+    "django>=5.2.14",
     "django-ninja>=1.6.2",
     # Configuration
     "python-decouple>=3.8",
@@ -21,7 +21,7 @@ dependencies = [
     "django-apscheduler>=0.7.0",
     # SSL / crypto / SSH
     "cryptography>=42.0",
-    "paramiko>=3.4",
+    "paramiko>=5.0.0",
     # Reports (PDF generation)
     "xhtml2pdf>=0.2.15",
     # Task queue
@@ -30,6 +30,9 @@ dependencies = [
     "defusedxml>=0.7.1",
     # Auth
     "django-ninja-jwt>=5.0",
+    "lxml>=6.1.0",
+    "pypdf>=6.10.2",
+    "urllib3>=2.7.0",
 ]
 
 [project.optional-dependencies]
