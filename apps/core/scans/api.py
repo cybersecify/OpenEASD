@@ -30,7 +30,7 @@ _VALID_HOSTNAME = _re.compile(
     r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$"
 )
 
-BUILTIN_JOB_IDS = {"daily_scan", "watchdog_reap_stuck_scans"}
+BUILTIN_JOB_IDS = {"daily_scan", "watchdog_reap_stuck_scans", "purge_blacklisted_tokens"}
 
 
 def _describe_cron_trigger(trigger):
