@@ -118,11 +118,14 @@ def ensure_superuser():
             cwd=BASE_DIR,
             check=False,  # may fail if DJANGO_SUPERUSER_PASSWORD not set
         )
-        # Set password explicitly
+        # Set password and flag for forced change on first login
         pw_script = (
             "import django; django.setup();"
             "from django.contrib.auth import get_user_model; U = get_user_model();"
+            "from apps.core.dashboard.models import UserProfile;"
             "u = U.objects.get(username='admin'); u.set_password('admin'); u.save();"
+            "p, _ = UserProfile.objects.get_or_create(user=u);"
+            "p.must_change_password = True; p.save();"
             "print('Password set')"
         )
         subprocess.run(

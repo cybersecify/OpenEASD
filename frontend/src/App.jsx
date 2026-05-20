@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { auth } from './auth.js';
 import LoginPage from './pages/LoginPage.jsx';
+import ChangePasswordPage from './pages/ChangePasswordPage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import DomainsPage from './pages/DomainsPage.jsx';
 import ScansPage from './pages/ScansPage.jsx';
@@ -38,6 +39,7 @@ export default function App() {
   }
 
   if (path === '/login') return <LoginPage />;
+  if (path === '/change-password') return <ChangePasswordPage />;
   if (path === '/') return <DashboardPage />;
   if (path === '/domains') return <DomainsPage />;
   if (path === '/scans') return <ScansPage />;

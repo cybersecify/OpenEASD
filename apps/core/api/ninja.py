@@ -78,10 +78,44 @@ api.add_router("/token", blacklist_router)
 # ---------------------------------------------------------------------------
 # Current user endpoint
 # ---------------------------------------------------------------------------
+from ninja import Schema
+from django.contrib.auth import get_user_model
+
+
+class ChangePasswordIn(Schema):
+    current_password: str
+    new_password: str
+
+
 @api.get("/user/", auth=JWTAuth())
 def get_user(request):
     u = request.auth
-    return {"id": u.id, "username": u.username, "email": u.email or ""}
+    must_change = getattr(getattr(u, "profile", None), "must_change_password", False)
+    return {
+        "id": u.id,
+        "username": u.username,
+        "email": u.email or "",
+        "must_change_password": must_change,
+    }
+
+
+@api.post("/user/change-password/", auth=JWTAuth())
+def change_password(request, payload: ChangePasswordIn):
+    u = request.auth
+    if not u.check_password(payload.current_password):
+        raise HttpError(400, "Current password is incorrect")
+    if len(payload.new_password) < 8:
+        raise HttpError(400, "New password must be at least 8 characters")
+    if payload.new_password == payload.current_password:
+        raise HttpError(400, "New password must differ from current password")
+    u.set_password(payload.new_password)
+    u.save()
+    # Clear the forced-change flag
+    profile = getattr(u, "profile", None)
+    if profile and profile.must_change_password:
+        profile.must_change_password = False
+        profile.save(update_fields=["must_change_password"])
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

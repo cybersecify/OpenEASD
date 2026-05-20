@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Button } from '../components/ui/button.jsx';
-import { apiPost } from '../api/client.js';
+import { apiPost, apiGet } from '../api/client.js';
 import { auth } from '../auth.js';
 import { navigate } from '../App.jsx';
 
@@ -17,7 +17,8 @@ export default function LoginPage() {
     try {
       const res = await apiPost('/token/pair', { username, password });
       auth.setTokens(res.access, res.refresh);
-      navigate('/');
+      const user = await apiGet('/user/');
+      navigate(user.must_change_password ? '/change-password' : '/');
     } catch (err) {
       setError(err.data?.error?.message || err.message || 'Login failed');
     } finally {
