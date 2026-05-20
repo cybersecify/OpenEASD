@@ -518,7 +518,6 @@ def scan_detail(request, session_uuid: uuid.UUID):
 @router.get("/{session_uuid}/status/")
 def scan_status(request, session_uuid: uuid.UUID):
     from apps.core.assets.models import IPAddress, Port, Subdomain
-    from apps.core.findings.models import Finding
     from apps.core.web_assets.models import URL
 
     session = get_object_or_404(ScanSession, uuid=str(session_uuid))

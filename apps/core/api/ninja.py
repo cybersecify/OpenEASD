@@ -2,7 +2,7 @@
 
 from django.conf import settings
 from django.http import JsonResponse
-from ninja import NinjaAPI
+from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError, ValidationError
 from ninja_jwt.routers.obtain import obtain_pair_router   # POST /pair, POST /refresh
 from ninja_jwt.routers.verify import verify_router        # POST /verify
@@ -78,10 +78,6 @@ api.add_router("/token", blacklist_router)
 # ---------------------------------------------------------------------------
 # Current user endpoint
 # ---------------------------------------------------------------------------
-from ninja import Schema
-from django.contrib.auth import get_user_model
-
-
 class ChangePasswordIn(Schema):
     current_password: str
     new_password: str
