@@ -111,11 +111,18 @@ COPY config/ config/
 
 # Copy built frontend from frontend-builder stage
 COPY --from=frontend-builder /build/frontend/dist/ frontend/dist/
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
 
-# Collect static files
+# Pre-collect static files so the image is ready without a volume
 RUN SECRET_KEY=build-time-placeholder python manage.py collectstatic --noinput
 
 VOLUME ["/app/data", "/app/logs"]
 EXPOSE 8000
 
+ENTRYPOINT ["./docker-entrypoint.sh"]
+
+# Default: single-container mode (web + worker via main.py)
+# K8s web:    gunicorn openeasd.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120
+# K8s worker: python manage.py qcluster
 CMD ["python", "main.py"]

@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openeasd-data
+  namespace: openeasd
+spec:
+  accessModes:
+    - ReadWriteOnce   # SQLite requires single-node access
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openeasd-logs
+  namespace: openeasd
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi

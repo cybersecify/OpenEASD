@@ -1,0 +1,31 @@
+# Requires an Ingress controller (e.g. nginx-ingress or Traefik).
+# For TLS, install cert-manager and uncomment the tls + annotation blocks.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openeasd
+  namespace: openeasd
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # Uncomment for automatic TLS via cert-manager:
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: openeasd.example.com   # replace with your domain
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: openeasd
+                port:
+                  name: http
+  # Uncomment for TLS:
+  # tls:
+  #   - hosts:
+  #       - openeasd.example.com
+  #     secretName: openeasd-tls

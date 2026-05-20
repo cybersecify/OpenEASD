@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openeasd-web
+  namespace: openeasd
+  labels:
+    app: openeasd
+    component: web
+spec:
+  # SQLite (RWO PVC) — must stay at 1 replica.
+  # To scale horizontally, migrate to PostgreSQL and increase replicas.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openeasd
+      component: web
+  template:
+    metadata:
+      labels:
+        app: openeasd
+        component: web
+    spec:
+      # Co-locate web and worker on the same node so both can mount the RWO PVC
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: openeasd
+                  component: worker
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: web
+          image: ghcr.io/cybersecify/openeasd:latest
+          command:
+            - gunicorn
+            - openeasd.wsgi:application
+            - --bind
+            - "0.0.0.0:8000"
+            - --workers
+            - "2"
+            - --timeout
+            - "120"
+            - --access-logfile
+            - "-"
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: openeasd-config
+            - secretRef:
+                name: openeasd-secret
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: logs
+              mountPath: /app/logs
+          readinessProbe:
+            httpGet:
+              path: /health/
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health/
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: openeasd-data
+        - name: logs
+          persistentVolumeClaim:
+            claimName: openeasd-logs

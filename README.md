@@ -124,6 +124,51 @@ docker stop openeasd && docker rm openeasd
 | `SCAN_DAILY_HOUR` | `2` | Hour for daily scheduled scans (24h, UTC) |
 | `SCAN_DAILY_MINUTE` | `0` | Minute for daily scheduled scans |
 
+### Kubernetes
+
+Manifests are in `k8s/`. Requires a cluster with an nginx Ingress controller.
+
+**1. Set your secret**
+
+Edit `k8s/secret.yaml` and replace `REPLACE_WITH_OPENSSL_RAND_HEX_32` with a real key:
+
+```bash
+openssl rand -hex 32
+```
+
+**2. Set your domain**
+
+Edit `k8s/configmap.yaml` (`ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`) and `k8s/ingress.yaml` (`host`) to match your domain.
+
+**3. Deploy**
+
+```bash
+kubectl apply -k k8s/
+```
+
+**4. Update to latest image**
+
+```bash
+kubectl rollout restart deployment/openeasd-web deployment/openeasd-worker -n openeasd
+```
+
+#### Architecture
+
+Two deployments share a single `ReadWriteOnce` PVC:
+
+| Pod | Command | Resources |
+|---|---|---|
+| `openeasd-web` | `gunicorn` (2 workers) | 256Mi–512Mi |
+| `openeasd-worker` | `manage.py qcluster` | 512Mi–1Gi, `NET_RAW` capability |
+
+The worker pod gets `NET_RAW` capability for nmap/naabu port scanning. The web pod does not need it.
+
+> **SQLite constraint:** `ReadWriteOnce` PVC limits both pods to the same node. `replicas: 1` is required. To scale horizontally, migrate to PostgreSQL.
+
+#### Health check
+
+`GET /health/` returns `{"status": "ok"}` — used by K8s readiness and liveness probes (no auth required).
+
 ### Prerequisites (from source)
 
 - Python 3.11+
