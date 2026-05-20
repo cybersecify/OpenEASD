@@ -107,6 +107,16 @@ On first run, `main.py` creates `admin/admin` with `must_change_password=True`. 
 - Open TCP 8000 in VCN Security List and `iptables` (see README for full steps)
 - Add `ALLOWED_HOSTS=<PUBLIC_IP>,localhost` to the docker run command
 
+### Fly.io
+- `fly.toml` included in repo — uses pre-built GHCR image (no rebuild on deploy)
+- Region: `sin` (Singapore); change `primary_region` in `fly.toml` as needed
+- **512MB RAM required** — 256MB OOMs with Django + Django-Q2 worker running together
+- Volume `openeasd_data` mounted at `/app/data` for SQLite persistence
+- `auto_stop_machines = "stop"` — machine sleeps when idle, wakes on first request (~5s cold start)
+- Deploy: `fly deploy` — picks up latest `:latest` tag from GHCR
+- Secrets: `SECRET_KEY` and `CSRF_TRUSTED_ORIGINS` set via `fly secrets set`
+- Live at `https://<app-name>.fly.dev`
+
 ### Scheduler
 - Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (uses `TIME_ZONE` in settings, default 02:00)
 - Configured via env vars: `SCAN_DAILY_HOUR`, `SCAN_DAILY_MINUTE`
