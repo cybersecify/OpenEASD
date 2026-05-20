@@ -1,6 +1,8 @@
 # OpenEASD — Ubuntu 24.04 LTS
-# Multi-stage build targeting linux/amd64 (standard server architecture).
-# On Apple Silicon: docker buildx build --platform linux/amd64 -t openeasd .
+# Multi-platform build (linux/amd64 + linux/arm64):
+#   docker buildx build --platform linux/amd64,linux/arm64 -t openeasd:latest --push .
+# Single-platform local load:
+#   docker buildx build --platform linux/amd64 --load -t openeasd .
 
 # ---------------------------------------------------------------------------
 # Stage 1: frontend build (platform-agnostic — Node runs natively)
@@ -21,9 +23,12 @@ COPY frontend/ ./
 RUN npm run build
 
 # ---------------------------------------------------------------------------
-# Stage 2: download pre-built linux/amd64 security tool binaries
+# Stage 2: download pre-built security tool binaries for the target platform
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04 AS tools-builder
+
+# TARGETARCH is injected by buildx: 'amd64' or 'arm64'
+ARG TARGETARCH
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates unzip \
@@ -34,28 +39,28 @@ WORKDIR /tools
 # ProjectDiscovery tool versions — bump as needed
 ARG SUBFINDER_VERSION=2.6.6
 ARG DNSX_VERSION=1.2.1
-ARG NAABU_VERSION=2.3.1
+ARG NAABU_VERSION=2.6.1
 ARG HTTPX_VERSION=1.6.5
 ARG NUCLEI_VERSION=3.2.9
 ARG AMASS_VERSION=4.2.0
 
-RUN curl -fsSL "https://github.com/projectdiscovery/subfinder/releases/download/v${SUBFINDER_VERSION}/subfinder_${SUBFINDER_VERSION}_linux_amd64.zip" \
+RUN curl -fsSL "https://github.com/projectdiscovery/subfinder/releases/download/v${SUBFINDER_VERSION}/subfinder_${SUBFINDER_VERSION}_linux_${TARGETARCH}.zip" \
     -o subfinder.zip && unzip subfinder.zip subfinder && rm subfinder.zip
 
-RUN curl -fsSL "https://github.com/projectdiscovery/dnsx/releases/download/v${DNSX_VERSION}/dnsx_${DNSX_VERSION}_linux_amd64.zip" \
+RUN curl -fsSL "https://github.com/projectdiscovery/dnsx/releases/download/v${DNSX_VERSION}/dnsx_${DNSX_VERSION}_linux_${TARGETARCH}.zip" \
     -o dnsx.zip && unzip dnsx.zip dnsx && rm dnsx.zip
 
-RUN curl -fsSL "https://github.com/projectdiscovery/naabu/releases/download/v${NAABU_VERSION}/naabu_${NAABU_VERSION}_linux_amd64.zip" \
+RUN curl -fsSL "https://github.com/projectdiscovery/naabu/releases/download/v${NAABU_VERSION}/naabu_${NAABU_VERSION}_linux_${TARGETARCH}.zip" \
     -o naabu.zip && unzip naabu.zip naabu && rm naabu.zip
 
-RUN curl -fsSL "https://github.com/projectdiscovery/httpx/releases/download/v${HTTPX_VERSION}/httpx_${HTTPX_VERSION}_linux_amd64.zip" \
+RUN curl -fsSL "https://github.com/projectdiscovery/httpx/releases/download/v${HTTPX_VERSION}/httpx_${HTTPX_VERSION}_linux_${TARGETARCH}.zip" \
     -o httpx.zip && unzip httpx.zip httpx && rm httpx.zip
 
-RUN curl -fsSL "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_amd64.zip" \
+RUN curl -fsSL "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_${TARGETARCH}.zip" \
     -o nuclei.zip && unzip nuclei.zip nuclei && rm nuclei.zip
 
-RUN curl -fsSL "https://github.com/owasp-amass/amass/releases/download/v${AMASS_VERSION}/amass_Linux_amd64.zip" \
-    -o amass.zip && unzip amass.zip && mv amass_Linux_amd64/amass . && rm -rf amass.zip amass_Linux_amd64
+RUN curl -fsSL "https://github.com/owasp-amass/amass/releases/download/v${AMASS_VERSION}/amass_Linux_${TARGETARCH}.zip" \
+    -o amass.zip && unzip amass.zip && mv amass_Linux_${TARGETARCH}/amass . && rm -rf amass.zip amass_Linux_${TARGETARCH}
 
 RUN chmod +x subfinder dnsx naabu httpx nuclei amass
 
