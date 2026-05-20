@@ -153,12 +153,15 @@ uv run python main.py --port 9000      # custom port
 uv run python main.py --no-worker      # web server only (no worker)
 ```
 
-## CI
+## CI/CD
 
-GitHub Actions runs on every push to `main`:
-- **pytest** — fast test suite (~531 tests, excludes slow DNS/RDAP tests)
+GitHub Actions runs on every push to `main` and `v*` tags:
+- **pytest** — fast test suite (~522 tests, excludes slow DNS/RDAP tests)
 - **bandit** — Python SAST scan
 - **pip-audit** — dependency CVE scan
+- **Frontend build** — `npm ci && npm run build`
+- **Docker build** — amd64 smoke-build on every push
+- **Publish to GHCR** — multi-arch (`amd64` + `arm64`) image published on every `main` push and version tags
 
 ## API
 
@@ -205,10 +208,10 @@ apps/my_tool/
 ## Running Tests
 
 ```bash
-# Fast tests (excludes slow DNS tests, ~557 tests)
+# Fast tests (excludes slow DNS tests, ~522 tests)
 uv run pytest tests/ --ignore=tests/unit/test_domain_security.py
 
-# All tests (~598 total)
+# All tests (~563 total)
 uv run pytest tests/
 ```
 
@@ -218,6 +221,7 @@ uv run pytest tests/
 - **Django 5** — Web framework
 - **Django Ninja** — REST API with OpenAPI docs
 - **Django-Q2** — Background task queue (ORM broker, tasks stored in Django DB)
+- **WhiteNoise** — Serves static files in production (Docker) with gzip compression
 - **SQLite** — Database (dev), configurable via `DB_NAME`
 - **paramiko** — SSH protocol inspection
 - **cryptography** — X.509 certificate analysis

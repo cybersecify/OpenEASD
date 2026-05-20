@@ -15,10 +15,16 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
   3. Tag it: `git tag -a v0.x -m "description"`
   4. Push: `git push origin main --tags`
 
-## CI (GitHub Actions)
-- Pipeline: `.github/workflows/ci.yml` — runs on every push to `main`
-- Steps: pytest (fast, excludes `test_domain_security.py`), bandit (SAST), pip-audit (CVE scan)
-- Runner: `ubuntu-24.04`, Python 3.12, `uv sync` for deps, `libcairo2-dev gcc` system deps required for cairo/weasyprint
+## CI/CD (GitHub Actions)
+- Pipeline: `.github/workflows/ci.yml` — runs on every push to `main` and `v*` tags
+- **4 parallel jobs:**
+  - `test` — pytest (fast, excludes `test_domain_security.py`), bandit (SAST), pip-audit (CVE scan)
+  - `frontend` — `npm ci && npm run build`
+  - `docker` — `docker buildx build` for `linux/amd64` (no push, cache check)
+  - `publish` — builds `linux/amd64` + `linux/arm64` and pushes to `ghcr.io/cybersecify/openeasd`
+- **Publish triggers:** every push to `main` (`:latest` tag) and `v*` tags (`:vX.Y` tag)
+- Runner: `ubuntu-24.04`, Python 3.12, `uv sync --group dev` for deps, `libcairo2-dev gcc` system deps required
+- `pip-audit --ignore-vuln PYSEC-2025-183` — disputed PyJWT weak-key-length CVE, no fix available
 
 ## Commands
 - Always use `uv run python` instead of `python` or `python3`
@@ -35,6 +41,7 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 - **JWT Bearer auth** — access + refresh tokens via `djangorestframework-simplejwt` (ninja-jwt wrapper); token blacklist handled by simplejwt's built-in `OutstandingToken`/`BlacklistedToken` models
 - **Django-Q2** — background task queue for scan execution (ORM broker, tasks stored in Django DB)
 - `django-apscheduler` for daily automated scans (starts in `SchedulerConfig.ready()`)
+- **WhiteNoise** — serves collected static files (frontend bundle) when `DEBUG=False` (Docker/prod); uses `CompressedManifestStaticFilesStorage` for gzip + content-hash fingerprinting
 - SQLite database (dev), configurable via `DB_NAME` env var
 
 ### Frontend (React SPA — new primary UI)
@@ -50,12 +57,6 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 - Dark theme throughout: bg `#0d1117`, card `#161b22`, border `#30363d`, accent `#30c074`; mapped to shadcn CSS vars (`--background`, `--card`, `--border`, `--primary`)
 - **Dev:** Vite proxy forwards `/api/` → Django on port 8000 (no CORS config needed)
 - **Prod:** `npm run build` → `frontend/dist/` → served by Django `STATICFILES_DIRS`
-
-### Legacy HTML stack (still intact, runs in parallel)
-- HTMX — server-driven UI updates (form submits, polling, partial HTML swaps)
-- Alpine.js — client-side UI state (modals, dropdowns, tabs, toggles)
-- Tailwind CSS via CDN (no build step)
-- Chart.js — visualizations via CDN
 
 ### Frontend dev setup
 ```bash
@@ -336,4 +337,4 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | `tests/integration/test_scan_flow.py` | 13 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 71 | Smoke tests for all 35 API endpoints (auth + payload shape) |
 
-**Total: ~572 tests** (~531 fast + 41 slow domain_security)
+**Total: ~563 tests** (~522 fast + 41 slow domain_security)
