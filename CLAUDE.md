@@ -56,7 +56,8 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 - **Toast notifications:** `import { toast } from '../components/Notification.jsx'` → `toast.success()` / `toast.error()`; `<Toaster>` mounted in `main.jsx`
 - Dark theme throughout: bg `#0d1117`, card `#161b22`, border `#30363d`, accent `#30c074`; mapped to shadcn CSS vars (`--background`, `--card`, `--border`, `--primary`)
 - **Dev:** Vite proxy forwards `/api/` → Django on port 8000 (no CORS config needed)
-- **Prod:** `npm run build` → `frontend/dist/` → served by Django `STATICFILES_DIRS`
+- **Prod:** `npm run build` → `frontend/dist/` → served by Django via WhiteNoise
+- **`/change-password` route** — forced redirect after login if `must_change_password=true`; clears flag on success
 
 ### Frontend dev setup
 ```bash
@@ -77,7 +78,36 @@ cd frontend && npm install && npm run dev
 - SPA catch-all in `openeasd/urls.py` serves `frontend/dist/index.html` for all non-API paths.
 - Run `cd frontend && npm run build` to update the production bundle before deployment.
 
-## Scheduler
+## Deployment
+
+### Docker (production)
+```bash
+docker run -d \
+  -p 8000:8000 \
+  -v openeasd-data:/app/data \
+  -v openeasd-logs:/app/logs \
+  -e SECRET_KEY="$(openssl rand -hex 32)" \
+  -e ALLOWED_HOSTS="<IP_OR_DOMAIN>,localhost" \
+  --cap-add NET_RAW \
+  --restart unless-stopped \
+  --name openeasd \
+  ghcr.io/cybersecify/openeasd:latest
+```
+- `--cap-add NET_RAW` — required for nmap raw socket scanning
+- `--restart unless-stopped` — survives server reboots
+- Volumes: `openeasd-data` (SQLite DB) and `openeasd-logs` persist across container replacements
+- Static files served by WhiteNoise (no nginx needed)
+
+### First login
+On first run, `main.py` creates `admin/admin` with `must_change_password=True`. The React app redirects to `/change-password` before allowing access. On every startup, if the default password is still in use, the flag is re-set.
+
+### Oracle Cloud Free Tier (recommended free host)
+- Shape: `VM.Standard.A1.Flex` (Ampere ARM) — 2 OCPUs / 12GB RAM, always free
+- The `arm64` image runs natively — no emulation
+- Open TCP 8000 in VCN Security List and `iptables` (see README for full steps)
+- Add `ALLOWED_HOSTS=<PUBLIC_IP>,localhost` to the docker run command
+
+### Scheduler
 - Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (uses `TIME_ZONE` in settings, default 02:00)
 - Configured via env vars: `SCAN_DAILY_HOUR`, `SCAN_DAILY_MINUTE`
 - Disable on extra workers via `SCHEDULER_ENABLED=False` (for multi-worker gunicorn)
@@ -105,7 +135,7 @@ Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TO
 
 | App | Label | Purpose |
 |---|---|---|
-| `dashboard/` | `core` | Dashboard page, health check |
+| `dashboard/` | `core` | Dashboard page, health check; **UserProfile** model (`must_change_password` flag) |
 | `domains/` | `domains` | Domain model, CRUD views |
 | `assets/` | `assets` | Network assets: Subdomain, IPAddress, Port |
 | `web_assets/` | `web_assets` | Web assets: URL |
@@ -277,7 +307,8 @@ POST /api/token/pair                      — JWT login → {access, refresh}
 POST /api/token/blacklist                 — blacklist refresh token (logout)
 POST /api/token/refresh                   — exchange refresh → new access token
 POST /api/token/verify                    — verify token validity
-GET  /api/user/                           — current user info (requires access token)
+GET  /api/user/                           — current user info + must_change_password flag
+POST /api/user/change-password/           — change password; clears must_change_password flag
 GET  /api/dashboard/                      — KPIs, domain status, urgent findings
 GET  /api/domains/                        — list domains (enriched)
 POST /api/domains/                        — add domain

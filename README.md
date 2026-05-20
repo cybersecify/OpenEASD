@@ -21,6 +21,7 @@ OpenEASD scans domains to discover subdomains, resolve IPs, scan ports, detect s
 - **Alerts** — Slack and Microsoft Teams notifications
 - **Scheduling** — One-time, recurring, and daily automated scans
 - **JWT auth** — Stateless Bearer token authentication with refresh token rotation
+- **Forced password change** — Default `admin/admin` password must be changed on first login
 
 ## Scan Pipeline
 
@@ -91,12 +92,14 @@ docker run -d \
   -p 8000:8000 \
   -v openeasd-data:/app/data \
   -v openeasd-logs:/app/logs \
-  -e SECRET_KEY="change-me-to-a-long-random-string" \
+  -e SECRET_KEY="$(openssl rand -hex 32)" \
+  --cap-add NET_RAW \
+  --restart unless-stopped \
   --name openeasd \
   ghcr.io/cybersecify/openeasd:latest
 ```
 
-Open http://localhost:8000, log in with `admin` / `admin`, change the password.
+Open http://localhost:8000 — log in with `admin` / `admin`. You will be forced to set a new password before accessing the app.
 
 #### Update to latest
 
@@ -120,6 +123,50 @@ docker stop openeasd && docker rm openeasd
 | `ALERT_SEVERITY_THRESHOLD` | `high` | Minimum severity to trigger alerts (`critical`/`high`/`medium`/`low`) |
 | `SCAN_DAILY_HOUR` | `2` | Hour for daily scheduled scans (24h, UTC) |
 | `SCAN_DAILY_MINUTE` | `0` | Minute for daily scheduled scans |
+
+### Deploy on Oracle Cloud Free Tier (Always Free)
+
+Oracle Cloud's Ampere A1 instance (4 OCPUs, 24GB RAM) is permanently free and ideal for self-hosting — full root access, no platform restrictions on security tools.
+
+**1. Create the VM**
+
+In Oracle Cloud Console → Compute → Instances → Create Instance:
+- Image: **Ubuntu 22.04**
+- Shape: **VM.Standard.A1.Flex** (Ampere) — 2 OCPUs, 12GB RAM
+- Add your SSH public key
+
+**2. Open port 8000**
+
+In the instance's VCN Security List → Add Ingress Rule: TCP port `8000`, source `0.0.0.0/0`.
+
+Then SSH in and open the OS firewall:
+```bash
+ssh ubuntu@<PUBLIC_IP>
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 8000 -j ACCEPT
+sudo netfilter-persistent save
+```
+
+**3. Install Docker**
+```bash
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker ubuntu && newgrp docker
+```
+
+**4. Run OpenEASD**
+```bash
+docker run -d \
+  -p 8000:8000 \
+  -v openeasd-data:/app/data \
+  -v openeasd-logs:/app/logs \
+  -e SECRET_KEY="$(openssl rand -hex 32)" \
+  -e ALLOWED_HOSTS="<PUBLIC_IP>,localhost" \
+  --cap-add NET_RAW \
+  --restart unless-stopped \
+  --name openeasd \
+  ghcr.io/cybersecify/openeasd:latest
+```
+
+Open `http://<PUBLIC_IP>:8000`. The `arm64` image runs natively on Ampere hardware.
 
 ### Prerequisites (from source)
 
