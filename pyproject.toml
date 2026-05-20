@@ -30,6 +30,7 @@ dependencies = [
     "defusedxml>=0.7.1",
     # Auth
     "django-ninja-jwt>=5.0",
+    "whitenoise>=6.7",
     "lxml>=6.1.0",
     "pypdf>=6.10.2",
     "urllib3>=2.7.0",
