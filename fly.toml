@@ -1,0 +1,36 @@
+# OpenEASD — Fly.io deployment
+# Uses the pre-built image from GHCR (no rebuild on deploy)
+# Deploy: fly deploy
+# Secrets: fly secrets set SECRET_KEY="$(openssl rand -hex 32)"
+
+app = "openeasd"
+primary_region = "sin"
+
+[build]
+  image = "ghcr.io/cybersecify/openeasd:latest"
+
+[env]
+  ALLOWED_HOSTS = "openeasd.fly.dev,localhost"
+  PORT = "8000"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[[mounts]]
+  source = "openeasd_data"
+  destination = "/app/data"
+  initial_size = "3gb"
