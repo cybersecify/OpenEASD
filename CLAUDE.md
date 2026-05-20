@@ -33,7 +33,7 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 - Django 5+ with plain Django views (no DRF, no Celery, no Redis)
 - **Django Ninja** REST API under `/api/` — Schema-based, auto-docs at `/api/docs`
 - **JWT Bearer auth** — access + refresh tokens via `djangorestframework-simplejwt` (ninja-jwt wrapper); token blacklist handled by simplejwt's built-in `OutstandingToken`/`BlacklistedToken` models
-- Huey — lightweight task queue for background scan execution
+- **Django-Q2** — background task queue for scan execution (ORM broker, tasks stored in Django DB)
 - `django-apscheduler` for daily automated scans (starts in `SchedulerConfig.ready()`)
 - SQLite database (dev), configurable via `DB_NAME` env var
 

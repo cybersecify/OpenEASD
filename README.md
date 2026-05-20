@@ -71,7 +71,8 @@ apps/                   - Tool apps (add/remove freely)
 
 frontend/               - React 18 + Vite SPA
   src/pages/            - Page components
-  src/components/       - Shared UI primitives
+  src/components/       - Shared UI primitives (Badge, Spinner, Pagination, ConfirmButton)
+  src/components/ui/    - shadcn/ui primitives (Button, Card, Table, AlertDialog, …)
   src/hooks/            - useFetch, usePolling
   src/api/client.js     - JWT apiFetch wrapper
   src/auth.js           - localStorage token helpers
@@ -136,13 +137,20 @@ uv run python main.py --port 9000      # custom port
 uv run python main.py --no-worker      # web server only (no worker)
 ```
 
+## CI
+
+GitHub Actions runs on every push to `main`:
+- **pytest** — fast test suite (~531 tests, excludes slow DNS/RDAP tests)
+- **bandit** — Python SAST scan
+- **pip-audit** — dependency CVE scan
+
 ## API
 
 The REST API is served at `/api/` via Django Ninja with JWT Bearer authentication.
 
 - **Docs:** http://localhost:8000/api/docs (OpenAPI/Swagger UI)
-- **Auth:** `POST /api/auth/login/` → `{access, refresh}` tokens
-- **Token refresh:** `POST /api/auth/refresh/`
+- **Auth:** `POST /api/token/pair` → `{access, refresh}` tokens
+- **Token refresh:** `POST /api/token/refresh`
 
 ## Adding a New Tool
 
@@ -202,7 +210,8 @@ uv run pytest tests/
 
 **Frontend:**
 - **React 18 + Vite** — SPA with hot module replacement
-- **Tailwind CSS** — Utility-first styling
+- **Tailwind CSS 3 + shadcn/ui** — Utility-first styling with Radix UI component primitives
+- **sonner** — Toast notifications
 - Vanilla popstate router (no react-router)
 
 ## License
