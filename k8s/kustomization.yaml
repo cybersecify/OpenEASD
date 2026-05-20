@@ -4,8 +4,12 @@ namespace: openeasd
 resources:
   - namespace.yaml
   - configmap.yaml
-  - secret.yaml
   - pvc.yaml
   - deployment.yaml
   - service.yaml
-  - ingress.yaml
+# ingress.yaml is omitted — Caddy on the host terminates TLS and proxies to the
+# NodePort (service.yaml). Re-add the ingress + a controller (e.g. nginx-ingress)
+# if you want in-cluster ingress instead.
+# Apply secret.yaml separately with a real SECRET_KEY (do not commit real values):
+#   kubectl create secret generic openeasd-secret -n openeasd \
+#     --from-literal=SECRET_KEY="$(openssl rand -hex 32)"

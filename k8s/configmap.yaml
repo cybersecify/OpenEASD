@@ -4,8 +4,8 @@ metadata:
   name: openeasd-config
   namespace: openeasd
 data:
-  ALLOWED_HOSTS: "openeasd.example.com,localhost"
-  CSRF_TRUSTED_ORIGINS: "https://openeasd.example.com"
+  ALLOWED_HOSTS: "openeasd.cybersecify.com,openeasd.local,localhost"
+  CSRF_TRUSTED_ORIGINS: "https://openeasd.cybersecify.com,http://openeasd.local"
   DEBUG: "False"
   DB_NAME: "data/openeasd.db"
   ALERT_SEVERITY_THRESHOLD: "high"

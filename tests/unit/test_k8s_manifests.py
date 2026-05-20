@@ -297,8 +297,12 @@ class TestService:
         assert port["port"] == 80
         assert port["targetPort"] == 8000
 
-    def test_type_is_cluster_ip(self):
-        assert self.doc["spec"]["type"] == "ClusterIP"
+    def test_type_is_nodeport(self):
+        assert self.doc["spec"]["type"] == "NodePort"
+
+    def test_nodeport_in_valid_range(self):
+        port = self.doc["spec"]["ports"][0]
+        assert 30000 <= port["nodePort"] <= 32767
 
 
 # ---------------------------------------------------------------------------
@@ -344,15 +348,16 @@ class TestKustomization:
         assert self.doc["namespace"] == "openeasd"
 
     def test_all_manifest_files_listed(self):
+        # secret.yaml and ingress.yaml are intentionally omitted from kustomize:
+        # secret is applied imperatively with a real SECRET_KEY,
+        # ingress is replaced by a host-level reverse proxy (e.g. Caddy → NodePort).
         resources = self.doc["resources"]
         expected = [
             "namespace.yaml",
             "configmap.yaml",
-            "secret.yaml",
             "pvc.yaml",
             "deployment.yaml",
             "service.yaml",
-            "ingress.yaml",
         ]
         for f in expected:
             assert f in resources, f"{f} missing from kustomization resources"

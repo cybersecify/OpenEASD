@@ -62,6 +62,9 @@ spec:
             httpGet:
               path: /health/
               port: 8000
+              httpHeaders:
+                - name: Host
+                  value: openeasd.local
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
@@ -69,6 +72,9 @@ spec:
             httpGet:
               path: /health/
               port: 8000
+              httpHeaders:
+                - name: Host
+                  value: openeasd.local
             initialDelaySeconds: 30
             periodSeconds: 30
             failureThreshold: 3
