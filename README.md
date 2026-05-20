@@ -154,16 +154,16 @@ kubectl rollout restart deployment/openeasd-web deployment/openeasd-worker -n op
 
 #### Architecture
 
-Two deployments share a single `ReadWriteOnce` PVC:
+Single pod, two containers, one `ReadWriteOnce` PVC:
 
-| Pod | Command | Resources |
+| Container | Command | Resources |
 |---|---|---|
-| `openeasd-web` | `gunicorn` (2 workers) | 256Mi–512Mi |
-| `openeasd-worker` | `manage.py qcluster` | 512Mi–1Gi, `NET_RAW` capability |
+| `web` | `gunicorn` (2 workers) | 256Mi–512Mi |
+| `worker` | `manage.py qcluster` | 512Mi–1Gi, `NET_RAW` capability |
 
-The worker pod gets `NET_RAW` capability for nmap/naabu port scanning. The web pod does not need it.
+An init container runs migrations and admin user setup before the main containers start. The `worker` container gets `NET_RAW` capability for nmap/naabu port scanning.
 
-> **SQLite constraint:** `ReadWriteOnce` PVC limits both pods to the same node. `replicas: 1` is required. To scale horizontally, migrate to PostgreSQL.
+> **SQLite constraint:** `replicas: 1` is required. To scale horizontally, migrate to PostgreSQL.
 
 #### Health check
 

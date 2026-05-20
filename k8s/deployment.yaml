@@ -1,34 +1,37 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: openeasd-web
+  name: openeasd
   namespace: openeasd
   labels:
     app: openeasd
-    component: web
 spec:
-  # SQLite (RWO PVC) — must stay at 1 replica.
-  # To scale horizontally, migrate to PostgreSQL and increase replicas.
+  # SQLite (RWO PVC) — single replica required.
+  # To scale horizontally, migrate to PostgreSQL.
   replicas: 1
   selector:
     matchLabels:
       app: openeasd
-      component: web
   template:
     metadata:
       labels:
         app: openeasd
-        component: web
     spec:
-      # Co-locate web and worker on the same node so both can mount the RWO PVC
-      affinity:
-        podAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchLabels:
-                  app: openeasd
-                  component: worker
-              topologyKey: kubernetes.io/hostname
+      initContainers:
+        - name: init
+          image: ghcr.io/cybersecify/openeasd:latest
+          command: ["./docker-entrypoint.sh", "true"]
+          envFrom:
+            - configMapRef:
+                name: openeasd-config
+            - secretRef:
+                name: openeasd-secret
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: logs
+              mountPath: /app/logs
+
       containers:
         - name: web
           image: ghcr.io/cybersecify/openeasd:latest
@@ -59,7 +62,7 @@ spec:
             httpGet:
               path: /health/
               port: 8000
-            initialDelaySeconds: 15
+            initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:
@@ -76,6 +79,35 @@ spec:
             limits:
               cpu: "1000m"
               memory: "512Mi"
+
+        - name: worker
+          image: ghcr.io/cybersecify/openeasd:latest
+          command:
+            - python
+            - manage.py
+            - qcluster
+          envFrom:
+            - configMapRef:
+                name: openeasd-config
+            - secretRef:
+                name: openeasd-secret
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: logs
+              mountPath: /app/logs
+          securityContext:
+            capabilities:
+              add:
+                - NET_RAW   # required for nmap and naabu port scanning
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "1Gi"
+
       volumes:
         - name: data
           persistentVolumeClaim:
