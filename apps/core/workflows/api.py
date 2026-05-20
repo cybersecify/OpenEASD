@@ -160,6 +160,23 @@ def update_workflow(request, pk: int, data: WorkflowIn):
     return _serialize_workflow(workflow)
 
 
+class WorkflowRenameIn(Schema):
+    name: str
+    description: str = ""
+
+
+@router.post("/{pk}/rename/")
+def rename_workflow(request, pk: int, data: WorkflowRenameIn):
+    workflow = get_object_or_404(Workflow, pk=pk)
+    name = data.name.strip()
+    if not name:
+        raise HttpError(400, "name is required")
+    workflow.name = name
+    workflow.description = data.description.strip()
+    workflow.save(update_fields=["name", "description", "updated_at"])
+    return _serialize_workflow(workflow)
+
+
 @router.post("/{pk}/delete/")
 def delete_workflow(request, pk: int):
     workflow = get_object_or_404(Workflow, pk=pk)
@@ -172,6 +189,9 @@ def delete_workflow(request, pk: int):
 
 @router.post("/{pk}/steps/{tool}/toggle/")
 def toggle_step(request, pk: int, tool: str):
+    valid_tools = {key for key, _ in get_tool_choices()}
+    if tool not in valid_tools:
+        raise HttpError(400, f"Unknown tool: {tool}")
     workflow = get_object_or_404(Workflow, pk=pk)
     step, _ = WorkflowStep.objects.get_or_create(
         workflow=workflow,

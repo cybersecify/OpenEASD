@@ -307,10 +307,14 @@ def start_scan(request, data: ScanStartRequest):
             scheduled_at = datetime.datetime.fromisoformat(data.scheduled_at)
         except ValueError:
             raise HttpError(400, "Invalid ISO datetime format for scheduled_at")
+        if scheduled_at.tzinfo is None:
+            scheduled_at = timezone.make_aware(scheduled_at)
         _schedule_once(domain, scheduled_at)
         return Status(201, {"scheduled_at": scheduled_at.isoformat()})
 
     elif data.schedule_type == "recurring":
+        if data.recurrence not in ("daily", "weekly"):
+            raise HttpError(400, "recurrence must be 'daily' or 'weekly'")
         try:
             recurrence_time = datetime.datetime.strptime(data.recurrence_time, "%H:%M").time()
         except ValueError:
@@ -338,10 +342,14 @@ def list_findings(
     if not session_id:
         base_qs = base_qs.filter(session_id__in=latest_ids)
 
-    count_open_critical = Finding.objects.filter(session_id__in=latest_ids, status="open", severity="critical").count()
-    count_open_high = Finding.objects.filter(session_id__in=latest_ids, status="open", severity="high").count()
-    count_open_medium = Finding.objects.filter(session_id__in=latest_ids, status="open", severity="medium").count()
-    count_open_low = Finding.objects.filter(session_id__in=latest_ids, status="open", severity="low").count()
+    if session_id:
+        count_base = Finding.objects.filter(session_id=session_id, status="open")
+    else:
+        count_base = Finding.objects.filter(session_id__in=latest_ids, status="open")
+    count_open_critical = count_base.filter(severity="critical").count()
+    count_open_high     = count_base.filter(severity="high").count()
+    count_open_medium   = count_base.filter(severity="medium").count()
+    count_open_low      = count_base.filter(severity="low").count()
 
     qs = base_qs.order_by(
         models.Case(
@@ -389,15 +397,15 @@ def list_findings(
 def list_urls(
     request,
     domain: str = "",
-    session_uuid: str = "",
+    session_uuid: uuid.UUID | None = None,
     scheme: str = "",
     status_code: str = "",
     page: int = 1,
 ):
     from apps.core.web_assets.models import URL
 
-    if session_uuid:
-        session = get_object_or_404(ScanSession, uuid=session_uuid)
+    if session_uuid is not None:
+        session = get_object_or_404(ScanSession, uuid=str(session_uuid))
         qs = URL.objects.filter(session=session)
     else:
         latest_ids = latest_session_ids()
@@ -459,12 +467,12 @@ def update_finding_status(request, finding_id: int, data: FindingStatusRequest):
 
 
 @router.get("/{session_uuid}/")
-def scan_detail(request, session_uuid: str):
+def scan_detail(request, session_uuid: uuid.UUID):
     from apps.core.assets.models import IPAddress, Port, Subdomain
     from apps.core.findings.models import Finding
     from apps.core.web_assets.models import URL
 
-    session = get_object_or_404(ScanSession, uuid=session_uuid)
+    session = get_object_or_404(ScanSession, uuid=str(session_uuid))
     vuln_counts = _get_vuln_counts(session)
 
     subdomains = list(Subdomain.objects.filter(session=session).order_by("-is_active", "subdomain"))
@@ -509,12 +517,12 @@ def scan_detail(request, session_uuid: str):
 
 
 @router.get("/{session_uuid}/status/")
-def scan_status(request, session_uuid: str):
+def scan_status(request, session_uuid: uuid.UUID):
     from apps.core.assets.models import IPAddress, Port, Subdomain
     from apps.core.findings.models import Finding
     from apps.core.web_assets.models import URL
 
-    session = get_object_or_404(ScanSession, uuid=session_uuid)
+    session = get_object_or_404(ScanSession, uuid=str(session_uuid))
     vuln_counts = _get_vuln_counts(session)
 
     sub_agg = Subdomain.objects.filter(session=session).aggregate(
@@ -550,8 +558,8 @@ def scan_status(request, session_uuid: str):
 
 
 @router.post("/{session_uuid}/stop/")
-def stop_scan(request, session_uuid: str):
-    session = get_object_or_404(ScanSession, uuid=session_uuid)
+def stop_scan(request, session_uuid: uuid.UUID):
+    session = get_object_or_404(ScanSession, uuid=str(session_uuid))
     if session.status in ("pending", "running"):
         session.status = "cancelled"
         session.end_time = timezone.now()
@@ -561,8 +569,8 @@ def stop_scan(request, session_uuid: str):
 
 
 @router.post("/{session_uuid}/delete/")
-def delete_scan(request, session_uuid: str):
-    session = get_object_or_404(ScanSession, uuid=session_uuid)
+def delete_scan(request, session_uuid: uuid.UUID):
+    session = get_object_or_404(ScanSession, uuid=str(session_uuid))
     if session.status in ("pending", "running"):
         raise HttpError(409, "Cannot delete — scan is currently active. Stop it first.")
     session.delete()

@@ -29,7 +29,7 @@ export default function WorkflowDetailPage() {
 
   async function handleSave(e) {
     e.preventDefault(); setSaving(true);
-    try { await apiPost(`/workflows/${id}/update/`, { name: name.trim(), description: desc.trim() }); toast.success('Updated.'); refetch(); }
+    try { await apiPost(`/workflows/${id}/rename/`, { name: name.trim(), description: desc.trim() }); toast.success('Updated.'); refetch(); }
     catch (e) { toast.error(e.message || 'Update failed.'); }
     finally { setSaving(false); }
   }
