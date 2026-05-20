@@ -101,6 +101,17 @@ docker run -d \
 ### First login
 On first run, `main.py` creates `admin/admin` with `must_change_password=True`. The React app redirects to `/change-password` before allowing access. On every startup, if the default password is still in use, the flag is re-set.
 
+### microk8s deployment (host IP changed)
+If the host IP changes, microk8s certs and kubeconfigs reference the old IP and the cluster goes "not running":
+1. Update IP-SAN in `/var/snap/microk8s/current/certs/csr.conf.template` (the `IP.3` line), then `sudo microk8s refresh-certs --cert server.crt`.
+2. `refresh-certs` does **not** rewrite the client kubeconfigs — sed-replace the old `server: https://<old-ip>:16443` in `/var/snap/microk8s/current/credentials/{client,kubelet,controller,scheduler,proxy}.config`.
+3. `refresh-certs` also does **not** cover `kubelet.crt` (the kubelet's serving cert) — regenerate it manually with openssl, signed by `ca.crt`/`ca.key`, with Subject `CN=system:node:<hostname>, O=system:nodes` and SANs `DNS:<hostname>, IP:<new-host-ip>, IP:127.0.0.1`. Without this, `kubectl logs`/`exec` fail with "certificate is valid for <old-ip>".
+4. Restart with `sudo microk8s stop && sudo microk8s start` (or just `systemctl restart snap.microk8s.daemon-kubelite` if only kubelet.crt changed).
+5. Backups from `microk8s refresh-certs` land in `/var/snap/microk8s/<rev>/certs-backup/`; manual kubelet regen leaves `kubelet.crt.bak.<epoch>` next to the new cert.
+
+### microk8s + host Caddy
+Don't enable the `ingress` addon if the host already runs Caddy on :80/:443 — the nginx-ingress DaemonSet uses `hostPort` 80/443, and CNI portmap iptables intercept all traffic in PREROUTING before it reaches Caddy, silently breaking every Caddy site. Instead: expose the service as `NodePort` (e.g. 30808) and have Caddy `reverse_proxy localhost:<nodeport>`. The probe still needs `httpHeaders: [{name: Host, value: <ALLOWED_HOSTS-entry>}]` because kubelet sends the pod IP as Host by default and Django rejects it with 400.
+
 ### Scheduler
 - Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (uses `TIME_ZONE` in settings, default 02:00)
 - Configured via env vars: `SCAN_DAILY_HOUR`, `SCAN_DAILY_MINUTE`
