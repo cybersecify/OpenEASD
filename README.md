@@ -91,10 +91,35 @@ docker run -d \
   -p 8000:8000 \
   -v openeasd-data:/app/data \
   -v openeasd-logs:/app/logs \
+  -e SECRET_KEY="change-me-to-a-long-random-string" \
+  --name openeasd \
   ghcr.io/cybersecify/openeasd:latest
 ```
 
 Open http://localhost:8000, log in with `admin` / `admin`, change the password.
+
+#### Update to latest
+
+```bash
+docker pull ghcr.io/cybersecify/openeasd:latest
+docker stop openeasd && docker rm openeasd
+# re-run the docker run command above — volumes preserve all data
+```
+
+#### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `SECRET_KEY` | insecure default | Django secret key — **set this in production** |
+| `ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated hostnames (add your server IP/domain) |
+| `CSRF_TRUSTED_ORIGINS` | — | Required if accessing via a domain, e.g. `https://openeasd.example.com` |
+| `DEBUG` | `False` | Set `True` only for local development |
+| `DB_NAME` | `data/openeasd.db` | SQLite path relative to `/app` |
+| `SLACK_WEBHOOK_URL` | — | Slack incoming webhook for scan alerts |
+| `MS_TEAMS_WEBHOOK_URL` | — | Teams incoming webhook for scan alerts |
+| `ALERT_SEVERITY_THRESHOLD` | `high` | Minimum severity to trigger alerts (`critical`/`high`/`medium`/`low`) |
+| `SCAN_DAILY_HOUR` | `2` | Hour for daily scheduled scans (24h, UTC) |
+| `SCAN_DAILY_MINUTE` | `0` | Minute for daily scheduled scans |
 
 ### Prerequisites (from source)
 
