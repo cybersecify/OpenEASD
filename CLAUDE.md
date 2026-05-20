@@ -15,6 +15,11 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
   3. Tag it: `git tag -a v0.x -m "description"`
   4. Push: `git push origin main --tags`
 
+## CI (GitHub Actions)
+- Pipeline: `.github/workflows/ci.yml` — runs on every push to `main`
+- Steps: pytest (fast, excludes `test_domain_security.py`), bandit (SAST), pip-audit (CVE scan)
+- Runner: `ubuntu-24.04`, Python 3.12, `uv sync` for deps, `libcairo2-dev gcc` system deps required for cairo/weasyprint
+
 ## Commands
 - Always use `uv run python` instead of `python` or `python3`
 - Always use `uv run manage.py` for Django management commands (e.g. `uv run manage.py check`)
@@ -34,12 +39,15 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 
 ### Frontend (React SPA — new primary UI)
 - **React 18 + Vite** — `frontend/` directory, builds to `frontend/dist/`
+- **shadcn/ui** — component library on top of Tailwind CSS 3 + Radix UI; CSS variables in `src/index.css`; components in `src/components/ui/`
 - Vanilla popstate-based router in `App.jsx` (no react-router)
 - JWT `apiFetch` in `src/api/client.js` — sends `Authorization: Bearer <token>` header; 401 clears tokens and redirects to `/login`
 - `auth.js` — isolated localStorage helpers (`getToken`, `setTokens`, `clear`, `isLoggedIn`)
 - `useFetch` / `usePolling` hooks for data fetching and live scan status (3s poll)
-- Shared components: `Badge`, `Spinner`, `Pagination`, `ConfirmButton`, `Notification`
-- Dark theme throughout: bg `#0d1117`, card `#161b22`, border `#30363d`, accent `#30c074`
+- **Shared components:** `Badge` (cva severity/status variants), `Spinner`, `Pagination`, `ConfirmButton` (AlertDialog), `Notification` (re-exports sonner `toast`)
+- **shadcn UI primitives** (`src/components/ui/`): `Button`, `Card`, `Table`, `Badge`, `AlertDialog`, `Pagination`, `Sonner`
+- **Toast notifications:** `import { toast } from '../components/Notification.jsx'` → `toast.success()` / `toast.error()`; `<Toaster>` mounted in `main.jsx`
+- Dark theme throughout: bg `#0d1117`, card `#161b22`, border `#30363d`, accent `#30c074`; mapped to shadcn CSS vars (`--background`, `--card`, `--border`, `--primary`)
 - **Dev:** Vite proxy forwards `/api/` → Django on port 8000 (no CORS config needed)
 - **Prod:** `npm run build` → `frontend/dist/` → served by Django `STATICFILES_DIRS`
 
