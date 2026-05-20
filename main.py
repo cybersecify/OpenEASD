@@ -134,7 +134,29 @@ def ensure_superuser():
             env={**os.environ, "DJANGO_SETTINGS_MODULE": "openeasd.settings"},
         )
     else:
-        print("  ✓ Admin user exists")
+        # Existing install: flag must_change_password if still using default password
+        flag_script = (
+            "import django; django.setup();"
+            "from django.contrib.auth import get_user_model; U = get_user_model();"
+            "from apps.core.dashboard.models import UserProfile;"
+            "u = U.objects.filter(username='admin').first();"
+            "if u and u.check_password('admin'):"
+            "    p, _ = UserProfile.objects.get_or_create(user=u);"
+            "    p.must_change_password = True; p.save();"
+            "    print('flagged');"
+            "else: print('ok')"
+        )
+        result2 = subprocess.run(
+            [sys.executable, "-c", flag_script],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "DJANGO_SETTINGS_MODULE": "openeasd.settings"},
+        )
+        if result2.stdout.strip() == "flagged":
+            print("  ⚠  Default password detected — user will be prompted to change it on next login.")
+        else:
+            print("  ✓ Admin user exists")
 
 
 def run_server(port: int, with_worker: bool):
