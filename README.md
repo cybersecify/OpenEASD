@@ -168,39 +168,6 @@ docker run -d \
 
 Open `http://<PUBLIC_IP>:8000`. The `arm64` image runs natively on Ampere hardware.
 
-### Deploy on Fly.io
-
-A `fly.toml` is included. Requires a [Fly.io](https://fly.io) account (free tier: 3 shared VMs, 3GB volume).
-
-> **Note:** Fly.io's 256MB free VMs OOM with Django + Django-Q2 worker. Use 512MB (~$2/month) or `--no-worker` flag.
-
-**1. Install flyctl and log in**
-```bash
-curl -L https://fly.io/install.sh | sh
-fly auth login
-```
-
-**2. Create app, set secrets, create volume**
-```bash
-fly apps create openeasd
-fly secrets set \
-  SECRET_KEY="$(openssl rand -hex 32)" \
-  CSRF_TRUSTED_ORIGINS="https://openeasd.fly.dev"
-fly volumes create openeasd_data --region sin --size 3 --yes
-```
-
-**3. Deploy**
-```bash
-fly deploy
-```
-
-Open `https://openeasd.fly.dev` — log in with `admin/admin` and change the password.
-
-**Update to latest image:**
-```bash
-fly deploy
-```
-
 ### Prerequisites (from source)
 
 - Python 3.11+
