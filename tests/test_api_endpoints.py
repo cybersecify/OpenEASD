@@ -83,6 +83,24 @@ def workflow(db):
 
 
 # ---------------------------------------------------------------------------
+# Health check (K8s probe endpoint)
+# ---------------------------------------------------------------------------
+
+class TestHealthEndpoint:
+    def test_returns_200(self, client):
+        res = client.get("/health/")
+        assert res.status_code == 200
+
+    def test_returns_ok_status(self, client):
+        assert client.get("/health/").json() == {"status": "ok"}
+
+    def test_no_auth_required(self, client):
+        # Must be accessible without a token — used by K8s liveness/readiness probes
+        res = client.get("/health/")
+        assert res.status_code == 200
+
+
+# ---------------------------------------------------------------------------
 # Auth endpoints
 # ---------------------------------------------------------------------------
 
