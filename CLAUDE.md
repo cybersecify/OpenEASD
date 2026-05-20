@@ -101,12 +101,6 @@ docker run -d \
 ### First login
 On first run, `main.py` creates `admin/admin` with `must_change_password=True`. The React app redirects to `/change-password` before allowing access. On every startup, if the default password is still in use, the flag is re-set.
 
-### Oracle Cloud Free Tier (recommended free host)
-- Shape: `VM.Standard.A1.Flex` (Ampere ARM) — 2 OCPUs / 12GB RAM, always free
-- The `arm64` image runs natively — no emulation
-- Open TCP 8000 in VCN Security List and `iptables` (see README for full steps)
-- Add `ALLOWED_HOSTS=<PUBLIC_IP>,localhost` to the docker run command
-
 ### Scheduler
 - Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (uses `TIME_ZONE` in settings, default 02:00)
 - Configured via env vars: `SCAN_DAILY_HOUR`, `SCAN_DAILY_MINUTE`
