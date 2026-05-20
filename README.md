@@ -2,6 +2,7 @@
 
 [![GitHub Stars](https://img.shields.io/github/stars/cybersecify/OpenEASD?style=social)](https://github.com/cybersecify/OpenEASD/stargazers)
 [![CI](https://github.com/cybersecify/OpenEASD/actions/workflows/ci.yml/badge.svg)](https://github.com/cybersecify/OpenEASD/actions/workflows/ci.yml)
+[![Docker Image](https://ghcr-badge.egpl.dev/cybersecify/openeasd/latest_tag?trim=major&label=ghcr.io)](https://github.com/cybersecify/OpenEASD/pkgs/container/openeasd)
 
 **Open External Attack Surface Detection** - An automated platform for discovering and analyzing your organization's external attack surface.
 
@@ -83,7 +84,19 @@ frontend/               - React 18 + Vite SPA
 
 ## Quick Start
 
-### Prerequisites
+### Docker (recommended)
+
+```bash
+docker run -d \
+  -p 8000:8000 \
+  -v openeasd-data:/app/data \
+  -v openeasd-logs:/app/logs \
+  ghcr.io/cybersecify/openeasd:latest
+```
+
+Open http://localhost:8000, log in with `admin` / `admin`, change the password.
+
+### Prerequisites (from source)
 
 - Python 3.11+
 - Node.js 18+ (for frontend)
