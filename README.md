@@ -1,5 +1,8 @@
 # OpenEASD
 
+[![GitHub Stars](https://img.shields.io/github/stars/cybersecify/OpenEASD?style=social)](https://github.com/cybersecify/OpenEASD/stargazers)
+[![CI](https://github.com/cybersecify/OpenEASD/actions/workflows/ci.yml/badge.svg)](https://github.com/cybersecify/OpenEASD/actions/workflows/ci.yml)
+
 **Open External Attack Surface Detection** - An automated platform for discovering and analyzing your organization's external attack surface.
 
 OpenEASD scans domains to discover subdomains, resolve IPs, scan ports, detect services, and find vulnerabilities across your network attack surface.
