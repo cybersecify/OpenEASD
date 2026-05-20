@@ -1,21 +1,28 @@
 import { auth } from '../auth.js';
 
+let _refreshPromise = null;
+
 async function _tryRefresh() {
-  const refresh = auth.getRefresh();
-  if (!refresh) return false;
-  try {
-    const res = await fetch('/api/token/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh }),
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    auth.setTokens(data.access, refresh);
-    return true;
-  } catch {
-    return false;
+  if (!_refreshPromise) {
+    _refreshPromise = (async () => {
+      const refresh = auth.getRefresh();
+      if (!refresh) return false;
+      try {
+        const res = await fetch('/api/token/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh }),
+        });
+        if (!res.ok) return false;
+        const data = await res.json();
+        auth.setTokens(data.access, refresh);
+        return true;
+      } catch {
+        return false;
+      }
+    })().finally(() => { _refreshPromise = null; });
   }
+  return _refreshPromise;
 }
 
 async function _doFetch(path, options, token) {

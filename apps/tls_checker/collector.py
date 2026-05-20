@@ -13,7 +13,6 @@ Inherently insecure protocols (Telnet, rsh, etc.) always flagged without probing
 """
 
 import ftplib  # nosec B402 — intentional: probing FTP servers to detect their exposure
-import http.client
 import imaplib
 import logging
 import poplib
@@ -129,32 +128,6 @@ def _tls_context() -> ssl.SSLContext:
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
-
-
-def _check_hsts(ip: str, port: int, host: str) -> str | None:
-    """
-    Make an HTTPS HEAD request and return the Strict-Transport-Security header value.
-
-    Returns None if HSTS is absent or if the connection fails.
-    Uses the provided host for the HTTP Host header (supports virtual hosting / CDN).
-    """
-    try:
-        conn = http.client.HTTPSConnection(
-            ip, port, timeout=PROBE_TIMEOUT, context=_tls_context()
-        )
-        conn.request("HEAD", "/", headers={"Host": host, "User-Agent": "openeasd-tls-checker/1.0"})
-        resp = conn.getresponse()
-        return resp.getheader("Strict-Transport-Security")
-    except (OSError, ssl.SSLError, http.client.HTTPException):
-        return None
-    except Exception as e:
-        logger.debug(f"[tls_checker] HSTS check failed on {ip}:{port}: {type(e).__name__}: {e}")
-        return None
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
 
 
 def _parse_cert_details(der_bytes: bytes, hostname: str | None = None) -> dict:
