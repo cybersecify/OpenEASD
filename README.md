@@ -91,7 +91,7 @@ docker run -d \
   -p 8000:8000 \
   -v openeasd-data:/app/data \
   -v openeasd-logs:/app/logs \
-  ghcr.io/cybersecify/openeasd:latest
+  ghcr.io/rathnakaragn/openeasd:latest
 ```
 
 Open http://localhost:8000, log in with `admin` / `admin`, change the password.

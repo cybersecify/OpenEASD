@@ -111,7 +111,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/cybersecify/openeasd
+          images: ghcr.io/rathnakaragn/openeasd
           tags: |
             type=ref,event=tag
             type=raw,value=latest,enable={{is_default_branch}}
