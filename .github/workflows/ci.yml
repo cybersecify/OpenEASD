@@ -39,8 +39,8 @@ jobs:
         # -ll = LOW+ severity only (skip INFO noise); -x = exclude test dirs
 
       - name: Dependency vulnerability scan — pip-audit
-        run: uv run pip-audit
-        # Reports CVEs in installed packages; non-zero exit fails the build
+        run: uv run pip-audit --ignore-vuln PYSEC-2025-183
+        # PYSEC-2025-183 (pyjwt weak key length) is disputed by PyJWT maintainers — no fix available
 
   frontend:
     name: Frontend Build
