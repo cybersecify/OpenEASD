@@ -139,8 +139,80 @@ class TestAuthUser:
         assert data["username"] == "apitest"
         assert "id" in data
 
+    def test_must_change_password_false_by_default(self, auth_client, user):
+        res = auth_client.get("/api/user/")
+        assert res.status_code == 200
+        assert res.json()["must_change_password"] is False
+
+    def test_must_change_password_true_when_flagged(self, auth_client, user):
+        from apps.core.dashboard.models import UserProfile
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.must_change_password = True
+        profile.save()
+        res = auth_client.get("/api/user/")
+        assert res.json()["must_change_password"] is True
+
     def test_requires_auth(self, client):
         res = client.get("/api/user/")
+        assert res.status_code == 401
+
+
+class TestChangePassword:
+    def test_success(self, auth_client, user):
+        res = post_json(auth_client, "/api/user/change-password/", {
+            "current_password": "pass123",
+            "new_password": "newpass456",
+        })
+        assert res.status_code == 200
+        assert res.json()["ok"] is True
+        user.refresh_from_db()
+        assert user.check_password("newpass456")
+
+    def test_wrong_current_password_returns_400(self, auth_client, user):
+        res = post_json(auth_client, "/api/user/change-password/", {
+            "current_password": "wrongpassword",
+            "new_password": "newpass456",
+        })
+        assert res.status_code == 400
+        assert "incorrect" in res.json()["error"]["message"].lower()
+
+    def test_too_short_new_password_returns_400(self, auth_client, user):
+        res = post_json(auth_client, "/api/user/change-password/", {
+            "current_password": "pass123",
+            "new_password": "short",
+        })
+        assert res.status_code == 400
+        assert "8 characters" in res.json()["error"]["message"]
+
+    def test_same_password_returns_400(self, client, db):
+        # Use an 8-char password so length check doesn't fire first
+        u = User.objects.create_user(username="samepass", password="longpass1")
+        token = str(AccessToken.for_user(u))
+        client.defaults["HTTP_AUTHORIZATION"] = f"Bearer {token}"
+        res = post_json(client, "/api/user/change-password/", {
+            "current_password": "longpass1",
+            "new_password": "longpass1",
+        })
+        assert res.status_code == 400
+        assert "differ" in res.json()["error"]["message"].lower()
+
+    def test_clears_must_change_password_flag(self, auth_client, user):
+        from apps.core.dashboard.models import UserProfile
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.must_change_password = True
+        profile.save()
+        post_json(auth_client, "/api/user/change-password/", {
+            "current_password": "pass123",
+            "new_password": "newpass456",
+        })
+        profile.refresh_from_db()
+        assert profile.must_change_password is False
+
+    def test_requires_auth(self, client):
+        res = post_json(client, "/api/user/change-password/", {
+            "current_password": "pass123",
+            "new_password": "newpass456",
+        })
         assert res.status_code == 401
 
 
