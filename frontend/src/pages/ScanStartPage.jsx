@@ -27,7 +27,7 @@ export default function ScanStartPage() {
 
   useEffect(() => {
     if (defaultWf && !workflowId) setWorkflow(String(defaultWf.id));
-  }, [defaultWf]);
+  }, [defaultWf, workflowId]);
 
   async function handleSubmit(e) {
     e.preventDefault();

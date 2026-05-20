@@ -26,7 +26,7 @@ function StatusEditor({ findingId, current, onUpdated }) {
     setSaving(true);
     try {
       await apiPost(`/scans/findings/${findingId}/status/`, { status: val });
-      onUpdated(findingId, val);
+      onUpdated();
     } finally { setSaving(false); setEditing(false); }
   }
 

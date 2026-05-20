@@ -511,7 +511,6 @@ def scan_detail(request, session_uuid: uuid.UUID):
             "ips": len(ips),
             "ports": len(ports),
             "urls": len(urls),
-            "nmap_findings": len(nmap_findings),
         },
     }
 
@@ -535,7 +534,6 @@ def scan_status(request, session_uuid: uuid.UUID):
         "ips": IPAddress.objects.filter(session=session).count(),
         "ports": Port.objects.filter(session=session).count(),
         "urls": URL.objects.filter(session=session).count(),
-        "nmap_findings": Finding.objects.filter(session=session, source="nmap").count(),
     }
 
     step_results = []

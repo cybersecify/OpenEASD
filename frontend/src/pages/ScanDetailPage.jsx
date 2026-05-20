@@ -83,7 +83,7 @@ export default function ScanDetailPage() {
       refetch();
     }
     prevPollStatusRef.current = pollStatus;
-  }, [statusData]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [statusData, refetch]);
 
   async function handleStop() {
     setBusy(true);
