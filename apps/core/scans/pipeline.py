@@ -171,6 +171,18 @@ def run_scan(session_id: int):
     session.save(update_fields=["status"])
     logger.info(f"[scan:{session_id}] Starting scan for {session.domain}")
 
+    # Seed the input domain itself into the Subdomain pool so the downstream
+    # pipeline (dnsx → naabu → service_detection → nmap/tls/ssh/nuclei_network →
+    # httpx → nuclei/web_checker) has something to work with when subfinder/amass
+    # find no children. Without this, scanning a leaf host (e.g. scanme.nmap.org)
+    # or any domain with no public subdomains produces only domain_security findings.
+    from apps.core.assets.models import Subdomain
+    Subdomain.objects.get_or_create(
+        session=session,
+        subdomain=session.domain,
+        defaults={"domain": session.domain, "source": "seed"},
+    )
+
     try:
         _run_via_workflow(session)
         session.refresh_from_db(fields=["status"])

@@ -1,6 +1,5 @@
 """Central Django Ninja API instance for OpenEASD."""
 
-from django.conf import settings
 from django.http import JsonResponse
 from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError, ValidationError
@@ -10,7 +9,7 @@ from ninja_jwt.routers.blacklist import blacklist_router  # POST /blacklist
 from ninja_jwt.authentication import JWTAuth
 from ninja_jwt.exceptions import AuthenticationFailed as JWTAuthenticationFailed, TokenError
 
-api = NinjaAPI(title="OpenEASD API", version="1.0", docs_url="/docs" if settings.DEBUG else None)
+api = NinjaAPI(title="OpenEASD API", version="1.0", docs_url="/docs")
 
 _STATUS_CODES = {
     400: "BAD_REQUEST",

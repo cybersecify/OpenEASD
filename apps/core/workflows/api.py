@@ -9,7 +9,12 @@ from ninja.errors import HttpError
 
 from ninja_jwt.authentication import JWTAuth
 from apps.core.workflows.models import Workflow, WorkflowStep
-from apps.core.workflows.registry import get_tool_choices, get_tool_phases, get_tool_requires
+from apps.core.workflows.registry import (
+    get_tool_choices,
+    get_tool_phases,
+    get_tool_produces_findings,
+    get_tool_requires,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +51,15 @@ def _serialize_step_result(sr) -> dict:
 
 @router.get("/tools/")
 def list_tools(request):
+    phases = get_tool_phases()
+    produces = get_tool_produces_findings()
     tools = [
-        {"key": key, "label": label, "phase": get_tool_phases().get(key, 99)}
+        {
+            "key": key,
+            "label": label,
+            "phase": phases.get(key, 99),
+            "produces_findings": produces.get(key, False),
+        }
         for key, label in get_tool_choices()
     ]
     return {"tools": tools, "requires": get_tool_requires()}

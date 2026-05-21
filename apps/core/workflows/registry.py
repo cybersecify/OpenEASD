@@ -82,6 +82,11 @@ def get_tool_requires() -> dict[str, list[str]]:
     return {name: info["requires"] for name, info in get_registry().items()}
 
 
+def get_tool_produces_findings() -> dict[str, bool]:
+    """Dynamic map: tool_name → whether the tool writes to the Finding table."""
+    return {name: info["produces_findings"] for name, info in get_registry().items()}
+
+
 def get_source_choices() -> list[tuple[str, str]]:
     """Dynamic SOURCE_CHOICES for Finding.source field."""
     reg = get_registry()

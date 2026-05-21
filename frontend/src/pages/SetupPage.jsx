@@ -71,7 +71,7 @@ export default function SetupPage() {
           <>
             <h1 className="text-lit font-bold text-xl mb-1">Welcome to OpenEASD</h1>
             <p className="text-dim text-sm mb-6">
-              Set a new password before you start scanning.
+              First-time login uses <code className="font-mono text-lit">admin</code> / <code className="font-mono text-lit">admin</code>. Enter it once below to confirm, then set your new password.
             </p>
             {pwError && (
               <div className="mb-4 px-3 py-2 rounded-md bg-red-900/40 border border-red-700 text-red-400 text-sm">
