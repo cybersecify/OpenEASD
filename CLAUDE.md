@@ -98,8 +98,48 @@ docker run -d \
 - Volumes: `openeasd-data` (SQLite DB) and `openeasd-logs` persist across container replacements
 - Static files served by WhiteNoise (no nginx needed)
 
+### Kubernetes
+Manifests in `k8s/`. Deploy with `kubectl apply -k k8s/`.
+
+**Pod layout — single Deployment, single Pod, two containers:**
+```
+initContainer: init    → migrate + collectstatic + admin user setup (docker-entrypoint.sh)
+container: web         → gunicorn openeasd.wsgi:application --bind 0.0.0.0:8000 --workers 2
+container: worker      → python manage.py qcluster  (NET_RAW capability for nmap/naabu)
+```
+
+**Files:**
+```
+k8s/
+  namespace.yaml        — openeasd namespace
+  configmap.yaml        — env vars (ALLOWED_HOSTS, CSRF_TRUSTED_ORIGINS, etc.)
+  secret.yaml           — SECRET_KEY template (fill in before applying)
+  pvc.yaml              — openeasd-data (10Gi) + openeasd-logs (2Gi), RWO
+  deployment.yaml       — single pod with init + web + worker containers
+  service.yaml          — ClusterIP, port 80 → 8000
+  ingress.yaml          — nginx Ingress; TLS annotations ready to uncomment
+  kustomization.yaml    — kubectl apply -k k8s/
+```
+
+**Key constraints:**
+- `replicas: 1` required — SQLite RWO PVC allows single-node access only
+- Only `worker` container gets `NET_RAW`; `web` does not need it
+- `GET /health/` — unauthenticated endpoint used by K8s readiness/liveness probes
+
+**Update running deployment:**
+```bash
+kubectl rollout restart deployment/openeasd -n openeasd
+```
+
+### docker-entrypoint.sh
+Runs on every container start (init container in K8s, or `CMD` override in Docker):
+1. `manage.py migrate --run-syncdb`
+2. `manage.py collectstatic --noinput --clear`
+3. Creates `admin/admin` with `must_change_password=True` if no users exist; re-flags if default password still in use
+4. `exec "$@"` — hands off to the actual process
+
 ### First login
-On first run, `main.py` creates `admin/admin` with `must_change_password=True`. The React app redirects to `/change-password` before allowing access. On every startup, if the default password is still in use, the flag is re-set.
+`docker-entrypoint.sh` creates `admin/admin` with `must_change_password=True` on first run. The React app redirects to `/change-password` before allowing access. On every startup, if the default password is still in use, the flag is re-set.
 
 ### microk8s deployment (host IP changed)
 If the host IP changes, microk8s certs and kubeconfigs reference the old IP and the cluster goes "not running":
