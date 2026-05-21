@@ -3,7 +3,7 @@ kind: Kustomization
 namespace: default
 images:
   - name: ghcr.io/cybersecify/openeasd
-    newTag: v0.3
+    newTag: v0.4
 resources:
   - configmap.yaml
   - pvc.yaml
