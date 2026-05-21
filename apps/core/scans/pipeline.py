@@ -161,6 +161,64 @@ def create_scan_session(domain: str, triggered_by: str = "manual", workflow=None
 
 
 # ---------------------------------------------------------------------------
+# Apex domain seed — guarantees the downstream pipeline has work to do even
+# when subfinder/amass find no children (leaf hosts, new domains, etc.).
+# ---------------------------------------------------------------------------
+
+def _seed_apex_into_assets(session) -> None:
+    """Insert the scan's input domain as a Subdomain + resolve its public IPs.
+
+    The Subdomain insert alone isn't enough — dnsx has been observed silently
+    returning 0 records for a single-host input list when invoked from the
+    Django-Q worker (works fine in a bare subprocess). Resolving here with
+    dnspython sidesteps that and guarantees the apex flows downstream into
+    naabu / service_detection / nmap / tls / ssh / nuclei_network.
+    """
+    import ipaddress
+    import dns.resolver
+
+    from apps.core.assets.models import IPAddress, Subdomain
+    from django.utils import timezone as django_tz
+
+    sub, _ = Subdomain.objects.get_or_create(
+        session=session,
+        subdomain=session.domain,
+        defaults={"domain": session.domain, "source": "seed"},
+    )
+
+    public_ips: list[tuple[str, int]] = []
+    for rdtype in ("A", "AAAA"):
+        try:
+            for rdata in dns.resolver.resolve(session.domain, rdtype, lifetime=10):
+                ip_str = rdata.to_text()
+                try:
+                    ip = ipaddress.ip_address(ip_str)
+                except ValueError:
+                    continue
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                    continue
+                public_ips.append((ip_str, ip.version))
+        except Exception:
+            # NXDOMAIN, no answer, timeout — all benign; just leave IPs unresolved.
+            continue
+
+    if not public_ips:
+        logger.info(f"[scan:{session.id}] Apex {session.domain} has no public IPs to seed")
+        return
+
+    IPAddress.objects.bulk_create(
+        [IPAddress(session=session, subdomain=sub, address=addr, version=ver, source="seed")
+         for addr, ver in public_ips],
+        ignore_conflicts=True,
+    )
+    if not sub.is_active:
+        sub.is_active = True
+        sub.resolved_at = django_tz.now()
+        sub.save(update_fields=["is_active", "resolved_at"])
+    logger.info(f"[scan:{session.id}] Seeded apex {session.domain} → {len(public_ips)} public IP(s)")
+
+
+# ---------------------------------------------------------------------------
 # Main scan orchestrator
 # ---------------------------------------------------------------------------
 
@@ -171,17 +229,7 @@ def run_scan(session_id: int):
     session.save(update_fields=["status"])
     logger.info(f"[scan:{session_id}] Starting scan for {session.domain}")
 
-    # Seed the input domain itself into the Subdomain pool so the downstream
-    # pipeline (dnsx → naabu → service_detection → nmap/tls/ssh/nuclei_network →
-    # httpx → nuclei/web_checker) has something to work with when subfinder/amass
-    # find no children. Without this, scanning a leaf host (e.g. scanme.nmap.org)
-    # or any domain with no public subdomains produces only domain_security findings.
-    from apps.core.assets.models import Subdomain
-    Subdomain.objects.get_or_create(
-        session=session,
-        subdomain=session.domain,
-        defaults={"domain": session.domain, "source": "seed"},
-    )
+    _seed_apex_into_assets(session)
 
     try:
         _run_via_workflow(session)

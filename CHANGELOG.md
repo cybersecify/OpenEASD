@@ -15,6 +15,27 @@ security learners. The pre-launch work below tightens the load-bearing
 "one `docker run` and it works" promise before any public announcement.
 
 #### Fixed
+- **Apex domain is now resolved Python-side at pipeline start, not relying on dnsx.**
+  Re-test on the all-fixes image showed dnsx still returning 0 records for the
+  seeded apex (took 13s, returncode 0, empty stdout) — even though running the
+  exact same `dnsx -l <file> -a -aaaa -resp -json -silent` command via a bare
+  `python3 -c "subprocess.run(...)"` inside the same container worked in 1
+  second and returned the expected `{"host":"scanme.nmap.org","a":["45.33.32.156"]...}`.
+  The failure mode is only reproducible inside the Django-Q worker process —
+  some interaction we couldn't pin down (signals? cgroup? Goroutine scheduling
+  under the worker fork?). Now: a new `_seed_apex_into_assets()` helper in
+  `apps/core/scans/pipeline.py` uses `dns.resolver.resolve()` (dnspython,
+  already a dependency) to resolve the apex's public A/AAAA records and seed
+  the `IPAddress` table directly, marking the seeded `Subdomain` active.
+  dnsx still runs and still resolves anything subfinder/amass discovered —
+  this is a *guarantee* on the apex case, not a replacement for dnsx.
+  **Why:** the load-bearing first-run experience ("scan my domain → get
+  open ports + web vulns") can't depend on a tool that fails silently in
+  one specific runtime. Python-side resolution is fast (<1s), uses the
+  same NXDOMAIN/timeout semantics, and bypasses the dnsx-in-django-q issue
+  entirely. The dnsx failure is logged for future investigation but no
+  longer blocks the user-visible value.
+
 - **Tool path defaults now use PATH lookup instead of hardcoded pdtm location.**
   Before: `settings.py` set `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`,
   `TOOL_HTTPX`, `TOOL_NUCLEI` to `~/.pdtm/go/bin/<tool>` by default — the
