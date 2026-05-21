@@ -18,7 +18,7 @@ export default function LoginPage() {
       const res = await apiPost('/token/pair', { username, password });
       auth.setTokens(res.access, res.refresh);
       const user = await apiGet('/user/');
-      navigate(user.must_change_password ? '/change-password' : '/');
+      navigate(user.must_change_password ? '/setup' : '/');
     } catch (err) {
       setError(err.data?.error?.message || err.message || 'Login failed');
     } finally {
