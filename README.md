@@ -93,6 +93,7 @@ docker run -d \
   -v openeasd-data:/app/data \
   -v openeasd-logs:/app/logs \
   -e SECRET_KEY="$(openssl rand -hex 32)" \
+  -e ALLOWED_HOSTS="*" \
   --cap-add NET_RAW \
   --restart unless-stopped \
   --name openeasd \
@@ -100,6 +101,8 @@ docker run -d \
 ```
 
 Open http://localhost:8000 — log in with `admin` / `admin`. You will be forced to set a new password before accessing the app.
+
+> **Production note:** `ALLOWED_HOSTS="*"` is fine for evaluation on a private network. For internet-facing deployments, narrow it to your actual hostname or IP (e.g. `ALLOWED_HOSTS="scanner.example.com,127.0.0.1"`) and set `CSRF_TRUSTED_ORIGINS` if accessing over a domain.
 
 #### Update to latest
 
