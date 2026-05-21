@@ -51,7 +51,7 @@ def collect(session, host_ports: list[str]) -> list[dict]:
     logger.info(f"[httpx:{session.id}] Probing {len(host_ports)} host:port pairs")
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL)
     except FileNotFoundError:
         logger.error(f"[httpx:{session.id}] Binary not found: {binary}")
         return []

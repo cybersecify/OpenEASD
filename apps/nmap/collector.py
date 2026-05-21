@@ -37,7 +37,7 @@ def collect(session, ip_to_ports: dict[str, list[int]]) -> dict[str, str]:
         ]
         logger.info(f"[nmap:{session.id}] Scanning {ip} ports {port_list}")
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=360)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=360, stdin=subprocess.DEVNULL)
             if proc.returncode != 0:
                 logger.warning(f"[nmap:{session.id}] {ip} exited with code {proc.returncode}")
                 if proc.stderr:

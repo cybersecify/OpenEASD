@@ -15,6 +15,24 @@ security learners. The pre-launch work below tightens the load-bearing
 "one `docker run` and it works" promise before any public announcement.
 
 #### Fixed
+- **All collector subprocess invocations now pass `stdin=subprocess.DEVNULL`.**
+  Defensive fix applied to all 9 collector callsites: `subfinder`, `amass`,
+  `dnsx`, `naabu`, `httpx`, `nuclei`, `nuclei_network`, `nmap`, and
+  `service_detection`. Without an explicit stdin, the subprocess inherits the
+  parent (Django-Q worker) process's stdin, which has been observed to make
+  Go binaries (dnsx, naabu) hang or silently return 0 records — the exact
+  pattern that produced 0.8-second "full scans" with only DNS findings.
+  **Why:** local reproduction confirmed `stdin=DEVNULL` is the difference
+  between dnsx hanging at 60s and returning records in ~1s when invoked
+  via Python subprocess. The same defensive flag is applied to all
+  collectors uniformly because the failure mode is silent — better to
+  fix it everywhere than chase tool-by-tool. **Honest caveat:** root cause
+  for the underlying behavior was not fully pinned down (Go runtime + stdin
+  inheritance + container networking on macOS Colima all contributed to
+  noisy reproduction). The patch is safe regardless: closing inherited
+  stdin can't break tools that don't read it, and it fixes the ones that
+  do. Deployment to a real Linux node is the cleanest confirmation.
+
 - **Apex domain is now resolved Python-side at pipeline start, not relying on dnsx.**
   Re-test on the all-fixes image showed dnsx still returning 0 records for the
   seeded apex (took 13s, returncode 0, empty stdout) — even though running the

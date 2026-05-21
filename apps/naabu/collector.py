@@ -55,7 +55,8 @@ def collect(session, targets: list[str]) -> list[dict]:
 
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=config.scan_timeout
+            cmd, capture_output=True, text=True, timeout=config.scan_timeout,
+            stdin=subprocess.DEVNULL,
         )
     except FileNotFoundError:
         logger.error(f"[naabu:{session.id}] Binary not found: {binary}")

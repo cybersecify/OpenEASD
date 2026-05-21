@@ -48,7 +48,7 @@ def collect(session) -> list[dict]:
     logger.info(f"[subfinder:{session.id}] Running: {' '.join(cmd)}")
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
     except FileNotFoundError:
         logger.error(f"[subfinder:{session.id}] Binary not found: {binary}")
         return []

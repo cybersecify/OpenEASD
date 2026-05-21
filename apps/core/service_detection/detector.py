@@ -245,7 +245,8 @@ def _nmap_sv(ip: str, ports: list[int], hostname: str | None = None) -> dict[int
     logger.debug(f"[service_detection] nmap: {' '.join(cmd)}")
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=NMAP_TIMEOUT
+            cmd, capture_output=True, text=True, timeout=NMAP_TIMEOUT,
+            stdin=subprocess.DEVNULL,
         )
         if result.returncode not in (0, 1):
             logger.debug(

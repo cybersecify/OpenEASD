@@ -49,7 +49,7 @@ def collect(session) -> list[dict]:
     logger.info(f"[nuclei:{session.id}] Scanning {len(targets)} web targets")
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT, stdin=subprocess.DEVNULL)
     except FileNotFoundError:
         logger.error(f"[nuclei:{session.id}] Binary not found: {binary}")
         return []

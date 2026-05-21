@@ -106,7 +106,7 @@ def collect(session) -> list[dict]:
     ]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT, stdin=subprocess.DEVNULL)
     except FileNotFoundError:
         logger.error(f"[nuclei_network:{session.id}] Binary not found: {binary}")
         return []

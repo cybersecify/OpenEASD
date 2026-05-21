@@ -67,6 +67,7 @@ def collect(session) -> list[dict]:
             capture_output=True,
             text=True,
             timeout=config.scan_timeout * 60 + 30,  # seconds, with 30s grace
+            stdin=subprocess.DEVNULL,
         )
     except FileNotFoundError:
         logger.error(f"[amass:{session.id}] Binary not found: {binary}")
