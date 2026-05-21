@@ -30,7 +30,9 @@ def collect(session) -> list[dict]:
     binary = getattr(settings, "TOOL_AMASS", "amass")
     domain = session.domain
 
-    cmd = [binary, "enum", "-d", domain, "-json", "-silent"]
+    # amass v4 dropped the `-json` flag; output is line-by-line plain text on
+    # stdout by default. The parser below handles both plain text and JSONL.
+    cmd = [binary, "enum", "-d", domain, "-silent"]
 
     if config.wordlist_file:
         cmd += ["-brute", "-w", config.wordlist_file.path]

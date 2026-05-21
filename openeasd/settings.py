@@ -174,14 +174,17 @@ MS_TEAMS_WEBHOOK_URL = config("MS_TEAMS_WEBHOOK_URL", default="")
 # Minimum severity to trigger an alert: critical / high / medium / low
 ALERT_SEVERITY_THRESHOLD = config("ALERT_SEVERITY_THRESHOLD", default="high")
 
-# Tool paths — ProjectDiscovery tools installed via pdtm at ~/.pdtm/go/bin/
-_PDTM_BIN = os.path.expanduser("~/.pdtm/go/bin")
-TOOL_SUBFINDER = config("TOOL_SUBFINDER", default=f"{_PDTM_BIN}/subfinder")
-TOOL_DNSX = config("TOOL_DNSX", default=f"{_PDTM_BIN}/dnsx")
-TOOL_NAABU = config("TOOL_NAABU", default=f"{_PDTM_BIN}/naabu")
-TOOL_HTTPX = config("TOOL_HTTPX", default=f"{_PDTM_BIN}/httpx")
+# Tool paths — defaults resolve via PATH so the same setting works for:
+#   - Container deploys (tools in /usr/local/bin, per Dockerfile)
+#   - Local dev with pdtm (~/.pdtm/go/bin is added to PATH by pdtm install)
+#   - Local dev with system-installed tools (apt/brew/go install — anywhere on PATH)
+# Override individually via env (TOOL_SUBFINDER=/full/path) when PATH won't do.
+TOOL_SUBFINDER = config("TOOL_SUBFINDER", default="subfinder")
+TOOL_DNSX = config("TOOL_DNSX", default="dnsx")
+TOOL_NAABU = config("TOOL_NAABU", default="naabu")
+TOOL_HTTPX = config("TOOL_HTTPX", default="httpx")
 TOOL_NMAP = config("TOOL_NMAP", default="nmap")
-TOOL_NUCLEI = config("TOOL_NUCLEI", default=f"{_PDTM_BIN}/nuclei")
+TOOL_NUCLEI = config("TOOL_NUCLEI", default="nuclei")
 TOOL_AMASS = config("TOOL_AMASS", default="amass")
 
 # Logging

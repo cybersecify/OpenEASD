@@ -15,6 +15,32 @@ security learners. The pre-launch work below tightens the load-bearing
 "one `docker run` and it works" promise before any public announcement.
 
 #### Fixed
+- **Tool path defaults now use PATH lookup instead of hardcoded pdtm location.**
+  Before: `settings.py` set `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`,
+  `TOOL_HTTPX`, `TOOL_NUCLEI` to `~/.pdtm/go/bin/<tool>` by default — the
+  ProjectDiscovery `pdtm` install location on dev machines. In the published
+  Docker image those binaries live at `/usr/local/bin/` (per `Dockerfile:90`),
+  so every ProjectDiscovery scanner failed with `Binary not found:
+  /root/.pdtm/go/bin/...` and silently returned zero results. Now: defaults
+  are bare names (`"subfinder"`, etc.), so `subprocess.run` resolves via PATH —
+  which covers all three deploy targets (container, pdtm-installed dev,
+  system-installed dev). The `TOOL_*` env vars still work for overrides.
+  **Why:** the load-bearing test (scan `scanme.nmap.org`, get IPs/ports/URLs)
+  was failing solely because of this — even with the pipeline-seed fix in place,
+  dnsx couldn't resolve the seeded subdomain because the binary lookup failed.
+
+- **Removed invalid `-json` flag from amass collector.**
+  Before: `apps/amass/collector.py:33` invoked `amass enum -d ... -json -silent`,
+  but amass v4.2.0 (the version bundled in the Docker image) dropped the `-json`
+  flag. Result: amass exited code 1 with stderr `flag provided but not defined:
+  -json` → 0 subdomains returned, silent failure. Now: flag dropped; amass v4
+  outputs plain-text subdomains line-by-line, which the existing parser already
+  handles (line 94 fallback).
+  **Why:** amass should actually run when enabled. Bumping amass between major
+  versions without revisiting the CLI flags was the real bug — adding a CI
+  smoke-test that runs each tool with a tiny target would catch this kind of
+  drift earlier.
+
 - **Scan pipeline now seeds the input domain as a Subdomain at scan start.**
   Before: subfinder/amass populated the `Subdomain` table with their *output*,
   and every downstream tool (dnsx → naabu → service_detection → nmap / tls_checker /
