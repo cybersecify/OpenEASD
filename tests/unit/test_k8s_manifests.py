@@ -45,22 +45,6 @@ def find_volume_mount(container: dict, mount_path: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Namespace
-# ---------------------------------------------------------------------------
-
-class TestNamespace:
-    def test_api_version(self):
-        doc = single("namespace.yaml")
-        assert doc["apiVersion"] == "v1"
-
-    def test_kind(self):
-        assert single("namespace.yaml")["kind"] == "Namespace"
-
-    def test_name_is_openeasd(self):
-        assert single("namespace.yaml")["metadata"]["name"] == "openeasd"
-
-
-# ---------------------------------------------------------------------------
 # ConfigMap
 # ---------------------------------------------------------------------------
 
@@ -73,7 +57,7 @@ class TestConfigMap:
         assert self.doc["kind"] == "ConfigMap"
 
     def test_namespace(self):
-        assert self.doc["metadata"]["namespace"] == "openeasd"
+        assert self.doc["metadata"]["namespace"] == "default"
 
     def test_name(self):
         assert self.doc["metadata"]["name"] == "openeasd-config"
@@ -102,7 +86,7 @@ class TestSecret:
         assert self.doc["kind"] == "Secret"
 
     def test_namespace(self):
-        assert self.doc["metadata"]["namespace"] == "openeasd"
+        assert self.doc["metadata"]["namespace"] == "default"
 
     def test_name(self):
         assert self.doc["metadata"]["name"] == "openeasd-secret"
@@ -131,9 +115,9 @@ class TestPVCs:
         for doc in self.docs:
             assert doc["kind"] == "PersistentVolumeClaim"
 
-    def test_both_in_openeasd_namespace(self):
+    def test_both_in_default_namespace(self):
         for doc in self.docs:
-            assert doc["metadata"]["namespace"] == "openeasd"
+            assert doc["metadata"]["namespace"] == "default"
 
     def test_pvc_names(self):
         names = {doc["metadata"]["name"] for doc in self.docs}
@@ -165,7 +149,7 @@ class TestDeployment:
         assert self.doc["kind"] == "Deployment"
 
     def test_namespace(self):
-        assert self.doc["metadata"]["namespace"] == "openeasd"
+        assert self.doc["metadata"]["namespace"] == "default"
 
     def test_name(self):
         assert self.doc["metadata"]["name"] == "openeasd"
@@ -287,7 +271,7 @@ class TestService:
         assert self.doc["kind"] == "Service"
 
     def test_namespace(self):
-        assert self.doc["metadata"]["namespace"] == "openeasd"
+        assert self.doc["metadata"]["namespace"] == "default"
 
     def test_selector_matches_deployment_label(self):
         assert self.doc["spec"]["selector"]["app"] == "openeasd"
@@ -317,7 +301,7 @@ class TestIngress:
         assert self.doc["kind"] == "Ingress"
 
     def test_namespace(self):
-        assert self.doc["metadata"]["namespace"] == "openeasd"
+        assert self.doc["metadata"]["namespace"] == "default"
 
     def test_has_rules(self):
         assert len(self.doc["spec"]["rules"]) >= 1
@@ -345,7 +329,7 @@ class TestKustomization:
         assert self.doc["kind"] == "Kustomization"
 
     def test_namespace(self):
-        assert self.doc["namespace"] == "openeasd"
+        assert self.doc["namespace"] == "default"
 
     def test_all_manifest_files_listed(self):
         # secret.yaml and ingress.yaml are intentionally omitted from kustomize:
@@ -353,7 +337,6 @@ class TestKustomization:
         # ingress is replaced by a host-level reverse proxy (e.g. Caddy → NodePort).
         resources = self.doc["resources"]
         expected = [
-            "namespace.yaml",
             "configmap.yaml",
             "pvc.yaml",
             "deployment.yaml",

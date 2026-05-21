@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: openeasd-config
-  namespace: openeasd
+  namespace: default
 data:
   ALLOWED_HOSTS: "openeasd.cybersecify.com,openeasd.local,localhost"
   CSRF_TRUSTED_ORIGINS: "https://openeasd.cybersecify.com,http://openeasd.local"

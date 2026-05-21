@@ -111,7 +111,6 @@ container: worker      → python manage.py qcluster  (NET_RAW capability for nm
 **Files:**
 ```
 k8s/
-  namespace.yaml        — openeasd namespace
   configmap.yaml        — env vars (ALLOWED_HOSTS, CSRF_TRUSTED_ORIGINS, etc.)
   secret.yaml           — SECRET_KEY template (fill in before applying)
   pvc.yaml              — openeasd-data (10Gi) + openeasd-logs (2Gi), RWO
@@ -128,7 +127,7 @@ k8s/
 
 **Update running deployment:**
 ```bash
-kubectl rollout restart deployment/openeasd -n openeasd
+kubectl rollout restart deployment/openeasd -n default
 ```
 
 ### docker-entrypoint.sh

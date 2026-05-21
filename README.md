@@ -152,7 +152,7 @@ kubectl apply -k k8s/
 **4. Update to latest image**
 
 ```bash
-kubectl rollout restart deployment/openeasd-web deployment/openeasd-worker -n openeasd
+kubectl rollout restart deployment/openeasd-web deployment/openeasd-worker -n default
 ```
 
 #### Architecture

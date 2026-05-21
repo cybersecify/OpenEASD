@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: openeasd
-  namespace: openeasd
+  namespace: default
   labels:
     app: openeasd
 spec:

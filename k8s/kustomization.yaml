@@ -1,11 +1,10 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: openeasd
+namespace: default
 images:
   - name: ghcr.io/cybersecify/openeasd
     newTag: v0.3
 resources:
-  - namespace.yaml
   - configmap.yaml
   - pvc.yaml
   - deployment.yaml
@@ -14,5 +13,5 @@ resources:
 # NodePort (service.yaml). Re-add the ingress + a controller (e.g. nginx-ingress)
 # if you want in-cluster ingress instead.
 # Apply secret.yaml separately with a real SECRET_KEY (do not commit real values):
-#   kubectl create secret generic openeasd-secret -n openeasd \
+#   kubectl create secret generic openeasd-secret -n default \
 #     --from-literal=SECRET_KEY="$(openssl rand -hex 32)"
