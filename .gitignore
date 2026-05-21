@@ -29,6 +29,13 @@ staticfiles/
 frontend/node_modules/
 frontend/dist/
 
+# Docker image exports
+*.tar
+
+# Coverage reports
+.coverage
+htmlcov/
+
 # Superpowers
 .superpowers/
 docs/superpowers/
