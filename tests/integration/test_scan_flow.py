@@ -452,8 +452,14 @@ class TestFullPipelineMocked:
         session.refresh_from_db()
         assert session.status == "completed"
 
-        # Verify the asset graph is intact
-        assert Subdomain.objects.filter(session=session).count() == 2
+        # Verify the asset graph is intact.
+        # Subdomain pool: 1 seed (the apex `pipeline.test`, inserted at pipeline
+        # start so leaf-host scans aren't empty) + 2 from subfinder. Only the
+        # 2 subfinder subdomains are in the mocked dnsx data, so the seeded
+        # apex stays is_active=False.
+        assert Subdomain.objects.filter(session=session).count() == 3
+        assert Subdomain.objects.filter(session=session, source="seed").count() == 1
+        assert Subdomain.objects.filter(session=session, source="subfinder").count() == 2
         assert Subdomain.objects.filter(session=session, is_active=True).count() == 2
         assert IPAddress.objects.filter(session=session).count() == 2
         assert Port.objects.filter(session=session).count() == 3
