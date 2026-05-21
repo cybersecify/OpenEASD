@@ -222,14 +222,116 @@ def _seed_apex_into_assets(session) -> None:
 # Main scan orchestrator
 # ---------------------------------------------------------------------------
 
+def _copy_assets_from_parent(session) -> None:
+    """Copy Subdomain/IPAddress/Port/URL records from parent session into this subscan session."""
+    from apps.core.assets.models import IPAddress, Port, Subdomain
+    from apps.core.web_assets.models import URL
+
+    parent = session.parent_session
+    logger.info(f"[scan:{session.id}] Copying assets from parent session {parent.id}")
+
+    # --- Subdomains ---
+    sub_map = {}  # old_id -> new Subdomain
+    for old in Subdomain.objects.filter(session=parent):
+        new_sub = Subdomain.objects.create(
+            session=session,
+            domain=old.domain,
+            subdomain=old.subdomain,
+            source=old.source,
+            is_active=old.is_active,
+            resolved_at=old.resolved_at,
+        )
+        sub_map[old.id] = new_sub
+
+    # --- IP Addresses ---
+    ip_map = {}  # old_id -> new IPAddress
+    for old in IPAddress.objects.filter(session=parent):
+        new_ip = IPAddress.objects.create(
+            session=session,
+            subdomain=sub_map.get(old.subdomain_id),
+            address=old.address,
+            version=old.version,
+            source=old.source,
+        )
+        ip_map[old.id] = new_ip
+
+    # --- Ports ---
+    port_map = {}  # old_id -> new Port
+    for old in Port.objects.filter(session=parent):
+        new_port = Port.objects.create(
+            session=session,
+            ip_address=ip_map.get(old.ip_address_id),
+            address=old.address,
+            port=old.port,
+            protocol=old.protocol,
+            state=old.state,
+            service=old.service,
+            version=old.version,
+            is_web=old.is_web,
+            source=old.source,
+        )
+        port_map[old.id] = new_port
+
+    # --- URLs ---
+    for old in URL.objects.filter(session=parent):
+        URL.objects.create(
+            session=session,
+            port=port_map.get(old.port_id),
+            subdomain=sub_map.get(old.subdomain_id),
+            url=old.url,
+            scheme=old.scheme,
+            host=old.host,
+            port_number=old.port_number,
+            status_code=old.status_code,
+            title=old.title,
+            web_server=old.web_server,
+            content_length=old.content_length,
+            source=old.source,
+        )
+
+    logger.info(
+        f"[scan:{session.id}] Copied {len(sub_map)} subdomains, {len(ip_map)} IPs, "
+        f"{len(port_map)} ports from parent {parent.id}"
+    )
+
+
+def create_subscan_session(parent_uuid: str, tools: list[str], triggered_by: str = "subscan") -> "ScanSession | None":
+    """Create a subscan session that reuses parent assets and runs only the specified tools."""
+    try:
+        parent = ScanSession.objects.get(uuid=parent_uuid, status="completed")
+    except ScanSession.DoesNotExist:
+        return None
+
+    workflow = parent.workflow or ScanSession.objects.filter(
+        domain=parent.domain, workflow__isnull=False
+    ).values_list("workflow", flat=True).first()
+
+    if workflow is None:
+        from apps.core.workflows.models import Workflow
+        workflow = Workflow.objects.filter(is_default=True).first()
+
+    return ScanSession.objects.create(
+        domain=parent.domain,
+        scan_type="subscan",
+        triggered_by=triggered_by,
+        workflow=parent.workflow,
+        parent_session=parent,
+        subscan_tools=tools,
+        status="pending",
+    )
+
+
 def run_scan(session_id: int):
     """Execute a scan session via its attached workflow, then finalise."""
-    session = ScanSession.objects.select_related("workflow").get(id=session_id)
+    session = ScanSession.objects.select_related("workflow", "parent_session").get(id=session_id)
     session.status = "running"
     session.save(update_fields=["status"])
-    logger.info(f"[scan:{session_id}] Starting scan for {session.domain}")
+    logger.info(f"[scan:{session_id}] Starting {'subscan' if session.parent_session_id else 'scan'} for {session.domain}")
 
-    _seed_apex_into_assets(session)
+    if session.parent_session_id:
+        _copy_assets_from_parent(session)
+    else:
+        _seed_apex_into_assets(session)
 
     try:
         _run_via_workflow(session)
@@ -257,7 +359,7 @@ def _run_via_workflow(session):
         )
 
     run = WorkflowRun.objects.create(workflow=session.workflow, session=session)
-    run_workflow(run.id)
+    run_workflow(run.id, only_tools=session.subscan_tools)
 
 
 # ---------------------------------------------------------------------------

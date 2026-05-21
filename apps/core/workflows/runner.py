@@ -29,8 +29,11 @@ def _get_runner(tool_name: str):
     return getattr(module, func_name)
 
 
-def run_workflow(workflow_run_id: int):
-    """Execute all steps of a WorkflowRun in order."""
+def run_workflow(workflow_run_id: int, only_tools: list | None = None):
+    """Execute all steps of a WorkflowRun in order.
+
+    only_tools: if provided, restrict execution to these tool keys (subscan use-case).
+    """
     run = WorkflowRun.objects.select_related("workflow", "session").get(id=workflow_run_id)
     session = run.session
 
@@ -39,10 +42,17 @@ def run_workflow(workflow_run_id: int):
     run.save(update_fields=["status", "started_at"])
 
     tools = run.workflow.enabled_tools()
+    if only_tools is not None:
+        tools = [t for t in tools if t in only_tools]
+        # also allow tools not in the workflow when explicitly requested
+        for t in only_tools:
+            if t not in tools:
+                tools.append(t)
 
     # Core step: service_detection always runs after naabu (if naabu produced ports)
     # even if the workflow doesn't include it — it's core infrastructure.
-    if "service_detection" not in tools:
+    # Skip for subscans (assets already classified from parent).
+    if "service_detection" not in tools and only_tools is None:
         # Find where to insert: after naabu (or at start if no naabu)
         insert_at = 0
         for i, t in enumerate(tools):

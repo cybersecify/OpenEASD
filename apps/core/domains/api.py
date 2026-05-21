@@ -79,11 +79,16 @@ def _serialize_domain(domain) -> dict:
         "added_at": domain.added_at.isoformat() if domain.added_at else None,
         "last_scan": last_scan_data,
         "findings_summary": getattr(domain, "findings_summary", {}),
+        "monitoring_interval_hours": domain.monitoring_interval_hours,
     }
 
 
 class DomainIn(Schema):
     name: str
+
+
+class MonitoringIn(Schema):
+    interval_hours: int | None = None  # null = disable
 
 
 @router.get("/")
@@ -135,3 +140,21 @@ def delete_domain(request, pk: int):
 
     rebuild_finding_type_summaries()
     return {"deleted": domain_name}
+
+
+@router.post("/{pk}/monitoring/")
+def set_monitoring(request, pk: int, data: MonitoringIn):
+    VALID_INTERVALS = {6, 12, 24, 48, 168}
+    domain = get_object_or_404(Domain, pk=pk)
+
+    if data.interval_hours is not None and data.interval_hours not in VALID_INTERVALS:
+        raise HttpError(400, f"interval_hours must be one of {sorted(VALID_INTERVALS)} or null")
+
+    domain.monitoring_interval_hours = data.interval_hours
+    domain.save(update_fields=["monitoring_interval_hours"])
+
+    from apps.core.scheduler.scheduler import sync_domain_monitoring_jobs
+    sync_domain_monitoring_jobs()
+
+    _enrich_domains([domain])
+    return _serialize_domain(domain)

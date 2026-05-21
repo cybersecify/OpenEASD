@@ -6,10 +6,85 @@ import { ConfirmButton } from '../components/ConfirmButton.jsx';
 import { Button } from '../components/ui/button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
+import {
+  AlertDialog, AlertDialogCancel, AlertDialogContent,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '../components/ui/alert-dialog.jsx';
 import { toast } from '../components/Notification.jsx';
 import { navigate } from '../App.jsx';
 import { apiPost } from '../api/client.js';
 import { useFetch } from '../hooks/useFetch.js';
+
+const MONITORING_OPTIONS = [
+  { label: 'Every 6 hours',  value: 6   },
+  { label: 'Every 12 hours', value: 12  },
+  { label: 'Every 24 hours', value: 24  },
+  { label: 'Every 48 hours', value: 48  },
+  { label: 'Weekly',         value: 168 },
+];
+
+function MonitoringDialog({ domain, onClose, onSaved }) {
+  const current = domain.monitoring_interval_hours;
+  const [interval, setInterval] = useState(current ?? 24);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await apiPost(`/domains/${domain.id}/monitoring/`, { interval_hours: interval });
+      toast.success(`Monitoring set to every ${interval}h for ${domain.name}`);
+      onSaved();
+      onClose();
+    } catch (e) { toast.error(e.message || 'Failed to set monitoring'); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDisable() {
+    setSaving(true);
+    try {
+      await apiPost(`/domains/${domain.id}/monitoring/`, { interval_hours: null });
+      toast.success(`Monitoring disabled for ${domain.name}`);
+      onSaved();
+      onClose();
+    } catch (e) { toast.error(e.message || 'Failed to disable monitoring'); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <AlertDialog open onOpenChange={open => !open && onClose()}>
+      <AlertDialogContent className="bg-card border border-rim max-w-sm">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="text-lit">Monitor {domain.name}</AlertDialogTitle>
+        </AlertDialogHeader>
+        <div className="py-2 space-y-3">
+          <p className="text-dim text-sm">Automatically re-scan this domain on a schedule. Alerts fire only on new findings.</p>
+          <select
+            value={interval}
+            onChange={e => setInterval(Number(e.target.value))}
+            className="field w-full"
+          >
+            {MONITORING_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <AlertDialogFooter className="flex gap-2">
+          <AlertDialogCancel asChild>
+            <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+          </AlertDialogCancel>
+          {current && (
+            <Button variant="destructive" size="sm" onClick={handleDisable} disabled={saving}>
+              Disable
+            </Button>
+          )}
+          <Button size="sm" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving…' : 'Enable'}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
 
 function findingTotal(summary) {
   if (!summary || typeof summary !== 'object') return 0;
@@ -56,6 +131,7 @@ function AddDomainForm({ onAdded }) {
 export default function DomainsPage() {
   const { data, loading, error, refetch } = useFetch('/domains/');
   const [busyIds, setBusyIds] = useState(new Set());
+  const [monitoringDomain, setMonitoringDomain] = useState(null);
 
   const domains = data || [];
   function busy(id) { return busyIds.has(id); }
@@ -93,7 +169,7 @@ export default function DomainsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    {['Domain', 'Active', 'Last Scan', 'Findings', 'Actions'].map(h => (
+                    {['Domain', 'Active', 'Last Scan', 'Findings', 'Monitoring', 'Actions'].map(h => (
                       <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>
                     ))}
                   </TableRow>
@@ -109,10 +185,23 @@ export default function DomainsPage() {
                         {d.last_scan?.start_time ? new Date(d.last_scan.start_time).toLocaleDateString() : '—'}
                       </TableCell>
                       <TableCell className="px-4 py-3 text-dim">{findingTotal(d.findings_summary) || '—'}</TableCell>
+                      <TableCell className="px-4 py-3 text-dim text-xs">
+                        {d.monitoring_interval_hours ? (
+                          <span className="text-brand font-medium">Every {d.monitoring_interval_hours}h</span>
+                        ) : '—'}
+                      </TableCell>
                       <TableCell className="px-4 py-3">
                         <span className="inline-flex gap-1.5 items-center flex-wrap">
                           <Button variant="outline" size="sm" onClick={() => navigate(`/scans/start?domain=${d.name}`)}>Scan</Button>
                           <Button variant="outline" size="sm" onClick={() => navigate('/scans?domain=' + d.name)}>History</Button>
+                          <Button
+                            variant={d.monitoring_interval_hours ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setMonitoringDomain(d)}
+                            title={d.monitoring_interval_hours ? `Monitoring every ${d.monitoring_interval_hours}h` : 'Enable monitoring'}
+                          >
+                            {d.monitoring_interval_hours ? `Every ${d.monitoring_interval_hours}h` : 'Monitor'}
+                          </Button>
                           <Button variant="outline" size="sm" onClick={() => handleToggle(d.id)} disabled={busy(d.id)}>
                             {d.is_active ? 'Deactivate' : 'Activate'}
                           </Button>
@@ -127,6 +216,13 @@ export default function DomainsPage() {
           )}
         </Card>
       </div>
+      {monitoringDomain && (
+        <MonitoringDialog
+          domain={monitoringDomain}
+          onClose={() => setMonitoringDomain(null)}
+          onSaved={refetch}
+        />
+      )}
     </Layout>
   );
 }

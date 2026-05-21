@@ -20,6 +20,8 @@ class ScanSession(models.Model):
         ("manual", "Manual"),
         ("scheduled", "Scheduled"),
         ("recurring", "Recurring"),
+        ("monitoring", "Monitoring"),
+        ("subscan", "Subscan"),
     ]
 
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
@@ -29,6 +31,10 @@ class ScanSession(models.Model):
     workflow = models.ForeignKey(
         "workflow.Workflow", on_delete=models.SET_NULL, null=True, blank=True, related_name="sessions"
     )
+    parent_session = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="subscans"
+    )
+    subscan_tools = models.JSONField(null=True, blank=True)
     start_time = models.DateTimeField(auto_now_add=True)
     end_time = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", db_index=True)

@@ -8,11 +8,85 @@ import { Pagination } from '../components/Pagination.jsx';
 import { Button } from '../components/ui/button.jsx';
 import { Card, CardContent } from '../components/ui/card.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
+import {
+  AlertDialog, AlertDialogCancel, AlertDialogContent,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '../components/ui/alert-dialog.jsx';
 import { navigate } from '../App.jsx';
-import { apiPost } from '../api/client.js';
+import { apiPost, apiGet } from '../api/client.js';
 import { auth } from '../auth.js';
 import { useFetch } from '../hooks/useFetch.js';
 import { usePolling } from '../hooks/usePolling.js';
+
+function SubScanDialog({ uuid, domain, onClose, onStarted }) {
+  const [tools, setTools] = useState([]);
+  const [selected, setSelected] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    apiGet('/workflows/tools/').then(data => {
+      const scanTools = data.filter(t => !['subfinder','amass','dnsx','naabu','service_detection'].includes(t.key));
+      setTools(scanTools);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  function toggle(key) {
+    setSelected(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  }
+
+  async function handleRun() {
+    if (!selected.size) { toast.error('Select at least one tool'); return; }
+    setRunning(true);
+    try {
+      const res = await apiPost(`/scans/${uuid}/subscan/`, { tools: [...selected] });
+      toast.success('Subscan started');
+      onStarted(res.uuid);
+      onClose();
+    } catch (e) { toast.error(e.message || 'Failed to start subscan'); }
+    finally { setRunning(false); }
+  }
+
+  return (
+    <AlertDialog open onOpenChange={open => !open && onClose()}>
+      <AlertDialogContent className="bg-card border border-rim max-w-sm">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="text-lit">Re-run Tools on {domain}</AlertDialogTitle>
+        </AlertDialogHeader>
+        <div className="py-2 space-y-3">
+          <p className="text-amber-400 text-xs border border-amber-800 bg-amber-900/20 rounded px-3 py-2">
+            Assets (subdomains, IPs, ports, URLs) are copied from this scan. Run a full scan to refresh discovery.
+          </p>
+          {loading ? <Spinner size={20} /> : (
+            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+              {tools.map(t => (
+                <label key={t.key} className="flex items-center gap-2.5 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(t.key)}
+                    onChange={() => toggle(t.key)}
+                    className="accent-brand"
+                  />
+                  <span className="text-sm text-body group-hover:text-lit">{t.label}</span>
+                  {t.produces_findings && <span className="text-xs text-dim">(findings)</span>}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+        <AlertDialogFooter className="flex gap-2">
+          <AlertDialogCancel asChild>
+            <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+          </AlertDialogCancel>
+          <Button size="sm" onClick={handleRun} disabled={running || !selected.size}>
+            {running ? 'Starting…' : `Run ${selected.size || ''} tool${selected.size !== 1 ? 's' : ''}`}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
 
 const TABS = ['subdomains', 'ips', 'ports', 'urls', 'findings'];
 const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
@@ -58,6 +132,7 @@ export default function ScanDetailPage() {
   const [tab,  setTab]  = useState('subdomains');
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(false);
+  const [showSubScan, setShowSubScan] = useState(false);
   const [schemeFilter, setSchemeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
@@ -153,6 +228,7 @@ export default function ScanDetailPage() {
           <span className="inline-flex gap-1.5 items-center flex-wrap">
             {isRunning && <ConfirmButton label="Stop" confirmLabel="Stop scan?" onConfirm={handleStop} disabled={busy} />}
             {liveStatus === 'completed' && (<>
+              <Button variant="outline" size="sm" onClick={() => setShowSubScan(true)}>Re-scan Tools</Button>
               <Button variant="outline" size="sm" asChild>
                 <a href={`/reports/${uuid}/csv/?token=${auth.getToken()}`} download>CSV</a>
               </Button>
@@ -316,6 +392,15 @@ export default function ScanDetailPage() {
           </Card>
         </div>
       </div>
+
+      {showSubScan && (
+        <SubScanDialog
+          uuid={uuid}
+          domain={session.domain_name}
+          onClose={() => setShowSubScan(false)}
+          onStarted={newUuid => navigate(`/scans/${newUuid}`)}
+        />
+      )}
     </Layout>
   );
 }

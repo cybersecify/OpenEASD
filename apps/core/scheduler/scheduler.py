@@ -78,6 +78,62 @@ def start_scheduler():
 # Scheduled scan functions
 # ---------------------------------------------------------------------------
 
+def run_monitoring_scan(domain: str):
+    """Run a monitoring scan for a single domain (called by per-domain APScheduler jobs)."""
+    from apps.core.scans.pipeline import create_scan_session
+    from apps.core.scans.tasks import run_scan_task
+
+    session = create_scan_session(domain, triggered_by="monitoring")
+    if session is None:
+        logger.info(f"[monitoring] Skipping {domain} — scan already active")
+        return
+    run_scan_task(session.id)
+    logger.info(f"[monitoring] Launched monitoring scan for {domain} (session {session.id})")
+
+
+def sync_domain_monitoring_jobs():
+    """Create/remove per-domain APScheduler jobs based on Domain.monitoring_interval_hours."""
+    from apps.core.domains.models import Domain
+
+    scheduler = get_scheduler()
+    existing_ids = {j.id for j in scheduler.get_jobs() if j.id.startswith("monitor_")}
+    wanted_ids = set()
+
+    for domain in Domain.objects.filter(is_active=True, monitoring_interval_hours__isnull=False):
+        job_id = f"monitor_{domain.name}"
+        wanted_ids.add(job_id)
+        interval = domain.monitoring_interval_hours
+
+        if interval < 24:
+            from apscheduler.triggers.interval import IntervalTrigger
+            trigger = IntervalTrigger(hours=interval)
+        elif interval < 168:
+            from apscheduler.triggers.cron import CronTrigger
+            trigger = CronTrigger(day=f"*/{interval // 24}", hour=2, minute=0)
+        else:
+            from apscheduler.triggers.cron import CronTrigger
+            trigger = CronTrigger(day_of_week="mon", hour=2, minute=0)
+
+        scheduler.add_job(
+            run_monitoring_scan,
+            args=[domain.name],
+            trigger=trigger,
+            id=job_id,
+            name=f"Monitoring: {domain.name} (every {interval}h)",
+            jobstore="default",
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+        logger.info(f"[monitoring] Registered job {job_id} every {interval}h")
+
+    for stale_id in existing_ids - wanted_ids:
+        try:
+            scheduler.remove_job(stale_id, jobstore="default")
+            logger.info(f"[monitoring] Removed stale job {stale_id}")
+        except Exception:
+            pass
+
+
 def run_scheduled_scan(domain: str, triggered_by: str = "scheduled"):
     """
     Top-level callable for APScheduler jobs (one-time and recurring).

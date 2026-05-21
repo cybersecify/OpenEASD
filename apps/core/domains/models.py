@@ -6,6 +6,7 @@ class Domain(models.Model):
     is_primary = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     added_at = models.DateTimeField(auto_now_add=True)
+    monitoring_interval_hours = models.IntegerField(null=True, blank=True)
 
     class Meta:
         ordering = ["name"]

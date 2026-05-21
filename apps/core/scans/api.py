@@ -576,6 +576,33 @@ def delete_scan(request, session_uuid: uuid.UUID):
     return {"deleted": session_uuid}
 
 
+class SubScanRequest(Schema):
+    tools: list[str]
+
+
+@router.post("/{session_uuid}/subscan/")
+def start_subscan(request, session_uuid: uuid.UUID, data: SubScanRequest):
+    from apps.core.scans.pipeline import create_subscan_session
+    from apps.core.scans.tasks import run_scan_task
+    from apps.core.workflows.registry import get_tool_runners
+
+    if not data.tools:
+        raise HttpError(400, "At least one tool is required")
+
+    registered = set(get_tool_runners().keys())
+    invalid = [t for t in data.tools if t not in registered]
+    if invalid:
+        raise HttpError(400, f"Unknown tools: {invalid}")
+
+    session = create_subscan_session(str(session_uuid), tools=data.tools)
+    if session is None:
+        raise HttpError(404, "Parent scan not found or not completed")
+
+    run_scan_task(session.id)
+    logger.info(f"Subscan started: parent={session_uuid} tools={data.tools} new_session={session.uuid}")
+    return {"uuid": str(session.uuid)}
+
+
 # ---------------------------------------------------------------------------
 # Scheduled jobs endpoints
 # ---------------------------------------------------------------------------
