@@ -2,81 +2,449 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Scan Report — {{ session.domain }}</title>
+  <title>Attack Surface Report — {{ session.domain }}</title>
   <style>
-    body { font-family: Helvetica, Arial, sans-serif; font-size: 11px; color: #1a1a1a; margin: 30px; }
-    h1 { font-size: 20px; margin-bottom: 4px; }
-    h2 { font-size: 14px; margin-top: 20px; margin-bottom: 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
-    .meta { color: #666; font-size: 10px; margin-bottom: 16px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-    th, td { border: 1px solid #ddd; padding: 5px 8px; text-align: left; font-size: 10px; }
-    th { background-color: #f5f5f5; font-weight: bold; }
-    .sev-critical { color: #dc2626; font-weight: bold; }
-    .sev-high { color: #ea580c; font-weight: bold; }
-    .sev-medium { color: #d97706; }
-    .sev-low { color: #2563eb; }
-    .sev-info { color: #6b7280; }
-    .summary-table td:first-child { font-weight: bold; width: 120px; }
-    .summary-table td:last-child { text-align: right; width: 80px; }
+    /* ── Base ─────────────────────────────────────────────── */
+    body {
+      font-family: Helvetica, Arial, sans-serif;
+      font-size: 10px;
+      color: #1a1a1a;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* ── Page breaks ──────────────────────────────────────── */
+    .page-break { page-break-before: always; }
+    .no-break   { page-break-inside: avoid; }
+
+    /* ── Cover ────────────────────────────────────────────── */
+    .cover-wrap {
+      background-color: #0d1117;
+      padding: 80px 50px 60px 50px;
+      page-break-after: always;
+    }
+    .cover-brand {
+      font-size: 13px;
+      font-weight: bold;
+      color: #30c074;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-bottom: 70px;
+    }
+    .cover-title {
+      font-size: 30px;
+      font-weight: bold;
+      color: #e6edf3;
+      margin-bottom: 6px;
+    }
+    .cover-subtitle {
+      font-size: 13px;
+      color: #8b949e;
+      margin-bottom: 50px;
+    }
+    .cover-domain {
+      font-size: 22px;
+      font-weight: bold;
+      color: #30c074;
+      margin-bottom: 6px;
+    }
+    .cover-meta {
+      font-size: 10px;
+      color: #8b949e;
+      margin-bottom: 60px;
+      line-height: 1.9;
+    }
+    .cover-sev-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 8px 0;
+    }
+    .cover-sev-table td {
+      text-align: center;
+      padding: 18px 10px;
+      border: 1px solid #30363d;
+      width: 20%;
+    }
+    .sev-big-num {
+      font-size: 36px;
+      font-weight: bold;
+      line-height: 1;
+    }
+    .sev-lbl {
+      font-size: 9px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 6px;
+    }
+    .cover-confidential {
+      margin-top: 60px;
+      color: #484f58;
+      font-size: 8px;
+      text-align: center;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    /* ── Severity colors ──────────────────────────────────── */
+    .c-critical { color: #f85149; }
+    .c-high     { color: #f0883e; }
+    .c-medium   { color: #e3b341; }
+    .c-low      { color: #58a6ff; }
+    .c-info     { color: #8b949e; }
+
+    .bg-critical { background-color: #f85149; }
+    .bg-high     { background-color: #f0883e; }
+    .bg-medium   { background-color: #e3b341; }
+    .bg-low      { background-color: #58a6ff; }
+    .bg-info     { background-color: #8b949e; }
+
+    /* ── Section title ────────────────────────────────────── */
+    .section-title {
+      background-color: #161b22;
+      color: #e6edf3;
+      padding: 9px 14px;
+      font-size: 12px;
+      font-weight: bold;
+      margin-top: 24px;
+      margin-bottom: 12px;
+      border-left: 4px solid #30c074;
+    }
+
+    /* ── Metric grid ──────────────────────────────────────── */
+    .metric-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    .metric-table td {
+      text-align: center;
+      padding: 14px 10px;
+      border: 1px solid #e5e7eb;
+    }
+    .metric-num { font-size: 26px; font-weight: bold; }
+    .metric-lbl {
+      font-size: 8px;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 4px;
+    }
+
+    /* ── Info table ───────────────────────────────────────── */
+    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10px; }
+    .info-table th {
+      background-color: #1f2937;
+      color: #f9fafb;
+      padding: 8px 12px;
+      text-align: left;
+      font-size: 9px;
+      width: 28%;
+      font-weight: bold;
+    }
+    .info-table td { padding: 7px 12px; border-bottom: 1px solid #f3f4f6; }
+    .info-table tr:last-child td { border-bottom: none; }
+
+    /* ── Findings overview table ──────────────────────────── */
+    .overview-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 9px; }
+    .overview-table thead th {
+      background-color: #1f2937;
+      color: #f9fafb;
+      padding: 8px 10px;
+      text-align: left;
+    }
+    .overview-table tbody td {
+      padding: 6px 10px;
+      border-bottom: 1px solid #f3f4f6;
+      vertical-align: top;
+    }
+    .overview-table tbody tr:nth-child(even) td { background-color: #f9fafb; }
+
+    /* ── Inline severity badge ────────────────────────────── */
+    .badge {
+      padding: 2px 7px;
+      font-size: 8px;
+      font-weight: bold;
+      color: #ffffff;
+      text-transform: uppercase;
+    }
+
+    /* ── Severity group header ────────────────────────────── */
+    .sev-group-hdr {
+      padding: 7px 14px;
+      color: #ffffff;
+      font-weight: bold;
+      font-size: 10px;
+      margin-bottom: 8px;
+      margin-top: 20px;
+    }
+
+    /* ── Finding card ─────────────────────────────────────── */
+    .finding-card { border: 1px solid #d1d5db; margin-bottom: 14px; }
+    .finding-hdr  { padding: 9px 14px; color: #ffffff; font-weight: bold; font-size: 11px; }
+    .finding-body { padding: 12px 14px; }
+    .finding-meta-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 10px;
+      font-size: 9px;
+    }
+    .finding-meta-table th {
+      background-color: #f3f4f6;
+      color: #6b7280;
+      padding: 4px 10px;
+      text-align: left;
+      font-weight: bold;
+      width: 15%;
+      border: 1px solid #e5e7eb;
+    }
+    .finding-meta-table td { padding: 4px 10px; border: 1px solid #e5e7eb; }
+    .field-lbl {
+      font-size: 8px;
+      font-weight: bold;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 10px;
+      margin-bottom: 3px;
+    }
+    .field-val { font-size: 10px; color: #374151; line-height: 1.5; }
+
+    /* ── Footer ───────────────────────────────────────────── */
+    .report-footer {
+      text-align: center;
+      color: #9ca3af;
+      font-size: 8px;
+      margin-top: 30px;
+      padding-top: 8px;
+      border-top: 1px solid #e5e7eb;
+    }
   </style>
 </head>
 <body>
-  <h1>OpenEASD Scan Report</h1>
-  <p class="meta">
-    Domain: <strong>{{ session.domain }}</strong> |
-    Scan #{{ session.id }} |
-    Date: {{ session.end_time|default:generated_at }} |
-    Status: {{ session.status }}
-  </p>
 
-  <h2>Severity Summary</h2>
-  <table class="summary-table">
-    <tr><td class="sev-critical">Critical</td><td>{{ vuln_counts.critical }}</td></tr>
-    <tr><td class="sev-high">High</td><td>{{ vuln_counts.high }}</td></tr>
-    <tr><td class="sev-medium">Medium</td><td>{{ vuln_counts.medium }}</td></tr>
-    <tr><td class="sev-low">Low</td><td>{{ vuln_counts.low }}</td></tr>
+<!-- ===========================================================
+     COVER PAGE
+     =========================================================== -->
+<div class="cover-wrap">
+  <div class="cover-brand">OpenEASD</div>
+
+  <div class="cover-title">Attack Surface Report</div>
+  <div class="cover-subtitle">External Attack Surface Detection &amp; Vulnerability Analysis</div>
+
+  <div class="cover-domain">{{ session.domain }}</div>
+  <div class="cover-meta">
+    Scan Date: {{ session.end_time|default:generated_at|date:"F j, Y" }}<br>
+    Generated: {{ generated_at|date:"F j, Y · H:i" }} UTC<br>
+    Scan ID:&nbsp;&nbsp; {{ session.uuid }}
+  </div>
+
+  <table class="cover-sev-table">
+    <tr>
+      <td>
+        <div class="sev-big-num c-critical">{{ vuln_counts.critical }}</div>
+        <div class="sev-lbl c-critical">Critical</div>
+      </td>
+      <td>
+        <div class="sev-big-num c-high">{{ vuln_counts.high }}</div>
+        <div class="sev-lbl c-high">High</div>
+      </td>
+      <td>
+        <div class="sev-big-num c-medium">{{ vuln_counts.medium }}</div>
+        <div class="sev-lbl c-medium">Medium</div>
+      </td>
+      <td>
+        <div class="sev-big-num c-low">{{ vuln_counts.low }}</div>
+        <div class="sev-lbl c-low">Low</div>
+      </td>
+      <td>
+        <div class="sev-big-num c-info">{{ vuln_counts.info }}</div>
+        <div class="sev-lbl c-info">Info</div>
+      </td>
+    </tr>
   </table>
 
-  <h2>Asset Summary</h2>
-  <table class="summary-table">
-    <tr><td>Active Subdomains</td><td>{{ asset_counts.subdomains }}</td></tr>
-    <tr><td>IP Addresses</td><td>{{ asset_counts.ips }}</td></tr>
-    <tr><td>Open Ports</td><td>{{ asset_counts.ports }}</td></tr>
-    <tr><td>Web URLs</td><td>{{ asset_counts.urls }}</td></tr>
-  </table>
+  <div class="cover-confidential">Confidential — For Authorized Use Only</div>
+</div>
 
-  <h2>Findings</h2>
-  <table>
-    <thead>
+<!-- ===========================================================
+     PAGE 2 — EXECUTIVE SUMMARY
+     =========================================================== -->
+<div class="section-title">Executive Summary</div>
+
+<table class="metric-table">
+  <tr>
+    <td>
+      <div class="metric-num">{{ total_findings }}</div>
+      <div class="metric-lbl">Total Findings</div>
+    </td>
+    <td>
+      <div class="metric-num c-critical">{{ vuln_counts.critical }}</div>
+      <div class="metric-lbl">Critical</div>
+    </td>
+    <td>
+      <div class="metric-num c-high">{{ vuln_counts.high }}</div>
+      <div class="metric-lbl">High</div>
+    </td>
+    <td>
+      <div class="metric-num c-medium">{{ vuln_counts.medium }}</div>
+      <div class="metric-lbl">Medium</div>
+    </td>
+    <td>
+      <div class="metric-num c-low">{{ vuln_counts.low }}</div>
+      <div class="metric-lbl">Low</div>
+    </td>
+    <td>
+      <div class="metric-num c-info">{{ vuln_counts.info }}</div>
+      <div class="metric-lbl">Info</div>
+    </td>
+  </tr>
+</table>
+
+<div class="section-title">Scan Information</div>
+<table class="info-table">
+  <tr><th>Target Domain</th><td><strong>{{ session.domain }}</strong></td></tr>
+  <tr><th>Scan Type</th><td>{{ session.scan_type|title }}</td></tr>
+  <tr><th>Triggered By</th><td>{{ session.triggered_by|title }}</td></tr>
+  <tr><th>Started</th><td>{{ session.start_time|date:"Y-m-d H:i:s" }} UTC</td></tr>
+  <tr><th>Completed</th><td>{% if session.end_time %}{{ session.end_time|date:"Y-m-d H:i:s" }} UTC{% else %}—{% endif %}</td></tr>
+  {% if scan_duration %}<tr><th>Duration</th><td>{{ scan_duration }}</td></tr>{% endif %}
+  <tr><th>Status</th><td>{{ session.status|title }}</td></tr>
+  <tr><th>Scan ID</th><td>{{ session.uuid }}</td></tr>
+</table>
+
+<div class="section-title">Asset Discovery</div>
+<table class="metric-table">
+  <tr>
+    <td>
+      <div class="metric-num">{{ asset_counts.subdomains }}</div>
+      <div class="metric-lbl">Subdomains</div>
+    </td>
+    <td>
+      <div class="metric-num">{{ asset_counts.ips }}</div>
+      <div class="metric-lbl">IP Addresses</div>
+    </td>
+    <td>
+      <div class="metric-num">{{ asset_counts.ports }}</div>
+      <div class="metric-lbl">Open Ports</div>
+    </td>
+    <td>
+      <div class="metric-num">{{ asset_counts.urls }}</div>
+      <div class="metric-lbl">Web URLs</div>
+    </td>
+  </tr>
+</table>
+
+<!-- ===========================================================
+     PAGE 3 — FINDINGS OVERVIEW TABLE
+     =========================================================== -->
+<div class="page-break"></div>
+<div class="section-title">Findings Overview</div>
+
+{% if findings %}
+<table class="overview-table">
+  <thead>
+    <tr>
+      <th style="width:4%;">#</th>
+      <th style="width:10%;">Severity</th>
+      <th style="width:32%;">Title</th>
+      <th style="width:14%;">Source</th>
+      <th style="width:20%;">Target</th>
+      <th style="width:12%;">Check Type</th>
+      <th style="width:8%;">Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for f in findings %}
+    <tr>
+      <td>{{ forloop.counter }}</td>
+      <td><span class="badge bg-{{ f.severity }}">{{ f.severity|upper }}</span></td>
+      <td><strong>{{ f.title }}</strong></td>
+      <td>{{ f.source }}</td>
+      <td>{{ f.target }}</td>
+      <td>{{ f.check_type }}</td>
+      <td>{{ f.get_status_display }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="color:#6b7280; font-style:italic; margin: 20px 0;">No findings recorded for this scan.</p>
+{% endif %}
+
+<!-- ===========================================================
+     DETAILED FINDINGS — grouped by severity
+     =========================================================== -->
+{% if grouped_findings %}
+<div class="page-break"></div>
+<div class="section-title">Detailed Findings</div>
+
+{% for severity, sev_findings in grouped_findings %}{% if sev_findings %}
+
+<div class="sev-group-hdr bg-{{ severity }}">
+  {{ severity|upper }} — {{ sev_findings|length }} Finding{{ sev_findings|length|pluralize }}
+</div>
+
+{% for f in sev_findings %}
+<div class="finding-card no-break">
+  <div class="finding-hdr bg-{{ f.severity }}">
+    {{ f.title }}
+  </div>
+  <div class="finding-body">
+
+    <table class="finding-meta-table">
       <tr>
-        <th>Title</th>
-        <th>Severity</th>
         <th>Source</th>
-        <th>Status</th>
-        <th>Target</th>
-        <th>Description</th>
-        <th>Remediation</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for f in findings %}
-      <tr>
-        <td>{{ f.title }}</td>
-        <td class="sev-{{ f.severity }}">{{ f.severity|upper }}</td>
         <td>{{ f.source }}</td>
-        <td>{{ f.get_status_display }}</td>
-        <td>{{ f.target }}</td>
-        <td>{{ f.description|truncatewords:30 }}</td>
-        <td>{{ f.remediation|truncatewords:20 }}</td>
+        <th style="width:15%;">Check Type</th>
+        <td>{{ f.check_type }}</td>
       </tr>
-      {% empty %}
-      <tr><td colspan="7">No findings.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      <tr>
+        <th>Target</th>
+        <td colspan="3">{{ f.target }}</td>
+      </tr>
+      <tr>
+        <th>Status</th>
+        <td>{{ f.get_status_display }}</td>
+        <th>Discovered</th>
+        <td>{{ f.discovered_at|date:"Y-m-d H:i" }}</td>
+      </tr>
+      {% if f.port %}
+      <tr>
+        <th>Port</th>
+        <td colspan="3">{{ f.port.port }}/{{ f.port.protocol }}{% if f.port.service %} ({{ f.port.service }}){% endif %}</td>
+      </tr>
+      {% endif %}
+      {% if f.url %}
+      <tr>
+        <th>URL</th>
+        <td colspan="3">{{ f.url.url }}</td>
+      </tr>
+      {% endif %}
+      {% if f.extra.cvss_score %}
+      <tr>
+        <th>CVSS Score</th>
+        <td>{{ f.extra.cvss_score }}</td>
+        {% if f.extra.cve %}<th>CVE</th><td>{{ f.extra.cve }}</td>{% else %}<th></th><td></td>{% endif %}
+      </tr>
+      {% endif %}
+    </table>
 
-  <p class="meta" style="margin-top: 30px; text-align: center;">
-    Generated by OpenEASD on {{ generated_at }}
-  </p>
+    <div class="field-lbl">Description</div>
+    <div class="field-val">{{ f.description }}</div>
+
+    {% if f.remediation %}
+    <div class="field-lbl">Remediation</div>
+    <div class="field-val">{{ f.remediation }}</div>
+    {% endif %}
+
+  </div>
+</div>
+{% endfor %}
+
+{% endif %}{% endfor %}
+{% endif %}
+
+<div class="report-footer">
+  OpenEASD Attack Surface Report &nbsp;·&nbsp; {{ session.domain }} &nbsp;·&nbsp;
+  Generated {{ generated_at|date:"Y-m-d H:i" }} UTC &nbsp;·&nbsp; CONFIDENTIAL
+</div>
+
 </body>
 </html>

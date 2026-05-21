@@ -75,13 +75,23 @@ def export_findings_csv(request, session_uuid):
 def export_scan_pdf(request, session_uuid):
     """Export a scan report as PDF."""
     session = get_object_or_404(ScanSession, uuid=session_uuid)
-    findings = Finding.objects.filter(session=session).order_by("severity", "-discovered_at")
+    findings = Finding.objects.filter(session=session).select_related("port", "url").order_by(
+        "severity", "-discovered_at"
+    )
 
     # Severity counts
-    vuln_counts = {sev: 0 for sev in SEVERITY_LEVELS}
+    SEV_ORDER = ["critical", "high", "medium", "low", "info"]
+    vuln_counts = {sev: 0 for sev in SEV_ORDER}
     for row in findings.values("severity").annotate(total=Count("id")):
         if row["severity"] in vuln_counts:
             vuln_counts[row["severity"]] = row["total"]
+
+    # Findings grouped by severity (for detail section)
+    from collections import defaultdict
+    by_sev = defaultdict(list)
+    for f in findings:
+        by_sev[f.severity].append(f)
+    grouped_findings = [(sev, by_sev[sev]) for sev in SEV_ORDER if by_sev[sev]]
 
     # Asset counts
     asset_counts = {
@@ -91,12 +101,29 @@ def export_scan_pdf(request, session_uuid):
         "urls": URL.objects.filter(session=session).count(),
     }
 
+    # Scan duration
+    scan_duration = None
+    if session.end_time and session.start_time:
+        delta = session.end_time - session.start_time
+        total_seconds = int(delta.total_seconds())
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        if hours:
+            scan_duration = f"{hours}h {minutes}m {seconds}s"
+        elif minutes:
+            scan_duration = f"{minutes}m {seconds}s"
+        else:
+            scan_duration = f"{seconds}s"
+
     template = get_template("reports/scan_report.html")
     html = template.render({
         "session": session,
         "findings": findings,
+        "grouped_findings": grouped_findings,
         "vuln_counts": vuln_counts,
+        "total_findings": sum(vuln_counts.values()),
         "asset_counts": asset_counts,
+        "scan_duration": scan_duration,
         "generated_at": timezone.now(),
     })
 
