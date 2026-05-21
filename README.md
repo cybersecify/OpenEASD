@@ -169,42 +169,38 @@ An init container runs migrations and admin user setup before the main container
 
 `GET /health/` returns `{"status": "ok"}` — used by K8s readiness and liveness probes (no auth required).
 
-### Prerequisites (from source)
+### Standalone (no Docker)
 
-- Python 3.11+
-- Node.js 18+ (for frontend)
-- [uv](https://docs.astral.sh/uv/) (Python package manager)
-- [ProjectDiscovery tools](https://github.com/projectdiscovery) (`pdtm` recommended)
-- nmap
-- amass (optional, for active subdomain enumeration)
-
-### Install
+The fastest way to get running on a Linux server or macOS without Docker:
 
 ```bash
-# Clone
 git clone https://github.com/cybersecify/OpenEASD.git
 cd OpenEASD
 
-# Install Python dependencies
-uv sync
+# Linux (installs all deps + systemd services)
+sudo ./install.sh
 
-# Install ProjectDiscovery tools
-curl -sL https://raw.githubusercontent.com/projectdiscovery/pdtm/main/scripts/install.sh | bash
-pdtm -install-all
+# macOS
+./install.sh
 
-# nmap (macOS)
-brew install nmap
-# nmap (Ubuntu/Debian)
-sudo apt install nmap
-
-# Build frontend
-cd frontend && npm install && npm run build && cd ..
-
-# Run (auto-migrates, creates admin/admin on first run)
-uv run python main.py
+# Skip amass if you don't need active subdomain enumeration (saves ~10 min)
+sudo ./install.sh --skip-amass
 ```
 
-Open http://localhost:8000, log in with `admin/admin`, change the password, add a domain, and start scanning.
+The script installs: Python/uv, Node.js, nmap, ProjectDiscovery tools (subfinder, dnsx, naabu, httpx, nuclei), amass, builds the frontend, generates a `.env` with a random `SECRET_KEY`, runs migrations, creates the `admin` user, grants `NET_RAW` to nmap/naabu, and sets up `systemd` services on Linux.
+
+After install, edit `.env` to add your domain to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`, then restart:
+
+```bash
+sudo systemctl restart openeasd-web openeasd-worker
+```
+
+On macOS, start manually:
+
+```bash
+uv run gunicorn openeasd.wsgi:application --bind 0.0.0.0:8000 --workers 2
+uv run manage.py qcluster   # second terminal
+```
 
 ### Development Mode
 
