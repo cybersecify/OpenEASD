@@ -39,3 +39,6 @@ htmlcov/
 # Superpowers
 .superpowers/
 docs/superpowers/
+
+# Claude Code runtime artifacts
+.claude/

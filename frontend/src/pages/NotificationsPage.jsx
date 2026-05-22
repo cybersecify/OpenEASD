@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { toast } from '../components/Notification.jsx';
 import { navigate } from '../App.jsx';
-import { apiPost, apiFetch } from '../api/client.js';
+import { apiPost } from '../api/client.js';
 import { useFetch } from '../hooks/useFetch.js';
 
 const THRESHOLD_OPTIONS = [

@@ -23,6 +23,8 @@ const MONITORING_OPTIONS = [
   { label: 'Weekly',         value: 168 },
 ];
 
+const INTERVAL_LABEL = Object.fromEntries(MONITORING_OPTIONS.map(o => [o.value, o.label]));
+
 function MonitoringDialog({ domain, onClose, onSaved }) {
   const current = domain.monitoring_interval_hours;
   const [interval, setInterval] = useState(current ?? 24);
@@ -187,7 +189,9 @@ export default function DomainsPage() {
                       <TableCell className="px-4 py-3 text-dim">{findingTotal(d.findings_summary) || '—'}</TableCell>
                       <TableCell className="px-4 py-3 text-dim text-xs">
                         {d.monitoring_interval_hours ? (
-                          <span className="text-brand font-medium">Every {d.monitoring_interval_hours}h</span>
+                          <span className="text-brand font-medium">
+                            {INTERVAL_LABEL[d.monitoring_interval_hours] ?? `Every ${d.monitoring_interval_hours}h`}
+                          </span>
                         ) : '—'}
                       </TableCell>
                       <TableCell className="px-4 py-3">

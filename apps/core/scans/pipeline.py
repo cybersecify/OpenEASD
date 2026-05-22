@@ -34,9 +34,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _detect_deltas(session):
+    # Exclude subscans: they only run a subset of tools, so using one as the
+    # baseline would produce spurious "new finding" deltas on the next full scan.
     previous = (
         ScanSession.objects.filter(domain=session.domain, status="completed")
         .exclude(id=session.id)
+        .filter(parent_session__isnull=True)
         .order_by("-start_time")
         .first()
     )
@@ -302,19 +305,19 @@ def create_subscan_session(parent_uuid: str, tools: list[str], triggered_by: str
     except ScanSession.DoesNotExist:
         return None
 
-    workflow = parent.workflow or ScanSession.objects.filter(
-        domain=parent.domain, workflow__isnull=False
-    ).values_list("workflow", flat=True).first()
-
+    workflow = parent.workflow
     if workflow is None:
         from apps.core.workflows.models import Workflow
         workflow = Workflow.objects.filter(is_default=True).first()
+    if workflow is None:
+        logger.error(f"[subscan] Cannot create subscan for {parent_uuid} — no workflow available")
+        return None
 
     return ScanSession.objects.create(
         domain=parent.domain,
         scan_type="subscan",
         triggered_by=triggered_by,
-        workflow=parent.workflow,
+        workflow=workflow,
         parent_session=parent,
         subscan_tools=tools,
         status="pending",

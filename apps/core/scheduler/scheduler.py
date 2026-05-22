@@ -72,6 +72,9 @@ def start_scheduler():
     logger.info(
         f"Scheduler started — daily scan at {settings.SCAN_DAILY_HOUR:02d}:{settings.SCAN_DAILY_MINUTE:02d} IST"
     )
+    # Re-register per-domain monitoring jobs from DB state on every startup.
+    # Covers fresh deployments with pre-seeded databases and post-upgrade restarts.
+    sync_domain_monitoring_jobs()
 
 
 # ---------------------------------------------------------------------------
@@ -104,12 +107,9 @@ def sync_domain_monitoring_jobs():
         wanted_ids.add(job_id)
         interval = domain.monitoring_interval_hours
 
-        if interval < 24:
+        if interval < 168:
             from apscheduler.triggers.interval import IntervalTrigger
             trigger = IntervalTrigger(hours=interval)
-        elif interval < 168:
-            from apscheduler.triggers.cron import CronTrigger
-            trigger = CronTrigger(day=f"*/{interval // 24}", hour=2, minute=0)
         else:
             from apscheduler.triggers.cron import CronTrigger
             trigger = CronTrigger(day_of_week="mon", hour=2, minute=0)

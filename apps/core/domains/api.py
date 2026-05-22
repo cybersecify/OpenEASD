@@ -118,6 +118,8 @@ def toggle_domain(request, pk: int):
     domain = get_object_or_404(Domain, pk=pk)
     domain.is_active = not domain.is_active
     domain.save()
+    from apps.core.scheduler.scheduler import sync_domain_monitoring_jobs
+    sync_domain_monitoring_jobs()
     _enrich_domains([domain])
     return _serialize_domain(domain)
 
@@ -139,6 +141,8 @@ def delete_domain(request, pk: int):
         domain.delete()
 
     rebuild_finding_type_summaries()
+    from apps.core.scheduler.scheduler import sync_domain_monitoring_jobs
+    sync_domain_monitoring_jobs()
     return {"deleted": domain_name}
 
 
