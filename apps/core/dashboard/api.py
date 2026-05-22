@@ -46,10 +46,11 @@ def api_dashboard(request):
         for s in ScanSession.objects.filter(id__in=latest_session_ids)
     }
 
-    # Latest completed session per domain (for asset counts)
+    # Latest completed-or-partial session per domain (for asset counts).
+    # Partial scans still carry real findings — include them.
     latest_completed_ids = list(
         ScanSession.objects
-        .filter(domain__in=domain_names, status="completed")
+        .filter(domain__in=domain_names, status__in=["completed", "partial"])
         .values("domain")
         .annotate(latest_id=Max("id"))
         .values_list("latest_id", flat=True)

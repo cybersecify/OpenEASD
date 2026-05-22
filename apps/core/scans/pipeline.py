@@ -37,7 +37,9 @@ def _detect_deltas(session):
     # Exclude subscans: they only run a subset of tools, so using one as the
     # baseline would produce spurious "new finding" deltas on the next full scan.
     previous = (
-        ScanSession.objects.filter(domain=session.domain, status="completed")
+        ScanSession.objects.filter(
+            domain=session.domain, status__in=["completed", "partial"]
+        )
         .exclude(id=session.id)
         .filter(parent_session__isnull=True)
         .order_by("-start_time")

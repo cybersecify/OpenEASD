@@ -38,6 +38,32 @@ security learners. The pre-launch work below tightens the load-bearing
 "one `docker run` and it works" promise before any public announcement.
 
 #### Fixed
+- **Stuck-scan watchdog no longer throws away pre-nuclei findings.**
+  Before: any scan still in `running` after `SCAN_TIMEOUT_MINUTES` (default 90)
+  was marked `failed`, end of story. In practice that meant scans against real
+  domains with web URLs almost always hit the watchdog mid-nuclei (web vuln
+  scan across community templates routinely exceeds 1 hour), and the user
+  saw `failed` + no PDF + the React UI hid all the findings from steps 1–9
+  even though they were sitting in the database. Three back-to-back production
+  scans on the openeasd.cybersecify.com instance reproduced this exactly —
+  domain_security/subfinder/dnsx/naabu/service_detection/httpx/nmap/tls_checker/ssh_checker
+  all completed with real findings, then the scan was reaped while nuclei was
+  still running and the entire report disappeared from the UI. Now: the
+  watchdog distinguishes two cases — if at least one step has `status=completed`
+  the session is marked `partial` (new status), otherwise `failed`. Any
+  in-flight step's status flips to `failed` with `error="reaped by watchdog
+  after Nm"` so the UI shows exactly what was killed. Partial sessions surface
+  in `latest_session_ids`, dashboard tiles, delta detection, and the findings
+  list the same way completed sessions do; the React Badge renders `partial`
+  in amber (not red) and CSV/PDF report buttons are enabled.
+  **Why:** the load-bearing "run a scan against your domain, get a report"
+  promise was being broken by an internal implementation timeout that the user
+  has no visibility into. Marking partial-completion as a first-class outcome
+  is the smallest change that restores the promise without re-architecting
+  nuclei's runtime. The deeper fix — bounding nuclei templates or extending
+  the worker timeout — is still on the table but is product policy, not a bug
+  fix.
+
 - **All collector subprocess invocations now pass `stdin=subprocess.DEVNULL`.**
   Defensive fix applied to all 9 collector callsites: `subfinder`, `amass`,
   `dnsx`, `naabu`, `httpx`, `nuclei`, `nuclei_network`, `nmap`, and

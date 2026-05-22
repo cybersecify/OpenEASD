@@ -116,7 +116,7 @@ export default function ScansPage() {
                               {s.status === 'running' && (
                                 <ConfirmButton label="Stop" confirmLabel="Stop scan?" onConfirm={() => handleStop(s.uuid)} disabled={busy(s.uuid)} />
                               )}
-                              {['completed', 'failed', 'cancelled'].includes(s.status) && (
+                              {['completed', 'partial', 'failed', 'cancelled'].includes(s.status) && (
                                 <ConfirmButton label="Delete" onConfirm={() => handleDelete(s.uuid)} disabled={busy(s.uuid)} />
                               )}
                             </span>

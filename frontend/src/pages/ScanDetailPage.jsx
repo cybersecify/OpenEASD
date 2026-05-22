@@ -89,7 +89,7 @@ function SubScanDialog({ uuid, domain, onClose, onStarted }) {
 }
 
 const TABS = ['subdomains', 'ips', 'ports', 'urls', 'findings'];
-const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
+const TERMINAL = new Set(['completed', 'partial', 'failed', 'cancelled']);
 const PAGE_SIZE = 50;
 
 function fmtDate(iso) {
@@ -227,8 +227,10 @@ export default function ScanDetailPage() {
           </div>
           <span className="inline-flex gap-1.5 items-center flex-wrap">
             {isRunning && <ConfirmButton label="Stop" confirmLabel="Stop scan?" onConfirm={handleStop} disabled={busy} />}
-            {liveStatus === 'completed' && (<>
+            {liveStatus === 'completed' && (
               <Button variant="outline" size="sm" onClick={() => setShowSubScan(true)}>Re-scan Tools</Button>
+            )}
+            {(liveStatus === 'completed' || liveStatus === 'partial') && (<>
               <Button variant="outline" size="sm" asChild>
                 <a href={`/reports/${uuid}/csv/?token=${auth.getToken()}`} download>CSV</a>
               </Button>

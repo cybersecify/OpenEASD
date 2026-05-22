@@ -13,6 +13,7 @@ class ScanSession(models.Model):
         ("pending", "Pending"),
         ("running", "Running"),
         ("completed", "Completed"),
+        ("partial", "Partial"),
         ("cancelled", "Cancelled"),
         ("failed", "Failed"),
     ]

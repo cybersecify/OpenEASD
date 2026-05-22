@@ -146,19 +146,55 @@ def daily_scan():
 # ---------------------------------------------------------------------------
 
 def reap_stuck_scans():
-    """Mark scans stuck in pending/running beyond SCAN_TIMEOUT_MINUTES as failed."""
+    """
+    Reap scans that have been running/pending beyond SCAN_TIMEOUT_MINUTES.
+
+    A scan that had at least one step complete before the timeout is reaped as
+    `partial` (its findings are kept and shown). A scan with no completed steps
+    is reaped as `failed`. Any step still in-flight at reap time is marked
+    `failed` with a reason in `error` so the UI shows what was killed.
+    """
     from apps.core.scans.models import ScanSession
 
-    cutoff = django_tz.now() - django_tz.timedelta(minutes=SCAN_TIMEOUT_MINUTES)
-    stuck = ScanSession.objects.filter(
+    now = django_tz.now()
+    cutoff = now - django_tz.timedelta(minutes=SCAN_TIMEOUT_MINUTES)
+    stuck_qs = ScanSession.objects.filter(
         status__in=["pending", "running"],
         start_time__lt=cutoff,
-    )
-    count = stuck.count()
-    if count:
-        stuck.update(status="failed", end_time=django_tz.now())
-        logger.warning(f"[watchdog] Reaped {count} stuck scan(s)")
-    return count
+    ).select_related("workflow_run")
+
+    reap_msg = f"reaped by watchdog after {SCAN_TIMEOUT_MINUTES}m"
+    partial_count = 0
+    failed_count = 0
+
+    for session in stuck_qs:
+        run = getattr(session, "workflow_run", None)
+        completed_step = False
+        if run is not None:
+            in_flight = run.step_results.filter(status__in=["pending", "running"])
+            in_flight.update(status="failed", finished_at=now, error=reap_msg)
+            completed_step = run.step_results.filter(status="completed").exists()
+            run.status = "partial" if completed_step else "failed"
+            run.finished_at = now
+            run.save(update_fields=["status", "finished_at"])
+
+        new_status = "partial" if completed_step else "failed"
+        session.status = new_status
+        session.end_time = now
+        session.save(update_fields=["status", "end_time"])
+
+        if new_status == "partial":
+            partial_count += 1
+        else:
+            failed_count += 1
+
+    total = partial_count + failed_count
+    if total:
+        logger.warning(
+            f"[watchdog] Reaped {total} stuck scan(s) — "
+            f"{partial_count} as partial (kept findings), {failed_count} as failed"
+        )
+    return total
 
 
 # ---------------------------------------------------------------------------

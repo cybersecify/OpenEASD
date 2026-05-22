@@ -78,6 +78,69 @@ class TestReapStuckScans:
     def test_returns_zero_when_nothing_stuck(self, db):
         assert reap_stuck_scans() == 0
 
+    def _attach_run(self, session, completed_tools=(), in_flight_tools=()):
+        """Create a WorkflowRun + StepResults for the session."""
+        from apps.core.workflows.models import Workflow, WorkflowRun, WorkflowStepResult
+        wf = Workflow.objects.create(name=f"wf-{session.id}")
+        run = WorkflowRun.objects.create(workflow=wf, session=session, status="running")
+        order = 1
+        for tool in completed_tools:
+            WorkflowStepResult.objects.create(
+                run=run, tool=tool, status="completed", order=order, findings_count=1,
+            )
+            order += 1
+        for tool in in_flight_tools:
+            WorkflowStepResult.objects.create(
+                run=run, tool=tool, status="running", order=order,
+            )
+            order += 1
+        return run
+
+    def test_partial_when_at_least_one_step_completed(self, db):
+        from apps.core.workflows.models import WorkflowStepResult
+        session = self._make_session("running", SCAN_TIMEOUT_MINUTES + 1, "p.example.com")
+        run = self._attach_run(
+            session,
+            completed_tools=["domain_security", "subfinder"],
+            in_flight_tools=["nuclei"],
+        )
+
+        assert reap_stuck_scans() == 1
+        session.refresh_from_db()
+        run.refresh_from_db()
+        assert session.status == "partial"
+        assert run.status == "partial"
+        # In-flight step marked failed with reap error.
+        nuclei_step = WorkflowStepResult.objects.get(run=run, tool="nuclei")
+        assert nuclei_step.status == "failed"
+        assert "watchdog" in nuclei_step.error.lower()
+        assert nuclei_step.finished_at is not None
+        # Completed steps untouched.
+        ds = WorkflowStepResult.objects.get(run=run, tool="domain_security")
+        assert ds.status == "completed"
+
+    def test_failed_when_no_step_completed(self, db):
+        """Stuck scan with a run but no completed steps -> failed (not partial)."""
+        session = self._make_session("running", SCAN_TIMEOUT_MINUTES + 1, "f.example.com")
+        run = self._attach_run(session, in_flight_tools=["domain_security"])
+
+        assert reap_stuck_scans() == 1
+        session.refresh_from_db()
+        run.refresh_from_db()
+        assert session.status == "failed"
+        assert run.status == "failed"
+
+    def test_partial_session_surfaces_in_latest_session_ids(self, db):
+        """Partial scans must show up alongside completed in latest-session lookups."""
+        from apps.core.queries import latest_session_ids
+
+        partial = self._make_session("running", SCAN_TIMEOUT_MINUTES + 1, "x.example.com")
+        self._attach_run(partial, completed_tools=["domain_security"])
+        reap_stuck_scans()
+
+        ids = latest_session_ids(domains=["x.example.com"])
+        assert partial.id in ids
+
 
 # ---------------------------------------------------------------------------
 # purge_expired_blacklisted_tokens

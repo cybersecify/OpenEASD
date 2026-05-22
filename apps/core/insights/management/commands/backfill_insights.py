@@ -17,7 +17,9 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         existing_ids = ScanSummary.objects.values_list("session_id", flat=True)
-        scans = ScanSession.objects.filter(status="completed").exclude(id__in=existing_ids)
+        scans = ScanSession.objects.filter(
+            status__in=["completed", "partial"]
+        ).exclude(id__in=existing_ids)
         total = scans.count()
 
         if total == 0:
