@@ -1,88 +1,102 @@
-"""APScheduler setup and scheduled scan functions for OpenEASD."""
+"""Django-Q2 scheduling for OpenEASD — replaces APScheduler."""
 
+import json
 import logging
 
 from django.utils import timezone as django_tz
 
 logger = logging.getLogger(__name__)
 
-_scheduler = None
-
-# A scan running longer than this is considered stuck and will be marked failed.
-# Must exceed Q_CLUSTER timeout (3600s = 60 min) so legitimate long scans aren't reaped.
-# Override with SCAN_TIMEOUT_MINUTES env var if needed.
 from decouple import config as _config  # noqa: E402
 SCAN_TIMEOUT_MINUTES = _config("SCAN_TIMEOUT_MINUTES", default=90, cast=int)
 
 
-def get_scheduler():
-    """Return the shared scheduler instance (created lazily)."""
-    global _scheduler
-    if _scheduler is None:
-        from apscheduler.schedulers.background import BackgroundScheduler
-        from django.conf import settings
-        _scheduler = BackgroundScheduler(timezone=settings.TIME_ZONE)
-    return _scheduler
+# ---------------------------------------------------------------------------
+# Core schedule setup (called once on qcluster startup)
+# ---------------------------------------------------------------------------
 
-
-def start_scheduler():
-    from apscheduler.triggers.cron import CronTrigger
+def setup_core_schedules():
+    """Register/update the three fixed system schedules in Django-Q2."""
     from django.conf import settings
-    from django_apscheduler.jobstores import DjangoJobStore
+    from django_q.models import Schedule
 
-    scheduler = get_scheduler()
-    scheduler.add_jobstore(DjangoJobStore(), "default")
+    hour   = settings.SCAN_DAILY_HOUR
+    minute = settings.SCAN_DAILY_MINUTE
 
-    scheduler.add_job(
-        daily_scan,
-        trigger=CronTrigger(
-            hour=settings.SCAN_DAILY_HOUR,
-            minute=settings.SCAN_DAILY_MINUTE,
-        ),
-        id="daily_scan",
-        name="Daily domain vulnerability scan",
-        jobstore="default",
-        replace_existing=True,
-        misfire_grace_time=3600,
+    Schedule.objects.update_or_create(
+        name="daily_scan",
+        defaults={
+            "func":          "apps.core.scheduler.scheduler.daily_scan",
+            "schedule_type": Schedule.CRON,
+            "cron":          f"{minute} {hour} * * *",
+            "repeats":       -1,
+        },
     )
-
-    # Watchdog: reap scans stuck in pending/running beyond SCAN_TIMEOUT_MINUTES
-    scheduler.add_job(
-        reap_stuck_scans,
-        trigger=CronTrigger(minute="*/15"),
-        id="watchdog_reap_stuck_scans",
-        name="Reap stuck scans",
-        jobstore="default",
-        replace_existing=True,
-        misfire_grace_time=300,
+    Schedule.objects.update_or_create(
+        name="watchdog_reap_stuck_scans",
+        defaults={
+            "func":          "apps.core.scheduler.scheduler.reap_stuck_scans",
+            "schedule_type": Schedule.MINUTES,
+            "minutes":       15,
+            "repeats":       -1,
+        },
     )
-
-    # Purge expired blacklisted JWT refresh tokens (runs daily at 03:00)
-    scheduler.add_job(
-        purge_expired_blacklisted_tokens,
-        trigger=CronTrigger(hour=3, minute=0),
-        id="purge_blacklisted_tokens",
-        name="Purge expired blacklisted JWT tokens",
-        jobstore="default",
-        replace_existing=True,
-        misfire_grace_time=3600,
+    Schedule.objects.update_or_create(
+        name="purge_blacklisted_tokens",
+        defaults={
+            "func":          "apps.core.scheduler.scheduler.purge_expired_blacklisted_tokens",
+            "schedule_type": Schedule.CRON,
+            "cron":          "0 3 * * *",
+            "repeats":       -1,
+        },
     )
-
-    scheduler.start()
     logger.info(
-        f"Scheduler started — daily scan at {settings.SCAN_DAILY_HOUR:02d}:{settings.SCAN_DAILY_MINUTE:02d} IST"
+        f"[scheduler] Core schedules registered — daily scan at {hour:02d}:{minute:02d}"
     )
-    # Re-register per-domain monitoring jobs from DB state on every startup.
-    # Covers fresh deployments with pre-seeded databases and post-upgrade restarts.
     sync_domain_monitoring_jobs()
 
 
 # ---------------------------------------------------------------------------
-# Scheduled scan functions
+# Per-domain monitoring job sync
+# ---------------------------------------------------------------------------
+
+def sync_domain_monitoring_jobs():
+    """Sync Django-Q2 Schedule entries with Domain.monitoring_interval_hours."""
+    from apps.core.domains.models import Domain
+    from django_q.models import Schedule
+
+    wanted_names = set()
+    for domain in Domain.objects.filter(is_active=True, monitoring_interval_hours__isnull=False):
+        name     = f"monitor_{domain.name}"
+        interval = domain.monitoring_interval_hours
+        wanted_names.add(name)
+
+        Schedule.objects.update_or_create(
+            name=name,
+            defaults={
+                "func":          "apps.core.scheduler.scheduler.run_monitoring_scan",
+                "args":          json.dumps([domain.name]),
+                "schedule_type": Schedule.MINUTES,
+                "minutes":       interval * 60,
+                "repeats":       -1,
+            },
+        )
+        logger.info(f"[monitoring] Registered schedule {name} every {interval}h")
+
+    # Remove schedules for domains that were deleted or deactivated
+    removed = Schedule.objects.filter(
+        name__startswith="monitor_"
+    ).exclude(name__in=wanted_names).delete()
+    if removed[0]:
+        logger.info(f"[monitoring] Removed {removed[0]} stale monitoring schedule(s)")
+
+
+# ---------------------------------------------------------------------------
+# Callable functions (must be importable module-level paths for Django-Q2)
 # ---------------------------------------------------------------------------
 
 def run_monitoring_scan(domain: str):
-    """Run a monitoring scan for a single domain (called by per-domain APScheduler jobs)."""
+    """Run a monitoring scan for a single domain."""
     from apps.core.scans.pipeline import create_scan_session
     from apps.core.scans.tasks import run_scan_task
 
@@ -94,51 +108,8 @@ def run_monitoring_scan(domain: str):
     logger.info(f"[monitoring] Launched monitoring scan for {domain} (session {session.id})")
 
 
-def sync_domain_monitoring_jobs():
-    """Create/remove per-domain APScheduler jobs based on Domain.monitoring_interval_hours."""
-    from apps.core.domains.models import Domain
-
-    scheduler = get_scheduler()
-    existing_ids = {j.id for j in scheduler.get_jobs() if j.id.startswith("monitor_")}
-    wanted_ids = set()
-
-    for domain in Domain.objects.filter(is_active=True, monitoring_interval_hours__isnull=False):
-        job_id = f"monitor_{domain.name}"
-        wanted_ids.add(job_id)
-        interval = domain.monitoring_interval_hours
-
-        if interval < 168:
-            from apscheduler.triggers.interval import IntervalTrigger
-            trigger = IntervalTrigger(hours=interval)
-        else:
-            from apscheduler.triggers.cron import CronTrigger
-            trigger = CronTrigger(day_of_week="mon", hour=2, minute=0)
-
-        scheduler.add_job(
-            run_monitoring_scan,
-            args=[domain.name],
-            trigger=trigger,
-            id=job_id,
-            name=f"Monitoring: {domain.name} (every {interval}h)",
-            jobstore="default",
-            replace_existing=True,
-            misfire_grace_time=3600,
-        )
-        logger.info(f"[monitoring] Registered job {job_id} every {interval}h")
-
-    for stale_id in existing_ids - wanted_ids:
-        try:
-            scheduler.remove_job(stale_id, jobstore="default")
-            logger.info(f"[monitoring] Removed stale job {stale_id}")
-        except Exception:
-            pass
-
-
 def run_scheduled_scan(domain: str, triggered_by: str = "scheduled"):
-    """
-    Top-level callable for APScheduler jobs (one-time and recurring).
-    Must be a module-level function so APScheduler can serialize it by reference.
-    """
+    """Top-level callable for Django-Q2 one-time and recurring scan jobs."""
     from apps.core.scans.pipeline import create_scan_session
     from apps.core.scans.tasks import run_scan_task
 
@@ -151,7 +122,7 @@ def run_scheduled_scan(domain: str, triggered_by: str = "scheduled"):
 
 
 def daily_scan():
-    """Run a scan for every active domain. Called by APScheduler daily."""
+    """Run a scan for every active domain."""
     from apps.core.domains.models import Domain
     from apps.core.scans.pipeline import create_scan_session
     from apps.core.scans.tasks import run_scan_task
@@ -175,10 +146,7 @@ def daily_scan():
 # ---------------------------------------------------------------------------
 
 def reap_stuck_scans():
-    """
-    Mark scans that have been running/pending beyond SCAN_TIMEOUT_MINUTES as failed.
-    Called by the scheduler; safe to call multiple times concurrently.
-    """
+    """Mark scans stuck in pending/running beyond SCAN_TIMEOUT_MINUTES as failed."""
     from apps.core.scans.models import ScanSession
 
     cutoff = django_tz.now() - django_tz.timedelta(minutes=SCAN_TIMEOUT_MINUTES)
@@ -198,7 +166,7 @@ def reap_stuck_scans():
 # ---------------------------------------------------------------------------
 
 def purge_expired_blacklisted_tokens():
-    """Delete expired OutstandingToken rows (and their BlacklistedToken entries) to keep the table small."""
+    """Delete expired OutstandingToken rows to keep the table small."""
     from ninja_jwt.token_blacklist.models import OutstandingToken
 
     cutoff = django_tz.now()

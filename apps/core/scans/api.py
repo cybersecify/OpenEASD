@@ -10,8 +10,8 @@ from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.date import DateTrigger
+import json as _json
+
 from ninja import Router, Schema, Status
 from ninja.errors import HttpError
 
@@ -20,7 +20,6 @@ from apps.core.constants import SEVERITY_LEVELS
 from apps.core.insights.builder import rebuild_finding_type_summaries
 from apps.core.queries import latest_session_ids
 from apps.core.scans.models import ScanSession
-from apps.core.scheduler.scheduler import run_scheduled_scan
 
 logger = logging.getLogger(__name__)
 
@@ -30,82 +29,74 @@ _VALID_HOSTNAME = _re.compile(
     r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$"
 )
 
-BUILTIN_JOB_IDS = {"daily_scan", "watchdog_reap_stuck_scans", "purge_blacklisted_tokens"}
+BUILTIN_SCHEDULE_NAMES = {"daily_scan", "watchdog_reap_stuck_scans", "purge_blacklisted_tokens"}
 
 
-def _describe_cron_trigger(trigger):
-    try:
-        for field in trigger.fields:
-            if field.name == "day_of_week" and not field.is_default:
-                return "Weekly (Mondays)"
-        return "Daily"
-    except Exception:
-        return "Recurring"
+def _parse_schedule(schedule):
+    """Convert a Django-Q2 Schedule → API dict. Returns None for built-in schedules."""
+    from django_q.models import Schedule
 
-
-def _parse_job(job):
-    """Convert APScheduler job → dict for API. Returns None for built-in jobs."""
-    if job.id in BUILTIN_JOB_IDS:
+    name = schedule.name
+    if name in BUILTIN_SCHEDULE_NAMES or name.startswith("monitor_"):
         return None
-    if job.id.startswith("recurring_"):
-        domain = job.id[len("recurring_"):]
+
+    if name.startswith("recurring_"):
+        domain = name[len("recurring_"):]
         job_type = "recurring"
-        frequency = _describe_cron_trigger(job.trigger)
-    elif job.id.startswith("once_"):
-        suffix = job.id[len("once_"):]
+        # Infer frequency from cron expression: "MM HH * * 1" = weekly, "MM HH * * *" = daily
+        cron = getattr(schedule, "cron", "") or ""
+        frequency = "Weekly (Mondays)" if cron.endswith(" 1") else "Daily"
+    elif name.startswith("once_"):
+        suffix = name[len("once_"):]
+        # strip trailing _{32 hex chars}
         domain = suffix[:-33] if len(suffix) > 33 else suffix
         job_type = "one-time"
         frequency = "—"
     else:
-        domain = job.name
-        job_type = "unknown"
-        frequency = "—"
+        return None
+
     return {
-        "job_id": job.id,
-        "domain": domain,
-        "job_type": job_type,
-        "next_run_time": job.next_run_time,
-        "frequency": frequency,
+        "job_id":        name,
+        "domain":        domain,
+        "job_type":      job_type,
+        "next_run_time": schedule.next_run,
+        "frequency":     frequency,
     }
 
 
 def _schedule_once(domain, scheduled_at):
-    """Schedule a one-time scan using the shared persistent scheduler."""
-    from apps.core.scheduler import get_scheduler
+    """Schedule a one-time scan via Django-Q2."""
+    from django_q.models import Schedule
 
     job_id = f"once_{domain}_{uuid.uuid4().hex}"
-    get_scheduler().add_job(
-        run_scheduled_scan,
-        args=[domain, "scheduled"],
-        trigger=DateTrigger(run_date=scheduled_at),
-        id=job_id,
-        name=f"One-time scan: {domain}",
-        jobstore="default",
-        replace_existing=True,
-        misfire_grace_time=3600,
+    Schedule.objects.create(
+        name=          job_id,
+        func=          "apps.core.scheduler.scheduler.run_scheduled_scan",
+        args=          _json.dumps([domain, "scheduled"]),
+        schedule_type= Schedule.ONCE,
+        next_run=      scheduled_at,
+        repeats=       1,
     )
     logger.info(f"One-time scan scheduled: domain={domain} at={scheduled_at}")
 
 
 def _schedule_recurring(domain, recurrence, recurrence_time):
-    """Add or replace a recurring scan job using the shared persistent scheduler."""
-    from apps.core.scheduler import get_scheduler
+    """Add or replace a recurring scan job via Django-Q2."""
+    from django_q.models import Schedule
 
-    if recurrence == "weekly":
-        trigger = CronTrigger(day_of_week="mon", hour=recurrence_time.hour, minute=recurrence_time.minute)
-    else:
-        trigger = CronTrigger(hour=recurrence_time.hour, minute=recurrence_time.minute)
-
+    h, m   = recurrence_time.hour, recurrence_time.minute
+    cron   = f"{m} {h} * * 1" if recurrence == "weekly" else f"{m} {h} * * *"
     job_id = f"recurring_{domain}"
-    get_scheduler().add_job(
-        run_scheduled_scan,
-        args=[domain, "recurring"],
-        trigger=trigger,
-        id=job_id,
-        name=f"Recurring {recurrence} scan: {domain}",
-        jobstore="default",
-        replace_existing=True,
-        misfire_grace_time=3600,
+
+    Schedule.objects.update_or_create(
+        name=job_id,
+        defaults={
+            "func":          "apps.core.scheduler.scheduler.run_scheduled_scan",
+            "args":          _json.dumps([domain, "recurring"]),
+            "schedule_type": Schedule.CRON,
+            "cron":          cron,
+            "repeats":       -1,
+        },
     )
     logger.info(f"Recurring scan scheduled: domain={domain} recurrence={recurrence} time={recurrence_time}")
 
@@ -609,12 +600,14 @@ def start_subscan(request, session_uuid: uuid.UUID, data: SubScanRequest):
 
 @scheduled_router.get("/")
 def list_scheduled(request):
-    from apps.core.scheduler import get_scheduler
+    from django_q.models import Schedule
 
     jobs = []
     try:
-        all_jobs = get_scheduler().get_jobs()
-        jobs = [p for job in all_jobs if (p := _parse_job(job)) is not None]
+        schedules = Schedule.objects.exclude(name__in=BUILTIN_SCHEDULE_NAMES).exclude(
+            name__startswith="monitor_"
+        )
+        jobs = [p for s in schedules if (p := _parse_schedule(s)) is not None]
         jobs.sort(
             key=lambda j: (
                 0 if j["job_type"] == "recurring" else 1,
@@ -626,10 +619,10 @@ def list_scheduled(request):
 
     return [
         {
-            "job_id": j["job_id"],
-            "domain": j["domain"],
-            "job_type": j["job_type"],
-            "frequency": j["frequency"],
+            "job_id":        j["job_id"],
+            "domain":        j["domain"],
+            "job_type":      j["job_type"],
+            "frequency":     j["frequency"],
             "next_run_time": j["next_run_time"].isoformat() if j["next_run_time"] else None,
         }
         for j in jobs
@@ -641,14 +634,13 @@ def cancel_scheduled(request, job_id: str):
     if not (job_id.startswith("once_") or job_id.startswith("recurring_")):
         raise HttpError(400, "job_id must start with 'once_' or 'recurring_'")
 
-    from apps.core.scheduler import get_scheduler
-    from apscheduler.jobstores.base import JobLookupError
+    from django_q.models import Schedule
 
-    note = None
-    try:
-        get_scheduler().remove_job(job_id)
+    deleted, _ = Schedule.objects.filter(name=job_id).delete()
+    if deleted:
         logger.info(f"Scheduled job cancelled via API: {job_id}")
-    except JobLookupError:
+        note = None
+    else:
         logger.info(f"Job already gone: {job_id}")
         note = "Job already completed or was already cancelled."
 

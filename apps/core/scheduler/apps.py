@@ -29,8 +29,8 @@ class SchedulerConfig(AppConfig):
         if not any("qcluster" in arg for arg in sys.argv):
             return
 
-        from .scheduler import start_scheduler
+        from .scheduler import setup_core_schedules
         try:
-            start_scheduler()
+            setup_core_schedules()
         except Exception as e:
-            _logger.error(f"Scheduler failed to start: {e}", exc_info=True)
+            _logger.error(f"Scheduler setup failed: {e}", exc_info=True)

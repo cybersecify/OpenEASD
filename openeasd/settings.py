@@ -32,7 +32,6 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     # Third party
-    "django_apscheduler",
     "django_q",
     # Local apps
     "apps.core.dashboard",
@@ -132,10 +131,6 @@ MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "data" / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-# APScheduler
-APSCHEDULER_DATETIME_FORMAT = "N j, Y, f:s a"
-APSCHEDULER_RUN_NOW_TIMEOUT = 25  # seconds
 
 # Scan schedule (24h clock, uses TIME_ZONE above)
 SCAN_DAILY_HOUR = config("SCAN_DAILY_HOUR", default=2, cast=int)

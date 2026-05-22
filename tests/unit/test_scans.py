@@ -76,48 +76,60 @@ class TestCreateScanSession:
 
 
 @pytest.mark.django_db
-class TestParseJob:
-    """Tests _parse_job() domain extraction, especially for domains with underscores."""
+class TestParseSchedule:
+    """Tests _parse_schedule() domain extraction, especially for domains with underscores."""
 
-    def _make_job(self, job_id):
+    def _make_schedule(self, name, cron="0 2 * * *"):
         from unittest.mock import MagicMock
-        job = MagicMock()
-        job.id = job_id
-        job.next_run_time = None
-        job.name = job_id
-        return job
+        s = MagicMock()
+        s.name = name
+        s.next_run = None
+        s.cron = cron
+        return s
 
     def test_recurring_plain_domain(self):
-        from apps.core.scans.api import _parse_job
-        job = self._make_job("recurring_example.com")
-        result = _parse_job(job)
+        from apps.core.scans.api import _parse_schedule
+        s = self._make_schedule("recurring_example.com")
+        result = _parse_schedule(s)
         assert result["domain"] == "example.com"
         assert result["job_type"] == "recurring"
 
     def test_recurring_underscored_domain(self):
-        from apps.core.scans.api import _parse_job
-        job = self._make_job("recurring_sub_domain.example.com")
-        result = _parse_job(job)
+        from apps.core.scans.api import _parse_schedule
+        s = self._make_schedule("recurring_sub_domain.example.com")
+        result = _parse_schedule(s)
         assert result["domain"] == "sub_domain.example.com"
 
     def test_once_plain_domain(self):
-        from apps.core.scans.api import _parse_job
-        job = self._make_job("once_example.com_" + "a" * 32)
-        result = _parse_job(job)
+        from apps.core.scans.api import _parse_schedule
+        s = self._make_schedule("once_example.com_" + "a" * 32)
+        result = _parse_schedule(s)
         assert result["domain"] == "example.com"
         assert result["job_type"] == "one-time"
 
     def test_once_underscored_domain(self):
-        from apps.core.scans.api import _parse_job
-        job = self._make_job("once_sub_domain.com_" + "b" * 32)
-        result = _parse_job(job)
+        from apps.core.scans.api import _parse_schedule
+        s = self._make_schedule("once_sub_domain.com_" + "b" * 32)
+        result = _parse_schedule(s)
         assert result["domain"] == "sub_domain.com"
 
-    def test_builtin_jobs_return_none(self):
-        from apps.core.scans.api import _parse_job
-        for job_id in ("daily_scan", "watchdog_reap_stuck_scans"):
-            job = self._make_job(job_id)
-            assert _parse_job(job) is None
+    def test_builtin_schedules_return_none(self):
+        from apps.core.scans.api import _parse_schedule
+        for name in ("daily_scan", "watchdog_reap_stuck_scans", "monitor_example.com"):
+            s = self._make_schedule(name)
+            assert _parse_schedule(s) is None
+
+    def test_weekly_frequency_from_cron(self):
+        from apps.core.scans.api import _parse_schedule
+        s = self._make_schedule("recurring_example.com", cron="0 2 * * 1")
+        result = _parse_schedule(s)
+        assert result["frequency"] == "Weekly (Mondays)"
+
+    def test_daily_frequency_from_cron(self):
+        from apps.core.scans.api import _parse_schedule
+        s = self._make_schedule("recurring_example.com", cron="0 2 * * *")
+        result = _parse_schedule(s)
+        assert result["frequency"] == "Daily"
 
 
 @pytest.mark.django_db

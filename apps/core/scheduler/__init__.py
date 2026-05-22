@@ -1,3 +1,3 @@
-from .scheduler import get_scheduler, start_scheduler
+from .scheduler import setup_core_schedules, sync_domain_monitoring_jobs
 
-__all__ = ["get_scheduler", "start_scheduler"]
+__all__ = ["setup_core_schedules", "sync_domain_monitoring_jobs"]
