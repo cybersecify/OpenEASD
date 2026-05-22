@@ -131,3 +131,6 @@ api.add_router("/workflows", workflows_router)
 
 from apps.core.insights.api import router as insights_router
 api.add_router("/insights", insights_router)
+
+from apps.core.notifications.api import router as notifications_router
+api.add_router("/notifications", notifications_router)

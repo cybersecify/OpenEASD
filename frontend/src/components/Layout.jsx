@@ -5,12 +5,13 @@ import { apiPost } from '../api/client.js';
 import { auth } from '../auth.js';
 
 const NAV = [
-  { label: 'Dashboard', path: '/' },
-  { label: 'Domains',   path: '/domains' },
-  { label: 'Scans',     path: '/scans' },
-  { label: 'Findings',  path: '/findings' },
-  { label: 'Workflows', path: '/workflows' },
-  { label: 'Insights',  path: '/insights' },
+  { label: 'Dashboard',      path: '/' },
+  { label: 'Domains',        path: '/domains' },
+  { label: 'Scans',          path: '/scans' },
+  { label: 'Findings',       path: '/findings' },
+  { label: 'Workflows',      path: '/workflows' },
+  { label: 'Insights',       path: '/insights' },
+  { label: 'Notifications',  path: '/notifications' },
 ];
 
 function NavLink({ path, label, badge }) {

@@ -367,11 +367,19 @@ def _run_via_workflow(session):
 # ---------------------------------------------------------------------------
 
 def _dispatch_alerts(session):
-    """Fire alerts if SLACK_WEBHOOK_URL is configured."""
+    """Fire alerts to all configured channels after a scan completes."""
     from django.conf import settings
-    if not getattr(settings, "SLACK_WEBHOOK_URL", ""):
+    from apps.core.notifications.models import NotificationConfig
+
+    cfg = NotificationConfig.get()
+    # DB config takes precedence; fall back to env vars for Docker/K8s deployments
+    slack_url  = cfg.slack_webhook_url  or getattr(settings, "SLACK_WEBHOOK_URL", "")
+    teams_url  = cfg.teams_webhook_url  or getattr(settings, "MS_TEAMS_WEBHOOK_URL", "")
+    threshold  = cfg.severity_threshold or getattr(settings, "ALERT_SEVERITY_THRESHOLD", "high")
+
+    if not slack_url and not teams_url:
         return
-    threshold = getattr(settings, "ALERT_SEVERITY_THRESHOLD", "high")
+
     try:
         from apps.core.notifications.dispatcher import dispatch_alerts
         dispatch_alerts(session.id, severity_threshold=threshold)

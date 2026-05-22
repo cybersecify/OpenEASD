@@ -1,6 +1,31 @@
 from django.db import models
 
 
+class NotificationConfig(models.Model):
+    """Singleton (pk=1) — stores webhook URLs and alert threshold in the DB."""
+    THRESHOLD_CHOICES = [
+        ("critical", "Critical only"),
+        ("high",     "High and above"),
+        ("medium",   "Medium and above"),
+        ("low",      "Low and above"),
+    ]
+
+    slack_webhook_url  = models.TextField(blank=True, default="")
+    teams_webhook_url  = models.TextField(blank=True, default="")
+    severity_threshold = models.CharField(max_length=20, choices=THRESHOLD_CHOICES, default="high")
+
+    class Meta:
+        verbose_name = "Notification config"
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return f"NotificationConfig (threshold={self.severity_threshold})"
+
+
 class Alert(models.Model):
     ALERT_TYPE_CHOICES = [("slack", "Slack"), ("teams", "Microsoft Teams")]
     STATUS_CHOICES = [("sent", "Sent"), ("failed", "Failed")]

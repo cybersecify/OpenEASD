@@ -86,8 +86,20 @@ def _build_slack_payload(session, grouped: dict, threshold: str) -> dict:
     return {"blocks": blocks}
 
 
+def _get_slack_url() -> str:
+    from apps.core.notifications.models import NotificationConfig
+    cfg = NotificationConfig.get()
+    return cfg.slack_webhook_url or getattr(settings, "SLACK_WEBHOOK_URL", "")
+
+
+def _get_teams_url() -> str:
+    from apps.core.notifications.models import NotificationConfig
+    cfg = NotificationConfig.get()
+    return cfg.teams_webhook_url or getattr(settings, "MS_TEAMS_WEBHOOK_URL", "")
+
+
 def _send_slack(session, grouped: dict, threshold: str) -> tuple[str, str]:
-    url = getattr(settings, "SLACK_WEBHOOK_URL", "")
+    url = _get_slack_url()
     if not url:
         return "skipped", ""
 
@@ -146,7 +158,7 @@ def _build_teams_payload(session, grouped: dict, threshold: str) -> dict:
 
 
 def _send_teams(session, grouped: dict, threshold: str) -> tuple[str, str]:
-    url = getattr(settings, "MS_TEAMS_WEBHOOK_URL", "")
+    url = _get_teams_url()
     if not url:
         return "skipped", ""
 
