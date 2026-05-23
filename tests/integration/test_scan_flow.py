@@ -82,7 +82,6 @@ class TestDomainSecurityScanFlow:
 
     def test_missing_email_records_creates_findings(self, db):
         from apps.core.scans.models import ScanSession
-        from apps.core.findings.models import Finding
 
         session = ScanSession.objects.create(domain="insecure.com", scan_type="full", status="pending")
         findings = self._run_mocked_scan(
@@ -103,7 +102,6 @@ class TestDomainSecurityScanFlow:
         session = ScanSession.objects.create(domain="expiring.com", scan_type="full", status="pending")
         findings = self._run_mocked_scan(session, rdap_days=3)
 
-        titles = [f.title for f in findings]
         expiry = next((f for f in findings if "expires" in f.title.lower()), None)
         assert expiry is not None
         assert expiry.severity == "critical"

@@ -1,5 +1,4 @@
 """Tests that tool_meta phase numbers match the intended pipeline order."""
-import pytest
 
 
 def test_phase_order():

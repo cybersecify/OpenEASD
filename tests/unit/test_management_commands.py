@@ -1,7 +1,7 @@
 """Unit tests for management commands: run_scan, run_daily_scan, run_weekly_scan, backfill_insights."""
 
 from io import StringIO
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from django.core.management import call_command

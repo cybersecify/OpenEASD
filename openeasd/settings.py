@@ -5,7 +5,6 @@ OpenEASD - Automated External Attack Surface Detection
 Company: Cybersecify | Author: Rathnakara G N
 """
 
-import os
 from datetime import timedelta
 from pathlib import Path
 from decouple import config

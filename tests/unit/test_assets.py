@@ -54,7 +54,7 @@ class TestIPAddressModel:
         from apps.core.assets.models import Subdomain, IPAddress
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         sub = Subdomain.objects.create(session=sess, domain="example.com", subdomain="api.example.com", source="subfinder")
-        ip = IPAddress.objects.create(session=sess, subdomain=sub, address="1.2.3.4", version=4, source="dnsx")
+        IPAddress.objects.create(session=sess, subdomain=sub, address="1.2.3.4", version=4, source="dnsx")
         assert sub.ips.count() == 1
         assert sub.ips.first().address == "1.2.3.4"
 

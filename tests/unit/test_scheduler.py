@@ -8,7 +8,6 @@ import uuid
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
-import pytest
 from django.utils import timezone
 
 from apps.core.scheduler.scheduler import (
@@ -65,7 +64,7 @@ class TestReapStuckScans:
         assert session.status == "completed"
 
     def test_does_not_reap_cancelled_scan(self, db):
-        session = self._make_session("cancelled", SCAN_TIMEOUT_MINUTES + 10)
+        self._make_session("cancelled", SCAN_TIMEOUT_MINUTES + 10)
         count = reap_stuck_scans()
         assert count == 0
 
@@ -132,7 +131,6 @@ class TestPurgeExpiredBlacklistedTokens:
 class TestDailyScan:
     def test_launches_scan_for_each_active_domain(self, db):
         from apps.core.domains.models import Domain
-        from apps.core.scans.models import ScanSession
         from apps.core.scheduler.scheduler import daily_scan
 
         Domain.objects.create(name="a.example.com", is_active=True)

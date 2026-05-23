@@ -80,7 +80,6 @@ class TestParseSchedule:
     """Tests _parse_schedule() domain extraction, especially for domains with underscores."""
 
     def _make_schedule(self, name, cron="0 2 * * *"):
-        from unittest.mock import MagicMock
         s = MagicMock()
         s.name = name
         s.next_run = None
@@ -239,7 +238,6 @@ class TestScanDurationLabel:
 
     def _make_scan(self, status, start_offset_seconds=-300, end_offset_seconds=None):
         """Build a mock ScanSession without hitting the DB."""
-        from unittest.mock import MagicMock
         from django.utils import timezone
         import datetime
         scan = MagicMock()
@@ -265,9 +263,7 @@ class TestScanDurationLabel:
 
     def test_running_scan_returns_running(self):
         from apps.core.scans.templatetags.scan_tags import scan_duration_label
-        import datetime
         from unittest.mock import patch
-        from django.utils import timezone
         scan = self._make_scan("running", start_offset_seconds=221)  # 3m 41s ago
         fixed_now = scan.start_time + datetime.timedelta(seconds=221)
         with patch("apps.core.scans.templatetags.scan_tags.timezone") as mock_tz:

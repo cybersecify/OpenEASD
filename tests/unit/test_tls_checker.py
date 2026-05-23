@@ -9,11 +9,8 @@ import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
-from cryptography.x509.oid import ExtensionOID
 
 from apps.tls_checker.collector import (
-    INHERENTLY_INSECURE_SERVICES,
-    TLS_CAPABLE_SERVICES,
     _check_trusted_ca,
     _parse_cert_details,
     _hostname_matches_san,
@@ -154,8 +151,6 @@ class TestParseCertDetails:
         # Generate a cert that expired 1 day ago (valid_before in past, valid_after just before now)
         der = _generate_self_signed_der(days_valid=1)
         # Patch the parsed cert's not_valid_after to be in the past
-        from cryptography import x509 as _x509
-        cert = _x509.load_der_x509_certificate(der)
         # Instead, test _parse_cert_details with a cert that has 1 day validity
         # (will be ~1 day remaining, not expired). For expired cert testing,
         # the analyzer tests cover this via _make_result(cert_expiry_days=-5).

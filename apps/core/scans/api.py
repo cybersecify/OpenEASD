@@ -34,7 +34,6 @@ BUILTIN_SCHEDULE_NAMES = {"daily_scan", "watchdog_reap_stuck_scans", "purge_blac
 
 def _parse_schedule(schedule):
     """Convert a Django-Q2 Schedule → API dict. Returns None for built-in schedules."""
-    from django_q.models import Schedule
 
     name = schedule.name
     if name in BUILTIN_SCHEDULE_NAMES or name.startswith("monitor_"):

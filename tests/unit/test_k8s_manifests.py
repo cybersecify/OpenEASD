@@ -7,7 +7,6 @@ consistency, security settings, and health probe configuration.
 
 from pathlib import Path
 import yaml
-import pytest
 
 K8S_DIR = Path(__file__).resolve().parents[2] / "k8s"
 
