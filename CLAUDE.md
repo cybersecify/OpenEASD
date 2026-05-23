@@ -39,8 +39,7 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 - Django 5+ with plain Django views (no DRF, no Celery, no Redis)
 - **Django Ninja** REST API under `/api/` — Schema-based, auto-docs at `/api/docs`
 - **JWT Bearer auth** — access + refresh tokens via `djangorestframework-simplejwt` (ninja-jwt wrapper); token blacklist handled by simplejwt's built-in `OutstandingToken`/`BlacklistedToken` models
-- **Django-Q2** — background task queue for scan execution (ORM broker, tasks stored in Django DB)
-- `django-apscheduler` for daily automated scans (starts in `SchedulerConfig.ready()`)
+- **Django-Q2** — background task queue for scan execution AND all scheduling (ORM broker, tasks stored in Django DB). `setup_core_schedules()` in `SchedulerConfig.ready()` registers daily scans, stuck-scan watchdog, JWT token purge, and per-domain monitoring jobs as `django_q.models.Schedule` entries. APScheduler has been fully removed.
 - **WhiteNoise** — serves collected static files (frontend bundle) when `DEBUG=False` (Docker/prod); uses `CompressedManifestStaticFilesStorage` for gzip + content-hash fingerprinting
 - SQLite database (dev), configurable via `DB_NAME` env var
 
@@ -154,10 +153,10 @@ Don't enable the `ingress` addon if the host already runs Caddy on :80/:443 — 
 ### Scheduler
 - Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (uses `TIME_ZONE` in settings, default 02:00)
 - Configured via env vars: `SCAN_DAILY_HOUR`, `SCAN_DAILY_MINUTE`
-- Job history visible in Django admin under "Django APScheduler"
+- Schedule history visible in Django admin under "Django Q" → "Scheduled tasks"
 - Scheduler code lives in `apps/core/scheduler/scheduler.py`
-- Started by `apps/core/scheduler/apps.py` → `SchedulerConfig.ready()`
-- Guard prevents double-start in dev server (checks `RUN_MAIN` env var)
+- `setup_core_schedules()` called from `apps/core/scheduler/apps.py` → `SchedulerConfig.ready()`
+- Guard runs only in the qcluster process (checks `qcluster` in `sys.argv`) — never runs in gunicorn workers
 
 ## External binary tools
 
@@ -186,8 +185,8 @@ Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TO
 | `findings/` | `findings` | Unified Finding model — all tools write here |
 | `scans/` | `scans` | ScanSession, ScanDelta, pipeline orchestrator |
 | `workflows/` | `workflow` | Workflow CRUD, dynamic runner, tool registry |
-| `scheduler/` | `scheduler` | APScheduler setup, daily/weekly scans, stuck scan watchdog |
-| `notifications/` | `alerts` | Slack/Teams alert dispatcher |
+| `scheduler/` | `scheduler` | Django-Q2 schedule setup, daily/weekly scans, per-domain monitoring, stuck scan watchdog |
+| `notifications/` | `alerts` | Slack/Teams alerts, NotificationConfig model, alert history |
 | `insights/` | `insights` | ScanSummary, FindingTypeSummary, charts |
 | `reports/` | `reports` | CSV + PDF export |
 | `api/` | — | Django Ninja API — routers, JWT auth, error handlers |

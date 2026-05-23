@@ -17,8 +17,10 @@ OpenEASD scans domains to discover subdomains, resolve IPs, scan ports, detect s
 - **Live scan progress** — Real-time pipeline status with per-tool step tracking
 - **Scan stop/cancel** — Graceful cancellation between tool steps
 - **Unified findings** — All tools write to a single Finding model with lifecycle tracking
+- **Continuous monitoring** — Per-domain rescans on a configurable schedule (6h / 12h / 24h / 48h / weekly)
+- **Subscan** — Re-run specific tools on existing scan assets without full rediscovery
 - **Reports** — CSV and PDF export
-- **Alerts** — Slack and Microsoft Teams notifications
+- **Alerts** — Slack and Teams webhooks with configurable severity threshold; test button and alert history in the UI
 - **Scheduling** — One-time, recurring, and daily automated scans
 - **JWT auth** — Stateless Bearer token authentication with refresh token rotation
 - **Forced password change** — Default `admin/admin` password must be changed on first login
@@ -53,7 +55,7 @@ apps/core/              - Infrastructure (never changes)
   findings/             - Unified Finding model
   scans/                - ScanSession, pipeline orchestrator
   workflows/            - Dynamic workflow engine + tool registry
-  scheduler/            - APScheduler, daily/weekly scans, stuck scan watchdog
+  scheduler/            - Django-Q2 scheduling, daily/weekly scans, per-domain monitoring, stuck scan watchdog
   notifications/        - Slack/Teams alerts
   insights/             - Scan summaries, charts
   reports/              - CSV/PDF export
@@ -121,9 +123,9 @@ docker stop openeasd && docker rm openeasd
 | `CSRF_TRUSTED_ORIGINS` | — | Required if accessing via a domain, e.g. `https://openeasd.example.com` |
 | `DEBUG` | `False` | Set `True` only for local development |
 | `DB_NAME` | `data/openeasd.db` | SQLite path relative to `/app` |
-| `SLACK_WEBHOOK_URL` | — | Slack incoming webhook for scan alerts |
-| `MS_TEAMS_WEBHOOK_URL` | — | Teams incoming webhook for scan alerts |
-| `ALERT_SEVERITY_THRESHOLD` | `high` | Minimum severity to trigger alerts (`critical`/`high`/`medium`/`low`) |
+| `SLACK_WEBHOOK_URL` | — | Slack incoming webhook for scan alerts (can also be set in the Notifications UI) |
+| `MS_TEAMS_WEBHOOK_URL` | — | Teams incoming webhook for scan alerts (can also be set in the Notifications UI) |
+| `ALERT_SEVERITY_THRESHOLD` | `high` | Minimum severity to trigger alerts — overridden by the Notifications UI setting |
 | `SCAN_DAILY_HOUR` | `2` | Hour for daily scheduled scans (24h, UTC) |
 | `SCAN_DAILY_MINUTE` | `0` | Minute for daily scheduled scans |
 
@@ -280,10 +282,10 @@ apps/my_tool/
 ## Running Tests
 
 ```bash
-# Fast tests (excludes slow DNS tests, ~522 tests)
+# Fast tests (excludes slow DNS tests, ~629 tests)
 uv run pytest tests/ --ignore=tests/unit/test_domain_security.py
 
-# All tests (~563 total)
+# All tests (~670 total)
 uv run pytest tests/
 ```
 
@@ -292,7 +294,8 @@ uv run pytest tests/
 **Backend:**
 - **Django 5** — Web framework
 - **Django Ninja** — REST API with OpenAPI docs
-- **Django-Q2** — Background task queue (ORM broker, tasks stored in Django DB)
+- **Django-Q2** — Background task queue and scheduler (ORM broker, replaces APScheduler)
+- **croniter** — Cron expression parsing for Django-Q2 CRON schedules
 - **WhiteNoise** — Serves static files in production (Docker) with gzip compression
 - **SQLite** — Database (dev), configurable via `DB_NAME`
 - **paramiko** — SSH protocol inspection
