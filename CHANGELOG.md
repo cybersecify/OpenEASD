@@ -37,6 +37,26 @@ specifically — in-house security/IT teams, small security consultancies,
 security learners. The pre-launch work below tightens the load-bearing
 "one `docker run` and it works" promise before any public announcement.
 
+#### Added
+- **`tools_healthcheck` management command, run at container startup.**
+  Probes each external tool (subfinder, dnsx, naabu, httpx, nuclei, nmap, amass)
+  with a tiny known-good target — e.g. `naabu -host 1.1.1.1 -p 443`,
+  `dnsx -a` with `google.com` on stdin — and prints PASS/FAIL per tool in the
+  container logs. Catches the four silent-failure modes that have repeatedly
+  bitten this project: (a) binary missing or wrong PATH, (b) subprocess
+  timeout, (c) non-zero exit, (d) **exit-zero-with-empty-stdout** — the
+  specific Mac/Colima symptom that produced "0.8-second full scans with only
+  DNS findings" earlier this week. `docker-entrypoint.sh` runs it after
+  migrate/collectstatic, before `exec`. Always exits 0 — observability, not
+  gating. Operators read the logs; users can still log into the UI to
+  investigate. `--quick` flag runs version checks only (no network) for fast
+  local sanity-checks. **Why:** every time scans have returned 0 findings on
+  a real target, the cause was an upstream tool failing silently and we had
+  no early warning — users would only notice after a scan finished suspiciously
+  fast or produced an obviously-thin report. A 30-second boot probe surfaces
+  the failure immediately in the container logs, where any operator
+  troubleshooting "why does my scan show nothing" will look first.
+
 #### Fixed
 - **Stuck-scan watchdog no longer throws away pre-nuclei findings.**
   Before: any scan still in `running` after `SCAN_TIMEOUT_MINUTES` (default 90)

@@ -33,4 +33,11 @@ else:
         print("[entrypoint] Admin user already configured")
 PYEOF
 
+# Probe external tools (subfinder, dnsx, naabu, httpx, nuclei, nmap, amass)
+# with tiny known-good targets. Non-fatal: always exits 0 — the point is
+# observability in the container logs, not gating startup. If any tool fails,
+# scans using it will silently return empty results until you fix it.
+echo "[entrypoint] Running external tool healthcheck..."
+python manage.py tools_healthcheck || true
+
 exec "$@"
