@@ -139,6 +139,7 @@ def _serialize_finding(finding) -> dict:
     return {
         "id": finding.id,
         "session_id": finding.session_id,
+        "session_uuid": str(finding.session.uuid) if finding.session else None,
         "source": finding.source,
         "check_type": finding.check_type,
         "severity": finding.severity,
@@ -323,9 +324,17 @@ def list_findings(
     status: str = "",
     source: str = "",
     session_id: int = 0,
+    session_uuid: uuid.UUID | None = None,
     page: int = 1,
 ):
     from apps.core.findings.models import Finding
+
+    # Allow callers to filter by scan UUID directly — matches list_urls and is
+    # what most external clients have on hand. Internally still keyed by
+    # session_id for the queries below.
+    if session_uuid is not None and not session_id:
+        session = get_object_or_404(ScanSession, uuid=str(session_uuid))
+        session_id = session.id
 
     latest_ids = latest_session_ids()
     base_qs = Finding.objects.select_related("session")

@@ -421,6 +421,35 @@ class TestFindingsList:
         res = auth_client.get("/api/scans/findings/?severity=info")
         assert res.status_code == 200
 
+    def test_filter_by_session_uuid(self, auth_client, finding):
+        """Closes the silent-ignore UX trap — session_uuid should actually filter."""
+        from apps.core.findings.models import Finding
+        from apps.core.scans.models import ScanSession
+
+        # A second session + finding so we can prove the filter narrows
+        other = ScanSession.objects.create(
+            domain="other.example.com", scan_type="full", status="completed",
+            end_time=timezone.now(), total_findings=0,
+        )
+        Finding.objects.create(
+            session=other, source="domain_security", target="other.example.com",
+            check_type="dns", severity="info", title="Other finding",
+            description="d", remediation="r",
+        )
+
+        res = auth_client.get(f"/api/scans/findings/?session_uuid={finding.session.uuid}")
+        assert res.status_code == 200
+        data = res.json()
+        uuids = {f["session_uuid"] for f in data["findings"]} if data["findings"] else set()
+        # Should contain the targeted session and exclude the other
+        assert str(finding.session.uuid) in uuids
+        assert str(other.uuid) not in uuids
+
+    def test_unknown_session_uuid_returns_404(self, auth_client):
+        import uuid
+        res = auth_client.get(f"/api/scans/findings/?session_uuid={uuid.uuid4()}")
+        assert res.status_code == 404
+
     def test_requires_auth(self, client):
         assert client.get("/api/scans/findings/").status_code == 401
 

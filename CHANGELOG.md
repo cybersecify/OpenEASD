@@ -38,6 +38,20 @@ security learners. The pre-launch work below tightens the load-bearing
 "one `docker run` and it works" promise before any public announcement.
 
 #### Added
+- **`/api/scans/findings/` now accepts `?session_uuid=<uuid>`.**
+  Before: callers (including me, today, debugging a watchdog issue) tried
+  `?session_uuid=<uuid>` and got the default `latest_session_ids()` view back
+  — silently. Django Ninja accepts unknown query params without complaint, so
+  the filter looked like it worked but returned unrelated data. Cost ~20 min
+  of "where are my findings?" Now: `session_uuid` is a real query param
+  alongside `session_id` and does an internal UUID→session lookup; unknown
+  UUID returns 404 (no longer a silent default). Finding serializer also now
+  includes `session_uuid` so external clients holding the UUID don't have to
+  do a separate lookup. **Why:** external clients rarely have the integer
+  `session_id` on hand (UUIDs are what /api/scans/ and /api/scans/<uuid>/
+  hand back). The mismatch was a guaranteed UX trap for anyone exercising
+  the API directly.
+
 - **`tools_healthcheck` management command, run at container startup.**
   Probes each external tool (subfinder, dnsx, naabu, httpx, nuclei, nmap, amass)
   with a tiny known-good target — e.g. `naabu -host 1.1.1.1 -p 443`,
