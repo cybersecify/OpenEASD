@@ -88,7 +88,18 @@ def run_workflow(workflow_run_id: int, only_tools: list | None = None):
                 results = fn(session)
                 count = len(results) if isinstance(results, (list, tuple)) else (results or 0)
                 step_result.status = "completed"
-                step_result.findings_count = count
+                # Only count Finding rows here. Asset-producing tools (subfinder,
+                # dnsx, naabu, httpx, service_detection) also return lists, but
+                # those are Subdomain/IPAddress/Port/URL records, not Findings.
+                # Surfacing that count as findings_count made API responses
+                # claim "subfinder: 10 findings" when there were 0 actual
+                # Finding rows. Per-tool asset counts are visible at the
+                # session level (subdomains_total, ips, ports, urls in /status/).
+                from .registry import get_tool_produces_findings
+                if get_tool_produces_findings().get(tool, False):
+                    step_result.findings_count = count
+                else:
+                    step_result.findings_count = 0
 
             except Exception as e:
                 logger.error(f"[workflow:{run.id}] Step {tool} failed: {e}", exc_info=True)

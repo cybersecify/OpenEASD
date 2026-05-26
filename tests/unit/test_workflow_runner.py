@@ -83,7 +83,11 @@ class TestRunWorkflowSuccess:
         for r in results:
             assert r.status in ("completed", "skipped")  # service_detection may be injected
 
-    def test_step_findings_count_stored(self, db, run):
+    def test_step_findings_count_zero_for_asset_producing_tools(self, db, run):
+        """Subfinder/dnsx/naabu/httpx return assets (Subdomain/IPAddress/Port/URL),
+        not Findings. Their step_result.findings_count must stay 0 to avoid
+        falsely claiming "subfinder: 10 findings" in API responses.
+        """
         with _patch_get_runner({
             "subfinder": _mock_runner(["sub1.example.com", "sub2.example.com"]),
             "dnsx":      _mock_runner([]),
@@ -91,8 +95,26 @@ class TestRunWorkflowSuccess:
             run_workflow(run.id)
 
         subfinder_result = WorkflowStepResult.objects.get(run=run, tool="subfinder")
-        assert subfinder_result.findings_count == 2
+        # subfinder.apps.SubfinderConfig.tool_meta has produces_findings=False
+        assert subfinder_result.findings_count == 0
         assert subfinder_result.status == "completed"
+
+    def test_step_findings_count_populated_for_finding_producing_tools(self, db, session):
+        """nmap (and domain_security, web_checker, etc.) DO return Finding rows.
+        Their findings_count must reflect the returned list length so API
+        callers can see per-tool finding totals.
+        """
+        wf = Workflow.objects.create(name="Finding Tool Test")
+        WorkflowStep.objects.create(workflow=wf, tool="nmap", order=1, enabled=True)
+        nmap_run = WorkflowRun.objects.create(workflow=wf, session=session)
+
+        with _patch_get_runner({"nmap": _mock_runner(["cve-1", "cve-2", "cve-3"])}):
+            run_workflow(nmap_run.id)
+
+        nmap_result = WorkflowStepResult.objects.get(run=nmap_run, tool="nmap")
+        # nmap.apps.NmapConfig.tool_meta has produces_findings=True
+        assert nmap_result.findings_count == 3
+        assert nmap_result.status == "completed"
 
     def test_step_findings_count_for_none_return(self, db, run):
         with _patch_get_runner({"subfinder": _mock_runner(None), "dnsx": _mock_runner(None)}):

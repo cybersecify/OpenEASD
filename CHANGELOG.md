@@ -37,6 +37,21 @@ specifically — in-house security/IT teams, small security consultancies,
 security learners. The pre-launch work below tightens the load-bearing
 "one `docker run` and it works" promise before any public announcement.
 
+#### Fixed
+- **`step_result.findings_count` no longer mislabels assets as findings.**
+  The runner counted *whatever* the tool's runner returned and wrote it to
+  `findings_count`. For finding-producing tools (nmap, domain_security,
+  tls_checker, ssh_checker, nuclei, nuclei_network, web_checker) that's
+  correct — they return Finding rows. But for asset-producing tools
+  (subfinder, amass, dnsx, naabu, httpx, service_detection) the return value
+  is a list of Subdomain/IPAddress/Port/URL records, not Findings. Result:
+  API responses showed nonsense like `"subfinder": findings_count: 10` when
+  the Findings table actually had zero rows for subfinder. Fix: the runner
+  now consults `tool_meta.produces_findings` (already declared per app) and
+  leaves `findings_count` at 0 for asset tools. Per-tool asset totals are
+  unchanged — they're visible at the session level (`subdomains_total`, `ips`,
+  `ports`, `urls` in `/api/scans/<uuid>/status/`).
+
 #### Added
 - **`/api/scans/findings/` now accepts `?session_uuid=<uuid>`.**
   Before: callers (including me, today, debugging a watchdog issue) tried
