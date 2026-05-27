@@ -37,7 +37,7 @@ Phase 5  Service Detection  - Classify ports as web/non-web via nmap -sV (auto)
 Phase 7  Nmap               - CVE scanning via NSE vulners (non-web ports)
 Phase 7  TLS Checker        - Certificate, cipher, and protocol analysis
 Phase 7  SSH Checker        - SSH configuration audit
-Phase 7  Nuclei Network     - Network protocol vulnerability scanning (319 templates)
+Phase 7  Nuclei Network     - Service-aware nuclei network templates against non-web ports
 Phase 8  httpx              - Web probing, URL discovery
 Phase 9  Nuclei             - Web vulnerability scanning (community templates)
 Phase 9  Web Checker        - Security headers, cookies, CORS analysis
@@ -301,7 +301,7 @@ uv run pytest tests/
 - **paramiko** — SSH protocol inspection
 - **cryptography** — X.509 certificate analysis
 - **xhtml2pdf** — PDF report generation
-- **PyJWT** — JWT token creation and validation
+- **django-ninja-jwt** — JWT auth for the Ninja API (wraps `djangorestframework-simplejwt`); access + refresh tokens, blacklist on logout
 
 **Frontend:**
 - **React 18 + Vite** — SPA with hot module replacement

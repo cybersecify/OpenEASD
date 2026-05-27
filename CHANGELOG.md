@@ -38,6 +38,33 @@ security learners. The pre-launch work below tightens the load-bearing
 "one `docker run` and it works" promise before any public announcement.
 
 #### Fixed
+- **README claims-trace audit — two drifts corrected.**
+  Walked every customer-visible README claim through `apps/*/analyzer.py`
+  and `apps/*/scanner.py` to confirm the code implements what we say it
+  does. Two drifts found:
+  (a) **"Nuclei Network (319 templates)"** → reworded to "service-aware
+  nuclei network templates against non-web ports." The number `319` doesn't
+  appear anywhere in code and is a stale snapshot — nuclei-templates updates
+  upstream, the count drifts every release. Timeless wording avoids the drift.
+  (b) **"PyJWT — JWT token creation and validation"** → corrected to
+  "django-ninja-jwt — JWT auth for the Ninja API." `pyproject.toml` has
+  `django-ninja-jwt>=5.0`; `apps/core/api/ninja.py` imports `ninja_jwt`.
+  PyJWT is at best a transitive dependency, not the auth library we use.
+  All other Pipeline/Features claims trace cleanly: DNS/SPF/DMARC/DKIM/RDAP
+  in `domain_security/scanner.py` and `checks/rdap.py`; web headers/cookies/
+  CORS in `web_checker/analyzer.py`; cert/cipher/protocol in `tls_checker/
+  analyzer.py`; SSH config (root login, weak kex/cipher/MAC, SSHv1) in
+  `ssh_checker/analyzer.py`; naabu top-100 confirmed in `collector.py:43`;
+  service_detection nmap -sV in `detector.py:15`; continuous-monitoring
+  intervals 6h/12h/24h/48h/weekly in `domains/api.py:151`
+  (`VALID_INTERVALS = {6, 12, 24, 48, 168}`). HSTS — the historic drift
+  case — is still not implemented in `web_checker/analyzer.py`, but the
+  README never claimed it, so no drift.
+  **Why:** the verification discipline ("claims trace to code, not to other
+  documentation") is the load-bearing rule that prevents customer-facing
+  copy from drifting out of sync with what the tool actually does. Audit
+  pass run pre-v1.0 launch.
+
 - **`step_result.findings_count` no longer mislabels assets as findings.**
   The runner counted *whatever* the tool's runner returned and wrote it to
   `findings_count`. For finding-producing tools (nmap, domain_security,
