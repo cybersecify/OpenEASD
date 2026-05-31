@@ -2,7 +2,7 @@
 
 
 def test_phase_order():
-    """Non-web tools (7) must run before httpx (8) and web tools (9)."""
+    """Non-web tools (7) must run before httpx (8) and web tools (10)."""
     from apps.core.workflows.registry import get_tool_phases
     phases = get_tool_phases()
 

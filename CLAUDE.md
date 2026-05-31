@@ -326,8 +326,8 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/ssh_checker/` | 7 | Yes | SSH config analysis |
 | `apps/nuclei_network/` | 7 | Yes | Network protocol vuln scan (319 templates, non-web) |
 | `apps/httpx/` | 8 | No | Web probing, URL discovery |
-| `apps/nuclei/` | 9 | Yes | Web vuln scan (community templates) |
-| `apps/web_checker/` | 9 | Yes | Security headers, cookies, CORS |
+| `apps/nuclei/` | 10 | Yes | Web vuln scan (community templates) |
+| `apps/web_checker/` | 10 | Yes | Security headers, cookies, CORS |
 
 ### Tool app structure
 ```
@@ -357,8 +357,8 @@ Phase 7  tls_checker        → Finding (cipher/cert/protocol on all ports)
 Phase 7  ssh_checker        → Finding (SSH config on service="ssh" ports)
 Phase 7  nuclei_network     → Finding (network protocol vulns, non-web ports)
 Phase 8  httpx              → URL (web probing, CDN-aware via SNI)
-Phase 9  nuclei             → Finding (web vulns via templates on URLs)
-Phase 9  web_checker        → Finding (headers, cookies, CORS on URLs)
+Phase 10 nuclei             → Finding (web vulns via templates on URLs)
+Phase 10 web_checker        → Finding (headers, cookies, CORS on URLs)
 ```
 
 ### Scan flow
