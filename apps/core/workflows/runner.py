@@ -172,7 +172,13 @@ def run_workflow(workflow_run_id: int, only_tools: list | None = None):
                         for tool in group
                     }
                     for future in as_completed(futures):
-                        future.result()  # re-raise unexpected executor errors only
+                        try:
+                            future.result()
+                        except Exception as exc:
+                            logger.error(
+                                f"[workflow:{run.id}] Unexpected error in parallel step future: {exc}",
+                                exc_info=True,
+                            )
                 order += len(group)
 
         if cancelled:
