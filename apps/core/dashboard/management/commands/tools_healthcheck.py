@@ -70,14 +70,15 @@ def _functional_probes() -> list[Probe]:
             stdin_input="https://1.1.1.1\n",
             expect_in_stdout="1.1.1.1",
         ),
+        # Version checks for tools where a functional probe would be slow
+        # (nuclei loads thousands of templates), noisy (amass active enum,
+        # nmap port scan), or require a live web target (katana crawl).
+        # Version check confirms the binary is callable.
         Probe(
             name="katana",
             cmd=[_tool_binary("TOOL_KATANA", "katana"), "-version"],
             expect_in_stdout="katana",
         ),
-        # Version checks for tools where a functional probe would be slow
-        # (nuclei loads thousands of templates) or noisy (amass active enum,
-        # nmap port scan). Version check confirms the binary is callable.
         Probe(
             name="nuclei",
             cmd=[_tool_binary("TOOL_NUCLEI", "nuclei"), "-version"],

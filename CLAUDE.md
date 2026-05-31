@@ -222,7 +222,7 @@ Don't enable the `ingress` addon if the host already runs Caddy on :80/:443 — 
 ## External binary tools
 
 ProjectDiscovery tools installed via `pdtm` at `~/.pdtm/go/bin/`:
-- `subfinder`, `dnsx`, `naabu`, `httpx`, `nuclei`
+- `subfinder`, `dnsx`, `naabu`, `httpx`, `katana`, `nuclei`
 
 OWASP/other tools:
 - `amass` — active subdomain enumeration (install separately: `go install -v github.com/owasp-amass/amass/v4/...@master`)
@@ -230,7 +230,7 @@ OWASP/other tools:
 System binary:
 - `nmap` (Homebrew at `/opt/homebrew/bin/nmap`)
 
-Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_NMAP`, `TOOL_NUCLEI`, `TOOL_AMASS` env vars.
+Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_KATANA`, `TOOL_NMAP`, `TOOL_NUCLEI`, `TOOL_AMASS` env vars.
 
 ## Architecture
 
@@ -311,7 +311,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (13 registered tools)
+### Tool apps (14 registered tools)
 
 | App | Phase | produces_findings | Description |
 |---|---|---|---|
@@ -326,6 +326,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/ssh_checker/` | 7 | Yes | SSH config analysis |
 | `apps/nuclei_network/` | 7 | Yes | Network protocol vuln scan (319 templates, non-web) |
 | `apps/httpx/` | 8 | No | Web probing, URL discovery |
+| `apps/katana/` | 9 | No | Web crawling, endpoint discovery |
 | `apps/nuclei/` | 10 | Yes | Web vuln scan (community templates) |
 | `apps/web_checker/` | 10 | Yes | Security headers, cookies, CORS |
 
@@ -342,7 +343,7 @@ apps/<tool>/
 ## Scan pipeline
 
 All scans run through the **dynamic workflow system**. The default "Full Scan"
-workflow executes all 11 tools in phase order. Custom workflows can include
+workflow executes all 14 tools in phase order. Custom workflows can include
 any subset of tools.
 
 ```
@@ -357,6 +358,7 @@ Phase 7  tls_checker        → Finding (cipher/cert/protocol on all ports)
 Phase 7  ssh_checker        → Finding (SSH config on service="ssh" ports)
 Phase 7  nuclei_network     → Finding (network protocol vulns, non-web ports)
 Phase 8  httpx              → URL (web probing, CDN-aware via SNI)
+Phase 9  katana             → URL (web crawling, endpoint discovery)
 Phase 10 nuclei             → Finding (web vulns via templates on URLs)
 Phase 10 web_checker        → Finding (headers, cookies, CORS on URLs)
 ```
@@ -455,6 +457,7 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | `tests/unit/test_domain_security.py` | 41 | DNS/email/RDAP — **slow, real network** |
 | `tests/unit/test_domains.py` | 15 | Domain CRUD |
 | `tests/unit/test_httpx.py` | 11 | JSON parser, Port lookup, Subdomain link |
+| `tests/unit/test_katana.py` | 18 | JSONL parser, Port/Subdomain FK links, scanner orchestrator |
 | `tests/unit/test_insights.py` | 11 | Insights builder + view |
 | `tests/unit/test_naabu.py` | 9 | JSON parser, FK to IPAddress |
 | `tests/unit/test_nmap.py` | 21 | Severity mapping, vulners XML parser, web/non-web exclusion |
@@ -471,4 +474,4 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | `tests/integration/test_scan_flow.py` | 13 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 71 | Smoke tests for all 35 API endpoints (auth + payload shape) |
 
-**Total: ~563 tests** (~522 fast + 41 slow domain_security)
+**Total: ~581 tests** (~540 fast + 41 slow domain_security)

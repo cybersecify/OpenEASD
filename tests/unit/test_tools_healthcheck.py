@@ -120,11 +120,11 @@ class TestCommand:
             return_value=(True, "OK"),
         ) as mock_probe:
             call_command("tools_healthcheck", "--quick", stdout=out)
-        # All 7 quick probes should fire
-        assert mock_probe.call_count == 7
+        # All 8 quick probes should fire (subfinder, dnsx, naabu, httpx, katana, nuclei, nmap, amass)
+        assert mock_probe.call_count == 8
         output = out.getvalue()
         assert "version mode" in output
-        assert "All 7 tools OK." in output
+        assert "All 8 tools OK." in output
 
     def test_functional_mode_runs_full_probes(self, db):
         out = StringIO()
@@ -133,7 +133,7 @@ class TestCommand:
             return_value=(True, "OK"),
         ) as mock_probe:
             call_command("tools_healthcheck", stdout=out)
-        assert mock_probe.call_count == 7
+        assert mock_probe.call_count == 8
         assert "functional mode" in out.getvalue()
 
     def test_failure_summary_lists_count(self, db):
@@ -151,7 +151,7 @@ class TestCommand:
         output = out.getvalue()
         assert "FAIL" in output
         assert "naabu" in output
-        assert "1 of 7 tool(s) failed" in output
+        assert "1 of 8 tool(s) failed" in output
 
     def test_command_always_exits_zero_even_with_failures(self, db):
         """Healthcheck is observability, not gating — never crashes the boot."""
