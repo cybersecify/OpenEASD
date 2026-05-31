@@ -2,7 +2,7 @@
 
 [![GitHub Stars](https://img.shields.io/github/stars/cybersecify/OpenEASD?style=social)](https://github.com/cybersecify/OpenEASD/stargazers)
 [![CI](https://github.com/cybersecify/OpenEASD/actions/workflows/ci.yml/badge.svg)](https://github.com/cybersecify/OpenEASD/actions/workflows/ci.yml)
-[![Docker Image](https://ghcr-badge.egpl.dev/cybersecify/openeasd/latest_tag?trim=major&label=ghcr.io)](https://github.com/cybersecify/OpenEASD/pkgs/container/openeasd)
+[![Docker Image](https://img.shields.io/badge/ghcr.io%2Fcybersecify%2Fopeneasd-latest-2496ed?logo=docker&logoColor=white)](https://github.com/cybersecify/OpenEASD/pkgs/container/openeasd)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **See your domain like an attacker does.** OpenEASD is a self-hosted scanner that wraps the open-source recon tools security teams already use — `subfinder`, `amass`, `dnsx`, `naabu`, `httpx`, `nuclei`, `nmap` — behind a single web UI with scheduling, alerts, and findings tracking. Free, MIT-licensed, one `docker run`. Results stay on your machine.
