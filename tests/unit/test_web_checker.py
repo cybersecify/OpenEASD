@@ -406,6 +406,73 @@ class TestWebCheckerCollector:
         results = collect(sess)
         assert results == []
 
+    def test_deduplicates_same_host_across_sources(self):
+        """katana URLs on same host as httpx URL must not produce a second fetch."""
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import Subdomain, IPAddress, Port
+        from apps.core.web_assets.models import URL
+
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        port = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                                   port=443, protocol="tcp", state="open", source="naabu")
+        sub = Subdomain.objects.create(session=sess, domain="example.com",
+                                       subdomain="www.example.com", source="subfinder")
+        URL.objects.create(session=sess, subdomain=sub, port=port,
+                           url="https://www.example.com", host="www.example.com",
+                           port_number=443, scheme="https", source="httpx")
+        # Katana adds multiple crawled paths on the same host
+        for path in ["/admin", "/login", "/api/docs"]:
+            URL.objects.create(session=sess, subdomain=sub, port=port,
+                               url=f"https://www.example.com{path}",
+                               host="www.example.com", port_number=443,
+                               scheme="https", source="katana")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {}
+        mock_resp.text = ""
+        mock_resp.raw.headers.getlist.return_value = []
+        mock_resp.cookies = []
+
+        with patch("apps.web_checker.collector.requests.get", return_value=mock_resp) as mock_get:
+            results = collect(sess)
+
+        # Only 1 fetch for www.example.com:443 despite 4 URLs in the session
+        assert mock_get.call_count == 1
+        assert len(results) == 1
+
+    def test_different_hosts_each_get_fetched(self):
+        """Two different subdomains on the same port → two fetches."""
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import Subdomain, IPAddress, Port
+        from apps.core.web_assets.models import URL
+
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        # Both subdomains share the same IP:port (common behind a CDN/load balancer)
+        port = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                                   port=443, protocol="tcp", state="open", source="naabu")
+        for host in ["www.example.com", "api.example.com"]:
+            sub = Subdomain.objects.create(session=sess, domain="example.com",
+                                           subdomain=host, source="subfinder")
+            URL.objects.create(session=sess, subdomain=sub, port=port,
+                               url=f"https://{host}", host=host,
+                               port_number=443, scheme="https", source="httpx")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {}
+        mock_resp.text = ""
+        mock_resp.raw.headers.getlist.return_value = []
+        mock_resp.cookies = []
+
+        with patch("apps.web_checker.collector.requests.get", return_value=mock_resp) as mock_get:
+            results = collect(sess)
+
+        assert mock_get.call_count == 2
+        assert len(results) == 2
+
 
 # ---------------------------------------------------------------------------
 # Scanner orchestrator

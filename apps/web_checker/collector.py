@@ -91,7 +91,21 @@ def collect(session) -> list[dict]:
     """
     from apps.core.web_assets.models import URL
 
-    urls = list(URL.objects.filter(session=session).select_related("port", "subdomain"))
+    # Deduplicate to one representative URL per (host, port_number).
+    # Security headers and cookies are server-wide — checking 50 katana-crawled
+    # paths on the same host would produce 50 identical findings and 50× the
+    # HTTP requests. httpx URLs (ordered first) are the canonical root URLs.
+    all_urls = URL.objects.filter(session=session).select_related(
+        "port", "subdomain"
+    ).order_by("source")  # "httpx" < "katana" alphabetically → httpx wins
+    seen_hosts: set[tuple] = set()
+    urls = []
+    for u in all_urls:
+        key = (u.host, u.port_number)
+        if key not in seen_hosts:
+            seen_hosts.add(key)
+            urls.append(u)
+
     if not urls:
         logger.info(f"[web_checker:{session.id}] No URLs to check")
         return []
