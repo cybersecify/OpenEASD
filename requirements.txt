@@ -31,7 +31,7 @@ python-nmap>=0.7.1
 docker>=6.1
 
 # Alerts and notifications
-slack-sdk>=3.26
+slack-sdk>=3.42.0
 
 # Data processing
 pandas>=2.1
