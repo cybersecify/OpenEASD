@@ -1,0 +1,53 @@
+name: CodeQL
+
+# CodeQL scans Python (Django backend) and JavaScript/TypeScript (React
+# frontend) for security anti-patterns: SQL injection, XSS, hardcoded secrets,
+# unsafe deserialisation, dataflow vulnerabilities. Findings appear in the
+# Security tab. Complements bandit (already in ci.yml) — bandit does pattern
+# matching, CodeQL does semantic dataflow analysis.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    # Run weekly even without commits to catch newly-discovered CWE patterns
+    # against unchanged code. Monday 04:00 UTC = quiet time for CI runners.
+    - cron: "0 4 * * 1"
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: python
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # default query suite — security-extended would catch more but is
+          # noisier; we can flip later if the default suite is too quiet
+          queries: security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
