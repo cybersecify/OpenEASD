@@ -28,7 +28,7 @@ certifi>=2026.5.20
 
 # Security scanning
 python-nmap>=0.7.1
-docker>=6.1
+docker>=7.1.0
 
 # Alerts and notifications
 slack-sdk>=3.42.0
