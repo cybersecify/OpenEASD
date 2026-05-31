@@ -1,0 +1,6 @@
+{
+  "ubuntu": {
+    "CVE-2024-6387": {"openssh": "3ubuntu13.3"},
+    "CVE-2024-39894": {"openssh": "3ubuntu13.4"}
+  }
+}
