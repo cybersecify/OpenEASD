@@ -418,7 +418,7 @@ class TestFullPipelineMocked:
         "apps.httpx" not in __import__("django.conf", fromlist=["settings"]).settings.INSTALLED_APPS,
         reason="Web tools disabled"
     )
-    def test_full_pipeline_produces_correct_asset_graph(self, db):
+    def test_full_pipeline_produces_correct_asset_graph(self, transactional_db):
         from apps.core.scans.models import ScanSession
         from apps.core.scans.pipeline import run_scan
         from apps.core.assets.models import Subdomain, IPAddress, Port
@@ -467,7 +467,7 @@ class TestFullPipelineMocked:
         "apps.httpx" not in __import__("django.conf", fromlist=["settings"]).settings.INSTALLED_APPS,
         reason="Web tools disabled"
     )
-    def test_full_pipeline_classifies_web_vs_non_web_correctly(self, db):
+    def test_full_pipeline_classifies_web_vs_non_web_correctly(self, transactional_db):
         from apps.core.scans.models import ScanSession
         from apps.core.scans.pipeline import run_scan
         from apps.core.assets.models import Port
@@ -510,7 +510,7 @@ class TestFullPipelineMocked:
         "apps.httpx" not in __import__("django.conf", fromlist=["settings"]).settings.INSTALLED_APPS,
         reason="Web tools disabled"
     )
-    def test_full_pipeline_total_findings_includes_all_tools(self, db):
+    def test_full_pipeline_total_findings_includes_all_tools(self, transactional_db):
         from apps.core.scans.models import ScanSession
         from apps.core.scans.pipeline import run_scan
         from apps.core.insights.models import ScanSummary

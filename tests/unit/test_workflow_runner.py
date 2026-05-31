@@ -435,27 +435,56 @@ class TestPhaseParallelExecution:
             "Run is not 'completed' — tools likely ran serially (barrier never satisfied)"
         )
 
-    def test_phase_boundary_respected(self, db, session):
-        """Phase 2 (subfinder) must finish before phase 7 (nmap) starts."""
-        call_log = []
+    def test_phase_boundary_respected(self, transactional_db):
+        """All phase-7 tools must finish before any phase-10 tool starts.
 
-        wf = Workflow.objects.create(name="Phase Boundary")
-        WorkflowStep.objects.create(workflow=wf, tool="subfinder", order=1, enabled=True)
-        WorkflowStep.objects.create(workflow=wf, tool="nmap",      order=2, enabled=True)
+        Uses threading.Event: nmap and tls_checker set phase7_done only after both
+        have run (checked via a counter). nuclei asserts phase7_done is set before
+        it proceeds. If phase 10 started before phase 7 finished, the assertion
+        inside nuclei's runner would fail.
+        """
+        import threading
+        from apps.core.scans.models import ScanSession
+
+        phase7_done = threading.Event()
+        phase7_count = [0]
+        count_lock = threading.Lock()
+
+        session = ScanSession.objects.create(
+            domain="boundary.example.com", scan_type="full", status="running"
+        )
+        wf = Workflow.objects.create(name="Phase Boundary Multi")
+        # Phase 7: nmap + tls_checker (parallel within phase)
+        WorkflowStep.objects.create(workflow=wf, tool="nmap",        order=1, enabled=True)
+        WorkflowStep.objects.create(workflow=wf, tool="tls_checker", order=2, enabled=True)
+        # Phase 10: nuclei (must start after phase 7 fully done)
+        WorkflowStep.objects.create(workflow=wf, tool="nuclei",      order=3, enabled=True)
         run = WorkflowRun.objects.create(workflow=wf, session=session)
 
-        def tracking_runner(tool_name):
+        def make_runner(tool_name):
             def runner(sess):
-                call_log.append(tool_name)
+                if tool_name == "service_detection":
+                    return []
+                if tool_name in ("nmap", "tls_checker"):
+                    with count_lock:
+                        phase7_count[0] += 1
+                        if phase7_count[0] == 2:
+                            phase7_done.set()
+                    return []
+                if tool_name == "nuclei":
+                    assert phase7_done.is_set(), (
+                        "nuclei started before both phase-7 tools finished"
+                    )
+                    return []
                 return []
             return runner
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=tracking_runner):
+        with patch("apps.core.workflows.runner._get_runner", side_effect=make_runner):
             run_workflow(run.id)
 
-        # service_detection is injected; filter it out to get the tools we care about
-        relevant = [t for t in call_log if t in ("subfinder", "nmap")]
-        assert relevant == ["subfinder", "nmap"]
+        run.refresh_from_db()
+        assert run.status == "completed"
+        assert phase7_done.is_set()
 
     def test_parallel_tool_failure_does_not_cancel_sibling(self, transactional_db):
         """If nmap fails, tls_checker (same phase 7) must still run to completion."""

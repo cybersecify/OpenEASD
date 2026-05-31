@@ -17,9 +17,10 @@ from .models import WorkflowRun, WorkflowStepResult
 
 logger = logging.getLogger(__name__)
 
-# SQLite only allows one writer at a time; this lock serialises the brief
-# WorkflowStepResult INSERT so parallel threads don't race on the write lock.
-_db_write_lock = threading.Lock()
+# SQLite only allows one writer at a time. This lock serialises the brief
+# WorkflowStepResult INSERT/UPDATE from parallel tool threads — tool runners
+# are responsible for their own write safety.
+_step_result_write_lock = threading.Lock()
 
 
 def _get_runner(tool_name: str):
@@ -59,29 +60,27 @@ def _run_single_step(run, session, tool: str, order: int) -> None:
     Calls close_old_connections() before touching the ORM so this function
     is safe to dispatch from a ThreadPoolExecutor worker.
 
-    SQLite only allows one writer at a time; _db_write_lock serialises the
-    brief INSERT/UPDATE calls so parallel tool threads don't race on the lock.
-
-    This function never raises — all exceptions are caught and recorded on the
-    step result so ThreadPoolExecutor callers see clean futures.
+    _step_result_write_lock serialises the brief WorkflowStepResult INSERT/UPDATE
+    so parallel threads don't race on SQLite's single-writer lock.
+    Tool runners are responsible for their own write safety.
     """
     from django.db import close_old_connections
     close_old_connections()
     from .registry import get_tool_produces_findings
 
-    step_result = None
+    with _step_result_write_lock:
+        step_result = WorkflowStepResult.objects.create(
+            run=run,
+            tool=tool,
+            order=order,
+            status="running",
+            started_at=django_tz.now(),
+        )
+
     status = "completed"
     error_msg = ""
     findings_count = 0
     try:
-        with _db_write_lock:
-            step_result = WorkflowStepResult.objects.create(
-                run=run,
-                tool=tool,
-                order=order,
-                status="running",
-                started_at=django_tz.now(),
-            )
         fn = _get_runner(tool)
         results = fn(session)
         count = len(results) if isinstance(results, (list, tuple)) else (results or 0)
@@ -96,13 +95,12 @@ def _run_single_step(run, session, tool: str, order: int) -> None:
         status = "failed"
         error_msg = str(e)
 
-    if step_result is not None:
-        with _db_write_lock:
-            step_result.status = status
-            step_result.findings_count = findings_count
-            step_result.error = error_msg
-            step_result.finished_at = django_tz.now()
-            step_result.save(update_fields=["status", "findings_count", "error", "finished_at"])
+    with _step_result_write_lock:
+        step_result.status = status
+        step_result.findings_count = findings_count
+        step_result.error = error_msg
+        step_result.finished_at = django_tz.now()
+        step_result.save(update_fields=["status", "findings_count", "error", "finished_at"])
 
 
 def run_workflow(workflow_run_id: int, only_tools: list | None = None):
