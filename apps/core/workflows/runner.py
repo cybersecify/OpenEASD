@@ -49,11 +49,10 @@ def _group_tools_by_phase(tools: list) -> list:
 
 
 def _run_single_step(run, session, tool: str, order: int) -> None:
-    """Execute one tool step and persist its WorkflowStepResult.
+    """Execute one tool step, record its WorkflowStepResult, and persist timing.
 
-    Safe to call from a ThreadPoolExecutor worker — calls close_old_connections()
-    so the thread gets its own fresh SQLite connection rather than borrowing
-    the caller's thread-local connection.
+    Calls close_old_connections() before touching the ORM so this function
+    is safe to dispatch from a ThreadPoolExecutor worker in the future.
     """
     from django.db import close_old_connections
     close_old_connections()
@@ -74,6 +73,10 @@ def _run_single_step(run, session, tool: str, order: int) -> None:
         if get_tool_produces_findings().get(tool, False):
             step_result.findings_count = count
         else:
+            # Asset-producing tools (subfinder, dnsx, naabu, httpx) return
+            # Subdomain/IPAddress/Port/URL rows, not Findings. Surfacing their
+            # list length as findings_count would falsely claim "subfinder: 10
+            # findings" in API responses.
             step_result.findings_count = 0
     except Exception as e:
         logger.error(f"[workflow:{run.id}] Step {tool} failed: {e}", exc_info=True)
@@ -103,6 +106,8 @@ def run_workflow(workflow_run_id: int, only_tools: list | None = None):
             if t not in tools:
                 tools.append(t)
 
+    # service_detection always runs after naabu (core infrastructure).
+    # Skip for subscans (assets already classified from parent).
     if "service_detection" not in tools and only_tools is None:
         insert_at = 0
         for i, t in enumerate(tools):
