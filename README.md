@@ -333,4 +333,4 @@ MIT License - see [LICENSE](LICENSE)
 
 ## Author
 
-[Rathnakara G N](https://cybersecify.com) and [Ashok S Kamat](https://cybersecify.com) / [CyberSecify](https://cybersecify.com)
+[Rathnakara G N](https://cybersecify.com/about/) and [Ashok S Kamat](https://cybersecify.com/about/) / [CyberSecify](https://cybersecify.com)
