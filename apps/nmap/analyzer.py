@@ -6,6 +6,7 @@ import defusedxml.ElementTree as ET
 
 from apps.core.assets.models import Port
 from apps.core.findings.models import Finding
+from apps.nmap.backports import check_backport
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,7 @@ def analyze(session, xml_outputs: dict[str, str]) -> list[Finding]:
                 if service_el is not None:
                     product = service_el.get("product", "")
                     ver = service_el.get("version", "")
+                    extrainfo = service_el.get("extrainfo", "")
                     version = f"{product} {ver}".strip()
 
                 port_fk = port_map.get((ip, port_num))
@@ -129,24 +131,35 @@ def analyze(session, xml_outputs: dict[str, str]) -> list[Finding]:
                             continue
                         seen.add(key)
 
+                        extra = {
+                            "cve": v["id"],
+                            "cvss_score": v["cvss"],
+                            "service": service_name,
+                            "version": version,
+                            "nse_script": "vulners",
+                            "port_number": port_num,
+                            "address": ip,
+                        }
+                        
+                        severity = _severity_from_cvss(v["cvss"])
+                        
+                        # Check backports
+                        full_version_string = f"{version} {extrainfo}".strip()
+                        backport_info = check_backport(product, full_version_string, v["id"])
+                        if backport_info:
+                            severity = "info"
+                            extra.update(backport_info)
+
                         findings.append(Finding(
                             session=session,
                             source="nmap",
                             check_type="cve",
                             port=port_fk,
                             target=f"{ip}:{port_num}",
-                            severity=_severity_from_cvss(v["cvss"]),
+                            severity=severity,
                             title=f"{v['id']} on {service_name or 'unknown'} {version}".strip(),
                             description=output[:2000],
-                            extra={
-                                "cve": v["id"],
-                                "cvss_score": v["cvss"],
-                                "service": service_name,
-                                "version": version,
-                                "nse_script": "vulners",
-                                "port_number": port_num,
-                                "address": ip,
-                            },
+                            extra=extra,
                         ))
 
     return findings

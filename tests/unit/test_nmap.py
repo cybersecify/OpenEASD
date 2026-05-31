@@ -221,6 +221,70 @@ class TestNmapAnalyzer:
 
 
 # ---------------------------------------------------------------------------
+# Backport XML Matching
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestBackportMatching:
+    SAMPLE_XML_UBUNTU = """<?xml version="1.0"?>
+<nmaprun>
+<host>
+<address addr="1.2.3.4" addrtype="ipv4"/>
+<ports><port protocol="tcp" portid="22">
+<state state="open"/>
+<service name="ssh" product="OpenSSH" version="9.6p1" extrainfo="Ubuntu Linux; 3ubuntu13.4"/>
+<script id="vulners">
+<table key="cpe:/a:openbsd:openssh:9.6p1">
+<table>
+<elem key="id">CVE-2024-6387</elem>
+<elem key="cvss">8.1</elem>
+<elem key="type">cve</elem>
+</table>
+<table>
+<elem key="id">CVE-2024-39894</elem>
+<elem key="cvss">5.3</elem>
+<elem key="type">cve</elem>
+</table>
+</table>
+</script>
+</port></ports>
+</host>
+</nmaprun>
+"""
+
+    def _make_session(self):
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import IPAddress, Port
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        Port.objects.create(
+            session=sess, ip_address=ip, address="1.2.3.4", port=22,
+            protocol="tcp", state="open", source="naabu",
+        )
+        return sess
+
+    @patch("apps.nmap.backports.BACKPORTS", {
+        "ubuntu": {
+            "CVE-2024-6387": {"openssh": "3ubuntu13.3"}
+        }
+    })
+    def test_backport_applied_demotes_to_info(self):
+        sess = self._make_session()
+        findings = analyze(sess, {"1.2.3.4": self.SAMPLE_XML_UBUNTU})
+        
+        by_cve = {f.cve: f for f in findings}
+        
+        # CVE-2024-6387 is patched in 3ubuntu13.3, and we are running 3ubuntu13.4 -> info
+        f1 = by_cve["CVE-2024-6387"]
+        assert f1.severity == "info"
+        assert f1.extra.get("backport_applied") is True
+        
+        # CVE-2024-39894 is not in our mock BACKPORTS -> original severity
+        f2 = by_cve["CVE-2024-39894"]
+        assert f2.severity == "medium"
+        assert f2.extra.get("backport_applied") is None
+
+# ---------------------------------------------------------------------------
 # Web/non-web classification via Port.is_web
 # ---------------------------------------------------------------------------
 
