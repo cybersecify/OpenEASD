@@ -19,6 +19,21 @@ from apps.core.scans.models import ScanSession
 
 logger = logging.getLogger(__name__)
 
+_SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
+_ALLOWED_SEVERITIES = frozenset(_SEVERITY_ORDER)
+
+
+def _parse_min_severity(request):
+    """Return (severities_list, None) or (None, 400 response) for ?min_severity= param."""
+    min_sev = request.GET.get("min_severity", "info").lower()
+    if min_sev not in _ALLOWED_SEVERITIES:
+        return None, HttpResponse(
+            f"Invalid min_severity. Allowed: {', '.join(_SEVERITY_ORDER)}",
+            status=400,
+            content_type="text/plain",
+        )
+    return _SEVERITY_ORDER[: _SEVERITY_ORDER.index(min_sev) + 1], None
+
 
 def _report_auth_required(view_func):
     """Accept Django session auth OR JWT access token via ?token= query param.
@@ -47,9 +62,12 @@ def _report_auth_required(view_func):
 
 @_report_auth_required
 def export_findings_csv(request, session_uuid):
-    """Export all findings for a scan session as CSV."""
+    """Export findings for a scan session as CSV, optionally filtered by ?min_severity=."""
     session = get_object_or_404(ScanSession, uuid=session_uuid)
-    findings = Finding.objects.filter(session=session).order_by("severity", "source")
+    severities, err = _parse_min_severity(request)
+    if err:
+        return err
+    findings = Finding.objects.filter(session=session, severity__in=severities).order_by("severity", "source")
 
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = (
@@ -72,9 +90,12 @@ def export_findings_csv(request, session_uuid):
 
 @_report_auth_required
 def export_scan_pdf(request, session_uuid):
-    """Export a scan report as PDF."""
+    """Export a scan report as PDF, optionally filtered by ?min_severity=."""
     session = get_object_or_404(ScanSession, uuid=session_uuid)
-    findings = Finding.objects.filter(session=session).select_related("port", "url").order_by(
+    severities, err = _parse_min_severity(request)
+    if err:
+        return err
+    findings = Finding.objects.filter(session=session, severity__in=severities).select_related("port", "url").order_by(
         "severity", "-discovered_at"
     )
 

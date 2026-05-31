@@ -135,6 +135,7 @@ export default function ScanDetailPage() {
   const [showSubScan, setShowSubScan] = useState(false);
   const [schemeFilter, setSchemeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [minSev, setMinSev] = useState('info');
 
   const { data, loading, error, refetch } = useFetch(uuid ? `/scans/${uuid}/` : null, [uuid]);
 
@@ -231,11 +232,22 @@ export default function ScanDetailPage() {
               <Button variant="outline" size="sm" onClick={() => setShowSubScan(true)}>Re-scan Tools</Button>
             )}
             {(liveStatus === 'completed' || liveStatus === 'partial') && (<>
+              <select
+                value={minSev}
+                onChange={e => setMinSev(e.target.value)}
+                className="h-8 rounded-md border border-rim bg-canvas px-2 text-xs text-lit focus:outline-none focus:ring-1 focus:ring-brand"
+              >
+                <option value="info">All severities</option>
+                <option value="low">Low+</option>
+                <option value="medium">Medium+</option>
+                <option value="high">High+</option>
+                <option value="critical">Critical only</option>
+              </select>
               <Button variant="outline" size="sm" asChild>
-                <a href={`/reports/${uuid}/csv/?token=${auth.getToken()}`} download>CSV</a>
+                <a href={`/reports/${uuid}/csv/?token=${auth.getToken()}&min_severity=${minSev}`} download>CSV</a>
               </Button>
               <Button variant="outline" size="sm" asChild>
-                <a href={`/reports/${uuid}/pdf/?token=${auth.getToken()}`} download>PDF</a>
+                <a href={`/reports/${uuid}/pdf/?token=${auth.getToken()}&min_severity=${minSev}`} download>PDF</a>
               </Button>
             </>)}
             <ConfirmButton label="Delete" onConfirm={handleDelete} disabled={busy} />
