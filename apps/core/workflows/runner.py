@@ -7,7 +7,11 @@ Tool runners are auto-discovered from AppConfig.tool_meta via the registry.
 
 import importlib
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from itertools import groupby
+from operator import itemgetter
 
+from django.db import close_old_connections
 from django.utils import timezone as django_tz
 
 from .models import WorkflowRun, WorkflowStepResult
@@ -27,6 +31,23 @@ def _get_runner(tool_name: str):
     module_path, func_name = runner_path.rsplit(".", 1)
     module = importlib.import_module(module_path)
     return getattr(module, func_name)
+
+
+def _group_tools_by_phase(tools: list) -> list:
+    """Group a flat tool list into phase buckets, preserving intra-phase order.
+
+    Returns [[phase_N_tools...], [phase_M_tools...], ...] sorted by phase number.
+    Tools not in the registry default to phase 99 (run last).
+    """
+    from .registry import get_tool_phases
+    phases = get_tool_phases()
+    with_phase = [(t, phases.get(t, 99)) for t in tools]
+    # Stable sort preserves the original intra-phase order from the workflow steps.
+    with_phase.sort(key=itemgetter(1))
+    return [
+        [t for t, _ in group]
+        for _, group in groupby(with_phase, key=itemgetter(1))
+    ]
 
 
 def run_workflow(workflow_run_id: int, only_tools: list | None = None):

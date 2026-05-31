@@ -345,3 +345,49 @@ class TestWorkflowStepResult:
     def test_duration_seconds_none_when_not_finished(self, db, run):
         sr = WorkflowStepResult.objects.create(run=run, tool="subfinder", order=1)
         assert sr.duration_seconds is None
+
+
+# ---------------------------------------------------------------------------
+# _group_tools_by_phase
+# ---------------------------------------------------------------------------
+
+class TestGroupToolsByPhase:
+    """Pure function — no DB needed."""
+
+    def test_single_tool_per_phase_returns_singleton_groups(self):
+        from apps.core.workflows.runner import _group_tools_by_phase
+        # subfinder=phase2, dnsx=phase3, naabu=phase4 — each in its own phase
+        groups = _group_tools_by_phase(["subfinder", "dnsx", "naabu"])
+        assert groups == [["subfinder"], ["dnsx"], ["naabu"]]
+
+    def test_multi_tool_phase_grouped_together(self):
+        from apps.core.workflows.runner import _group_tools_by_phase
+        # nmap, tls_checker, ssh_checker, nuclei_network are all phase 7
+        groups = _group_tools_by_phase(["nmap", "tls_checker", "ssh_checker", "nuclei_network"])
+        assert len(groups) == 1
+        assert set(groups[0]) == {"nmap", "tls_checker", "ssh_checker", "nuclei_network"}
+
+    def test_mixed_phases_split_correctly(self):
+        from apps.core.workflows.runner import _group_tools_by_phase
+        # subfinder (phase 2) + nmap (phase 7): two separate groups
+        groups = _group_tools_by_phase(["subfinder", "nmap"])
+        assert groups == [["subfinder"], ["nmap"]]
+
+    def test_preserves_intra_phase_order(self):
+        from apps.core.workflows.runner import _group_tools_by_phase
+        # Phase 7 tools — order within group must match input order
+        tools = ["ssh_checker", "nmap", "tls_checker", "nuclei_network"]
+        groups = _group_tools_by_phase(tools)
+        assert len(groups) == 1
+        assert groups[0] == ["ssh_checker", "nmap", "tls_checker", "nuclei_network"]
+
+    def test_unknown_tool_defaults_to_phase_99(self):
+        from apps.core.workflows.runner import _group_tools_by_phase
+        # An unregistered tool should sort last (phase 99)
+        groups = _group_tools_by_phase(["subfinder", "unknown_tool"])
+        assert groups[0] == ["subfinder"]
+        assert groups[1] == ["unknown_tool"]
+
+    def test_empty_list_returns_empty(self):
+        from apps.core.workflows.runner import _group_tools_by_phase
+        assert _group_tools_by_phase([]) == []
