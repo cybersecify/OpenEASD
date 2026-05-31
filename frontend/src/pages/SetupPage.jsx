@@ -1,7 +1,20 @@
 import React, { useState } from 'react';
 import { Button } from '../components/ui/button.jsx';
+import { toast } from '../components/Notification.jsx';
 import { apiPost } from '../api/client.js';
 import { navigate } from '../App.jsx';
+
+const DOCKER_CMD =
+`docker run -d \\
+  -p 8000:8000 \\
+  -v openeasd-data:/app/data \\
+  -v openeasd-logs:/app/logs \\
+  -e SECRET_KEY="$(openssl rand -hex 32)" \\
+  -e ALLOWED_HOSTS="<IP_OR_DOMAIN>,localhost" \\
+  --cap-add NET_RAW \\
+  --restart unless-stopped \\
+  --name openeasd \\
+  ghcr.io/cybersecify/openeasd:latest`;
 
 export default function SetupPage() {
   const [step, setStep] = useState(1);
@@ -12,9 +25,18 @@ export default function SetupPage() {
   const [pwError,  setPwError]  = useState(null);
   const [pwLoading,setPwLoading]= useState(false);
 
+  const [copied,    setCopied]    = useState(false);
+
   const [domain,    setDomain]    = useState('');
   const [domError,  setDomError]  = useState(null);
   const [domLoading,setDomLoading]= useState(false);
+
+  async function copyCmd() {
+    await navigator.clipboard.writeText(DOCKER_CMD);
+    toast.success('Copied to clipboard');
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   async function handlePassword(e) {
     e.preventDefault();
@@ -70,9 +92,20 @@ export default function SetupPage() {
         {step === 1 && (
           <>
             <h1 className="text-lit font-bold text-xl mb-1">Welcome to OpenEASD</h1>
-            <p className="text-dim text-sm mb-6">
+            <p className="text-dim text-sm mb-4">
               First-time login uses <code className="font-mono text-lit">admin</code> / <code className="font-mono text-lit">admin</code>. Enter it once below to confirm, then set your new password.
             </p>
+
+            {/* Docker run reference */}
+            <div className="mb-6 rounded-lg border border-rim bg-canvas p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-dim">Docker run command</span>
+                <Button size="sm" variant="outline" onClick={copyCmd}>
+                  {copied ? 'Copied!' : 'Copy'}
+                </Button>
+              </div>
+              <pre className="text-xs text-lit font-mono overflow-x-auto whitespace-pre leading-relaxed">{DOCKER_CMD}</pre>
+            </div>
             {pwError && (
               <div className="mb-4 px-3 py-2 rounded-md bg-red-900/40 border border-red-700 text-red-400 text-sm">
                 {pwError}
