@@ -13,6 +13,8 @@ from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from apps.tls_checker.collector import (
     _check_trusted_ca,
     _parse_cert_details,
+    _parse_cipher_enum_xml,
+    _enumerate_ciphers,
     _hostname_matches_san,
     _probe_tls_details,
     collect,
@@ -34,7 +36,8 @@ def _make_result(port_fk, ip="1.2.3.4", port=443, service="https",
                  cert_sig_algorithm="sha256WithRSAEncryption", cert_sig_sha1=False,
                  cert_san_list=None, cert_san_mismatch=False, cert_has_sct=True,
                  cert_trusted=True,
-                 supports_tls10=False, supports_tls11=False, hsts_header=None):
+                 supports_tls10=False, supports_tls11=False, hsts_header=None,
+                 supported_ciphers=None):
     return {
         "ip": ip, "port": port, "service": service,
         "has_tls": has_tls, "is_web": is_web, "scheme": scheme,
@@ -50,6 +53,7 @@ def _make_result(port_fk, ip="1.2.3.4", port=443, service="https",
         "cert_trusted": cert_trusted,
         "supports_tls10": supports_tls10, "supports_tls11": supports_tls11,
         "hsts_header": hsts_header,
+        "supported_ciphers": supported_ciphers,
     }
 
 
@@ -641,7 +645,8 @@ class TestTlsCollector:
         with patch("apps.tls_checker.collector._probe_tls") as mock_probe:
             with patch("apps.tls_checker.collector._probe_tls_details", return_value=None):
                 with patch("apps.tls_checker.collector._check_legacy_protocol_support", return_value={}):
-                    results = collect(sess)
+                    with patch("apps.tls_checker.collector._enumerate_ciphers", return_value={}):
+                        results = collect(sess)
         telnet = next(r for r in results if r["port"] == 23)
         assert telnet["inherently_insecure"] is True
         assert telnet["has_tls"] is False
@@ -662,7 +667,8 @@ class TestTlsCollector:
         with patch("apps.tls_checker.collector._probe_tls", return_value=fake_details) as mock_probe:
             with patch("apps.tls_checker.collector._check_legacy_protocol_support",
                        return_value={"tls10": False, "tls11": False}):
-                results = collect(sess)
+                with patch("apps.tls_checker.collector._enumerate_ciphers", return_value={}):
+                    results = collect(sess)
         redis = next((r for r in results if r["port"] == 6379), None)
         assert redis is not None
         mock_probe.assert_any_call("1.2.3.4", 6379, "redis", hostname="www.example.com")
@@ -680,7 +686,8 @@ class TestTlsCollector:
         with patch("apps.tls_checker.collector._probe_tls", return_value=fake_details) as mock_probe:
             with patch("apps.tls_checker.collector._check_legacy_protocol_support",
                        return_value={"tls10": False, "tls11": False}):
-                results = collect(sess)
+                with patch("apps.tls_checker.collector._enumerate_ciphers", return_value={}):
+                    results = collect(sess)
         https_result = next((r for r in results if r["port"] == 443), None)
         assert https_result is not None, "Port 443 (HTTPS) must appear in TLS results"
         assert https_result["has_tls"] is True
@@ -710,7 +717,8 @@ class TestTlsCollector:
         with patch("apps.tls_checker.collector._probe_tls", return_value=fake_details):
             with patch("apps.tls_checker.collector._check_legacy_protocol_support",
                        return_value={"tls10": False, "tls11": False}):
-                results = collect(sess)
+                with patch("apps.tls_checker.collector._enumerate_ciphers", return_value={}):
+                    results = collect(sess)
         findings = analyze(sess, results)
         cert_expired = [f for f in findings if f.check_type == "cert_expired"]
         assert len(cert_expired) >= 1
@@ -758,3 +766,214 @@ class TestTlsScanner:
         with patch("apps.tls_checker.scanner.collect", return_value=[]):
             findings = run_tls_check(sess)
         assert findings == []
+
+
+# ---------------------------------------------------------------------------
+# Cipher suite enumeration — _parse_cipher_enum_xml
+# ---------------------------------------------------------------------------
+
+class TestParseCipherEnumXml:
+    def test_parses_single_protocol_and_computes_least_strength(self):
+        xml = """<?xml version="1.0"?>
+<nmaprun><host><ports>
+  <port portid="443">
+    <script id="ssl-enum-ciphers">
+      <table key="TLSv1.2">
+        <table key="ciphers">
+          <table>
+            <elem key="name">ECDHE-RSA-AES256-GCM-SHA384</elem>
+            <elem key="strength">A</elem>
+          </table>
+          <table>
+            <elem key="name">ECDHE-RSA-AES128-SHA</elem>
+            <elem key="strength">C</elem>
+          </table>
+        </table>
+      </table>
+    </script>
+  </port>
+</ports></host></nmaprun>"""
+        result = _parse_cipher_enum_xml(xml, 443)
+        assert "TLSv1.2" in result
+        assert len(result["TLSv1.2"]) == 2
+        assert result["TLSv1.2"][0]["name"] == "ECDHE-RSA-AES256-GCM-SHA384"
+        assert result["TLSv1.2"][0]["strength"] == "A"
+        assert result["least_strength"] == "C"
+
+    def test_parses_multiple_protocols(self):
+        xml = """<?xml version="1.0"?>
+<nmaprun><host><ports>
+  <port portid="443">
+    <script id="ssl-enum-ciphers">
+      <table key="TLSv1.2">
+        <table key="ciphers">
+          <table>
+            <elem key="name">ECDHE-RSA-AES256-CBC-SHA384</elem>
+            <elem key="strength">C</elem>
+          </table>
+        </table>
+      </table>
+      <table key="TLSv1.3">
+        <table key="ciphers">
+          <table>
+            <elem key="name">TLS_AES_256_GCM_SHA384</elem>
+            <elem key="strength">A</elem>
+          </table>
+        </table>
+      </table>
+    </script>
+  </port>
+</ports></host></nmaprun>"""
+        result = _parse_cipher_enum_xml(xml, 443)
+        assert "TLSv1.2" in result
+        assert "TLSv1.3" in result
+        assert result["least_strength"] == "C"
+
+    def test_wrong_port_returns_empty(self):
+        xml = """<?xml version="1.0"?>
+<nmaprun><host><ports>
+  <port portid="8443">
+    <script id="ssl-enum-ciphers">
+      <table key="TLSv1.2">
+        <table key="ciphers">
+          <table>
+            <elem key="name">ECDHE-RSA-AES256-GCM-SHA384</elem>
+            <elem key="strength">A</elem>
+          </table>
+        </table>
+      </table>
+    </script>
+  </port>
+</ports></host></nmaprun>"""
+        assert _parse_cipher_enum_xml(xml, 443) == {}
+
+    def test_malformed_xml_returns_empty(self):
+        assert _parse_cipher_enum_xml("<not valid xml<<<", 443) == {}
+
+    def test_empty_string_returns_empty(self):
+        assert _parse_cipher_enum_xml("", 443) == {}
+
+    def test_no_script_element_returns_empty(self):
+        xml = """<?xml version="1.0"?>
+<nmaprun><host><ports>
+  <port portid="443"></port>
+</ports></host></nmaprun>"""
+        assert _parse_cipher_enum_xml(xml, 443) == {}
+
+
+# ---------------------------------------------------------------------------
+# Cipher suite enumeration — _enumerate_ciphers
+# ---------------------------------------------------------------------------
+
+class TestEnumerateCiphers:
+    def test_nmap_not_found_returns_empty(self):
+        with patch("apps.tls_checker.collector.subprocess.run", side_effect=FileNotFoundError):
+            result = _enumerate_ciphers("1.2.3.4", 443)
+        assert result == {}
+
+    def test_nmap_timeout_returns_empty(self):
+        import subprocess as sp
+        with patch("apps.tls_checker.collector.subprocess.run",
+                   side_effect=sp.TimeoutExpired("nmap", 120)):
+            result = _enumerate_ciphers("1.2.3.4", 443)
+        assert result == {}
+
+    def test_empty_stdout_returns_empty(self):
+        mock_proc = MagicMock()
+        mock_proc.stdout = ""
+        with patch("apps.tls_checker.collector.subprocess.run", return_value=mock_proc):
+            result = _enumerate_ciphers("1.2.3.4", 443)
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# Supported cipher findings (full enumeration path)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestSupportedCipherFindings:
+    def _make_port(self):
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import IPAddress, Port
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                                port=443, protocol="tcp", state="open",
+                                service="https", source="naabu")
+        return sess, p
+
+    def test_weak_supported_cipher_triggers_finding_even_when_not_negotiated(self):
+        sess, port_fk = self._make_port()
+        supported = {
+            "TLSv1.2": [
+                {"name": "ECDHE-RSA-AES256-GCM-SHA384", "strength": "A"},
+                {"name": "ECDHE-RSA-RC4-SHA", "strength": "F"},
+            ]
+        }
+        # negotiated cipher is strong, but RC4 is supported
+        results = [_make_result(port_fk, cipher_name="ECDHE-RSA-AES256-GCM-SHA384",
+                                supported_ciphers=supported)]
+        findings = analyze(sess, results)
+        f = next((f for f in findings if f.check_type == "rc4_cipher"), None)
+        assert f is not None and f.severity == "critical"
+
+    def test_deduplication_one_finding_per_check_type(self):
+        sess, port_fk = self._make_port()
+        # RC4 appears in two protocols → still only one rc4_cipher finding
+        supported = {
+            "TLSv1.1": [{"name": "ECDHE-RSA-RC4-SHA", "strength": "F"}],
+            "TLSv1.2": [{"name": "RC4-SHA", "strength": "F"}],
+        }
+        results = [_make_result(port_fk, supported_ciphers=supported)]
+        findings = analyze(sess, results)
+        rc4_findings = [f for f in findings if f.check_type == "rc4_cipher"]
+        assert len(rc4_findings) == 1
+        # Both cipher names should appear in extra
+        assert len(findings[0].extra.get("cipher_names", [])) == 2
+
+    def test_rsa_kex_in_supported_ciphers_triggers_no_forward_secrecy(self):
+        sess, port_fk = self._make_port()
+        supported = {
+            "TLSv1.2": [
+                {"name": "ECDHE-RSA-AES256-GCM-SHA384", "strength": "A"},
+                {"name": "RSA-AES256-SHA", "strength": "C"},
+            ]
+        }
+        results = [_make_result(port_fk, cipher_name="ECDHE-RSA-AES256-GCM-SHA384",
+                                supported_ciphers=supported)]
+        findings = analyze(sess, results)
+        f = next((f for f in findings if f.check_type == "no_forward_secrecy"), None)
+        assert f is not None and f.severity == "high"
+
+    def test_all_strong_enumerated_ciphers_no_cipher_finding(self):
+        sess, port_fk = self._make_port()
+        supported = {
+            "TLSv1.3": [
+                {"name": "TLS_AES_256_GCM_SHA384", "strength": "A"},
+                {"name": "TLS_CHACHA20_POLY1305_SHA256", "strength": "A"},
+            ]
+        }
+        results = [_make_result(port_fk, supported_ciphers=supported)]
+        findings = analyze(sess, results)
+        cipher_types = {f.check_type for f in findings}
+        assert not cipher_types.intersection({
+            "rc4_cipher", "null_cipher", "export_cipher", "sweet32",
+            "sha1_cipher", "cbc_cipher", "no_forward_secrecy",
+        })
+
+    def test_fallback_to_negotiated_when_supported_ciphers_empty(self):
+        sess, port_fk = self._make_port()
+        # supported_ciphers={} (no nmap data) → check negotiated cipher
+        results = [_make_result(port_fk, cipher_name="ECDHE-RSA-RC4-SHA",
+                                supported_ciphers={})]
+        findings = analyze(sess, results)
+        f = next((f for f in findings if f.check_type == "rc4_cipher"), None)
+        assert f is not None
+
+    def test_fallback_to_negotiated_when_supported_ciphers_none(self):
+        sess, port_fk = self._make_port()
+        results = [_make_result(port_fk, cipher_name="ECDHE-RSA-RC4-SHA",
+                                supported_ciphers=None)]
+        findings = analyze(sess, results)
+        f = next((f for f in findings if f.check_type == "rc4_cipher"), None)
+        assert f is not None

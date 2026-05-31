@@ -136,6 +136,95 @@ def _weak_cipher_findings(result: dict, session) -> list[Finding]:
     return findings
 
 
+def _supported_cipher_findings(result: dict, session) -> list[Finding]:
+    """Return findings for weak cipher suites, using full enumeration if available.
+
+    If result["supported_ciphers"] contains nmap ssl-enum-ciphers data, checks ALL
+    supported suites (not just the negotiated one). Deduplicates to one finding per
+    check_type per port; all matching cipher names appear in extra["cipher_names"].
+    Falls back to _weak_cipher_findings (negotiated cipher only) when no data.
+    """
+    supported = result.get("supported_ciphers")
+    if not supported:
+        return _weak_cipher_findings(result, session)
+
+    ip = result["ip"]
+    port_num = result["port"]
+    port_fk = result["port_fk"]
+
+    all_ciphers: list[str] = []
+    for proto, ciphers in supported.items():
+        if proto == "least_strength" or not isinstance(ciphers, list):
+            continue
+        for c in ciphers:
+            name = c.get("name", "")
+            if name:
+                all_ciphers.append(name)
+
+    if not all_ciphers:
+        return _weak_cipher_findings(result, session)
+
+    matched: dict[str, list[str]] = {}
+    for cipher_name in all_ciphers:
+        upper = cipher_name.upper()
+        for pattern, check_type, _sev, _reason in _CIPHER_CHECKS:
+            if re.search(pattern, upper, re.IGNORECASE):
+                matched.setdefault(check_type, []).append(cipher_name)
+
+    findings = []
+    for check_type, cipher_names in matched.items():
+        severity = next(sev for _, ct, sev, _ in _CIPHER_CHECKS if ct == check_type)
+        reason = next(r for _, ct, _, r in _CIPHER_CHECKS if ct == check_type)
+        count = len(cipher_names)
+        sample = ", ".join(cipher_names[:3])
+        suffix = f" (+ {count - 3} more)" if count > 3 else ""
+        findings.append(Finding(
+            session=session,
+            source="tls_checker",
+            check_type=check_type,
+            severity=severity,
+            title=f"{_CIPHER_TITLES[check_type]} on {ip}:{port_num}",
+            description=(
+                f"The TLS service on {ip}:{port_num} supports the following weak cipher suite(s): "
+                f"{sample}{suffix}. {reason}."
+            ),
+            remediation=_CIPHER_REMEDIATIONS[check_type],
+            port=port_fk,
+            target=f"{ip}:{port_num}",
+            extra={"cipher_names": cipher_names, "address": ip, "port_number": port_num},
+        ))
+
+    rsa_kex_ciphers = [name for name in all_ciphers if _check_rsa_key_exchange(name)]
+    if rsa_kex_ciphers:
+        count = len(rsa_kex_ciphers)
+        sample = ", ".join(rsa_kex_ciphers[:3])
+        suffix = f" (+ {count - 3} more)" if count > 3 else ""
+        findings.append(Finding(
+            session=session,
+            source="tls_checker",
+            check_type="no_forward_secrecy",
+            severity="high",
+            title=f"RSA key exchange (no forward secrecy) on {ip}:{port_num}",
+            description=(
+                f"The TLS service on {ip}:{port_num} supports static RSA key exchange "
+                f"cipher(s): {sample}{suffix}. "
+                f"There is no forward secrecy — if the server's private key is ever compromised, "
+                f"all past recorded sessions can be decrypted. This is also the attack surface "
+                f"exploited by the ROBOT vulnerability."
+            ),
+            remediation=(
+                "Use ECDHE or DHE key exchange only. Configure server cipher preference "
+                "to enforce ECDHE-based suites (e.g. ECDHE-RSA-AES256-GCM-SHA384). "
+                "TLS 1.3 mandates forward secrecy by design."
+            ),
+            port=port_fk,
+            target=f"{ip}:{port_num}",
+            extra={"cipher_names": rsa_kex_ciphers, "address": ip, "port_number": port_num},
+        ))
+
+    return findings
+
+
 # ---------------------------------------------------------------------------
 # Protocol version findings
 # ---------------------------------------------------------------------------
@@ -668,7 +757,7 @@ def analyze(session, results: list[dict]) -> list[Finding]:
         else:
             # ── TLS present — check configuration quality ─────────────
             findings.extend(_protocol_findings(r, session))
-            findings.extend(_weak_cipher_findings(r, session))
+            findings.extend(_supported_cipher_findings(r, session))
             findings.extend(_cert_findings(r, session))
             findings.extend(_sig_algorithm_findings(r, session))
             findings.extend(_san_mismatch_findings(r, session))

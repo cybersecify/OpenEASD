@@ -8,7 +8,8 @@ Checks based on:
   - MITM Attacks Detection (cybersecify.com/blog/mitm-attacks-detection-prevention)
   - Cryptography Fundamentals (cybersecify.com/blog/cryptography-fundamentals)
 
-Non-web ports only (is_web=False): probed via Python stdlib ssl/smtplib/imaplib/poplib/ftplib.
+Probes all open ports via Python stdlib ssl/smtplib/imaplib/poplib/ftplib.
+Cipher suite enumeration uses nmap --script ssl-enum-ciphers.
 Inherently insecure protocols (Telnet, rsh, etc.) always flagged without probing.
 """
 
@@ -19,6 +20,8 @@ import poplib
 import smtplib
 import socket
 import ssl
+import subprocess
+import xml.etree.ElementTree as ET
 
 from django.utils import timezone as django_tz
 
@@ -356,6 +359,104 @@ def _probe_tls(ip: str, port: int, service: str, hostname: str | None = None) ->
 
 
 # ---------------------------------------------------------------------------
+# Cipher suite enumeration via nmap ssl-enum-ciphers
+# ---------------------------------------------------------------------------
+
+# Maps nmap strength letter to sortable integer (higher = stronger).
+_STRENGTH_ORDER = {"A": 4, "B": 3, "C": 2, "D": 1, "F": 0}
+
+
+def _parse_cipher_enum_xml(xml_output: str, port: int) -> dict:
+    """Parse nmap ssl-enum-ciphers XML output for the given port.
+
+    Returns a dict shaped as:
+        {
+            "TLSv1.2": [{"name": "ECDHE-RSA-AES256-GCM-SHA384", "strength": "A"}, ...],
+            "TLSv1.3": [...],
+            "least_strength": "C",   # weakest grade across all protocols
+        }
+    Returns {} if the script produced no output for this port.
+    """
+    try:
+        root = ET.fromstring(xml_output)
+    except ET.ParseError:
+        return {}
+
+    script = root.find(f".//port[@portid='{port}']/script[@id='ssl-enum-ciphers']")
+    if script is None:
+        return {}
+
+    protocols: dict = {}
+    overall_worst: str | None = None
+
+    for proto_table in script.findall("table"):
+        proto_name = proto_table.get("key", "")
+        if not (proto_name.startswith("TLS") or proto_name.startswith("SSL")):
+            continue
+
+        ciphers = []
+        for cipher_table in proto_table.findall("table[@key='ciphers']/table"):
+            name_elem = cipher_table.find("elem[@key='name']")
+            strength_elem = cipher_table.find("elem[@key='strength']")
+            if name_elem is not None and name_elem.text:
+                entry = {
+                    "name": name_elem.text.strip(),
+                    "strength": (strength_elem.text or "?").strip() if strength_elem is not None else "?",
+                }
+                ciphers.append(entry)
+                s = entry["strength"]
+                if s in _STRENGTH_ORDER:
+                    if overall_worst is None or _STRENGTH_ORDER[s] < _STRENGTH_ORDER.get(overall_worst, 4):
+                        overall_worst = s
+
+        if ciphers:
+            protocols[proto_name] = ciphers
+
+    if protocols:
+        protocols["least_strength"] = overall_worst or "?"
+
+    return protocols
+
+
+def _enumerate_ciphers(ip: str, port: int) -> dict:
+    """Run nmap ssl-enum-ciphers against ip:port.
+
+    Returns parsed cipher data (see _parse_cipher_enum_xml) or {} on any failure.
+    Uses settings.TOOL_NMAP; falls back to "nmap" if unset.
+    """
+    from django.conf import settings
+
+    binary = getattr(settings, "TOOL_NMAP", "nmap")
+    cmd = [
+        binary,
+        "--script", "ssl-enum-ciphers",
+        "-p", str(port),
+        ip,
+        "-oX", "-",
+        "--host-timeout", "60s",
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            stdin=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        logger.warning(f"[tls_checker] nmap not found — skipping cipher enumeration on {ip}:{port}")
+        return {}
+    except subprocess.TimeoutExpired:
+        logger.warning(f"[tls_checker] nmap cipher enumeration timed out on {ip}:{port}")
+        return {}
+
+    if not result.stdout:
+        return {}
+
+    return _parse_cipher_enum_xml(result.stdout, port)
+
+
+# ---------------------------------------------------------------------------
 # Main collection function
 # ---------------------------------------------------------------------------
 
@@ -403,6 +504,7 @@ def collect(session) -> list[dict]:
         "cert_has_sct": False, "cert_trusted": False,
         "supports_tls10": False, "supports_tls11": False,
         "hsts_header": None,
+        "supported_ciphers": {},
     }
 
     results = []
@@ -435,7 +537,8 @@ def collect(session) -> list[dict]:
 
             if has_tls and details:
                 legacy = _check_legacy_protocol_support(ip, port_num)
-                tls_detail = {**details, **legacy}
+                cipher_data = _enumerate_ciphers(ip, port_num)
+                tls_detail = {**details, **legacy, "supported_ciphers": cipher_data}
 
             results.append({
                 "ip": ip, "port": port_num, "service": service,
@@ -451,7 +554,8 @@ def collect(session) -> list[dict]:
             details = _probe_tls_details(ip, port_num, hostname=host)
             if details:
                 legacy = _check_legacy_protocol_support(ip, port_num)
-                tls_detail = {**details, **legacy}
+                cipher_data = _enumerate_ciphers(ip, port_num)
+                tls_detail = {**details, **legacy, "supported_ciphers": cipher_data}
                 results.append({
                     "ip": ip, "port": port_num, "service": service,
                     "has_tls": True, "is_web": p.is_web, "scheme": None,
