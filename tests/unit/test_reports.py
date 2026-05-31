@@ -118,6 +118,36 @@ class TestExportFindingsCsv:
         res = authed_client.get("/reports/00000000-0000-0000-0000-000000000000/csv/")
         assert res.status_code == 404
 
+    def test_min_severity_high_excludes_medium_and_info(self, authed_client, session, findings):
+        res = authed_client.get(f"/reports/{session.uuid}/csv/?min_severity=high")
+        content = res.content.decode("utf-8")
+        assert "TLS expired" in content       # high — included
+        assert "No DMARC" not in content      # medium — excluded
+        assert "Info finding" not in content  # info — excluded
+
+    def test_min_severity_medium_excludes_info(self, authed_client, session, findings):
+        res = authed_client.get(f"/reports/{session.uuid}/csv/?min_severity=medium")
+        content = res.content.decode("utf-8")
+        assert "TLS expired" in content       # high — included
+        assert "No DMARC" in content          # medium — included
+        assert "Info finding" not in content  # info — excluded
+
+    def test_min_severity_info_includes_all(self, authed_client, session, findings):
+        res = authed_client.get(f"/reports/{session.uuid}/csv/?min_severity=info")
+        content = res.content.decode("utf-8")
+        rows = list(csv.reader(io.StringIO(content)))
+        assert len(rows) == len(findings) + 1  # all findings + header
+
+    def test_min_severity_critical_returns_only_critical(self, authed_client, session, findings):
+        res = authed_client.get(f"/reports/{session.uuid}/csv/?min_severity=critical")
+        content = res.content.decode("utf-8")
+        rows = list(csv.reader(io.StringIO(content)))
+        assert len(rows) == 1  # header only — no critical findings in fixture
+
+    def test_invalid_min_severity_returns_400(self, authed_client, session, findings):
+        res = authed_client.get(f"/reports/{session.uuid}/csv/?min_severity=bogus")
+        assert res.status_code == 400
+
 
 # ---------------------------------------------------------------------------
 # PDF export
