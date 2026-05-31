@@ -353,10 +353,10 @@ Phase 2  amass              → Subdomain (active enumeration)
 Phase 3  dnsx               → IPAddress (public-only filter)
 Phase 4  naabu              → Port (top 100 TCP scan)
 Phase 5  service_detection  → enriches Port.service + Port.is_web
-Phase 7  nmap               → Finding (CVEs on non-web ports, is_web=False)
-Phase 7  tls_checker        → Finding (cipher/cert/protocol on all ports)
-Phase 7  ssh_checker        → Finding (SSH config on service="ssh" ports)
-Phase 7  nuclei_network     → Finding (network protocol vulns, non-web ports)
+Phase 7  nmap               → Finding (CVEs on non-web ports, is_web=False)  ┐
+Phase 7  tls_checker        → Finding (cipher/cert/protocol on all ports)    │ parallel
+Phase 7  ssh_checker        → Finding (SSH config on service="ssh" ports)    │
+Phase 7  nuclei_network     → Finding (network protocol vulns, non-web ports)┘
 Phase 8  httpx              → URL (web probing, CDN-aware via SNI)
 Phase 9  katana             → URL (web crawling, endpoint discovery)
 Phase 10 nuclei             → Finding (web vulns via templates on URLs)
@@ -470,8 +470,8 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | `tests/unit/test_nuclei.py` | 25 | CVE parsing, severity, dedup, URL linking, collector |
 | `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
 | `tests/unit/test_service_detection.py` | 16 | XML parsing, Port enrichment, is_web |
-| `tests/unit/test_workflow_runner.py` | 20 | run_workflow, service_detection injection, step failure, cancellation |
+| `tests/unit/test_workflow_runner.py` | 31 | run_workflow, service_detection injection, step failure, cancellation, phase parallelism |
 | `tests/integration/test_scan_flow.py` | 13 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 71 | Smoke tests for all 35 API endpoints (auth + payload shape) |
 
-**Total: ~750 tests** (~709 fast + 41 slow domain_security)
+**Total: ~760 tests** (~719 fast + 41 slow domain_security)
