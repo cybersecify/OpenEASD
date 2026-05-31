@@ -34,7 +34,7 @@ docker>=7.1.0
 slack-sdk>=3.42.0
 
 # Data processing
-pandas>=2.1
+pandas>=3.0.3
 numpy>=1.26
 lxml>=4.9
 beautifulsoup4>=4.12
