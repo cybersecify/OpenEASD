@@ -7,7 +7,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1: frontend build (platform-agnostic — Node runs natively)
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS frontend-builder
+FROM --platform=$BUILDPLATFORM ubuntu:26.04 AS frontend-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates \
@@ -25,7 +25,7 @@ RUN npm run build
 # ---------------------------------------------------------------------------
 # Stage 2: download pre-built security tool binaries for the target platform
 # ---------------------------------------------------------------------------
-FROM ubuntu:24.04 AS tools-builder
+FROM ubuntu:26.04 AS tools-builder
 
 # TARGETARCH is injected by buildx: 'amd64' or 'arm64'
 ARG TARGETARCH
@@ -67,7 +67,7 @@ RUN chmod +x subfinder dnsx naabu httpx nuclei amass
 # ---------------------------------------------------------------------------
 # Stage 3: runtime
 # ---------------------------------------------------------------------------
-FROM ubuntu:24.04 AS runtime
+FROM ubuntu:26.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
