@@ -21,7 +21,7 @@ import smtplib
 import socket
 import ssl
 import subprocess
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 
 from django.utils import timezone as django_tz
 
