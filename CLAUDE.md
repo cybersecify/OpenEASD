@@ -321,8 +321,8 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/dnsx/` | 3 | No | DNS resolution, public IP filtering |
 | `apps/naabu/` | 4 | No | Port scanning (top 100 TCP) |
 | `apps/core/service_detection/` | 5 | No | nmap -sV enriches Port.service + is_web |
-| `apps/nmap/` | 7 | Yes | NSE vulners CVE scan (non-web ports) |
-| `apps/tls_checker/` | 7 | Yes | TLS/cert analysis (all ports) |
+| `apps/nmap/` | 7 | Yes | NSE vulners CVE scan (non-web ports); backport-aware CVE matching (`backports.json` registry) |
+| `apps/tls_checker/` | 7 | Yes | TLS/cert analysis + cipher suite enumeration via `nmap --script ssl-enum-ciphers` (all ports) |
 | `apps/ssh_checker/` | 7 | Yes | SSH config analysis |
 | `apps/nuclei_network/` | 7 | Yes | Network protocol vuln scan (319 templates, non-web) |
 | `apps/httpx/` | 8 | No | Web probing, URL discovery |
@@ -460,18 +460,18 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | `tests/unit/test_katana.py` | 18 | JSONL parser, Port/Subdomain FK links, scanner orchestrator |
 | `tests/unit/test_insights.py` | 11 | Insights builder + view |
 | `tests/unit/test_naabu.py` | 9 | JSON parser, FK to IPAddress |
-| `tests/unit/test_nmap.py` | 21 | Severity mapping, vulners XML parser, web/non-web exclusion |
-| `tests/unit/test_reports.py` | 15 | CSV export content/structure, PDF export (mocked pisa) |
+| `tests/unit/test_nmap.py` | 23 | Severity mapping, vulners XML parser, web/non-web exclusion, backport matching |
+| `tests/unit/test_reports.py` | 20 | CSV export content/structure, PDF export (mocked pisa), min_severity filter |
 | `tests/unit/test_scans.py` | 55 | ScanSession, scheduling, scan_start views |
 | `tests/unit/test_scheduler.py` | 15 | reap_stuck_scans, purge_expired_tokens, daily_scan |
 | `tests/unit/test_subfinder.py` | 11 | JSON parser, dedup, hostname normalization |
-| `tests/unit/test_tls_checker.py` | 77 | Cert parsing, ciphers, protocols, HSTS, collector, scanner |
+| `tests/unit/test_tls_checker.py` | 87 | Cert parsing, ciphers, protocols, HSTS, collector, scanner, cipher enumeration |
 | `tests/unit/test_ssh_checker.py` | 33 | SSH probe, host key, kex/cipher/MAC, auth, collector |
 | `tests/unit/test_nuclei.py` | 25 | CVE parsing, severity, dedup, URL linking, collector |
-| `tests/unit/test_web_checker.py` | 34 | Headers, cookies, CORS, disclosure, collector |
+| `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
 | `tests/unit/test_service_detection.py` | 16 | XML parsing, Port enrichment, is_web |
 | `tests/unit/test_workflow_runner.py` | 20 | run_workflow, service_detection injection, step failure, cancellation |
 | `tests/integration/test_scan_flow.py` | 13 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 71 | Smoke tests for all 35 API endpoints (auth + payload shape) |
 
-**Total: ~581 tests** (~540 fast + 41 slow domain_security)
+**Total: ~750 tests** (~709 fast + 41 slow domain_security)
