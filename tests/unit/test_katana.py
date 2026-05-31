@@ -75,3 +75,105 @@ class TestKatanaCollector:
         with patch("apps.katana.collector.subprocess.run", side_effect=fake_run):
             collect(sess, ["https://example.com"])
         assert captured["stdin"] == subprocess.DEVNULL
+
+
+from apps.katana.analyzer import analyze
+
+
+def _make_session_with_assets():
+    """Creates session, subdomain, IP, port, and one httpx URL row."""
+    from apps.core.scans.models import ScanSession
+    from apps.core.assets.models import Subdomain, IPAddress, Port
+    from apps.core.web_assets.models import URL
+
+    sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+    sub = Subdomain.objects.create(
+        session=sess, domain="example.com", subdomain="www.example.com", source="subfinder"
+    )
+    ip = IPAddress.objects.create(
+        session=sess, subdomain=sub, address="1.2.3.4", version=4, source="dnsx"
+    )
+    port = Port.objects.create(
+        session=sess, ip_address=ip, address="1.2.3.4", port=443,
+        protocol="tcp", state="open", source="naabu",
+    )
+    # Seed a httpx URL so the analyzer can look up the port FK
+    URL.objects.create(
+        session=sess, port=port, subdomain=sub,
+        url="https://www.example.com:443", scheme="https",
+        host="www.example.com", port_number=443,
+        status_code=200, source="httpx",
+    )
+    return sess, sub, port
+
+
+@pytest.mark.django_db
+class TestKatanaAnalyzer:
+    def test_creates_url_row_from_endpoint(self):
+        sess, sub, port = _make_session_with_assets()
+        records = [{"request": {"endpoint": "https://www.example.com/admin"}}]
+        objs = analyze(sess, records)
+        assert len(objs) == 1
+        assert objs[0].url == "https://www.example.com/admin"
+        assert objs[0].source == "katana"
+
+    def test_links_port_fk_via_httpx_url(self):
+        sess, sub, port = _make_session_with_assets()
+        records = [{"request": {"endpoint": "https://www.example.com/admin"}}]
+        objs = analyze(sess, records)
+        assert objs[0].port == port
+
+    def test_links_subdomain_fk_via_host(self):
+        sess, sub, port = _make_session_with_assets()
+        records = [{"request": {"endpoint": "https://www.example.com/dashboard"}}]
+        objs = analyze(sess, records)
+        assert objs[0].subdomain == sub
+
+    def test_deduplicates_same_url(self):
+        sess, _, _ = _make_session_with_assets()
+        records = [
+            {"request": {"endpoint": "https://www.example.com/page"}},
+            {"request": {"endpoint": "https://www.example.com/page"}},
+        ]
+        objs = analyze(sess, records)
+        assert len(objs) == 1
+
+    def test_skips_records_missing_endpoint(self):
+        sess, _, _ = _make_session_with_assets()
+        records = [{"request": {}}]
+        objs = analyze(sess, records)
+        assert objs == []
+
+    def test_no_port_fk_for_unknown_host(self):
+        sess, _, _ = _make_session_with_assets()
+        records = [{"request": {"endpoint": "https://unknown.example.com/page"}}]
+        objs = analyze(sess, records)
+        assert len(objs) == 1
+        assert objs[0].port is None
+        assert objs[0].subdomain is None
+
+    def test_sets_scheme_host_port_number(self):
+        sess, _, _ = _make_session_with_assets()
+        records = [{"request": {"endpoint": "https://www.example.com/path"}}]
+        objs = analyze(sess, records)
+        assert objs[0].scheme == "https"
+        assert objs[0].host == "www.example.com"
+        assert objs[0].port_number == 443
+
+    def test_http_default_port_80(self):
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import Subdomain, IPAddress, Port
+        from apps.core.web_assets.models import URL
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        sub = Subdomain.objects.create(session=sess, domain="example.com", subdomain="www.example.com", source="subfinder")
+        ip = IPAddress.objects.create(session=sess, subdomain=sub, address="1.2.3.4", version=4, source="dnsx")
+        port = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4", port=80, protocol="tcp", state="open", source="naabu")
+        URL.objects.create(session=sess, port=port, subdomain=sub, url="http://www.example.com:80", scheme="http", host="www.example.com", port_number=80, status_code=200, source="httpx")
+        records = [{"request": {"endpoint": "http://www.example.com/path"}}]
+        objs = analyze(sess, records)
+        assert objs[0].port_number == 80
+        assert objs[0].port == port
+
+    def test_returns_empty_for_no_records(self):
+        sess, _, _ = _make_session_with_assets()
+        assert analyze(sess, []) == []
