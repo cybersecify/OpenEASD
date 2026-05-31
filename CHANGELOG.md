@@ -7,6 +7,34 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+---
+
+## [v0.5] — 2026-05-31
+
+### Added
+
+- **HSTS checks in web_checker** — Two new findings: `missing_hsts` (medium) when an HTTPS response carries no `Strict-Transport-Security` header, and `weak_hsts` (low) when `max-age` is present but below the 6-month threshold (15 552 000 s). HTTP URLs are skipped — HSTS only applies to HTTPS. 4 new unit tests cover missing, HTTP-skip, weak, and strong cases. Contributed by [@xiaoke949](https://github.com/xiaoke949).
+
+- **Product and architecture docs** — `docs/PRD.md` (5W PM view: audience, 11 attack vectors, constraints, anti-features, success criteria) and `docs/DESIGN.md` (full architecture reference: core apps, tool registry, scan pipeline phases, data model, REST API, frontend, deployment topologies).
+
+### Changed
+
+- **GitHub Flow adopted** — Replaced the solo-developer "commit directly to main" workflow with a `feat/` / `fix/` branch + PR + squash-merge process. CLAUDE.md updated accordingly.
+
+- **React 19 + Vite 8 + @vitejs/plugin-react 6** — Full frontend stack upgrade. All three packages must move together (`@vitejs/plugin-react` v6 requires `vite@^8`); Dependabot grouping updated to reflect the coupling.
+
+- **Co-founder attribution** — LICENSE and README Author footer updated to credit both Rathnakara G N and Ashok S Kamat with LinkedIn profile links.
+
+- **Dependabot grouping fixed** — `react-stack` group now lists `vite` (exact name) alongside `react`, `react-dom`, and `@vitejs/plugin-react` so the packages always bump atomically. Tailwind 4 and Ubuntu 26.04 PRs are kept closed — both require dedicated migration work before adoption.
+
+### Dependencies updated
+
+Python: `psutil`, `slack-sdk`, `certifi`, `pytest-asyncio`, `django-stack` (Django + django-ninja + django-q2), `reportlab`, `aiofiles`, `tqdm`, `cachetools`, `docker`, `pandas`, `jinja2`, `python-dateutil`, `tenacity`, `numpy`.
+
+Frontend: `lucide-react`, `postcss`, `react 19`, `react-dom 19`, `vite 8`, `@vitejs/plugin-react 6`.
+
+GitHub Actions: `actions/setup-node`, `docker/login-action`.
+
 ### Feature additions (May 2026)
 
 #### Added
