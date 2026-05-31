@@ -11,6 +11,19 @@ It surfaces the **lowest hanging fruits** — what someone scanning your perimet
 
 ![OpenEASD scan in progress against nmap.org — 11 subdomains, 22 IPs, 6 ports, 3 critical findings already, all 13 tool steps tracked live](docs/screenshots/scan-detail-live.png)
 
+## Who this is for
+
+- **In-house security engineers and IT-doing-security teams** at small-to-mid orgs scanning their own external surface
+- **Small security consultancies** monitoring a handful of clients
+- **Bug bounty hunters** who want a unified view of recon output across programs they're authorised to test
+- **Solo self-hosters and security learners** auditing their own infra
+
+## Who this isn't for
+
+- **Enterprise SOCs** — no RBAC, SAML, multi-tenant, or Postgres (yet)
+- **Pen testers running one-shot deep enumeration of a single target** — for that, [Tib3rius/AutoRecon](https://github.com/Tib3rius/AutoRecon) and similar CLI tools are better fits. OpenEASD optimises for continuous monitoring across multiple domains over time, not single-target deep dives
+- **Anyone needing to scan domains they don't own or aren't authorised to test** — OpenEASD is intentionally not a "scan-anyone" hosted service. Running it implies you own or have written authorisation for your targets
+
 ## Quick start
 
 ```bash
