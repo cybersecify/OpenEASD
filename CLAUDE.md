@@ -3,17 +3,78 @@
 External Attack Surface Detection platform. Scans domains for network and
 web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 
-## Git workflow
-- Solo developer — commit directly to main, no branches or worktrees
-- Run `uv run pytest tests/ --ignore=tests/unit/test_domain_security.py` before committing
-- Tag before big changes (new libs, refactors, schema changes): `git tag -a v0.x -m "description"`
-- If something breaks: `git revert <commit>` or `git reset --hard v0.x` to roll back
-- **Versioning:** `0.x` = building/architecture changes, `1.0` = first stable public release
-- **Pushing to GitHub (clean history):**
-  1. Work locally, commit as often as needed
-  2. When stable, squash into one commit: `git reset --soft <last-tag> && git commit -m "v0.x: summary"`
-  3. Tag it: `git tag -a v0.x -m "description"`
-  4. Push: `git push origin main --tags`
+## GitHub Flow
+
+**Rule:** Never commit to `main` directly.
+
+**Branch prefixes** (only two):
+- `feat/` — new features
+- `fix/` — everything else (bugs, deps, config, refactor, docs, cleanup)
+
+**Commit message prefixes** match the branch: `feat:` or `fix:`.
+
+### Steps for every task
+
+1. **Sync main:**
+```bash
+git checkout main && git pull
+```
+   If `git pull` complains about uncommitted changes or a dirty working tree, stop and investigate before continuing — don't stash blindly, you may have unpushed work from a previous branch.
+
+2. **Create branch:**
+```bash
+git checkout -b feat/short-descriptive-name
+# or
+git checkout -b fix/short-descriptive-name
+```
+
+3. **Work and commit** with `feat:` or `fix:` prefixed messages:
+```bash
+git commit -m "feat: add opening accuracy skill"
+git commit -m "fix: guard empty games list in watcher"
+```
+
+4. **Open PR:**
+```bash
+gh pr create --title "..." --body "..."
+```
+
+5. **Squash-merge and delete remote branch:**
+```bash
+gh pr merge --squash --delete-branch
+```
+
+6. **Return to main and sync:**
+```bash
+git checkout main && git pull
+```
+
+7. **Delete local branch:**
+```bash
+git branch -D feat/your-branch-name
+```
+   Use `-D` (capital), not `-d`. After a squash merge, the squashed commit on `main` has a different SHA than your branch's commits, so `git branch -d` will refuse with "not fully merged" even though the PR is merged. `-D` force-deletes, which is safe here because the PR merge is the source of truth.
+
+   Optionally, prune stale remote-tracking refs:
+```bash
+git fetch --prune
+```
+
+### Tagging
+
+Tag `main` at meaningful milestones (not every PR). Use semantic versioning:
+- `feat/` work → bump **minor** (v0.6.0 → v0.7.0)
+- `fix/` work only → bump **patch** (v0.6.0 → v0.6.1)
+
+```bash
+git tag v0.7.0
+git push origin v0.7.0
+```
+
+Check the latest tag anytime with:
+```bash
+git describe --tags --abbrev=0
+```
 
 ## CI/CD (GitHub Actions)
 - Pipeline: `.github/workflows/ci.yml` — runs on every push to `main` and `v*` tags
