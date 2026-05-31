@@ -9,7 +9,7 @@
 
 It surfaces the **lowest hanging fruits** — what someone scanning your perimeter sees first. Eleven attack vectors across DNS, email, TLS, SSH, ports, CVEs, and web hygiene.
 
-![OpenEASD scan in progress against nmap.org — 11 subdomains, 22 IPs, 6 ports, 3 critical findings already, all 13 tool steps tracked live](docs/screenshots/scan-detail-live.png)
+![OpenEASD scan in progress against nmap.org — 11 subdomains, 22 IPs, 6 ports, 3 critical findings already, all 14 tool steps tracked live](docs/screenshots/scan-detail-live.png)
 
 ## Who this is for
 
@@ -43,7 +43,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ## Features
 
-- **Automated pipeline** — 13-tool scan workflow from domain to findings
+- **Automated pipeline** — 14-tool scan workflow from domain to findings
 - **Network attack surface scanning** — CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
 - **Dynamic workflows** — Create custom scan configurations, enable/disable tools per workflow
 - **Tool auto-registration** — Add new tools with zero core modification
@@ -72,6 +72,7 @@ Phase 7  TLS Checker        - Certificate, cipher, and protocol analysis
 Phase 7  SSH Checker        - SSH configuration audit
 Phase 7  Nuclei Network     - Service-aware nuclei network templates against non-web ports
 Phase 8  httpx              - Web probing, URL discovery
+Phase 9  Katana             - Deep URL crawling on top of httpx (Phase 9, asset producer)
 Phase 9  Nuclei             - Web vulnerability scanning (community templates)
 Phase 9  Web Checker        - Security headers, cookies, CORS analysis
 ```
@@ -106,10 +107,11 @@ apps/                   - Tool apps (add/remove freely)
   ssh_checker/          - SSH configuration audit
   nuclei_network/       - Network protocol vuln scanning
   httpx/                - Web probing
+  katana/               - Deep URL crawl on top of httpx (asset producer)
   nuclei/               - Web vulnerability scanning
   web_checker/          - Security headers, cookies, CORS
 
-frontend/               - React 18 + Vite SPA
+frontend/               - React 19 + Vite 8 SPA
   src/pages/            - Page components
   src/components/       - Shared UI primitives (Badge, Spinner, Pagination, ConfirmButton)
   src/components/ui/    - shadcn/ui primitives (Button, Card, Table, AlertDialog, …)
@@ -263,7 +265,7 @@ uv run python main.py --no-worker      # web server only (no worker)
 ## CI/CD
 
 GitHub Actions runs on every push to `main` and `v*` tags:
-- **pytest** — fast test suite (~522 tests, excludes slow DNS/RDAP tests)
+- **pytest** — fast test suite (~750 tests, excludes the 41 slow DNS/RDAP tests in `test_domain_security.py`)
 - **bandit** — Python SAST scan
 - **pip-audit** — dependency CVE scan
 - **Frontend build** — `npm ci && npm run build`
@@ -315,7 +317,7 @@ apps/my_tool/
 ## Running Tests
 
 ```bash
-# Fast tests (excludes slow DNS tests, ~629 tests)
+# Fast tests (excludes slow DNS tests, ~750 tests)
 uv run pytest tests/ --ignore=tests/unit/test_domain_security.py
 
 # All tests (~670 total)
@@ -337,7 +339,7 @@ uv run pytest tests/
 - **django-ninja-jwt** — JWT auth for the Ninja API (wraps `djangorestframework-simplejwt`); access + refresh tokens, blacklist on logout
 
 **Frontend:**
-- **React 18 + Vite** — SPA with hot module replacement
+- **React 19 + Vite 8** — SPA with hot module replacement
 - **Tailwind CSS 3 + shadcn/ui** — Utility-first styling with Radix UI component primitives
 - **sonner** — Toast notifications
 - Vanilla popstate router (no react-router)
