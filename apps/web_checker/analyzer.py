@@ -1,7 +1,7 @@
 """Web Checker analyzer — converts HTTP response data into Finding objects.
 
 Finding categories:
-  - Missing security headers (CSP, X-Frame-Options, X-Content-Type-Options, etc.)
+  - Missing security headers (CSP, X-Frame-Options, X-Content-Type-Options, HSTS, etc.)
   - Cookie security flags (Secure, HttpOnly, SameSite)
   - CORS misconfiguration (wildcard, origin reflection)
   - Server version disclosure (Server, X-Powered-By headers)
@@ -69,6 +69,10 @@ _HEADER_CHECKS = [
 ]
 
 
+_HSTS_MIN_MAX_AGE_SECONDS = 15552000  # 6 months
+_HSTS_MAX_AGE_RE = re.compile(r"(?:^|;)\s*max-age\s*=\s*(\d+)", re.IGNORECASE)
+
+
 def _security_header_findings(result: dict, session) -> list[Finding]:
     """Return findings for missing security headers."""
     if result.get("error"):
@@ -97,6 +101,76 @@ def _security_header_findings(result: dict, session) -> list[Finding]:
             ))
 
     return findings
+
+
+def _hsts_findings(result: dict, session) -> list[Finding]:
+    """Return findings for missing or weak HTTPS Strict-Transport-Security."""
+    if result.get("error"):
+        return []
+
+    url = result["url"]
+    if not url.startswith("https://"):
+        return []
+
+    headers = result.get("headers", {})
+    header_lower = {k.lower(): v for k, v in headers.items()}
+    hsts = header_lower.get("strict-transport-security")
+
+    if not hsts:
+        return [Finding(
+            session=session,
+            source="web_checker",
+            check_type="missing_hsts",
+            severity="medium",
+            title=f"Missing Strict-Transport-Security on {url}",
+            description=(
+                f"The HTTPS response from {url} does not set Strict-Transport-Security. "
+                f"Browsers may allow future visits over HTTP, leaving users exposed to "
+                f"downgrade and SSL-stripping attacks."
+            ),
+            remediation=(
+                "Add a Strict-Transport-Security header with a max-age of at least "
+                "six months. Example: Strict-Transport-Security: "
+                "max-age=31536000; includeSubDomains"
+            ),
+            url=result["url_fk"],
+            port=result["port_fk"],
+            target=url,
+            extra={"header": "Strict-Transport-Security", "url": url},
+        )]
+
+    match = _HSTS_MAX_AGE_RE.search(hsts)
+    max_age = int(match.group(1)) if match else None
+    if max_age is None or max_age < _HSTS_MIN_MAX_AGE_SECONDS:
+        return [Finding(
+            session=session,
+            source="web_checker",
+            check_type="weak_hsts",
+            severity="low",
+            title=f"Weak Strict-Transport-Security on {url}",
+            description=(
+                f"The Strict-Transport-Security header on {url} has an insufficient "
+                f"max-age. Short or missing HSTS lifetimes reduce protection against "
+                f"HTTPS downgrade attacks."
+            ),
+            remediation=(
+                "Set Strict-Transport-Security with max-age of at least 15552000 "
+                "seconds. Example: Strict-Transport-Security: "
+                "max-age=31536000; includeSubDomains"
+            ),
+            url=result["url_fk"],
+            port=result["port_fk"],
+            target=url,
+            extra={
+                "header": "Strict-Transport-Security",
+                "value": hsts,
+                "max_age": max_age,
+                "minimum_max_age": _HSTS_MIN_MAX_AGE_SECONDS,
+                "url": url,
+            },
+        )]
+
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +449,7 @@ def analyze(session, results: list[dict]) -> list[Finding]:
 
     For each URL result, generates findings across:
       - Missing security headers
+      - HSTS configuration
       - Cookie security flags
       - CORS misconfiguration
       - Server version disclosure
@@ -384,6 +459,7 @@ def analyze(session, results: list[dict]) -> list[Finding]:
 
     for r in results:
         findings.extend(_security_header_findings(r, session))
+        findings.extend(_hsts_findings(r, session))
         findings.extend(_cookie_findings(r, session))
         findings.extend(_cors_findings(r, session))
         findings.extend(_server_disclosure_findings(r, session))

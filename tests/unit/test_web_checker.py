@@ -136,10 +136,12 @@ class TestWebCheckerHeaders:
             "X-Content-Type-Options": "nosniff",
             "Permissions-Policy": "camera=()",
             "Referrer-Policy": "strict-origin-when-cross-origin",
+            "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
         })]
         findings = analyze(sess, results)
         header_types = {"missing_csp", "missing_xfo", "missing_xcto",
-                        "missing_permissions_policy", "missing_referrer_policy"}
+                        "missing_permissions_policy", "missing_referrer_policy",
+                        "missing_hsts", "weak_hsts"}
         assert not any(f.check_type in header_types for f in findings)
 
     def test_error_result_skipped(self):
@@ -147,6 +149,48 @@ class TestWebCheckerHeaders:
         results = [_make_result(port_fk=port_fk, error="Connection refused")]
         findings = analyze(sess, results)
         assert len(findings) == 0
+
+
+@pytest.mark.django_db
+class TestWebCheckerHSTS:
+    def _make_port(self):
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import IPAddress, Port
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                                port=443, protocol="tcp", state="open", service="https", source="naabu")
+        return sess, p
+
+    def test_https_missing_hsts_medium(self):
+        sess, port_fk = self._make_port()
+        results = [_make_result(port_fk=port_fk, headers={})]
+        findings = analyze(sess, results)
+        f = next((f for f in findings if f.check_type == "missing_hsts"), None)
+        assert f is not None and f.severity == "medium"
+
+    def test_http_skips_hsts_check(self):
+        sess, port_fk = self._make_port()
+        results = [_make_result(port_fk=port_fk, url="http://example.com", headers={})]
+        findings = analyze(sess, results)
+        assert not any(f.check_type == "missing_hsts" for f in findings)
+
+    def test_hsts_max_age_less_than_six_months_low(self):
+        sess, port_fk = self._make_port()
+        results = [_make_result(port_fk=port_fk, headers={
+            "Strict-Transport-Security": "max-age=3600; includeSubDomains",
+        })]
+        findings = analyze(sess, results)
+        f = next((f for f in findings if f.check_type == "weak_hsts"), None)
+        assert f is not None and f.severity == "low"
+
+    def test_strong_hsts_no_finding(self):
+        sess, port_fk = self._make_port()
+        results = [_make_result(port_fk=port_fk, headers={
+            "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        })]
+        findings = analyze(sess, results)
+        assert not any(f.check_type in {"missing_hsts", "weak_hsts"} for f in findings)
 
 
 @pytest.mark.django_db
