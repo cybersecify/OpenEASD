@@ -26,8 +26,6 @@ docker run -d \
 
 Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced to set a new password) → add a domain → run a scan. Full env-var reference, update path, Kubernetes manifests, and standalone (no-Docker) install are under [Deployment](#deployment).
 
-**Prefer not to self-host?** See [cybersecify.com/openeasd](https://cybersecify.com/openeasd) for an overview of what OpenEASD covers. If you want help interpreting your findings, we offer a paid founder-led walkthrough — [Security on Demand](https://cybersecify.com/pricing/#consulting) (INR 9,999, fully refundable if we can't help).
-
 ## Features
 
 - **Automated pipeline** — 13-tool scan workflow from domain to findings
