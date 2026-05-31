@@ -7,11 +7,9 @@ Tool runners are auto-discovered from AppConfig.tool_meta via the registry.
 
 import importlib
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import groupby
 from operator import itemgetter
 
-from django.db import close_old_connections
 from django.utils import timezone as django_tz
 
 from .models import WorkflowRun, WorkflowStepResult
