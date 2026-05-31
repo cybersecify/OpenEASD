@@ -9,7 +9,7 @@ class NucleiConfig(AppConfig):
     tool_meta = {
         "label": "Nuclei (Web Vuln Scan)",
         "runner": "apps.nuclei.scanner.run_nuclei",
-        "phase": 9,
+        "phase": 10,
         "requires": ["httpx"],
         "produces_findings": True,
     }

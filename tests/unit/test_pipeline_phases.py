@@ -2,14 +2,14 @@
 
 
 def test_phase_order():
-    """Non-web tools (7) must run before httpx (8) and web tools (9)."""
+    """Non-web tools (7) must run before httpx (8) and web tools (10)."""
     from apps.core.workflows.registry import get_tool_phases
     phases = get_tool_phases()
 
     assert phases["httpx"] == 8,           f"httpx: expected 8, got {phases['httpx']}"
     assert phases["nuclei_network"] == 7,  f"nuclei_network: expected 7, got {phases['nuclei_network']}"
-    assert phases["nuclei"] == 9,          f"nuclei: expected 9, got {phases['nuclei']}"
-    assert phases["web_checker"] == 9,     f"web_checker: expected 9, got {phases['web_checker']}"
+    assert phases["nuclei"] == 10,         f"nuclei: expected 10, got {phases['nuclei']}"
+    assert phases["web_checker"] == 10,    f"web_checker: expected 10, got {phases['web_checker']}"
 
     # Non-web tools must all be before httpx
     assert phases["nmap"] < phases["httpx"],          "nmap must run before httpx"

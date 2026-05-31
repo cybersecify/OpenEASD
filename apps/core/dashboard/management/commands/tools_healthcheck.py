@@ -71,8 +71,14 @@ def _functional_probes() -> list[Probe]:
             expect_in_stdout="1.1.1.1",
         ),
         # Version checks for tools where a functional probe would be slow
-        # (nuclei loads thousands of templates) or noisy (amass active enum,
-        # nmap port scan). Version check confirms the binary is callable.
+        # (nuclei loads thousands of templates), noisy (amass active enum,
+        # nmap port scan), or require a live web target (katana crawl).
+        # Version check confirms the binary is callable.
+        Probe(
+            name="katana",
+            cmd=[_tool_binary("TOOL_KATANA", "katana"), "-version"],
+            expect_in_stdout="katana",
+        ),
         Probe(
             name="nuclei",
             cmd=[_tool_binary("TOOL_NUCLEI", "nuclei"), "-version"],
@@ -98,6 +104,7 @@ def _quick_probes() -> list[Probe]:
         Probe(name="dnsx",      cmd=[_tool_binary("TOOL_DNSX", "dnsx"),           "-version"]),
         Probe(name="naabu",     cmd=[_tool_binary("TOOL_NAABU", "naabu"),         "-version"]),
         Probe(name="httpx",     cmd=[_tool_binary("TOOL_HTTPX", "httpx"),         "-version"]),
+        Probe(name="katana",    cmd=[_tool_binary("TOOL_KATANA", "katana"),       "-version"]),
         Probe(name="nuclei",    cmd=[_tool_binary("TOOL_NUCLEI", "nuclei"),       "-version"]),
         Probe(name="nmap",      cmd=[_tool_binary("TOOL_NMAP", "nmap"),           "-V"]),
         Probe(name="amass",     cmd=[_tool_binary("TOOL_AMASS", "amass"),         "-version"]),
