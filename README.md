@@ -9,6 +9,8 @@
 
 It surfaces the **lowest hanging fruits** — what someone scanning your perimeter sees first. Eleven attack vectors across DNS, email, TLS, SSH, ports, CVEs, and web hygiene.
 
+![OpenEASD scan in progress against nmap.org — 11 subdomains, 22 IPs, 6 ports, 3 critical findings already, all 13 tool steps tracked live](docs/screenshots/scan-detail-live.png)
+
 ## Quick start
 
 ```bash
