@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/cybersecify/OpenEASD/security/advisories/new
+    about: Report security issues privately via GitHub PVR (not public issues). See SECURITY.md.
+  - name: Question / discussion
+    url: https://github.com/cybersecify/OpenEASD/discussions
+    about: For usage questions, ideas, and broader conversation. Issues are for actionable bugs/features only.

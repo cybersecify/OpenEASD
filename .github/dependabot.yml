@@ -1,0 +1,69 @@
+version: 2
+updates:
+  # Python deps via uv-managed pyproject.toml (pip ecosystem covers this)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      django-stack:
+        patterns:
+          - "django*"
+          - "django-ninja*"
+          - "django-q*"
+      tooling:
+        patterns:
+          - "pytest*"
+          - "ruff*"
+          - "bandit*"
+          - "pip-audit*"
+    labels:
+      - "dependencies"
+      - "python"
+
+  # Frontend npm deps
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      react-stack:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "vite*"
+      shadcn-radix:
+        patterns:
+          - "@radix-ui/*"
+          - "class-variance-authority"
+          - "tailwind*"
+    labels:
+      - "dependencies"
+      - "frontend"
+
+  # GitHub Actions versions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ci"
+
+  # Docker base image (ubuntu:24.04) — security-only would be safer but
+  # we want to know when the upstream major bumps too.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 2
+    labels:
+      - "dependencies"
+      - "docker"

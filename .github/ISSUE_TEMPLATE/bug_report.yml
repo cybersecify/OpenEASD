@@ -1,0 +1,67 @@
+name: Bug report
+description: Something's broken — a scan failed, the UI did something unexpected, output looks wrong.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The more specific your
+        reproduction steps, the faster we can fix it.
+
+        **Security issue?** Please use private reporting instead — see
+        [SECURITY.md](https://github.com/cybersecify/OpenEASD/blob/main/SECURITY.md).
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / image tag / git SHA
+      description: "`docker inspect openeasd --format '{{.Image}}'` or `git rev-parse HEAD`"
+      placeholder: "ghcr.io/cybersecify/openeasd:latest (digest sha256:...) OR commit abc123"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: how-running
+    attributes:
+      label: How are you running it?
+      options:
+        - Docker (single container)
+        - Kubernetes (manifests in k8s/)
+        - Standalone (no Docker, install.sh)
+        - Local dev (uv run python main.py + vite)
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what did you get instead?
+      placeholder: |
+        1. Added domain `example.com`
+        2. Started Full Scan
+        3. Expected: scan completes in ~15 min with findings
+        4. Got: scan stuck in "running" for 2 hours, no step results updated
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: "Container logs (`docker logs openeasd`), API responses, or browser console errors. Wrap in code blocks. Redact anything sensitive."
+      render: shell
+
+  - type: input
+    id: tools
+    attributes:
+      label: External tool versions (if relevant)
+      description: "Output of `docker exec openeasd subfinder -version` etc., or whichever tool seems involved."
+      placeholder: "subfinder v2.6.6, naabu v2.3.5, nuclei v3.x.x"
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else?
+      description: Network conditions, target host quirks, anything else that might be relevant.

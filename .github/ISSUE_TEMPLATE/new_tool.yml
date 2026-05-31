@@ -1,0 +1,76 @@
+name: New tool proposal
+description: Propose a new scanner to add (subfinder/nuclei/etc. already integrated — see existing list first).
+title: "[new tool] "
+labels: ["new-tool"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        OpenEASD's plugin pattern makes adding tools a small PR — usually
+        just a new `apps/<tool>/` directory with four files (`apps.py`,
+        `models.py`, `collector.py`, `analyzer.py`, `scanner.py`) and
+        adding the app to `INSTALLED_APPS`. See [CONTRIBUTING.md](https://github.com/cybersecify/OpenEASD/blob/main/CONTRIBUTING.md#quickest-contribution-path-add-a-new-tool).
+
+        This template is for proposing — code can come in the same PR, or
+        we can discuss the design first if it's not obvious.
+
+  - type: input
+    id: tool-name
+    attributes:
+      label: Tool name + upstream URL
+      placeholder: "katana — https://github.com/projectdiscovery/katana"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-it-does
+    attributes:
+      label: What does it do, why add it to OpenEASD?
+      description: What gap does it fill that the existing 12 tools don't?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: produces
+    attributes:
+      label: Does it produce Findings or Assets?
+      description: "Findings = vulnerabilities/issues (nmap, nuclei). Assets = discovered things (subfinder, naabu)."
+      options:
+        - Findings (writes to apps/core/findings/)
+        - Assets (writes to apps/core/assets/ or web_assets/)
+        - Both (rare — explain below)
+    validations:
+      required: true
+
+  - type: input
+    id: phase
+    attributes:
+      label: What pipeline phase?
+      description: "Where in the dependency chain. See README 'Scan Pipeline' for current phases."
+      placeholder: "Phase 7 (depends on naabu having found open ports)"
+
+  - type: input
+    id: requires
+    attributes:
+      label: What does it depend on?
+      description: "Other tools whose output it needs. Listed in tool_meta['requires']."
+      placeholder: "naabu (needs open-port list)"
+
+  - type: textarea
+    id: invocation
+    attributes:
+      label: How is it invoked?
+      description: "CLI command, expected flags, input/output format. Example: `katana -list urls.txt -jsonl`"
+      render: shell
+
+  - type: dropdown
+    id: i-can-pr
+    attributes:
+      label: Can you send the PR?
+      description: It's a good first PR — see CONTRIBUTING.md for the four-file pattern.
+      options:
+        - Yes, I'll send a PR
+        - I want to but need pointers
+        - I'm only proposing, someone else can implement
+    validations:
+      required: true

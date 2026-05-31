@@ -1,0 +1,61 @@
+name: Feature request
+description: An idea, a missing capability, or a workflow OpenEASD doesn't cover today.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tell us the **problem** first, the solution second. A clear problem
+        often leads to a different solution than the one originally proposed.
+
+        For "add tool X", consider opening a "New tool proposal" issue instead
+        — it's a different kind of conversation.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the problem you're trying to solve?
+      description: What are you doing today, what's painful about it, why does it matter?
+      placeholder: |
+        I scan ~30 domains and want to compare findings between scans for the
+        same domain over time. Today I have to export each PDF and diff
+        manually.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What do you have in mind?
+      description: Rough sketch is fine. A working idea is more useful than a polished spec.
+      placeholder: |
+        A "compare" view on the scan detail page that shows new/removed
+        findings vs. the previous scan for the same domain.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Anything you tried, ruled out, or thought about. Helps us not re-litigate.
+
+  - type: dropdown
+    id: who-uses
+    attributes:
+      label: Who would use this?
+      multiple: true
+      options:
+        - In-house security / IT
+        - Bug bounty hunter
+        - Small security consultancy
+        - Security learner
+        - Solo self-hoster
+        - Other / not sure
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else?
+      description: Mockups, links to similar tools, edge cases — anything that helps.
