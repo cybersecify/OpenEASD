@@ -35,7 +35,7 @@ updates:
         patterns:
           - "react"
           - "react-dom"
-          - "vite*"
+          - "@vitejs/plugin-react"
       shadcn-radix:
         patterns:
           - "@radix-ui/*"
