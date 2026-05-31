@@ -667,6 +667,55 @@ class TestTlsCollector:
         assert redis is not None
         mock_probe.assert_any_call("1.2.3.4", 6379, "redis", hostname="www.example.com")
 
+    def test_https_port_probed(self):
+        """Port 443 (is_web=True, service='https') must be included in TLS probing."""
+        sess = self._make_session()
+        fake_details = {
+            "tls_version": "TLSv1.3", "cipher_name": "TLS_AES_256_GCM_SHA384",
+            "cipher_bits": 256, "cert_expiry_days": 365, "cert_self_signed": False,
+            "cert_key_type": "RSA", "cert_key_bits": 2048, "cert_sig_algorithm": "sha256WithRSAEncryption",
+            "cert_sig_sha1": False, "cert_san_list": ["www.example.com"], "cert_san_mismatch": False,
+            "cert_has_sct": True, "cert_trusted": True,
+        }
+        with patch("apps.tls_checker.collector._probe_tls", return_value=fake_details) as mock_probe:
+            with patch("apps.tls_checker.collector._check_legacy_protocol_support",
+                       return_value={"tls10": False, "tls11": False}):
+                results = collect(sess)
+        https_result = next((r for r in results if r["port"] == 443), None)
+        assert https_result is not None, "Port 443 (HTTPS) must appear in TLS results"
+        assert https_result["has_tls"] is True
+        assert https_result["is_web"] is True
+        mock_probe.assert_any_call("1.2.3.4", 443, "https", hostname="www.example.com")
+
+    def test_http_port_excluded_when_no_tls(self):
+        """Port 80 (is_web=True, service='http') produces no result when TLS probe returns None."""
+        sess = self._make_session()
+        with patch("apps.tls_checker.collector._probe_tls", return_value=None):
+            with patch("apps.tls_checker.collector._probe_tls_details", return_value=None):
+                with patch("apps.tls_checker.collector._check_legacy_protocol_support", return_value={}):
+                    results = collect(sess)
+        assert 80 not in {r["port"] for r in results}
+
+    def test_https_tls_findings_generated(self):
+        """End-to-end: expired cert on port 443 produces a finding."""
+        from apps.tls_checker.analyzer import analyze
+        sess = self._make_session()
+        fake_details = {
+            "tls_version": "TLSv1.2", "cipher_name": "ECDHE-RSA-AES256-GCM-SHA384",
+            "cipher_bits": 256, "cert_expiry_days": -5, "cert_self_signed": False,
+            "cert_key_type": "RSA", "cert_key_bits": 2048, "cert_sig_algorithm": "sha256WithRSAEncryption",
+            "cert_sig_sha1": False, "cert_san_list": ["www.example.com"], "cert_san_mismatch": False,
+            "cert_has_sct": True, "cert_trusted": True,
+        }
+        with patch("apps.tls_checker.collector._probe_tls", return_value=fake_details):
+            with patch("apps.tls_checker.collector._check_legacy_protocol_support",
+                       return_value={"tls10": False, "tls11": False}):
+                results = collect(sess)
+        findings = analyze(sess, results)
+        cert_expired = [f for f in findings if f.check_type == "cert_expired"]
+        assert len(cert_expired) >= 1
+        assert cert_expired[0].target == "1.2.3.4:443"
+
 
 # ---------------------------------------------------------------------------
 # Scanner orchestrator
