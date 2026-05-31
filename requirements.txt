@@ -24,7 +24,7 @@ httpx>=0.25
 # SSL/TLS
 cryptography>=42.0
 pyopenssl>=23.0
-certifi>=2023.11
+certifi>=2026.5.20
 
 # Security scanning
 python-nmap>=0.7.1
