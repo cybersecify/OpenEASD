@@ -35,7 +35,7 @@ slack-sdk>=3.42.0
 
 # Data processing
 pandas>=3.0.3
-numpy>=1.26
+numpy>=2.4.6
 lxml>=4.9
 beautifulsoup4>=4.12
 
