@@ -177,3 +177,44 @@ class TestKatanaAnalyzer:
     def test_returns_empty_for_no_records(self):
         sess, _, _ = _make_session_with_assets()
         assert analyze(sess, []) == []
+
+
+from apps.katana.scanner import run_katana
+
+
+@pytest.mark.django_db
+class TestKatanaScanner:
+    def test_returns_empty_when_no_httpx_urls(self):
+        from apps.core.scans.models import ScanSession
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        with patch("apps.katana.scanner.collect") as mock_collect:
+            result = run_katana(sess)
+        assert result == []
+        mock_collect.assert_not_called()
+
+    def test_passes_httpx_urls_to_collector(self):
+        sess, sub, port = _make_session_with_assets()  # seeds one httpx URL
+        captured = {}
+
+        def fake_collect(session, urls):
+            captured["urls"] = urls
+            return []
+
+        with patch("apps.katana.scanner.collect", side_effect=fake_collect):
+            run_katana(sess)
+
+        assert "https://www.example.com:443" in captured["urls"]
+
+    def test_saves_url_rows_to_db(self):
+        from apps.core.web_assets.models import URL
+        sess, sub, port = _make_session_with_assets()
+
+        fake_records = [{"request": {"endpoint": "https://www.example.com/admin"}}]
+
+        with patch("apps.katana.scanner.collect", return_value=fake_records):
+            result = run_katana(sess)
+
+        saved = URL.objects.filter(session=sess, source="katana")
+        assert saved.count() == 1
+        assert saved.first().url == "https://www.example.com/admin"
+        assert len(result) == 1
