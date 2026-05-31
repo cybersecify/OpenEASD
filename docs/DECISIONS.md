@@ -188,6 +188,84 @@ Calling these out so contributors don't add them back without a discussion:
 
 ---
 
+## D-009 — v2.0 direction: Agentic AI / LLM-triage
+**Status:** locked · **Decided:** 2026-05-31
+
+**What.** v2.0 will add an LLM-powered finding triage layer to OpenEASD — turning the scanner's raw output (76 findings, 3 critical, 21 high…) into a ranked, contextualised "fix this first" list with reasoning. Direction chosen over 4 other candidate scopes (chat-over-findings, auto-generated tool integrations, multi-agent recon planning, remediation playbooks) — see PRD.md v2.0 section.
+
+**Why.** The OSS recon-tool wrapper space is saturated. Analyst-grade output is genuinely scarce. Backport-aware CVE matching (PR #56, [@turfin-logic](https://github.com/turfin-logic)) made the gap concrete: scanner output emits the same false-positive noise the underlying tools do, and the differentiation we can offer is *being smarter about the output than the tool we wrap*. LLM-triage extends that exact play from "filter out one class of false positive" to "rank everything by what actually matters."
+
+**Hypothesis.** Triage is the highest-impact-per-token-spent scope of the 5 v2.0 candidates because (a) it's user-visible immediately on the existing scan-detail page (no new pages to build), (b) it has the lowest cost envelope per scan, (c) it directly answers the "scanner ≠ analyst" gap that backport-aware CVE matching exposed, (d) it demos well — a screenshot of "OpenEASD found 76 things; here are the 3 that actually matter and why" is a stronger marketing artifact than chat or planning sketches.
+
+**Evidence.** Speculative on the demo-value claim (no v2.0 prototype exists yet). Data-oriented on the "saturated wrapper space" claim — `awesome-pentest`, `awesome-osint`, and `awesome-security` lists each contain dozens of recon-tool wrappers; few offer triage layered on top.
+
+**Relationship to [D-008](#d-008--things-we-deliberately-dont-have-anti-features).** D-008 forbids *"AI-powered" in copy* — but explicitly allows real AI features described in plain terms. LLM-triage qualifies; marketing copy says what it does ("ranks findings by exploit-likelihood and explains why") not what it is ("AI-powered triage").
+
+---
+
+## D-010 — LLM-triage privacy stance: hybrid local + cloud opt-in
+**Status:** locked · **Decided:** 2026-05-31
+
+**What.** Local LLM (Ollama + Qwen 2.5 7B — see [D-011](#d-011--llm-triage-local-runtime--default-model)) is the default for everyone. Cloud API (Claude — see [D-012](#d-012--llm-triage-cloud-api-choice-claude-only-for-v20)) is a per-user opt-in with explicit consent (see [D-013](#d-013--llm-triage-consent-ux-shape)). Three other options were considered: local-only, cloud-only, and pluggable-from-day-one.
+
+**Why.** OpenEASD's README hero explicitly claims "results stay on your machine" — load-bearing language for the security ICP (in-house security, bug bounty hunters, isolated/air-gapped scanning use cases). Cloud-only would silently break that claim and erode trust with exactly the audience we're trying to reach. Local-only would cap the v2.0 quality ceiling unnecessarily for users who explicitly want cloud-tier quality and consent to send their data. Hybrid keeps the default brand-safe and adds quality-on-consent.
+
+**Hypothesis.** Brand-safe-by-default + explicit opt-in for cloud will (a) protect the "results stay on your machine" claim for the majority of users who never opt in, (b) allow a measurable upper bound on triage quality for the minority who do opt in, (c) provide a forcing function for a real consent UX that other "cloud AI inside an OSS tool" projects often skip.
+
+**Evidence.** Data-oriented on the brand-claim risk — the README hero rewrite (commit `2c9caeb`) prominently features "Results stay on your machine" as a tagline; breaking it via undisclosed cloud calls would be a documented brand-incident class. Speculative on the consent-UX-as-differentiator claim — we don't have comparable OSS-with-cloud-LLM products to evaluate against.
+
+---
+
+## D-011 — LLM-triage local runtime + default model
+**Status:** locked · **Decided:** 2026-05-31
+
+**What.** Local LLM backend = **Ollama** as the runtime, **Qwen 2.5 7B-Instruct** as the default model. User can override via config (`OPENEASD_LOCAL_LLM_MODEL` env var). Hardware floor: 8 GB RAM (the model needs ~5 GB; the rest is OpenEASD's existing footprint).
+
+**Why.** Three alternatives considered: Llama 3.1 8B-Instruct (most popular community baseline; reasoning slightly weaker on long-context tasks), Phi-4 14B (stronger but 16 GB RAM hardware floor excludes some users), and pluggable-no-default (forces a first-run model picker, more UX complexity for marginal gain).
+
+**Hypothesis.** Qwen 2.5 7B benchmarks well specifically on instruction-following and structured-output tasks — which is exactly what triage needs (output schema: ranked list with structured reasoning per item). Ollama is the canonical easy-install LLM runtime; most Docker hosts already have it or can install it cleanly. 8 GB RAM matches the realistic OpenEASD minimum.
+
+**Evidence.** Speculative on the in-context Qwen-vs-Llama comparison — no eval suite has been run against actual OpenEASD finding outputs yet (prototype phase decision). Data-oriented on Ollama as runtime — popularity / install rate measurable via Ollama's GitHub star history and package-download numbers; significantly higher than llama.cpp direct, vLLM, or Hugging Face Transformers for "self-hosted LLM on a single box" use case.
+
+---
+
+## D-012 — LLM-triage cloud API choice: Claude only for v2.0
+**Status:** locked · **Decided:** 2026-05-31
+
+**What.** Cloud-opt-in path uses **Anthropic's Claude API** as the only supported cloud backend in v2.0. Single integration. User configures via `ANTHROPIC_API_KEY` env var. Three alternatives were considered: OpenAI only, both Claude + OpenAI, and a multi-provider proxy framework (LiteLLM-style).
+
+**Why.** v2.0 is a prototype. The design phase already has 6 more sub-decisions to make; adding a second SDK now compounds the surface area without proportional benefit. Claude's JSON-mode + tool-use is more predictable for structured triage output. Anthropic's no-training-on-API-data stance is the cleanest privacy story to tell security-paranoid users who consent to cloud.
+
+**Hypothesis.** Shipping single-provider cleanly will (a) reduce time-to-prototype meaningfully vs. two-provider, (b) provide a single canonical consent-UX string to write ("your scan output is sent to Anthropic's Claude API") rather than per-provider variations, (c) let us learn whether the cloud path gets meaningful adoption before investing in second-provider support.
+
+**Evidence.** Speculative on the adoption-driven-second-provider claim. Data-oriented on the single-provider time-savings — second SDK integration realistically adds 1-2 weeks of work to prototype timeline (separate auth, separate error handling, separate streaming model, separate prompt format).
+
+**Follow-up trigger.** Add OpenAI as v2.1 if there's measurable user demand (3+ explicit requests, or visible cloud-opt-in adoption rate >25% after v2.0 ships and OpenAI-key users self-identify in Discussions).
+
+---
+
+## D-013 — LLM-triage consent UX shape
+**Status:** locked · **Decided:** 2026-05-31
+
+**What.** Four sub-axes of the consent UX for cloud-backed LLM triage:
+
+| Axis | Decision |
+|---|---|
+| **4a — *Where* the toggle lives** | Account-level default ("local" by default) + per-scan override on the scan-detail triage view |
+| **4b — *When* consent is captured** | First-use modal — one-time, "your scan output will be sent to Anthropic's Claude API; continue?" with a "don't show again" checkbox |
+| **4c — Audit log granularity** | Medium — per cloud call, log: timestamp + scan UUID + backend (claude/local) + token count + finding IDs included in the prompt. Don't store the prompt or response content (sensitive) |
+| **4d — Revocability** | Future-only — toggle off → no new cloud calls. v2.1 can add audit-purge if user demand surfaces. Anthropic API deletion DSR is manual via support; not automating in v2.0 |
+
+**Why.** Default-local + first-use modal + audit log + future-only-revoke is the smallest consent UX that's still honest. Each smaller variant (no modal, no audit) leaks trust; each larger variant (per-action confirmation, full prompt logging, automated DSR) adds friction or surface area without commensurate value for v2.0.
+
+**Hypothesis.** Minimal-honest consent UX will (a) cause near-zero friction for the local-default majority who never opt in to cloud (they never see the modal), (b) cause meaningful-but-not-prohibitive friction for users who consent (one modal, then frictionless until they explicitly revoke), (c) produce a defensible audit trail that's useful for the "what got sent where" question without storing the actually-sensitive prompt content.
+
+**Evidence.** Speculative on the friction-vs-trust trade-off curve — no A/B test data exists for this product. Pattern is similar to how Sentry handles "send error events to our cloud" (account-level default + per-scope override + audit log without full event bodies) and to how some EDR products handle their cloud-eval consent (first-use modal). Data-oriented on the modal-burden claim — UX research literature (e.g. NN/g) generally agrees one-time consent + "don't show again" is the lowest-friction informed-consent pattern.
+
+**Follow-up trigger.** v2.1 should add audit-log-purge if ≥3 users in Discussions ask for "I want to delete my own audit log entries." Don't pre-build it.
+
+---
+
 ## Index
 
 | ID | Decision | Status | Decided |
@@ -200,6 +278,11 @@ Calling these out so contributors don't add them back without a discussion:
 | D-006 | Wording conventions per surface | locked | 2026-05-22 |
 | D-007 | Canonical 11 attack vectors | locked | 2026-05-20 |
 | D-008 | Anti-features (deliberate omissions) | locked | 2026-05-21 |
+| D-009 | v2.0 direction: Agentic AI / LLM-triage | locked | 2026-05-31 |
+| D-010 | LLM-triage privacy stance: hybrid local + cloud opt-in | locked | 2026-05-31 |
+| D-011 | LLM-triage local runtime + default model | locked | 2026-05-31 |
+| D-012 | LLM-triage cloud API choice: Claude only for v2.0 | locked | 2026-05-31 |
+| D-013 | LLM-triage consent UX shape | locked | 2026-05-31 |
 
 ---
 
