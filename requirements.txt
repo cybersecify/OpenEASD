@@ -45,7 +45,7 @@ tenacity>=8.2
 cachetools>=5.3
 psutil>=7.2.2
 rich>=13.7
-tqdm>=4.66
+tqdm>=4.67.3
 
 # Reporting
 reportlab>=4.0
