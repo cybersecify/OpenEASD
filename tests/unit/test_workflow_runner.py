@@ -391,3 +391,143 @@ class TestGroupToolsByPhase:
     def test_empty_list_returns_empty(self):
         from apps.core.workflows.runner import _group_tools_by_phase
         assert _group_tools_by_phase([]) == []
+
+
+# ---------------------------------------------------------------------------
+# Phase-parallel execution
+# ---------------------------------------------------------------------------
+
+class TestPhaseParallelExecution:
+
+    def test_same_phase_tools_run_concurrently(self, transactional_db):
+        """Phase 7 tools (nmap + tls_checker) must run concurrently.
+
+        Uses threading.Barrier(2): each runner calls barrier.wait() before
+        returning. If they run serially the barrier is never satisfied, causing
+        BrokenBarrierError inside the thread, which runner.py records as a
+        'failed' step. So if run.status == 'completed', they ran in parallel.
+        """
+        import threading
+        from apps.core.scans.models import ScanSession
+
+        barrier = threading.Barrier(2, timeout=5)
+        session = ScanSession.objects.create(
+            domain="parallel.example.com", scan_type="full", status="running"
+        )
+        wf = Workflow.objects.create(name="Parallel Phase 7")
+        WorkflowStep.objects.create(workflow=wf, tool="nmap",        order=1, enabled=True)
+        WorkflowStep.objects.create(workflow=wf, tool="tls_checker", order=2, enabled=True)
+        run = WorkflowRun.objects.create(workflow=wf, session=session)
+
+        def barrier_runner(tool_name):
+            if tool_name == "service_detection":
+                return MagicMock(return_value=None)
+            def runner(sess):
+                barrier.wait()
+                return []
+            return runner
+
+        with patch("apps.core.workflows.runner._get_runner", side_effect=barrier_runner):
+            run_workflow(run.id)
+
+        run.refresh_from_db()
+        assert run.status == "completed", (
+            "Run is not 'completed' — tools likely ran serially (barrier never satisfied)"
+        )
+
+    def test_phase_boundary_respected(self, db, session):
+        """Phase 2 (subfinder) must finish before phase 7 (nmap) starts."""
+        call_log = []
+
+        wf = Workflow.objects.create(name="Phase Boundary")
+        WorkflowStep.objects.create(workflow=wf, tool="subfinder", order=1, enabled=True)
+        WorkflowStep.objects.create(workflow=wf, tool="nmap",      order=2, enabled=True)
+        run = WorkflowRun.objects.create(workflow=wf, session=session)
+
+        def tracking_runner(tool_name):
+            def runner(sess):
+                call_log.append(tool_name)
+                return []
+            return runner
+
+        with patch("apps.core.workflows.runner._get_runner", side_effect=tracking_runner):
+            run_workflow(run.id)
+
+        # service_detection is injected; filter it out to get the tools we care about
+        relevant = [t for t in call_log if t in ("subfinder", "nmap")]
+        assert relevant == ["subfinder", "nmap"]
+
+    def test_parallel_tool_failure_does_not_cancel_sibling(self, transactional_db):
+        """If nmap fails, tls_checker (same phase 7) must still run to completion."""
+        import threading
+        from apps.core.scans.models import ScanSession
+
+        # Use a barrier so we know both tools started
+        started = threading.Barrier(2, timeout=5)
+        session = ScanSession.objects.create(
+            domain="sibling.example.com", scan_type="full", status="running"
+        )
+        wf = Workflow.objects.create(name="Sibling Failure")
+        WorkflowStep.objects.create(workflow=wf, tool="nmap",        order=1, enabled=True)
+        WorkflowStep.objects.create(workflow=wf, tool="tls_checker", order=2, enabled=True)
+        run = WorkflowRun.objects.create(workflow=wf, session=session)
+
+        def make_runner(tool_name):
+            if tool_name == "service_detection":
+                return MagicMock(return_value=None)
+            def runner(sess):
+                started.wait()          # both must start before either proceeds
+                if tool_name == "nmap":
+                    raise RuntimeError("nmap timed out")
+                return ["finding-1"]
+            return runner
+
+        with patch("apps.core.workflows.runner._get_runner", side_effect=make_runner):
+            run_workflow(run.id)
+
+        run.refresh_from_db()
+        assert run.status == "partial"   # nmap failed → partial, not cancelled
+        tls_result = WorkflowStepResult.objects.get(run=run, tool="tls_checker")
+        assert tls_result.status == "completed"
+        nmap_result = WorkflowStepResult.objects.get(run=run, tool="nmap")
+        assert nmap_result.status == "failed"
+
+    def test_cancellation_stops_between_phases_not_mid_phase(self, transactional_db):
+        """When session is cancelled during phase 7, all phase 7 tools still finish.
+        Phase 10 tools (nuclei, web_checker) must be skipped.
+        """
+        import threading
+        from apps.core.scans.models import ScanSession
+
+        both_started = threading.Barrier(2, timeout=5)
+        session = ScanSession.objects.create(
+            domain="cancel.example.com", scan_type="full", status="running"
+        )
+        wf = Workflow.objects.create(name="Mid-Phase Cancel")
+        WorkflowStep.objects.create(workflow=wf, tool="nmap",        order=1, enabled=True)
+        WorkflowStep.objects.create(workflow=wf, tool="tls_checker", order=2, enabled=True)
+        WorkflowStep.objects.create(workflow=wf, tool="nuclei",      order=3, enabled=True)
+        run = WorkflowRun.objects.create(workflow=wf, session=session)
+
+        def make_runner(tool_name):
+            if tool_name == "service_detection":
+                return MagicMock(return_value=None)
+            def runner(sess):
+                both_started.wait()
+                # nmap cancels the session mid-phase
+                if tool_name == "nmap":
+                    ScanSession.objects.filter(pk=sess.pk).update(status="cancelled")
+                return []
+            return runner
+
+        with patch("apps.core.workflows.runner._get_runner", side_effect=make_runner):
+            run_workflow(run.id)
+
+        run.refresh_from_db()
+        assert run.status == "cancelled"
+
+        # Both phase-7 tools ran (cancellation detected between phases, not mid-phase)
+        assert WorkflowStepResult.objects.get(run=run, tool="nmap").status == "completed"
+        assert WorkflowStepResult.objects.get(run=run, tool="tls_checker").status == "completed"
+        # Phase-10 tool was skipped
+        assert WorkflowStepResult.objects.get(run=run, tool="nuclei").status == "skipped"
