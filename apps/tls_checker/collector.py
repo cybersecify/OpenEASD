@@ -33,12 +33,14 @@ PROBE_TIMEOUT = 5  # seconds per port
 # Services that use STARTTLS — must negotiate TLS after plaintext greeting
 _STARTTLS_SERVICES = frozenset({"smtp", "submission", "imap", "pop3", "ftp"})
 
-# Services that support TLS (STARTTLS or direct) but may run without it
+# Services that support TLS (STARTTLS or direct) but may run without it.
+# https/http-alt are included so HTTPS ports get full TLS probing, not silent skip.
 TLS_CAPABLE_SERVICES = frozenset({
     "smtp", "submission", "imap", "pop3", "ftp", "ldap",
     "mysql", "postgresql", "ms-sql-s", "mongodb",
     "redis", "rdp", "ms-wbt-server", "vnc",
     "memcached", "couchdb", "elasticsearch", "amqp",
+    "https", "http-alt",
 })
 
 # Services with no TLS standard — always an unencrypted finding
@@ -359,7 +361,7 @@ def _probe_tls(ip: str, port: int, service: str, hostname: str | None = None) ->
 
 def collect(session) -> list[dict]:
     """
-    Probe all non-web open ports for TLS status and configuration.
+    Probe all open ports for TLS status and configuration — including HTTPS (port 443).
 
     Returns one result dict per port that requires TLS analysis:
       {
@@ -380,11 +382,13 @@ def collect(session) -> list[dict]:
 
     Ports with unknown services (not in TLS_CAPABLE or INHERENTLY_INSECURE)
     are omitted — no findings can be generated.
+    Plain HTTP ports (service="http") produce no TLS findings because the probe
+    returns no TLS details; HSTS coverage for those is handled by web_checker.
     """
     from apps.core.assets.models import Port
 
     open_ports = list(
-        Port.objects.filter(session=session, state="open", is_web=False)
+        Port.objects.filter(session=session, state="open")
         .select_related("ip_address__subdomain")
     )
     if not open_ports:
@@ -417,7 +421,7 @@ def collect(session) -> list[dict]:
             logger.debug(f"[tls_checker:{session.id}] {ip}:{port_num} inherently insecure ({service})")
             results.append({
                 "ip": ip, "port": port_num, "service": service,
-                "has_tls": False, "is_web": False, "scheme": None,
+                "has_tls": False, "is_web": p.is_web, "scheme": None,
                 "inherently_insecure": True,
                 "port_fk": p, "url_fk": None,
                 **_tls_empty,
@@ -435,7 +439,7 @@ def collect(session) -> list[dict]:
 
             results.append({
                 "ip": ip, "port": port_num, "service": service,
-                "has_tls": has_tls, "is_web": False, "scheme": None,
+                "has_tls": has_tls, "is_web": p.is_web, "scheme": None,
                 "inherently_insecure": False,
                 "port_fk": p, "url_fk": None,
                 **tls_detail,
@@ -450,7 +454,7 @@ def collect(session) -> list[dict]:
                 tls_detail = {**details, **legacy}
                 results.append({
                     "ip": ip, "port": port_num, "service": service,
-                    "has_tls": True, "is_web": False, "scheme": None,
+                    "has_tls": True, "is_web": p.is_web, "scheme": None,
                     "inherently_insecure": False,
                     "port_fk": p, "url_fk": None,
                     **tls_detail,

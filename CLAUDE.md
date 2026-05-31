@@ -376,7 +376,7 @@ create_scan_session(domain)          # auto-assigns default workflow
 ### Key design rules
 1. **Tools never import from each other.** Shared data flows through `apps/core/assets/`, `apps/core/web_assets/`, and `apps/core/findings/`.
 2. **Tools self-register.** Add `tool_meta` to AppConfig + add to `INSTALLED_APPS`. No other core files to touch.
-3. **Port.is_web** classifies ports. Set by `service_detection` (Phase 5) based on nmap -sV service name. Used by nmap to skip web ports, by tls_checker for branching.
+3. **Port.is_web** classifies ports. Set by `service_detection` (Phase 5) based on nmap -sV service name. Used by nmap to skip web ports (`is_web=False` only). tls_checker probes all ports — including HTTPS (port 443).
 4. **dnsx filters to public IPs only.** Private/loopback/link-local/AWS metadata IPs dropped.
 5. **httpx feeds subdomain:port pairs, not IP:port pairs.** Cloudflare/CDN-fronted services need SNI matching.
 6. **nmap only scans non-web ports** (`Port.objects.filter(is_web=False)`).
