@@ -3,10 +3,30 @@
 [![GitHub Stars](https://img.shields.io/github/stars/cybersecify/OpenEASD?style=social)](https://github.com/cybersecify/OpenEASD/stargazers)
 [![CI](https://github.com/cybersecify/OpenEASD/actions/workflows/ci.yml/badge.svg)](https://github.com/cybersecify/OpenEASD/actions/workflows/ci.yml)
 [![Docker Image](https://ghcr-badge.egpl.dev/cybersecify/openeasd/latest_tag?trim=major&label=ghcr.io)](https://github.com/cybersecify/OpenEASD/pkgs/container/openeasd)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Open External Attack Surface Detection** - An automated platform for discovering and analyzing your organization's external attack surface.
+**See your domain like an attacker does.** OpenEASD is a self-hosted scanner that wraps the open-source recon tools security teams already use — `subfinder`, `amass`, `dnsx`, `naabu`, `httpx`, `nuclei`, `nmap` — behind a single web UI with scheduling, alerts, and findings tracking. Free, MIT-licensed, one `docker run`. Results stay on your machine.
 
-OpenEASD scans domains to discover subdomains, resolve IPs, scan ports, detect services, and find vulnerabilities across your network attack surface.
+It surfaces the **lowest hanging fruits** — what someone scanning your perimeter sees first. Eleven attack vectors across DNS, email, TLS, SSH, ports, CVEs, and web hygiene.
+
+## Quick start
+
+```bash
+docker run -d \
+  -p 8000:8000 \
+  -v openeasd-data:/app/data \
+  -v openeasd-logs:/app/logs \
+  -e SECRET_KEY="$(openssl rand -hex 32)" \
+  -e ALLOWED_HOSTS="*" \
+  --cap-add NET_RAW \
+  --restart unless-stopped \
+  --name openeasd \
+  ghcr.io/cybersecify/openeasd:latest
+```
+
+Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced to set a new password) → add a domain → run a scan. Full env-var reference, update path, Kubernetes manifests, and standalone (no-Docker) install are under [Deployment](#deployment).
+
+**Prefer not to self-host?** See [cybersecify.com/openeasd](https://cybersecify.com/openeasd) for an overview of what OpenEASD covers. If you want help interpreting your findings, we offer a paid founder-led walkthrough — [Security on Demand](https://cybersecify.com/pricing/#consulting) (INR 9,999, fully refundable if we can't help).
 
 ## Features
 
@@ -85,7 +105,7 @@ frontend/               - React 18 + Vite SPA
   src/auth.js           - localStorage token helpers
 ```
 
-## Quick Start
+## Deployment
 
 ### Docker (recommended)
 
