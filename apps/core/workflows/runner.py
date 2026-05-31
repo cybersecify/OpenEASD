@@ -48,6 +48,42 @@ def _group_tools_by_phase(tools: list) -> list:
     ]
 
 
+def _run_single_step(run, session, tool: str, order: int) -> None:
+    """Execute one tool step and persist its WorkflowStepResult.
+
+    Safe to call from a ThreadPoolExecutor worker — calls close_old_connections()
+    so the thread gets its own fresh SQLite connection rather than borrowing
+    the caller's thread-local connection.
+    """
+    from django.db import close_old_connections
+    close_old_connections()
+    from .registry import get_tool_produces_findings
+
+    step_result = WorkflowStepResult.objects.create(
+        run=run,
+        tool=tool,
+        order=order,
+        status="running",
+        started_at=django_tz.now(),
+    )
+    try:
+        fn = _get_runner(tool)
+        results = fn(session)
+        count = len(results) if isinstance(results, (list, tuple)) else (results or 0)
+        step_result.status = "completed"
+        if get_tool_produces_findings().get(tool, False):
+            step_result.findings_count = count
+        else:
+            step_result.findings_count = 0
+    except Exception as e:
+        logger.error(f"[workflow:{run.id}] Step {tool} failed: {e}", exc_info=True)
+        step_result.status = "failed"
+        step_result.error = str(e)
+
+    step_result.finished_at = django_tz.now()
+    step_result.save(update_fields=["status", "findings_count", "error", "finished_at"])
+
+
 def run_workflow(workflow_run_id: int, only_tools: list | None = None):
     """Execute all steps of a WorkflowRun in order.
 
@@ -63,16 +99,11 @@ def run_workflow(workflow_run_id: int, only_tools: list | None = None):
     tools = run.workflow.enabled_tools()
     if only_tools is not None:
         tools = [t for t in tools if t in only_tools]
-        # also allow tools not in the workflow when explicitly requested
         for t in only_tools:
             if t not in tools:
                 tools.append(t)
 
-    # Core step: service_detection always runs after naabu (if naabu produced ports)
-    # even if the workflow doesn't include it — it's core infrastructure.
-    # Skip for subscans (assets already classified from parent).
     if "service_detection" not in tools and only_tools is None:
-        # Find where to insert: after naabu (or at start if no naabu)
         insert_at = 0
         for i, t in enumerate(tools):
             if t == "naabu":
@@ -83,52 +114,20 @@ def run_workflow(workflow_run_id: int, only_tools: list | None = None):
     cancelled = False
     try:
         for order, tool in enumerate(tools, start=1):
-            step_result = WorkflowStepResult.objects.create(
-                run=run,
-                tool=tool,
-                order=order,
-                status="running",
-                started_at=django_tz.now(),
-            )
-            # Check if scan was cancelled between steps
             session.refresh_from_db(fields=["status"])
             if session.status == "cancelled":
                 logger.info(f"[workflow:{run.id}] Scan cancelled — stopping at step {order}")
-                step_result.status = "skipped"
-                step_result.finished_at = django_tz.now()
-                step_result.save(update_fields=["status", "finished_at"])
+                WorkflowStepResult.objects.create(
+                    run=run, tool=tool, order=order,
+                    status="skipped",
+                    started_at=django_tz.now(), finished_at=django_tz.now(),
+                )
                 cancelled = True
                 break
 
             logger.info(f"[workflow:{run.id}] Running step {order}/{len(tools)}: {tool}")
+            _run_single_step(run, session, tool, order)
 
-            try:
-                fn = _get_runner(tool)
-                results = fn(session)
-                count = len(results) if isinstance(results, (list, tuple)) else (results or 0)
-                step_result.status = "completed"
-                # Only count Finding rows here. Asset-producing tools (subfinder,
-                # dnsx, naabu, httpx, service_detection) also return lists, but
-                # those are Subdomain/IPAddress/Port/URL records, not Findings.
-                # Surfacing that count as findings_count made API responses
-                # claim "subfinder: 10 findings" when there were 0 actual
-                # Finding rows. Per-tool asset counts are visible at the
-                # session level (subdomains_total, ips, ports, urls in /status/).
-                from .registry import get_tool_produces_findings
-                if get_tool_produces_findings().get(tool, False):
-                    step_result.findings_count = count
-                else:
-                    step_result.findings_count = 0
-
-            except Exception as e:
-                logger.error(f"[workflow:{run.id}] Step {tool} failed: {e}", exc_info=True)
-                step_result.status = "failed"
-                step_result.error = str(e)
-
-            step_result.finished_at = django_tz.now()
-            step_result.save(update_fields=["status", "findings_count", "error", "finished_at"])
-
-        # Set final run status
         if cancelled:
             run.status = "cancelled"
         elif WorkflowStepResult.objects.filter(run=run, status="failed").exists():
