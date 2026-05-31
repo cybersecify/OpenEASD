@@ -2,11 +2,11 @@
 
 # Web framework (replaces FastAPI + Uvicorn)
 django>=5.0
-django-htmx>=1.17
+django-htmx>=1.27.0
 gunicorn>=21.2
 
 # Scheduler
-django-apscheduler>=0.6
+django-apscheduler>=0.7.0
 
 # Configuration
 python-decouple>=3.8
