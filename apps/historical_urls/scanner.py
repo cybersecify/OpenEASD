@@ -1,9 +1,4 @@
-"""Historical URLs scanner — orchestrator: read subdomains → collect → analyze → save.
-
-Phase 8.5: runs after httpx (Phase 8, current URL probing) and before
-katana (Phase 9, live crawling). Historical sources surface forgotten
-endpoints and deprecated APIs invisible to live-crawl-only scanning.
-"""
+"""Historical URLs scanner — orchestrator: read subdomains → collect → analyze → save."""
 
 import logging
 
@@ -17,11 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def run_historical_urls(session) -> list[URL]:
-    """Collect historical URLs for the session's root domain + all subdomains.
-
-    Returns the list of newly-saved URL objects (empty if no subdomains exist,
-    both binaries are missing, or neither source has history for this target).
-    """
+    """Collect and save historical URLs for the session's root domain and all subdomains."""
     subdomains = list(
         Subdomain.objects.filter(session=session)
         .values_list("subdomain", flat=True)
@@ -33,7 +24,7 @@ def run_historical_urls(session) -> list[URL]:
         return []
 
     # Always include the root domain itself — it's not a Subdomain row
-    targets = [session.domain] + subdomains
+    targets = list(dict.fromkeys([session.domain] + subdomains))
 
     logger.info(
         "[historical_urls:%s] querying history for %d targets",

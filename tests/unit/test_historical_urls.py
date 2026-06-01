@@ -315,3 +315,22 @@ class TestScanner:
         with patch("apps.historical_urls.scanner.collect", return_value=[]):
             result = run_historical_urls(sess)
         assert result == []
+
+    def test_deduplicates_targets_when_root_domain_is_also_a_subdomain(self):
+        from apps.core.assets.models import Subdomain
+        sess = self._session()
+        # apex domain recorded as a subdomain row (subfinder/amass emit this)
+        Subdomain.objects.create(
+            session=sess, domain="example.com",
+            subdomain="example.com", source="subfinder",
+        )
+        captured = {}
+
+        def fake_collect(targets):
+            captured["targets"] = targets
+            return []
+
+        with patch("apps.historical_urls.scanner.collect", side_effect=fake_collect):
+            run_historical_urls(sess)
+
+        assert captured["targets"].count("example.com") == 1
