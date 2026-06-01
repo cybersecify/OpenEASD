@@ -1,7 +1,12 @@
 """Tests for /api/users/ endpoints."""
+import json
 import pytest
 from django.contrib.auth.models import User
 from ninja_jwt.tokens import AccessToken
+
+
+def post_json(client, path, data):
+    return client.post(path, data=json.dumps(data), content_type="application/json")
 
 
 def _auth(client, user):
@@ -59,3 +64,49 @@ class TestListUsers:
         assert "is_active" in user
         assert "date_joined" in user
         assert "last_login" in user
+
+
+@pytest.mark.django_db
+class TestCreateUser:
+    def test_creates_user(self, admin_client):
+        res = post_json(admin_client, "/api/users/create/", {
+            "username": "bob",
+            "password": "securepass1",
+            "is_superuser": False,
+        })
+        assert res.status_code == 200
+        assert User.objects.filter(username="bob").exists()
+
+    def test_new_user_must_change_password(self, admin_client):
+        post_json(admin_client, "/api/users/create/", {
+            "username": "bob",
+            "password": "securepass1",
+            "is_superuser": False,
+        })
+        u = User.objects.get(username="bob")
+        assert u.profile.must_change_password is True
+
+    def test_duplicate_username_returns_400(self, admin_client, regular_user):
+        res = post_json(admin_client, "/api/users/create/", {
+            "username": "alice",
+            "password": "securepass1",
+            "is_superuser": False,
+        })
+        assert res.status_code == 400
+        assert res.json()["error"]["code"] == "BAD_REQUEST"
+
+    def test_short_password_returns_400(self, admin_client):
+        res = post_json(admin_client, "/api/users/create/", {
+            "username": "bob",
+            "password": "short",
+            "is_superuser": False,
+        })
+        assert res.status_code == 400
+
+    def test_regular_user_gets_403(self, user_client):
+        res = post_json(user_client, "/api/users/create/", {
+            "username": "bob",
+            "password": "securepass1",
+            "is_superuser": False,
+        })
+        assert res.status_code == 403

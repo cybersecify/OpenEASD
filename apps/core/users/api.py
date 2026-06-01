@@ -1,7 +1,7 @@
 """User management API — superuser only."""
 
 from django.contrib.auth import get_user_model
-from ninja import Router
+from ninja import Router, Schema
 from ninja.errors import HttpError
 from ninja_jwt.authentication import JWTAuth
 
@@ -33,3 +33,28 @@ def _serialize(u) -> dict:
 @router.get("/", response=list)
 def list_users(request):
     return [_serialize(u) for u in User.objects.order_by("date_joined")]
+
+
+class CreateUserIn(Schema):
+    username: str
+    password: str
+    is_superuser: bool = False
+
+
+@router.post("/create/")
+def create_user(request, payload: CreateUserIn):
+    if len(payload.password) < 8:
+        raise HttpError(400, "Password must be at least 8 characters")
+    if User.objects.filter(username=payload.username).exists():
+        raise HttpError(400, "Username already taken")
+    u = User.objects.create_user(
+        username=payload.username,
+        password=payload.password,
+        is_superuser=payload.is_superuser,
+        is_staff=payload.is_superuser,
+    )
+    profile = getattr(u, "profile", None)
+    if profile:
+        profile.must_change_password = True
+        profile.save(update_fields=["must_change_password"])
+    return _serialize(u)
