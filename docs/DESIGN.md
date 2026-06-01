@@ -71,21 +71,25 @@ apps/<tool>/
 
 ### Registered tools
 
-| App | Phase | Produces findings | Description |
-|---|---|---|---|
-| `apps/domain_security/` | 1 | Yes | DNS, email (SPF/DMARC/DKIM/MTA-STS), RDAP |
-| `apps/subfinder/` | 2 | No | Passive subdomain enumeration |
-| `apps/amass/` | 2 | No | Active subdomain enumeration |
-| `apps/dnsx/` | 3 | No | DNS resolution; filters to public IPs |
-| `apps/naabu/` | 4 | No | Port scan (top-100 TCP) |
-| `apps/core/service_detection/` | 5 | No | nmap -sV → `Port.service` + `Port.is_web` |
-| `apps/nmap/` | 7 | Yes | NSE vulners CVE scan (non-web ports) |
-| `apps/tls_checker/` | 7 | Yes | TLS ciphers, protocol versions, cert analysis |
-| `apps/ssh_checker/` | 7 | Yes | SSH config (root login, weak kex/cipher/MAC, SSHv1) |
-| `apps/nuclei_network/` | 7 | Yes | Nuclei network protocol templates (non-web ports) |
-| `apps/httpx/` | 8 | No | Web probing, URL discovery (CDN-aware via SNI) |
-| `apps/nuclei/` | 9 | Yes | Nuclei community web vuln scan |
-| `apps/web_checker/` | 9 | Yes | HTTP security headers, cookies, CORS |
+| App | Phase | Phase Group | Produces findings | Description |
+|---|---|---|---|---|
+| `apps/domain_security/` | 1 | Domain Intelligence | Yes | DNS, email (SPF/DMARC/DKIM/MTA-STS), RDAP |
+| `apps/subfinder/` | 2 | Surface Enumeration | No | Passive subdomain enumeration |
+| `apps/amass/` | 2 | Surface Enumeration | No | Active subdomain enumeration |
+| `apps/alterx/` | 2 | Surface Enumeration | No | Subdomain permutation from discovered subdomains |
+| `apps/dnsx/` | 3 | Surface Enumeration | No | DNS resolution; filters to public IPs |
+| `apps/takeover_check/` | 4 | Surface Enumeration | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
+| `apps/naabu/` | 5 | Port Discovery | No | Port scan (top-100 TCP) |
+| `apps/core/service_detection/` | 6 | Port Discovery | No | nmap -sV → `Port.service` + `Port.is_web` |
+| `apps/nmap/` | 7 | Network Exposure | Yes | NSE vulners CVE scan (non-web ports) |
+| `apps/tls_checker/` | 7 | Network Exposure | Yes | TLS ciphers, protocol versions, cert analysis |
+| `apps/ssh_checker/` | 7 | Network Exposure | Yes | SSH config (root login, weak kex/cipher/MAC, SSHv1) |
+| `apps/nuclei_network/` | 7 | Network Exposure | Yes | Nuclei network protocol templates (non-web ports) |
+| `apps/httpx/` | 8 | Web Exposure | No | Web probing, URL discovery (CDN-aware via SNI) |
+| `apps/historical_urls/` | 9 | Web Exposure | No | Historical URL discovery via gau + waybackurls |
+| `apps/katana/` | 10 | Web Exposure | No | Deep URL crawl on top of httpx |
+| `apps/nuclei/` | 11 | Web Exposure | Yes | Nuclei community web vuln scan |
+| `apps/web_checker/` | 11 | Web Exposure | Yes | HTTP security headers, cookies, CORS |
 
 ---
 
@@ -95,7 +99,7 @@ apps/<tool>/
 
 ```
 Domain
-  └── Subdomain  (source: seed | subfinder | amass | dnsx)
+  └── Subdomain  (source: seed | subfinder | amass | alterx | dnsx)
         └── IPAddress  (public only; private/loopback/AWS metadata filtered)
               └── Port  (is_web=True|False set by service_detection)
                     └── URL  (from httpx; SNI-matched)
@@ -257,7 +261,7 @@ frontend/
       Notification.jsx   re-exports sonner toast
 ```
 
-**Tech:** React 18, Vite, shadcn/ui, Tailwind CSS 3, Radix UI.
+**Tech:** React 19, Vite 8, shadcn/ui, Tailwind CSS 3, Radix UI.
 
 **Theme:** dark — `bg #0d1117`, card `#161b22`, border `#30363d`, accent `#30c074`.
 

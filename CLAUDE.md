@@ -105,7 +105,7 @@ git describe --tags --abbrev=0
 - SQLite database (dev), configurable via `DB_NAME` env var
 
 ### Frontend (React SPA — new primary UI)
-- **React 18 + Vite** — `frontend/` directory, builds to `frontend/dist/`
+- **React 19 + Vite 8** — `frontend/` directory, builds to `frontend/dist/`
 - **shadcn/ui** — component library on top of Tailwind CSS 3 + Radix UI; CSS variables in `src/index.css`; components in `src/components/ui/`
 - Vanilla popstate-based router in `App.jsx` (no react-router)
 - JWT `apiFetch` in `src/api/client.js` — sends `Authorization: Bearer <token>` header; 401 clears tokens and redirects to `/login`
