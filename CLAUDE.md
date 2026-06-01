@@ -473,7 +473,8 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
 | `tests/unit/test_service_detection.py` | 16 | XML parsing, Port enrichment, is_web |
 | `tests/unit/test_workflow_runner.py` | 31 | run_workflow, service_detection injection, step failure, cancellation, phase parallelism |
+| `tests/unit/test_takeover_check.py` | 35 | collector (binary missing, bad JSON, happy path), analyzer (vulnerable/non-vulnerable, FK link, dedup, extra field), scanner (no subdomains, persist + return) |
 | `tests/integration/test_scan_flow.py` | 13 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 71 | Smoke tests for all 35 API endpoints (auth + payload shape) |
 
-**Total: ~760 tests** (~719 fast + 41 slow domain_security)
+**Total: ~836 tests** (~795 fast + 41 slow domain_security)
