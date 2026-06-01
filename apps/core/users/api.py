@@ -71,8 +71,9 @@ def _get_user_or_404(user_id: int):
         raise HttpError(404, "User not found")
 
 
-def _active_superuser_count() -> int:
-    return User.objects.filter(is_superuser=True, is_active=True).count()
+def _other_active_superuser_count(caller_id: int) -> int:
+    """Count active superusers other than the caller."""
+    return User.objects.filter(is_superuser=True, is_active=True).exclude(id=caller_id).count()
 
 
 @router.post("/{user_id}/reset-password/")
@@ -92,7 +93,7 @@ def deactivate_user(request, user_id: int):
     if user_id == request.auth.id:
         raise HttpError(400, "Cannot deactivate your own account")
     u = _get_user_or_404(user_id)
-    if u.is_superuser and _active_superuser_count() <= 1:
+    if u.is_superuser and _other_active_superuser_count(request.auth.id) <= 1:
         raise HttpError(400, "Cannot deactivate the last active superuser")
     u.is_active = False
     u.save(update_fields=["is_active"])
@@ -121,7 +122,7 @@ def demote_user(request, user_id: int):
     if user_id == request.auth.id:
         raise HttpError(400, "Cannot demote your own account")
     u = _get_user_or_404(user_id)
-    if u.is_superuser and _active_superuser_count() <= 1:
+    if u.is_superuser and _other_active_superuser_count(request.auth.id) <= 1:
         raise HttpError(400, "Cannot demote the last active superuser")
     u.is_superuser = False
     u.is_staff = False
@@ -134,7 +135,7 @@ def delete_user(request, user_id: int):
     if user_id == request.auth.id:
         raise HttpError(400, "Cannot delete your own account")
     u = _get_user_or_404(user_id)
-    if u.is_superuser and _active_superuser_count() <= 1:
+    if u.is_superuser and _other_active_superuser_count(request.auth.id) <= 1:
         raise HttpError(400, "Cannot delete the last active superuser")
     u.delete()
     return {"ok": True}

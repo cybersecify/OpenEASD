@@ -162,8 +162,14 @@ class TestDeactivateReactivate:
         res = post_json(admin_client, f"/api/users/{superuser.id}/deactivate/", {})
         assert res.status_code == 400
 
-    def test_cannot_deactivate_last_superuser(self, admin_client, superuser):
-        res = post_json(admin_client, f"/api/users/{superuser.id}/deactivate/", {})
+    def test_cannot_deactivate_last_superuser(self, db, client):
+        # second_admin (caller) tries to deactivate first_admin who is the only
+        # other active superuser — guard fires because no other active superuser
+        # would remain besides the caller
+        first_admin = User.objects.create_superuser(username="admin1", password="pass123")
+        second_admin = User.objects.create_superuser(username="admin2", password="pass123")
+        caller_client = _auth(client, second_admin)
+        res = post_json(caller_client, f"/api/users/{first_admin.id}/deactivate/", {})
         assert res.status_code == 400
         assert res.json()["error"]["code"] == "BAD_REQUEST"
 
@@ -178,7 +184,10 @@ class TestPromoteDemote:
         assert regular_user.is_staff is True
 
     def test_demotes_user(self, admin_client, db):
+        # Three active superusers: admin (caller) + other_super (target) + spare_super
+        # so demoting other_super still leaves two active superusers
         other_super = User.objects.create_superuser(username="super2", password="pass123")
+        User.objects.create_superuser(username="super3", password="pass123")
         res = post_json(admin_client, f"/api/users/{other_super.id}/demote/", {})
         assert res.status_code == 200
         other_super.refresh_from_db()
@@ -188,8 +197,13 @@ class TestPromoteDemote:
         res = post_json(admin_client, f"/api/users/{superuser.id}/demote/", {})
         assert res.status_code == 400
 
-    def test_cannot_demote_last_superuser(self, admin_client, superuser):
-        res = post_json(admin_client, f"/api/users/{superuser.id}/demote/", {})
+    def test_cannot_demote_last_superuser(self, db, client):
+        # second_admin (caller) tries to demote first_admin who is the only
+        # other active superuser — guard fires
+        first_admin = User.objects.create_superuser(username="admin1", password="pass123")
+        second_admin = User.objects.create_superuser(username="admin2", password="pass123")
+        caller_client = _auth(client, second_admin)
+        res = post_json(caller_client, f"/api/users/{first_admin.id}/demote/", {})
         assert res.status_code == 400
         assert res.json()["error"]["code"] == "BAD_REQUEST"
 
@@ -206,9 +220,15 @@ class TestDeleteUser:
         res = post_json(admin_client, f"/api/users/{superuser.id}/delete/", {})
         assert res.status_code == 400
 
-    def test_cannot_delete_last_superuser(self, admin_client, superuser):
-        res = post_json(admin_client, f"/api/users/{superuser.id}/delete/", {})
+    def test_cannot_delete_last_superuser(self, db, client):
+        # second_admin (caller) tries to delete first_admin who is the only
+        # other active superuser — guard fires
+        first_admin = User.objects.create_superuser(username="admin1", password="pass123")
+        second_admin = User.objects.create_superuser(username="admin2", password="pass123")
+        caller_client = _auth(client, second_admin)
+        res = post_json(caller_client, f"/api/users/{first_admin.id}/delete/", {})
         assert res.status_code == 400
+        assert res.json()["error"]["code"] == "BAD_REQUEST"
 
     def test_unknown_user_returns_404(self, admin_client):
         res = post_json(admin_client, "/api/users/99999/delete/", {})

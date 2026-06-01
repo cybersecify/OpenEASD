@@ -11,12 +11,12 @@ import { apiPost } from '../api/client.js';
 import { auth } from '../auth.js';
 import { useFetch } from '../hooks/useFetch.js';
 
-function _currentUsername() {
+function _currentUserId() {
   try {
     const token = auth.getToken();
     if (!token) return null;
     const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.username || null;
+    return payload.user_id ?? null;
   } catch {
     return null;
   }
@@ -36,7 +36,7 @@ export default function UsersPage() {
   const [resetId, setResetId]         = useState(null);
   const [resetPw, setResetPw]         = useState('');
 
-  const currentUsername = _currentUsername();
+  const currentUserId = _currentUserId();
 
   async function handleCreate(e) {
     e.preventDefault();
@@ -153,7 +153,7 @@ export default function UsersPage() {
                 </TableHeader>
                 <TableBody>
                   {users.map(u => {
-                    const isSelf = u.username === currentUsername;
+                    const isSelf = u.id === currentUserId;
                     return (
                       <TableRow key={u.id}>
                         <TableCell className="font-medium">
