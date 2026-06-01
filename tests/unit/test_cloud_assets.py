@@ -131,3 +131,75 @@ class TestAnalyze:
         url = "https://s3.amazonaws.com/example-data"
         findings = analyze(sess, [url, url])
         assert len(findings) == 1
+
+
+# ---------------------------------------------------------------------------
+# Scanner
+# ---------------------------------------------------------------------------
+
+from apps.cloud_assets.scanner import _derive_keywords, run_cloud_assets
+
+
+class TestDeriveKeywords:
+    def test_apex_label_included(self):
+        result = _derive_keywords("example.com", [])
+        assert "example" in result
+
+    def test_subdomain_leftmost_label_included(self):
+        result = _derive_keywords("example.com", ["dev.example.com", "api.example.com"])
+        assert "dev" in result
+        assert "api" in result
+
+    def test_short_labels_filtered(self):
+        result = _derive_keywords("example.com", ["s3.example.com", "ns.example.com"])
+        assert "s3" not in result
+        assert "ns" not in result
+
+    def test_deduplication(self):
+        result = _derive_keywords("dev.com", ["dev.dev.com"])
+        assert result.count("dev") == 1
+
+
+@pytest.mark.django_db
+class TestScanner:
+    def _session(self):
+        from apps.core.scans.models import ScanSession
+        return ScanSession.objects.create(domain="example.com", scan_type="full")
+
+    def test_no_subdomains_skips_collect(self):
+        sess = self._session()
+        with patch("apps.cloud_assets.scanner.collect") as mock_collect:
+            result = run_cloud_assets(sess)
+        assert result == []
+        mock_collect.assert_not_called()
+
+    def test_happy_path_persists_and_returns_findings(self):
+        from apps.core.assets.models import Subdomain
+        from apps.core.findings.models import Finding
+
+        sess = self._session()
+        Subdomain.objects.create(
+            session=sess, domain="example.com",
+            subdomain="dev.example.com", source="subfinder",
+        )
+
+        with patch("apps.cloud_assets.scanner.collect",
+                   return_value=["https://s3.amazonaws.com/example-backup"]):
+            result = run_cloud_assets(sess)
+
+        assert len(result) == 1
+        assert Finding.objects.filter(session=sess, source="cloud_assets").count() == 1
+        assert result[0].check_type == "open_cloud_bucket"
+        assert result[0].severity == "high"
+
+    def test_collect_returns_empty_no_findings(self):
+        from apps.core.assets.models import Subdomain
+
+        sess = self._session()
+        Subdomain.objects.create(
+            session=sess, domain="example.com",
+            subdomain="dev.example.com", source="subfinder",
+        )
+        with patch("apps.cloud_assets.scanner.collect", return_value=[]):
+            result = run_cloud_assets(sess)
+        assert result == []
