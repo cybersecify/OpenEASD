@@ -345,7 +345,7 @@ apps/<tool>/
 ## Scan pipeline
 
 All scans run through the **dynamic workflow system**. The default "Full Scan"
-workflow executes all 15 tools in phase order. Custom workflows can include
+workflow executes all 16 tools in phase order. Custom workflows can include
 any subset of tools.
 
 ```
@@ -361,7 +361,7 @@ Phase 7  tls_checker        → Finding (cipher/cert/protocol on all ports)    �
 Phase 7  ssh_checker        → Finding (SSH config on service="ssh" ports)    │
 Phase 7  nuclei_network     → Finding (network protocol vulns, non-web ports)┘
 Phase 8  httpx              → URL (web probing, CDN-aware via SNI)
-Phase 8.5 historical_urls  → URL (gau + waybackurls — archived endpoints)
+Phase 8.5 historical_urls → URL (gau + waybackurls — archived endpoints)
 Phase 9  katana             → URL (web crawling, endpoint discovery)
 Phase 10 nuclei             → Finding (web vulns via templates on URLs)
 Phase 10 web_checker        → Finding (headers, cookies, CORS on URLs)
