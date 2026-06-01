@@ -53,6 +53,9 @@ export function Layout({ children }) {
               label === 'Scans'    ? running : null;
             return <NavLink key={path} path={path} label={label} badge={badge} />;
           })}
+          {auth.isAdmin() && (
+            <NavLink path="/settings/users" label="Users" />
+          )}
         </nav>
         <div className="px-3 py-3 border-t border-rim">
           <button

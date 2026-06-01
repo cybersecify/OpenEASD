@@ -12,6 +12,7 @@ import WorkflowsPage from './pages/WorkflowsPage.jsx';
 import WorkflowDetailPage from './pages/WorkflowDetailPage.jsx';
 import InsightsPage from './pages/InsightsPage.jsx';
 import NotificationsPage from './pages/NotificationsPage.jsx';
+import UsersPage from './pages/UsersPage.jsx';
 
 function NotFound() {
   return <div className="p-8 text-body">404 - Page not found</div>;
@@ -52,5 +53,6 @@ export default function App() {
   if (path.startsWith('/workflows/') && path.length > 11) return <WorkflowDetailPage />;
   if (path === '/insights') return <InsightsPage />;
   if (path === '/notifications') return <NotificationsPage />;
+  if (path === '/settings/users') return <UsersPage />;
   return <NotFound />;
 }
