@@ -110,3 +110,59 @@ class TestCreateUser:
             "is_superuser": False,
         })
         assert res.status_code == 403
+
+
+@pytest.mark.django_db
+class TestResetPassword:
+    def test_resets_password(self, admin_client, regular_user):
+        res = post_json(admin_client, f"/api/users/{regular_user.id}/reset-password/", {
+            "password": "newpassword1",
+        })
+        assert res.status_code == 200
+        regular_user.refresh_from_db()
+        assert regular_user.check_password("newpassword1")
+
+    def test_self_reset_returns_400(self, admin_client, superuser):
+        res = post_json(admin_client, f"/api/users/{superuser.id}/reset-password/", {
+            "password": "newpassword1",
+        })
+        assert res.status_code == 400
+        assert res.json()["error"]["code"] == "BAD_REQUEST"
+
+    def test_short_password_returns_400(self, admin_client, regular_user):
+        res = post_json(admin_client, f"/api/users/{regular_user.id}/reset-password/", {
+            "password": "short",
+        })
+        assert res.status_code == 400
+
+    def test_unknown_user_returns_404(self, admin_client):
+        res = post_json(admin_client, "/api/users/99999/reset-password/", {
+            "password": "newpassword1",
+        })
+        assert res.status_code == 404
+
+
+@pytest.mark.django_db
+class TestDeactivateReactivate:
+    def test_deactivates_user(self, admin_client, regular_user):
+        res = post_json(admin_client, f"/api/users/{regular_user.id}/deactivate/", {})
+        assert res.status_code == 200
+        regular_user.refresh_from_db()
+        assert regular_user.is_active is False
+
+    def test_reactivates_user(self, admin_client, regular_user):
+        regular_user.is_active = False
+        regular_user.save()
+        res = post_json(admin_client, f"/api/users/{regular_user.id}/reactivate/", {})
+        assert res.status_code == 200
+        regular_user.refresh_from_db()
+        assert regular_user.is_active is True
+
+    def test_cannot_deactivate_self(self, admin_client, superuser):
+        res = post_json(admin_client, f"/api/users/{superuser.id}/deactivate/", {})
+        assert res.status_code == 400
+
+    def test_cannot_deactivate_last_superuser(self, admin_client, superuser):
+        res = post_json(admin_client, f"/api/users/{superuser.id}/deactivate/", {})
+        assert res.status_code == 400
+        assert res.json()["error"]["code"] == "BAD_REQUEST"

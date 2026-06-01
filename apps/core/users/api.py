@@ -58,3 +58,50 @@ def create_user(request, payload: CreateUserIn):
         profile.must_change_password = True
         profile.save(update_fields=["must_change_password"])
     return _serialize(u)
+
+
+class ResetPasswordIn(Schema):
+    password: str
+
+
+def _get_user_or_404(user_id: int):
+    try:
+        return User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        raise HttpError(404, "User not found")
+
+
+def _active_superuser_count() -> int:
+    return User.objects.filter(is_superuser=True, is_active=True).count()
+
+
+@router.post("/{user_id}/reset-password/")
+def reset_password(request, user_id: int, payload: ResetPasswordIn):
+    if user_id == request.auth.id:
+        raise HttpError(400, "Use /api/user/change-password/ to change your own password")
+    if len(payload.password) < 8:
+        raise HttpError(400, "Password must be at least 8 characters")
+    u = _get_user_or_404(user_id)
+    u.set_password(payload.password)
+    u.save()
+    return _serialize(u)
+
+
+@router.post("/{user_id}/deactivate/")
+def deactivate_user(request, user_id: int):
+    if user_id == request.auth.id:
+        raise HttpError(400, "Cannot deactivate your own account")
+    u = _get_user_or_404(user_id)
+    if u.is_superuser and _active_superuser_count() <= 1:
+        raise HttpError(400, "Cannot deactivate the last active superuser")
+    u.is_active = False
+    u.save(update_fields=["is_active"])
+    return _serialize(u)
+
+
+@router.post("/{user_id}/reactivate/")
+def reactivate_user(request, user_id: int):
+    u = _get_user_or_404(user_id)
+    u.is_active = True
+    u.save(update_fields=["is_active"])
+    return _serialize(u)
