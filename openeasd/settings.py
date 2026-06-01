@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "apps.domain_security",
     "apps.subfinder",
     "apps.amass",
+    "apps.alterx",
     "apps.dnsx",
     "apps.takeover_check",
     "apps.naabu",
@@ -197,6 +198,7 @@ TOOL_KATANA = config("TOOL_KATANA", default="katana")
 TOOL_NMAP = config("TOOL_NMAP", default="nmap")
 TOOL_NUCLEI = config("TOOL_NUCLEI", default="nuclei")
 TOOL_AMASS = config("TOOL_AMASS", default="amass")
+TOOL_ALTERX = config("TOOL_ALTERX", default="alterx")
 
 # Logging
 LOGGING = {

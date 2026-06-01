@@ -59,10 +59,14 @@ RUN curl -fsSL "https://github.com/projectdiscovery/httpx/releases/download/v${H
 RUN curl -fsSL "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_${TARGETARCH}.zip" \
     -o nuclei.zip && unzip nuclei.zip nuclei && rm nuclei.zip
 
+ARG ALTERX_VERSION=0.0.4
+RUN curl -fsSL "https://github.com/projectdiscovery/alterx/releases/download/v${ALTERX_VERSION}/alterx_${ALTERX_VERSION}_linux_${TARGETARCH}.zip" \
+    -o alterx.zip && unzip alterx.zip alterx && rm alterx.zip
+
 RUN curl -fsSL "https://github.com/owasp-amass/amass/releases/download/v${AMASS_VERSION}/amass_Linux_${TARGETARCH}.zip" \
     -o amass.zip && unzip amass.zip && mv amass_Linux_${TARGETARCH}/amass . && rm -rf amass.zip amass_Linux_${TARGETARCH}
 
-RUN chmod +x subfinder dnsx naabu httpx nuclei amass
+RUN chmod +x subfinder dnsx naabu httpx nuclei amass alterx
 
 # ---------------------------------------------------------------------------
 # Stage 2b: build subzy from source (no prebuilt binaries available upstream).
