@@ -22,6 +22,7 @@ class MyToolConfig(AppConfig):
         "label": "My Tool",
         "runner": "apps.my_tool.scanner.run_my_tool",
         "phase": 7,
+        "phase_group": "Network Exposure",
         "requires": ["naabu"],          # tools that must run before yours
         "produces_findings": True,      # False = produces assets, not findings
     }
@@ -41,12 +42,7 @@ package marker). `apps/subfinder/` is a good asset-producing example
 
 ### Phase numbers
 
-Phases are integers 1–10 matching the pipeline order in `CLAUDE.md`.
-Fractional phases (e.g. `3.5`, `4.5`) are allowed when your tool must
-run strictly after one phase but before the next — the runner sorts and
-groups by phase, so `3.5` runs after all `3` tools and before all `4`
-tools. Use the lowest fraction that correctly places your tool; don't
-use decimals just to avoid renumbering.
+Phases are sequential integers 1–11 matching the pipeline order in `CLAUDE.md`. Pick the phase that correctly places your tool relative to its dependencies. Tools with the same phase number run in parallel. Do **not** use fractional phases (e.g. `3.5`) — use the next integer and renumber if needed.
 
 The `requires` list is advisory — it documents which earlier-phase tools
 your tool depends on (e.g. `["subfinder"]` if you read `Subdomain`
