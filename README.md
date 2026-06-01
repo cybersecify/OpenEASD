@@ -47,7 +47,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ## Features
 
-- **Automated pipeline** — 15-tool scan workflow from domain to findings
+- **Automated pipeline** — 16-tool scan workflow from domain to findings
 - **Network attack surface scanning** — CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
 - **Dynamic workflows** — Create custom scan configurations, enable/disable tools per workflow
 - **Tool auto-registration** — Add new tools with zero core modification
@@ -65,22 +65,22 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 ## Scan Pipeline
 
 ```
-Phase 1   Domain Security    - DNS, email (SPF/DMARC/DKIM), RDAP checks
-Phase 2   Subfinder          - Passive subdomain enumeration
-Phase 2   Amass              - Active subdomain enumeration
-Phase 3   DNSx               - DNS resolution, public IP filtering
-Phase 3.5 Takeover Check     - Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud)
-Phase 4   Naabu              - TCP port scanning (top 100)
-Phase 5   Service Detection  - Classify ports as web/non-web via nmap -sV (auto)
-Phase 7   Nmap               - CVE scanning via NSE vulners (non-web ports)
-Phase 7   TLS Checker        - Certificate, cipher, and protocol analysis
-Phase 7   SSH Checker        - SSH configuration audit
-Phase 7   Nuclei Network     - Service-aware nuclei network templates against non-web ports
-Phase 8   httpx              - Web probing, URL discovery
-Phase 8.5 Historical URLs    - Archived URL discovery via gau + waybackurls
-Phase 9   Katana             - Deep URL crawl on top of httpx (asset producer)
-Phase 10  Nuclei             - Web vulnerability scanning (community templates)
-Phase 10  Web Checker        - Security headers, cookies, CORS analysis
+Phase 1  Domain Security   - DNS, email (SPF/DMARC/DKIM), RDAP checks
+Phase 2  Subfinder         - Passive subdomain enumeration
+Phase 2  Amass             - Active subdomain enumeration
+Phase 3  DNSx              - DNS resolution, public IP filtering
+Phase 4  Takeover Check    - Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud)
+Phase 5  Naabu             - TCP port scanning (top 100)
+Phase 6  Service Detection - Classify ports as web/non-web via nmap -sV (auto)
+Phase 7  Nmap              - CVE scanning via NSE vulners (non-web ports)
+Phase 7  TLS Checker       - Certificate, cipher, and protocol analysis
+Phase 7  SSH Checker       - SSH configuration audit
+Phase 7  Nuclei Network    - Service-aware nuclei network templates against non-web ports
+Phase 8  httpx             - Web probing, URL discovery
+Phase 9  Historical URLs   - Archived URL discovery via gau + waybackurls
+Phase 10 Katana            - Deep URL crawl on top of httpx (asset producer)
+Phase 11 Nuclei            - Web vulnerability scanning (community templates)
+Phase 11 Web Checker       - Security headers, cookies, CORS analysis
 ```
 
 ## Architecture

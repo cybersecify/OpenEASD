@@ -9,7 +9,7 @@ class HistoricalUrlsConfig(AppConfig):
     tool_meta = {
         "label": "Historical URLs (gau + waybackurls)",
         "runner": "apps.historical_urls.scanner.run_historical_urls",
-        "phase": 8.5,
+        "phase": 9,
         "requires": ["httpx"],
         "produces_findings": False,
     }
