@@ -10,6 +10,7 @@ class HttpxConfig(AppConfig):
         "label": "HTTPx (Web Probe)",
         "runner": "apps.httpx.scanner.run_httpx",
         "phase": 8,
+        "phase_group": "Web Exposure",
         "requires": ["naabu"],
         "produces_findings": False,
     }

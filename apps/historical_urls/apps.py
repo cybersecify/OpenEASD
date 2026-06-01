@@ -10,6 +10,7 @@ class HistoricalUrlsConfig(AppConfig):
         "label": "Historical URLs (gau + waybackurls)",
         "runner": "apps.historical_urls.scanner.run_historical_urls",
         "phase": 9,
+        "phase_group": "Web Exposure",
         "requires": ["httpx"],
         "produces_findings": False,
     }

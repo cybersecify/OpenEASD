@@ -42,6 +42,7 @@ def _discover_tools():
             "label": meta.get("label", app_config.verbose_name or tool_name),
             "runner": meta["runner"],
             "phase": meta.get("phase", 99),
+            "phase_group": meta.get("phase_group", ""),
             "requires": meta.get("requires", []),
             "produces_findings": meta.get("produces_findings", False),
             "core": meta.get("core", False),
@@ -85,6 +86,11 @@ def get_tool_requires() -> dict[str, list[str]]:
 def get_tool_produces_findings() -> dict[str, bool]:
     """Dynamic map: tool_name → whether the tool writes to the Finding table."""
     return {name: info["produces_findings"] for name, info in get_registry().items()}
+
+
+def get_tool_phase_groups() -> dict[str, str]:
+    """Dynamic map: tool_name → phase_group label."""
+    return {name: info["phase_group"] for name, info in get_registry().items()}
 
 
 def get_source_choices() -> list[tuple[str, str]]:

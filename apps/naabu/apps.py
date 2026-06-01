@@ -10,6 +10,7 @@ class NaabuConfig(AppConfig):
         "label": "Naabu (Port Scan)",
         "runner": "apps.naabu.scanner.run_naabu",
         "phase": 5,
+        "phase_group": "Port Discovery",
         "requires": ["dnsx"],
         "produces_findings": False,
     }

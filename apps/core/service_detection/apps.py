@@ -9,6 +9,7 @@ class ServiceDetectionConfig(AppConfig):
         "label": "Service Detection",
         "runner": "apps.core.service_detection.detector.detect_services",
         "phase": 6,
+        "phase_group": "Port Discovery",
         "requires": ["naabu"],
         "produces_findings": False,
         "core": True,  # always runs, hidden from workflow UI
