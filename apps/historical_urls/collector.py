@@ -19,16 +19,14 @@ logger = logging.getLogger(__name__)
 _TIMEOUT = 300  # seconds per tool per domain
 
 
-def _run_tool(binary_setting_key: str, domain: str, timeout: int = _TIMEOUT) -> list[str]:
+def _run_tool(binary: str, domain: str, timeout: int = _TIMEOUT) -> list[str]:
     """Run a single URL history tool against one domain.
 
     Returns a list of URL strings (one per stdout line). Returns [] on any
     error — missing binary, non-zero exit, timeout.
     """
-    binary = getattr(settings, binary_setting_key, binary_setting_key.replace("TOOL_", "").lower())
-
     if not shutil.which(binary):
-        logger.debug("%s binary not found at %r — skipping", binary_setting_key, binary)
+        logger.debug("binary not found at %r — skipping", binary)
         return []
 
     try:
@@ -41,6 +39,9 @@ def _run_tool(binary_setting_key: str, domain: str, timeout: int = _TIMEOUT) -> 
         )
     except subprocess.TimeoutExpired:
         logger.warning("%s timed out after %ss on %s", binary, timeout, domain)
+        return []
+    except FileNotFoundError:
+        logger.warning("binary %r not found during subprocess call", binary)
         return []
 
     if result.returncode != 0:
@@ -65,8 +66,9 @@ def collect(subdomains: list[str]) -> list[str]:
     results: list[str] = []
 
     for domain in subdomains:
-        for tool_key in ("TOOL_GAU", "TOOL_WAYBACKURLS"):
-            for url in _run_tool(tool_key, domain):
+        for tool_key, default in (("TOOL_GAU", "gau"), ("TOOL_WAYBACKURLS", "waybackurls")):
+            binary = getattr(settings, tool_key, default)
+            for url in _run_tool(binary, domain):
                 if url not in seen:
                     seen.add(url)
                     results.append(url)

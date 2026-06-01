@@ -23,19 +23,19 @@ class TestRunTool:
 
     @patch("apps.historical_urls.collector.shutil.which", return_value=None)
     def test_binary_not_found_returns_empty(self, _which):
-        assert _run_tool("TOOL_GAU", "example.com") == []
+        assert _run_tool("gau", "example.com") == []
 
     @patch("apps.historical_urls.collector.shutil.which", return_value="/usr/bin/gau")
     @patch("apps.historical_urls.collector.subprocess.run")
     def test_nonzero_exit_returns_empty(self, mock_run, _which):
         mock_run.return_value = self._mock_run(returncode=1)
-        assert _run_tool("TOOL_GAU", "example.com") == []
+        assert _run_tool("gau", "example.com") == []
 
     @patch("apps.historical_urls.collector.shutil.which", return_value="/usr/bin/gau")
     @patch("apps.historical_urls.collector.subprocess.run")
     def test_timeout_returns_empty(self, mock_run, _which):
         mock_run.side_effect = subprocess.TimeoutExpired("gau", 300)
-        assert _run_tool("TOOL_GAU", "example.com") == []
+        assert _run_tool("gau", "example.com") == []
 
     @patch("apps.historical_urls.collector.shutil.which", return_value="/usr/bin/gau")
     @patch("apps.historical_urls.collector.subprocess.run")
@@ -43,7 +43,7 @@ class TestRunTool:
         mock_run.return_value = self._mock_run(
             "https://example.com/admin\nhttps://example.com/login\n"
         )
-        result = _run_tool("TOOL_GAU", "example.com")
+        result = _run_tool("gau", "example.com")
         assert result == ["https://example.com/admin", "https://example.com/login"]
 
     @patch("apps.historical_urls.collector.shutil.which", return_value="/usr/bin/gau")
@@ -52,8 +52,14 @@ class TestRunTool:
         mock_run.return_value = self._mock_run(
             "https://example.com/page\n\n\nhttps://example.com/other\n"
         )
-        result = _run_tool("TOOL_GAU", "example.com")
+        result = _run_tool("gau", "example.com")
         assert len(result) == 2
+
+    @patch("apps.historical_urls.collector.shutil.which", return_value="/usr/bin/gau")
+    @patch("apps.historical_urls.collector.subprocess.run")
+    def test_file_not_found_returns_empty(self, mock_run, _which):
+        mock_run.side_effect = FileNotFoundError
+        assert _run_tool("gau", "example.com") == []
 
 
 class TestCollect:
