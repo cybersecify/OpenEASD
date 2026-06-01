@@ -230,7 +230,7 @@ OWASP/other tools:
 System binary:
 - `nmap` (Homebrew at `/opt/homebrew/bin/nmap`)
 
-Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_KATANA`, `TOOL_NMAP`, `TOOL_NUCLEI`, `TOOL_AMASS`, `TOOL_ALTERX` env vars.
+Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_KATANA`, `TOOL_NMAP`, `TOOL_NUCLEI`, `TOOL_AMASS`, `TOOL_ALTERX`, `TOOL_CLOUD_ENUM` env vars.
 
 ## Architecture
 
@@ -313,7 +313,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (17 registered tools)
+### Tool apps (18 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
@@ -323,6 +323,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/alterx/` | 2 | Surface Enumeration | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
 | `apps/dnsx/` | 3 | Surface Enumeration | No | DNS resolution, public IP filtering |
 | `apps/takeover_check/` | 4 | Surface Enumeration | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
+| `apps/cloud_assets/` | 4 | Surface Enumeration | Yes | Public cloud bucket enumeration via cloud_enum (AWS S3 / Azure Blob / GCP Storage) |
 | `apps/naabu/` | 5 | Port Discovery | No | Port scanning (top 100 TCP) |
 | `apps/core/service_detection/` | 6 | Port Discovery | No | nmap -sV enriches Port.service + is_web |
 | `apps/nmap/` | 7 | Network Exposure | Yes | NSE vulners CVE scan (non-web ports); backport-aware CVE matching (`backports.json` registry) |
@@ -358,6 +359,7 @@ Phase 2  amass              → Subdomain (active enumeration)
 Phase 2  alterx             → Subdomain (permutation candidates from existing subdomains)
 Phase 3  dnsx               → IPAddress (public-only filter)
 Phase 4  takeover_check     → Finding (subzy — dangling DNS → unclaimed cloud)
+Phase 4  cloud_assets       → Finding (open S3/Azure/GCP buckets — cloud_enum)
 Phase 5  naabu              → Port (top 100 TCP scan)
 Phase 6  service_detection  → enriches Port.service + Port.is_web
 Phase 7  nmap               → Finding (CVEs on non-web ports, is_web=False)  ┐
@@ -482,7 +484,8 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | `tests/unit/test_service_detection.py` | 16 | XML parsing, Port enrichment, is_web |
 | `tests/unit/test_workflow_runner.py` | 31 | run_workflow, service_detection injection, step failure, cancellation, phase parallelism |
 | `tests/unit/test_takeover_check.py` | 35 | collector (binary missing, bad JSON, happy path), analyzer (vulnerable/non-vulnerable, FK link, dedup, extra field), scanner (no subdomains, persist + return) |
+| `tests/unit/test_cloud_assets.py` | 20 | cloud_assets collector, analyzer, keyword derivation, scanner |
 | `tests/integration/test_scan_flow.py` | 13 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 71 | Smoke tests for all 35 API endpoints (auth + payload shape) |
 
-**Total: ~890 tests** (~849 fast + 41 slow domain_security)
+**Total: ~910 tests** (~869 fast + 41 slow domain_security)

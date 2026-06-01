@@ -148,6 +148,9 @@ COPY apps/ apps/
 COPY openeasd/ openeasd/
 RUN uv pip install -e ".[prod]"
 
+# cloud_enum — not on PyPI; install from GitHub into the venv
+RUN uv pip install git+https://github.com/initstring/cloud_enum.git
+
 # Copy remaining source
 COPY manage.py main.py ./
 COPY templates/ templates/
