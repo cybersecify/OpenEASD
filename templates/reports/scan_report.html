@@ -441,6 +441,13 @@
 {% endif %}{% endfor %}
 {% endif %}
 
+{% if report_cta_url and report_cta_text %}
+<div class="report-cta" style="margin: 30px 50px; padding: 18px 22px; background-color: #161b22; border-left: 3px solid #30c074; color: #e6edf3; font-size: 11px; line-height: 1.6;">
+  {{ report_cta_text }}<br>
+  <a href="{{ report_cta_url }}" style="color: #30c074;">{{ report_cta_url }}</a>
+</div>
+{% endif %}
+
 <div class="report-footer">
   OpenEASD Attack Surface Report &nbsp;·&nbsp; {{ session.domain }} &nbsp;·&nbsp;
   Generated {{ generated_at|date:"Y-m-d H:i" }} UTC &nbsp;·&nbsp; CONFIDENTIAL

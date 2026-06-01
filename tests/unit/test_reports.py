@@ -200,3 +200,82 @@ class TestExportScanPdf:
         with patch("xhtml2pdf.pisa.CreatePDF", return_value=MagicMock(err=0)):
             res = authed_client.get("/reports/00000000-0000-0000-0000-000000000000/pdf/")
         assert res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Optional CTA — both REPORT_CTA_URL + REPORT_CTA_TEXT must be set to render
+# ---------------------------------------------------------------------------
+
+class TestReportCtaCsv:
+    def test_cta_absent_when_neither_setting_configured(self, authed_client, session, findings, settings):
+        settings.REPORT_CTA_URL = ""
+        settings.REPORT_CTA_TEXT = ""
+        res = authed_client.get(f"/reports/{session.uuid}/csv/")
+        content = res.content.decode("utf-8")
+        rows = list(csv.reader(io.StringIO(content)))
+        # 1 header + N findings, no CTA spacer / row
+        assert len(rows) == len(findings) + 1
+
+    def test_cta_absent_when_only_url_configured(self, authed_client, session, findings, settings):
+        settings.REPORT_CTA_URL = "https://example.com/help"
+        settings.REPORT_CTA_TEXT = ""
+        res = authed_client.get(f"/reports/{session.uuid}/csv/")
+        content = res.content.decode("utf-8")
+        assert "https://example.com/help" not in content
+
+    def test_cta_absent_when_only_text_configured(self, authed_client, session, findings, settings):
+        settings.REPORT_CTA_URL = ""
+        settings.REPORT_CTA_TEXT = "Talk to us"
+        res = authed_client.get(f"/reports/{session.uuid}/csv/")
+        content = res.content.decode("utf-8")
+        assert "Talk to us" not in content
+
+    def test_cta_appended_when_both_configured(self, authed_client, session, findings, settings):
+        settings.REPORT_CTA_URL = "https://example.com/help"
+        settings.REPORT_CTA_TEXT = "Need help acting on these findings?"
+        res = authed_client.get(f"/reports/{session.uuid}/csv/")
+        content = res.content.decode("utf-8")
+        assert "Need help acting on these findings?" in content
+        assert "https://example.com/help" in content
+
+
+class TestReportCtaPdfContext:
+    """The PDF view passes report_cta_url/report_cta_text into the template
+    context only when configured. Verified by mocking pisa and inspecting
+    the rendered HTML before PDF conversion."""
+
+    def test_cta_context_empty_when_settings_empty(self, authed_client, session, findings, settings):
+        settings.REPORT_CTA_URL = ""
+        settings.REPORT_CTA_TEXT = ""
+        captured = {}
+
+        def capture_html(html_str, dest):
+            captured["html"] = html_str
+            mock = MagicMock()
+            mock.err = 0
+            return mock
+
+        with patch("xhtml2pdf.pisa.CreatePDF", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+
+        assert res.status_code == 200
+        assert "report-cta" not in captured["html"]
+
+    def test_cta_renders_in_html_when_both_set(self, authed_client, session, findings, settings):
+        settings.REPORT_CTA_URL = "https://example.com/help"
+        settings.REPORT_CTA_TEXT = "Need help acting on these findings?"
+        captured = {}
+
+        def capture_html(html_str, dest):
+            captured["html"] = html_str
+            mock = MagicMock()
+            mock.err = 0
+            return mock
+
+        with patch("xhtml2pdf.pisa.CreatePDF", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+
+        assert res.status_code == 200
+        assert "report-cta" in captured["html"]
+        assert "Need help acting on these findings?" in captured["html"]
+        assert "https://example.com/help" in captured["html"]

@@ -11,3 +11,6 @@ data:
   ALERT_SEVERITY_THRESHOLD: "high"
   SCAN_DAILY_HOUR: "2"
   SCAN_DAILY_MINUTE: "0"
+  # Optional report CTA — both must be set to render. Empty defaults disable it.
+  REPORT_CTA_URL: ""
+  REPORT_CTA_TEXT: ""

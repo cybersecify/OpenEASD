@@ -5,6 +5,7 @@ import functools
 import logging
 from io import BytesIO
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.db.models import Count
 from django.http import HttpResponse, HttpResponseRedirect
@@ -85,6 +86,15 @@ def export_findings_csv(request, session_uuid):
             f.target, f.description, f.remediation, f.assigned_to,
             f.discovered_at.isoformat(),
         ])
+
+    # Optional CTA — appended as a final row when both settings are configured.
+    # Self-hosters with no CTA configured get a clean CSV.
+    cta_url = getattr(settings, "REPORT_CTA_URL", "") or ""
+    cta_text = getattr(settings, "REPORT_CTA_TEXT", "") or ""
+    if cta_url and cta_text:
+        writer.writerow([])  # spacer row
+        writer.writerow([cta_text, "", "", "", "", cta_url])
+
     return response
 
 
@@ -145,6 +155,9 @@ def export_scan_pdf(request, session_uuid):
         "asset_counts": asset_counts,
         "scan_duration": scan_duration,
         "generated_at": timezone.now(),
+        # Optional CTA — template renders the block only when both are truthy.
+        "report_cta_url": getattr(settings, "REPORT_CTA_URL", "") or "",
+        "report_cta_text": getattr(settings, "REPORT_CTA_TEXT", "") or "",
     })
 
     from xhtml2pdf import pisa
