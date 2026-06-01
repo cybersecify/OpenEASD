@@ -12,6 +12,12 @@ body:
         For "add tool X", consider opening a "New tool proposal" issue instead
         — it's a different kind of conversation.
 
+        **About this project:** OpenEASD is MIT-licensed open source
+        maintained by CyberSecify (Rathnakara G N + Ashok S Kamat).
+        Feature requests don't carry bounties — but if you'd like to
+        ship the feature yourself, contributors are credited in
+        CHANGELOG / commit attribution / Discussions.
+
   - type: textarea
     id: problem
     attributes:
