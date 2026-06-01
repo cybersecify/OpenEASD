@@ -94,6 +94,12 @@ def _functional_probes() -> list[Probe]:
             cmd=[_tool_binary("TOOL_AMASS", "amass"), "-version"],
             expect_in_stdout="v",
         ),
+        Probe(
+            name="cloud_enum",
+            cmd=[_tool_binary("TOOL_CLOUD_ENUM", "cloud_enum"), "-h"],
+            expect_in_stdout="keyword",
+            allowed_exit_codes=(0, 1),
+        ),
     ]
 
 
@@ -108,6 +114,7 @@ def _quick_probes() -> list[Probe]:
         Probe(name="nuclei",    cmd=[_tool_binary("TOOL_NUCLEI", "nuclei"),       "-version"]),
         Probe(name="nmap",      cmd=[_tool_binary("TOOL_NMAP", "nmap"),           "-V"]),
         Probe(name="amass",     cmd=[_tool_binary("TOOL_AMASS", "amass"),         "-version"]),
+        Probe(name="cloud_enum", cmd=[_tool_binary("TOOL_CLOUD_ENUM", "cloud_enum"), "-h"], allowed_exit_codes=(0, 1)),
     ]
 
 
