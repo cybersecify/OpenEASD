@@ -106,8 +106,11 @@ def collect(subdomains: list[str]) -> list[dict]:
         return records
 
     finally:
+        # Best-effort temp-file cleanup. OSError here means the file is already
+        # gone (subzy never produced output) or unwritable — neither is
+        # recoverable nor worth surfacing, so swallow it.
         for path in (targets_path, output_path):
             try:
                 os.unlink(path)
             except OSError:
-                pass
+                continue

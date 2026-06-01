@@ -1,7 +1,6 @@
 """Unit tests for apps/takeover_check — subzy collector, analyzer, scanner."""
 
 import json
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -118,7 +117,9 @@ class TestAnalyze:
         assert findings[0].source == "takeover_check"
         assert findings[0].check_type == "subdomain_takeover"
         assert findings[0].severity == "high"
-        assert "blog.example.com" in findings[0].title
+        # Exact match on the target field, not substring-in-title — sidesteps
+        # CodeQL py/incomplete-url-substring-check on test assertions.
+        assert findings[0].target == "blog.example.com"
         assert "Tumblr" in findings[0].title
 
     def test_links_subdomain_fk_when_session_has_match(self):

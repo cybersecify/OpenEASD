@@ -69,7 +69,7 @@ RUN chmod +x subfinder dnsx naabu httpx nuclei amass
 # Cross-compiled from $BUILDPLATFORM for $TARGETARCH so emulated arm64 builds
 # stay fast.
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM golang:1.22 AS subzy-builder
+FROM --platform=$BUILDPLATFORM golang:1.23 AS subzy-builder
 
 ARG TARGETOS
 ARG TARGETARCH
