@@ -230,7 +230,7 @@ OWASP/other tools:
 System binary:
 - `nmap` (Homebrew at `/opt/homebrew/bin/nmap`)
 
-Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_KATANA`, `TOOL_NMAP`, `TOOL_NUCLEI`, `TOOL_AMASS` env vars.
+Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_KATANA`, `TOOL_NMAP`, `TOOL_NUCLEI`, `TOOL_AMASS`, `TOOL_ALTERX` env vars.
 
 ## Architecture
 
@@ -346,7 +346,7 @@ apps/<tool>/
 ## Scan pipeline
 
 All scans run through the **dynamic workflow system**. The default "Full Scan"
-workflow executes all 16 tools in phase order. Custom workflows can include
+workflow executes all 17 tools in phase order. Custom workflows can include
 any subset of tools.
 
 ```
