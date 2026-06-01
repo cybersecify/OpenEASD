@@ -4,8 +4,14 @@ on:
   push:
     branches: ["main"]
     tags: ["v*"]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   pull_request:
     branches: ["main"]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
