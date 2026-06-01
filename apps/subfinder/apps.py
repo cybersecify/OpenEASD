@@ -10,6 +10,7 @@ class SubfinderConfig(AppConfig):
         "label": "Subfinder",
         "runner": "apps.subfinder.scanner.run_subfinder",
         "phase": 2,
+        "phase_group": "Surface Enumeration",
         "requires": [],
         "produces_findings": False,
     }

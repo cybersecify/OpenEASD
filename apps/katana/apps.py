@@ -10,6 +10,7 @@ class KatanaConfig(AppConfig):
         "label": "Katana",
         "runner": "apps.katana.scanner.run_katana",
         "phase": 10,
+        "phase_group": "Web Exposure",
         "requires": ["httpx"],
         "produces_findings": False,
     }

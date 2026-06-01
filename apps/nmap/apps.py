@@ -10,6 +10,7 @@ class NmapConfig(AppConfig):
         "label": "Nmap (NSE Vuln Scan)",
         "runner": "apps.nmap.scanner.run_nmap",
         "phase": 7,
+        "phase_group": "Network Exposure",
         "requires": ["naabu", "service_detection"],
         "produces_findings": True,
     }

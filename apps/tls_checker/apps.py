@@ -9,6 +9,7 @@ class TlsCheckerConfig(AppConfig):
         "label": "TLS Checker",
         "runner": "apps.tls_checker.scanner.run_tls_check",
         "phase": 7,
+        "phase_group": "Network Exposure",
         "requires": ["naabu", "service_detection"],
         "produces_findings": True,
     }

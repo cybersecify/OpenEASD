@@ -9,6 +9,7 @@ class TakeoverCheckConfig(AppConfig):
         "label": "Subdomain Takeover Check (subzy)",
         "runner": "apps.takeover_check.scanner.run_takeover_check",
         "phase": 4,
+        "phase_group": "Surface Enumeration",
         "requires": ["subfinder"],
         "produces_findings": True,
     }

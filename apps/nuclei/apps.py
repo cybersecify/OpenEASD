@@ -10,6 +10,7 @@ class NucleiConfig(AppConfig):
         "label": "Nuclei (Web Vuln Scan)",
         "runner": "apps.nuclei.scanner.run_nuclei",
         "phase": 11,
+        "phase_group": "Web Exposure",
         "requires": ["httpx"],
         "produces_findings": True,
     }
