@@ -230,7 +230,7 @@ OWASP/other tools:
 System binary:
 - `nmap` (Homebrew at `/opt/homebrew/bin/nmap`)
 
-Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_KATANA`, `TOOL_NMAP`, `TOOL_NUCLEI`, `TOOL_AMASS` env vars.
+Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_KATANA`, `TOOL_NMAP`, `TOOL_NUCLEI`, `TOOL_AMASS`, `TOOL_ALTERX` env vars.
 
 ## Architecture
 
@@ -311,13 +311,14 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (16 registered tools)
+### Tool apps (17 registered tools)
 
 | App | Phase | produces_findings | Description |
 |---|---|---|---|
 | `apps/domain_security/` | 1 | Yes | DNS, email, RDAP checks |
 | `apps/subfinder/` | 2 | No | Passive subdomain enumeration |
 | `apps/amass/` | 2 | No | Active subdomain enumeration |
+| `apps/alterx/` | 2 | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
 | `apps/dnsx/` | 3 | No | DNS resolution, public IP filtering |
 | `apps/takeover_check/` | 4 | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
 | `apps/naabu/` | 5 | No | Port scanning (top 100 TCP) |
@@ -345,13 +346,14 @@ apps/<tool>/
 ## Scan pipeline
 
 All scans run through the **dynamic workflow system**. The default "Full Scan"
-workflow executes all 16 tools in phase order. Custom workflows can include
+workflow executes all 17 tools in phase order. Custom workflows can include
 any subset of tools.
 
 ```
 Phase 1  domain_security    → Finding (DNS/email/RDAP)
 Phase 2  subfinder          → Subdomain (passive enumeration)
 Phase 2  amass              → Subdomain (active enumeration)
+Phase 2  alterx             → Subdomain (permutation candidates from existing subdomains)
 Phase 3  dnsx               → IPAddress (public-only filter)
 Phase 4  takeover_check     → Finding (subzy — dangling DNS → unclaimed cloud)
 Phase 5  naabu              → Port (top 100 TCP scan)
@@ -470,6 +472,7 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | `tests/unit/test_scans.py` | 55 | ScanSession, scheduling, scan_start views |
 | `tests/unit/test_scheduler.py` | 15 | reap_stuck_scans, purge_expired_tokens, daily_scan |
 | `tests/unit/test_subfinder.py` | 11 | JSON parser, dedup, hostname normalization |
+| `tests/unit/test_alterx.py` | 17 | collector (binary missing, timeout, happy path, stdin), analyzer (dedup, validation, session dedup, lowercase), scanner (no subdomains, persist, return) |
 | `tests/unit/test_tls_checker.py` | 87 | Cert parsing, ciphers, protocols, HSTS, collector, scanner, cipher enumeration |
 | `tests/unit/test_ssh_checker.py` | 33 | SSH probe, host key, kex/cipher/MAC, auth, collector |
 | `tests/unit/test_nuclei.py` | 25 | CVE parsing, severity, dedup, URL linking, collector |
@@ -480,4 +483,4 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | `tests/integration/test_scan_flow.py` | 13 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 71 | Smoke tests for all 35 API endpoints (auth + payload shape) |
 
-**Total: ~873 tests** (~832 fast + 41 slow domain_security)
+**Total: ~890 tests** (~849 fast + 41 slow domain_security)
