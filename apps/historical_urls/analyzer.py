@@ -15,15 +15,10 @@ from apps.core.web_assets.models import URL
 logger = logging.getLogger(__name__)
 
 _NOISE_EXTENSIONS = frozenset([
-    # Images
     ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg", ".webp", ".bmp", ".tiff",
-    # Fonts
     ".woff", ".woff2", ".ttf", ".otf", ".eot",
-    # Stylesheets
     ".css",
-    # Archives / executables
     ".pdf", ".zip", ".tar", ".gz", ".rar", ".exe", ".dmg", ".pkg",
-    # Media
     ".mp4", ".mp3", ".avi", ".mov", ".wav", ".ogg", ".flac",
 ])
 
@@ -32,14 +27,10 @@ _DEFAULT_PORTS = {"http": 80, "https": 443}
 
 def _is_noise(url: str) -> bool:
     """Return True if the URL points at a non-interesting static asset."""
-    try:
-        path = urlparse(url).path.lower()
-    except Exception:
-        return True
+    path = urlparse(url).path.lower()
     dot = path.rfind(".")
     if dot != -1:
         ext = path[dot:]
-        ext = ext.split("?")[0].split("#")[0]
         return ext in _NOISE_EXTENSIONS
     return False
 
@@ -54,7 +45,6 @@ def analyze(session, raw_urls: list[str]) -> list[URL]:
     if not raw_urls:
         return []
 
-    # Build lookup maps from httpx URL rows already in the session
     httpx_urls = URL.objects.filter(session=session, source="httpx").select_related("port", "subdomain")
     port_map: dict[tuple[str, int], object] = {}
     sub_map: dict[str, object] = {}
@@ -64,7 +54,6 @@ def analyze(session, raw_urls: list[str]) -> list[URL]:
         if u.subdomain and u.host:
             sub_map[u.host] = u.subdomain
 
-    # Supplement subdomain map from session subdomains
     for s in Subdomain.objects.filter(session=session):
         if s.subdomain not in sub_map:
             sub_map[s.subdomain] = s
@@ -79,7 +68,10 @@ def analyze(session, raw_urls: list[str]) -> list[URL]:
         if _is_noise(url_str):
             continue
 
-        parsed = urlparse(url_str)
+        try:
+            parsed = urlparse(url_str)
+        except ValueError:
+            continue
         scheme = parsed.scheme
         host = parsed.hostname or ""
         if not host or not scheme:
