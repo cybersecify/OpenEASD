@@ -7,6 +7,22 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+---
+
+## [v0.7.1] — 2026-06-02
+
+### Added
+
+- **Cloud asset enumeration (`apps/cloud_assets`)** — New Phase 4 tool that runs [`cloud_enum`](https://github.com/initstring/cloud_enum) to enumerate publicly accessible buckets across AWS S3, Azure Blob Storage, and GCP Storage. Keywords are derived from the apex domain label and the leftmost label of each discovered subdomain (minimum length 3, deduped). An open bucket is emitted as a `high`-severity Finding with `extra.provider`, `extra.bucket_name`, and `extra.url`. **Why:** publicly readable cloud storage is one of the most common and highest-impact external-exposure findings — credentials, backups, and customer data are frequently left world-readable by teams that forgot a bucket was ever created. The takeover-check tool (Phase 4) already probes DNS; this tool runs in parallel to close the cloud-storage gap without touching any core files. `TOOL_CLOUD_ENUM` env var configures the binary path.
+
+### Fixed
+
+- **Docker build: `git` missing from runtime stage** — `uv pip install git+https://github.com/initstring/cloud_enum.git` requires the `git` binary at build time, but the runtime `apt-get install` block only included `curl`. Added `git` to the same layer. Fixes CI Docker Build job failure introduced in #100.
+
+---
+
+## [v0.7] — 2026-05-31
+
 ### Added
 
 - **Phase groups in tool registry** — Added `phase_group` field to `tool_meta` for all 17 tools, grouping them into five EASD-aligned labels: *Domain Intelligence*, *Surface Enumeration*, *Port Discovery*, *Network Exposure*, *Web Exposure*. The registry exposes `get_tool_phase_groups()` for consumers (API, UI). No behavior change to scanning — purely metadata for display and grouping.
