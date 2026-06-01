@@ -166,3 +166,50 @@ class TestDeactivateReactivate:
         res = post_json(admin_client, f"/api/users/{superuser.id}/deactivate/", {})
         assert res.status_code == 400
         assert res.json()["error"]["code"] == "BAD_REQUEST"
+
+
+@pytest.mark.django_db
+class TestPromoteDemote:
+    def test_promotes_user(self, admin_client, regular_user):
+        res = post_json(admin_client, f"/api/users/{regular_user.id}/promote/", {})
+        assert res.status_code == 200
+        regular_user.refresh_from_db()
+        assert regular_user.is_superuser is True
+        assert regular_user.is_staff is True
+
+    def test_demotes_user(self, admin_client, db):
+        other_super = User.objects.create_superuser(username="super2", password="pass123")
+        res = post_json(admin_client, f"/api/users/{other_super.id}/demote/", {})
+        assert res.status_code == 200
+        other_super.refresh_from_db()
+        assert other_super.is_superuser is False
+
+    def test_cannot_demote_self(self, admin_client, superuser):
+        res = post_json(admin_client, f"/api/users/{superuser.id}/demote/", {})
+        assert res.status_code == 400
+
+    def test_cannot_demote_last_superuser(self, admin_client, superuser):
+        res = post_json(admin_client, f"/api/users/{superuser.id}/demote/", {})
+        assert res.status_code == 400
+        assert res.json()["error"]["code"] == "BAD_REQUEST"
+
+
+@pytest.mark.django_db
+class TestDeleteUser:
+    def test_deletes_user(self, admin_client, regular_user):
+        uid = regular_user.id
+        res = post_json(admin_client, f"/api/users/{uid}/delete/", {})
+        assert res.status_code == 200
+        assert not User.objects.filter(id=uid).exists()
+
+    def test_cannot_delete_self(self, admin_client, superuser):
+        res = post_json(admin_client, f"/api/users/{superuser.id}/delete/", {})
+        assert res.status_code == 400
+
+    def test_cannot_delete_last_superuser(self, admin_client, superuser):
+        res = post_json(admin_client, f"/api/users/{superuser.id}/delete/", {})
+        assert res.status_code == 400
+
+    def test_unknown_user_returns_404(self, admin_client):
+        res = post_json(admin_client, "/api/users/99999/delete/", {})
+        assert res.status_code == 404

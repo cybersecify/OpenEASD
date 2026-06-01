@@ -105,3 +105,36 @@ def reactivate_user(request, user_id: int):
     u.is_active = True
     u.save(update_fields=["is_active"])
     return _serialize(u)
+
+
+@router.post("/{user_id}/promote/")
+def promote_user(request, user_id: int):
+    u = _get_user_or_404(user_id)
+    u.is_superuser = True
+    u.is_staff = True
+    u.save(update_fields=["is_superuser", "is_staff"])
+    return _serialize(u)
+
+
+@router.post("/{user_id}/demote/")
+def demote_user(request, user_id: int):
+    if user_id == request.auth.id:
+        raise HttpError(400, "Cannot demote your own account")
+    u = _get_user_or_404(user_id)
+    if u.is_superuser and _active_superuser_count() <= 1:
+        raise HttpError(400, "Cannot demote the last active superuser")
+    u.is_superuser = False
+    u.is_staff = False
+    u.save(update_fields=["is_superuser", "is_staff"])
+    return _serialize(u)
+
+
+@router.post("/{user_id}/delete/")
+def delete_user(request, user_id: int):
+    if user_id == request.auth.id:
+        raise HttpError(400, "Cannot delete your own account")
+    u = _get_user_or_404(user_id)
+    if u.is_superuser and _active_superuser_count() <= 1:
+        raise HttpError(400, "Cannot delete the last active superuser")
+    u.delete()
+    return {"ok": True}
