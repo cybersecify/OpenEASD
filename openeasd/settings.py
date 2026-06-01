@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     "apps.naabu",
     # Web tools — disabled for non-web focus (re-enable for full scan)
     "apps.httpx",
+    "apps.historical_urls",
     "apps.katana",
     "apps.nmap",
     "apps.tls_checker",
@@ -182,6 +183,8 @@ TOOL_SUBFINDER = config("TOOL_SUBFINDER", default="subfinder")
 TOOL_DNSX = config("TOOL_DNSX", default="dnsx")
 TOOL_NAABU = config("TOOL_NAABU", default="naabu")
 TOOL_HTTPX = config("TOOL_HTTPX", default="httpx")
+TOOL_GAU = config("TOOL_GAU", default="gau")
+TOOL_WAYBACKURLS = config("TOOL_WAYBACKURLS", default="waybackurls")
 TOOL_KATANA = config("TOOL_KATANA", default="katana")
 TOOL_NMAP = config("TOOL_NMAP", default="nmap")
 TOOL_NUCLEI = config("TOOL_NUCLEI", default="nuclei")

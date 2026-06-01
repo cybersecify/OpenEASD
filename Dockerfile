@@ -85,6 +85,24 @@ RUN go install -ldflags="-s -w" github.com/PentestPad/subzy@${SUBZY_VERSION} \
        fi
 
 # ---------------------------------------------------------------------------
+# Stage 2c: build gau + waybackurls from source (pure-Go, cross-compiles cleanly).
+# ---------------------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM golang:1.23 AS history-builder
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG GAU_VERSION=v2.2.4
+ARG WAYBACKURLS_VERSION=v0.1.0
+
+ENV CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH
+
+RUN go install github.com/lc/gau/v2/cmd/gau@${GAU_VERSION} \
+    && go install github.com/tomnomnom/waybackurls@${WAYBACKURLS_VERSION} \
+    && mkdir -p /history-tools \
+    && (mv /go/bin/${TARGETOS}_${TARGETARCH}/gau /history-tools/ 2>/dev/null || mv /go/bin/gau /history-tools/) \
+    && (mv /go/bin/${TARGETOS}_${TARGETARCH}/waybackurls /history-tools/ 2>/dev/null || mv /go/bin/waybackurls /history-tools/)
+
+# ---------------------------------------------------------------------------
 # Stage 3: runtime
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04 AS runtime
@@ -109,6 +127,7 @@ ENV PATH="/root/.local/bin:${PATH}"
 # Copy security tool binaries
 COPY --from=tools-builder /tools/ /usr/local/bin/
 COPY --from=subzy-builder /subzy /usr/local/bin/subzy
+COPY --from=history-builder /history-tools/ /usr/local/bin/
 ENV PATH="/usr/local/bin:${PATH}"
 
 WORKDIR /app

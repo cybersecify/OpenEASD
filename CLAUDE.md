@@ -311,7 +311,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (15 registered tools)
+### Tool apps (16 registered tools)
 
 | App | Phase | produces_findings | Description |
 |---|---|---|---|
@@ -327,6 +327,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/ssh_checker/` | 7 | Yes | SSH config analysis |
 | `apps/nuclei_network/` | 7 | Yes | Network protocol vuln scan (319 templates, non-web) |
 | `apps/httpx/` | 8 | No | Web probing, URL discovery |
+| `apps/historical_urls/` | 8.5 | No | Historical URL discovery via gau + waybackurls (Wayback Machine, OTX, Common Crawl) |
 | `apps/katana/` | 9 | No | Web crawling, endpoint discovery |
 | `apps/nuclei/` | 10 | Yes | Web vuln scan (community templates) |
 | `apps/web_checker/` | 10 | Yes | Security headers, cookies, CORS |
@@ -360,6 +361,7 @@ Phase 7  tls_checker        → Finding (cipher/cert/protocol on all ports)    �
 Phase 7  ssh_checker        → Finding (SSH config on service="ssh" ports)    │
 Phase 7  nuclei_network     → Finding (network protocol vulns, non-web ports)┘
 Phase 8  httpx              → URL (web probing, CDN-aware via SNI)
+Phase 8.5 historical_urls  → URL (gau + waybackurls — archived endpoints)
 Phase 9  katana             → URL (web crawling, endpoint discovery)
 Phase 10 nuclei             → Finding (web vulns via templates on URLs)
 Phase 10 web_checker        → Finding (headers, cookies, CORS on URLs)
@@ -460,6 +462,7 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | `tests/unit/test_domains.py` | 15 | Domain CRUD |
 | `tests/unit/test_httpx.py` | 11 | JSON parser, Port lookup, Subdomain link |
 | `tests/unit/test_katana.py` | 18 | JSONL parser, Port/Subdomain FK links, scanner orchestrator |
+| `tests/unit/test_historical_urls.py` | 37 | collector (_run_tool: missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner (root domain, subdomains, persist, dedup) |
 | `tests/unit/test_insights.py` | 11 | Insights builder + view |
 | `tests/unit/test_naabu.py` | 9 | JSON parser, FK to IPAddress |
 | `tests/unit/test_nmap.py` | 23 | Severity mapping, vulners XML parser, web/non-web exclusion, backport matching |
@@ -477,4 +480,4 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | `tests/integration/test_scan_flow.py` | 13 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 71 | Smoke tests for all 35 API endpoints (auth + payload shape) |
 
-**Total: ~836 tests** (~795 fast + 41 slow domain_security)
+**Total: ~873 tests** (~832 fast + 41 slow domain_security)
