@@ -319,18 +319,18 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/subfinder/` | 2 | No | Passive subdomain enumeration |
 | `apps/amass/` | 2 | No | Active subdomain enumeration |
 | `apps/dnsx/` | 3 | No | DNS resolution, public IP filtering |
-| `apps/takeover_check/` | 3.5 | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
-| `apps/naabu/` | 4 | No | Port scanning (top 100 TCP) |
-| `apps/core/service_detection/` | 5 | No | nmap -sV enriches Port.service + is_web |
+| `apps/takeover_check/` | 4 | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
+| `apps/naabu/` | 5 | No | Port scanning (top 100 TCP) |
+| `apps/core/service_detection/` | 6 | No | nmap -sV enriches Port.service + is_web |
 | `apps/nmap/` | 7 | Yes | NSE vulners CVE scan (non-web ports); backport-aware CVE matching (`backports.json` registry) |
 | `apps/tls_checker/` | 7 | Yes | TLS/cert analysis + cipher suite enumeration via `nmap --script ssl-enum-ciphers` (all ports) |
 | `apps/ssh_checker/` | 7 | Yes | SSH config analysis |
 | `apps/nuclei_network/` | 7 | Yes | Network protocol vuln scan (319 templates, non-web) |
 | `apps/httpx/` | 8 | No | Web probing, URL discovery |
-| `apps/historical_urls/` | 8.5 | No | Historical URL discovery via gau + waybackurls (Wayback Machine, OTX, Common Crawl) |
-| `apps/katana/` | 9 | No | Web crawling, endpoint discovery |
-| `apps/nuclei/` | 10 | Yes | Web vuln scan (community templates) |
-| `apps/web_checker/` | 10 | Yes | Security headers, cookies, CORS |
+| `apps/historical_urls/` | 9 | No | Historical URL discovery via gau + waybackurls (Wayback Machine, OTX, Common Crawl) |
+| `apps/katana/` | 10 | No | Web crawling, endpoint discovery |
+| `apps/nuclei/` | 11 | Yes | Web vuln scan (community templates) |
+| `apps/web_checker/` | 11 | Yes | Security headers, cookies, CORS |
 
 ### Tool app structure
 ```
@@ -353,18 +353,18 @@ Phase 1  domain_security    → Finding (DNS/email/RDAP)
 Phase 2  subfinder          → Subdomain (passive enumeration)
 Phase 2  amass              → Subdomain (active enumeration)
 Phase 3  dnsx               → IPAddress (public-only filter)
-Phase 3.5 takeover_check    → Finding (subzy — dangling DNS → unclaimed cloud)
-Phase 4  naabu              → Port (top 100 TCP scan)
-Phase 5  service_detection  → enriches Port.service + Port.is_web
+Phase 4  takeover_check     → Finding (subzy — dangling DNS → unclaimed cloud)
+Phase 5  naabu              → Port (top 100 TCP scan)
+Phase 6  service_detection  → enriches Port.service + Port.is_web
 Phase 7  nmap               → Finding (CVEs on non-web ports, is_web=False)  ┐
 Phase 7  tls_checker        → Finding (cipher/cert/protocol on all ports)    │ parallel
 Phase 7  ssh_checker        → Finding (SSH config on service="ssh" ports)    │
 Phase 7  nuclei_network     → Finding (network protocol vulns, non-web ports)┘
 Phase 8  httpx              → URL (web probing, CDN-aware via SNI)
-Phase 8.5 historical_urls → URL (gau + waybackurls — archived endpoints)
-Phase 9  katana             → URL (web crawling, endpoint discovery)
-Phase 10 nuclei             → Finding (web vulns via templates on URLs)
-Phase 10 web_checker        → Finding (headers, cookies, CORS on URLs)
+Phase 9  historical_urls    → URL (gau + waybackurls — archived endpoints)
+Phase 10 katana             → URL (web crawling, endpoint discovery)
+Phase 11 nuclei             → Finding (web vulns via templates on URLs)
+Phase 11 web_checker        → Finding (headers, cookies, CORS on URLs)
 ```
 
 ### Scan flow
@@ -380,7 +380,7 @@ create_scan_session(domain)          # auto-assigns default workflow
 ### Key design rules
 1. **Tools never import from each other.** Shared data flows through `apps/core/assets/`, `apps/core/web_assets/`, and `apps/core/findings/`.
 2. **Tools self-register.** Add `tool_meta` to AppConfig + add to `INSTALLED_APPS`. No other core files to touch.
-3. **Port.is_web** classifies ports. Set by `service_detection` (Phase 5) based on nmap -sV service name. Used by nmap to skip web ports (`is_web=False` only). tls_checker probes all ports — including HTTPS (port 443).
+3. **Port.is_web** classifies ports. Set by `service_detection` (Phase 6) based on nmap -sV service name. Used by nmap to skip web ports (`is_web=False` only). tls_checker probes all ports — including HTTPS (port 443).
 4. **dnsx filters to public IPs only.** Private/loopback/link-local/AWS metadata IPs dropped.
 5. **httpx feeds subdomain:port pairs, not IP:port pairs.** Cloudflare/CDN-fronted services need SNI matching.
 6. **nmap only scans non-web ports** (`Port.objects.filter(is_web=False)`).

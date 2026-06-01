@@ -8,7 +8,7 @@ class TakeoverCheckConfig(AppConfig):
     tool_meta = {
         "label": "Subdomain Takeover Check (subzy)",
         "runner": "apps.takeover_check.scanner.run_takeover_check",
-        "phase": 3.5,
+        "phase": 4,
         "requires": ["subfinder"],
         "produces_findings": True,
     }

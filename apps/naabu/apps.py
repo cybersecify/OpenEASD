@@ -9,7 +9,7 @@ class NaabuConfig(AppConfig):
     tool_meta = {
         "label": "Naabu (Port Scan)",
         "runner": "apps.naabu.scanner.run_naabu",
-        "phase": 4,
+        "phase": 5,
         "requires": ["dnsx"],
         "produces_findings": False,
     }
