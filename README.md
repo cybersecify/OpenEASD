@@ -67,14 +67,14 @@ Phase 2  Amass              - Active subdomain enumeration
 Phase 3  DNSx               - DNS resolution, public IP filtering
 Phase 4  Naabu              - TCP port scanning (top 100)
 Phase 5  Service Detection  - Classify ports as web/non-web via nmap -sV (auto)
-Phase 7  Nmap               - CVE scanning via NSE vulners (non-web ports)
-Phase 7  TLS Checker        - Certificate, cipher, and protocol analysis
-Phase 7  SSH Checker        - SSH configuration audit
-Phase 7  Nuclei Network     - Service-aware nuclei network templates against non-web ports
-Phase 8  httpx              - Web probing, URL discovery
-Phase 9  Katana             - Deep URL crawling on top of httpx (Phase 9, asset producer)
-Phase 9  Nuclei             - Web vulnerability scanning (community templates)
-Phase 9  Web Checker        - Security headers, cookies, CORS analysis
+Phase 6  Nmap               - CVE scanning via NSE vulners (non-web ports)
+Phase 6  TLS Checker        - Certificate, cipher, and protocol analysis
+Phase 6  SSH Checker        - SSH configuration audit
+Phase 6  Nuclei Network     - Service-aware nuclei network templates against non-web ports
+Phase 7  httpx              - Web probing, URL discovery
+Phase 8  Katana             - Deep URL crawl on top of httpx (asset producer)
+Phase 8  Nuclei             - Web vulnerability scanning (community templates)
+Phase 8  Web Checker        - Security headers, cookies, CORS analysis
 ```
 
 ## Architecture
