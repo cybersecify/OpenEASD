@@ -6,7 +6,7 @@ anything's unclear.
 
 > **First time contributing?** CI won't run automatically on PRs from new accounts — that's our anti-spam gate, not unresponsiveness. A maintainer will approve it within a few hours, up to 2 business days depending on load.
 
-> **About contributions:** OpenEASD is MIT-licensed open source maintained by CyberSecify (Rathnakara G N + Ashok S Kamat). Community contributions are welcomed — they make the project move faster and amplify what we can give back to the security community. We don't pay for PRs or run a bug bounty program; contributions are recognised through public CHANGELOG credit, commit attribution, GitHub Discussion shout-outs, and (where applicable) conference / publication co-credit. See [SECURITY.md](https://github.com/cybersecify/OpenEASD/blob/main/SECURITY.md) for the no-bounty note and [CONTRIBUTING.md](https://github.com/cybersecify/OpenEASD/blob/main/CONTRIBUTING.md) for what we look for in a PR.
+> **About contributions:** OpenEASD is MIT-licensed open source maintained by Cybersecify (Rathnakara G N + Ashok S Kamat). Community contributions are welcomed — they make the project move faster and amplify what we can give back to the security community. We don't pay for PRs or run a bug bounty program; contributions are recognised through public CHANGELOG credit, commit attribution, GitHub Discussion shout-outs, and (where applicable) conference / publication co-credit. See [SECURITY.md](https://github.com/cybersecify/OpenEASD/blob/main/SECURITY.md) for the no-bounty note and [CONTRIBUTING.md](https://github.com/cybersecify/OpenEASD/blob/main/CONTRIBUTING.md) for what we look for in a PR.
 
 ## What this changes
 
