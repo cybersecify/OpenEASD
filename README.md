@@ -9,11 +9,11 @@
 
 Use it as a **red teamer** to map external surface fast on a target you're engaged with. Use it as a **defender** to see what's leaking out of your own infrastructure — subdomains, exposed ports, dangling CNAMEs, missing TLS, known CVEs — without paying $500-5000/mo for a commercial EASM platform.
 
-OpenEASD wraps the open-source recon tools security teams already use — `subfinder`, `amass`, `dnsx`, `subzy`, `naabu`, `httpx`, `nuclei`, `nmap` — behind a single web UI with scheduling, alerts, and findings tracking. Twelve attack vectors across DNS, email, TLS, SSH, ports, CVEs, subdomain takeover, and web hygiene. Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
+OpenEASD wraps the open-source recon tools security teams already use — `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `naabu`, `httpx`, `gau`, `waybackurls`, `nuclei`, `nmap` — behind a single web UI with scheduling, alerts, and findings tracking. Seventeen tools across DNS, email, TLS, SSH, ports, CVEs, subdomain takeover, historical URLs, and web hygiene. Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
 
 Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok S Kamat](https://www.linkedin.com/in/ashokskamat/) of [Cybersecify](https://cybersecify.com) — the same tool we run in engagements and on our own infrastructure.
 
-![OpenEASD scan in progress against nmap.org — 11 subdomains, 22 IPs, 6 ports, 3 critical findings already, all 15 tool steps tracked live](docs/screenshots/scan-detail-live.png)
+![OpenEASD scan in progress against nmap.org — 11 subdomains, 22 IPs, 6 ports, 3 critical findings already, all 17 tool steps tracked live](docs/screenshots/scan-detail-live.png)
 
 ## Who this is for
 
@@ -47,7 +47,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ## Features
 
-- **Automated pipeline** — 16-tool scan workflow from domain to findings
+- **Automated pipeline** — 17-tool scan workflow from domain to findings
 - **Network attack surface scanning** — CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
 - **Dynamic workflows** — Create custom scan configurations, enable/disable tools per workflow
 - **Tool auto-registration** — Add new tools with zero core modification
@@ -65,20 +65,30 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 ## Scan Pipeline
 
 ```
+── Domain Intelligence ──────────────────────────────────────────────────────
 Phase 1  Domain Security   - DNS, email (SPF/DMARC/DKIM), RDAP checks
+
+── Surface Enumeration ─────────────────────────────────────────────────────
 Phase 2  Subfinder         - Passive subdomain enumeration
 Phase 2  Amass             - Active subdomain enumeration
+Phase 2  Alterx            - Subdomain permutation from discovered subdomains
 Phase 3  DNSx              - DNS resolution, public IP filtering
-Phase 4  Takeover Check    - Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud)
+Phase 4  Takeover Check    - Subdomain takeover detection via subzy
+
+── Port Discovery ───────────────────────────────────────────────────────────
 Phase 5  Naabu             - TCP port scanning (top 100)
 Phase 6  Service Detection - Classify ports as web/non-web via nmap -sV (auto)
+
+── Network Exposure ─────────────────────────────────────────────────────────
 Phase 7  Nmap              - CVE scanning via NSE vulners (non-web ports)
 Phase 7  TLS Checker       - Certificate, cipher, and protocol analysis
 Phase 7  SSH Checker       - SSH configuration audit
-Phase 7  Nuclei Network    - Service-aware nuclei network templates against non-web ports
+Phase 7  Nuclei Network    - Network protocol vuln templates (non-web ports)
+
+── Web Exposure ─────────────────────────────────────────────────────────────
 Phase 8  httpx             - Web probing, URL discovery
 Phase 9  Historical URLs   - Archived URL discovery via gau + waybackurls
-Phase 10 Katana            - Deep URL crawl on top of httpx (asset producer)
+Phase 10 Katana            - Deep URL crawl on top of httpx
 Phase 11 Nuclei            - Web vulnerability scanning (community templates)
 Phase 11 Web Checker       - Security headers, cookies, CORS analysis
 ```
@@ -106,14 +116,17 @@ apps/                   - Tool apps (add/remove freely)
   domain_security/      - DNS, email, RDAP checks
   subfinder/            - Passive subdomain enumeration
   amass/                - Active subdomain enumeration
+  alterx/               - Subdomain permutation (from discovered subdomains)
   dnsx/                 - DNS resolution
+  takeover_check/       - Subdomain takeover detection (subzy)
   naabu/                - Port scanning
   nmap/                 - CVE scanning (NSE vulners)
   tls_checker/          - TLS/cert/cipher analysis
   ssh_checker/          - SSH configuration audit
   nuclei_network/       - Network protocol vuln scanning
   httpx/                - Web probing
-  katana/               - Deep URL crawl on top of httpx (asset producer)
+  historical_urls/      - Archived URL discovery (gau + waybackurls)
+  katana/               - Deep URL crawl
   nuclei/               - Web vulnerability scanning
   web_checker/          - Security headers, cookies, CORS
 
@@ -304,6 +317,7 @@ class MyToolConfig(AppConfig):
         "label": "My Tool",
         "runner": "apps.my_tool.scanner.run_my_tool",
         "phase": 6,
+        "phase_group": "Port Discovery",
         "requires": ["naabu"],
         "produces_findings": True,
     }

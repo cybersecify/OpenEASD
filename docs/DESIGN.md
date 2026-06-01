@@ -62,7 +62,7 @@ core files change.
 
 ```
 apps/<tool>/
-    apps.py       — AppConfig with tool_meta (phase, runner, requires, produces_findings)
+    apps.py       — AppConfig with tool_meta (phase, phase_group, runner, requires, produces_findings)
     models.py     — empty (all data goes to apps/core/assets/ or apps/core/findings/)
     scanner.py    — thin orchestrator: collect → analyze → save
     collector.py  — runs binary / probes; returns raw data (no DB writes)
@@ -106,19 +106,32 @@ Deletion cascades top-down: deleting a Domain wipes all session data.
 ### Pipeline phases
 
 ```
+── Domain Intelligence ──────────────────────────────────────
 Phase 1  domain_security    → Finding (DNS / email / RDAP checks)
+
+── Surface Enumeration ─────────────────────────────────────
 Phase 2  subfinder          → Subdomain (passive)
 Phase 2  amass              → Subdomain (active)
-Phase 3  dnsx               → IPAddress (public-IP filter; apex seeded via dnspython)
-Phase 4  naabu              → Port (top-100 TCP)
-Phase 5  service_detection  → enriches Port.service + Port.is_web
+Phase 2  alterx             → Subdomain (permutation candidates)
+Phase 3  dnsx               → IPAddress (public-IP filter)
+Phase 4  takeover_check     → Finding (dangling DNS → unclaimed cloud)
+
+── Port Discovery ───────────────────────────────────────────
+Phase 5  naabu              → Port (top-100 TCP)
+Phase 6  service_detection  → enriches Port.service + Port.is_web
+
+── Network Exposure ─────────────────────────────────────────
 Phase 7  nmap               → Finding (CVEs on is_web=False ports)
 Phase 7  tls_checker        → Finding (ciphers / cert / protocol on all ports)
 Phase 7  ssh_checker        → Finding (SSH config on service="ssh" ports)
 Phase 7  nuclei_network     → Finding (network protocol vulns, non-web ports)
+
+── Web Exposure ─────────────────────────────────────────────
 Phase 8  httpx              → URL (web probing)
-Phase 9  nuclei             → Finding (web vulns via community templates)
-Phase 9  web_checker        → Finding (headers / cookies / CORS)
+Phase 9  historical_urls    → URL (archived URLs via gau + waybackurls)
+Phase 10 katana             → URL (deep crawl)
+Phase 11 nuclei             → Finding (web vulns via community templates)
+Phase 11 web_checker        → Finding (headers / cookies / CORS)
 ```
 
 ### Scan flow (call chain)
