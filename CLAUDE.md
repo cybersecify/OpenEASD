@@ -299,6 +299,7 @@ class MyToolConfig(AppConfig):
         "label": "My Tool",
         "runner": "apps.my_tool.scanner.run_my_tool",
         "phase": 7,
+        "phase_group": "Network Exposure",
         "requires": ["naabu"],
         "produces_findings": True,
     }
@@ -308,30 +309,31 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_choices()` — for forms and UI
 - `get_tool_runners()` — for workflow execution
 - `get_tool_phases()` — for ordering
+- `get_tool_phase_groups()` — maps tool → phase_group label
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
 ### Tool apps (17 registered tools)
 
-| App | Phase | produces_findings | Description |
-|---|---|---|---|
-| `apps/domain_security/` | 1 | Yes | DNS, email, RDAP checks |
-| `apps/subfinder/` | 2 | No | Passive subdomain enumeration |
-| `apps/amass/` | 2 | No | Active subdomain enumeration |
-| `apps/alterx/` | 2 | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
-| `apps/dnsx/` | 3 | No | DNS resolution, public IP filtering |
-| `apps/takeover_check/` | 4 | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
-| `apps/naabu/` | 5 | No | Port scanning (top 100 TCP) |
-| `apps/core/service_detection/` | 6 | No | nmap -sV enriches Port.service + is_web |
-| `apps/nmap/` | 7 | Yes | NSE vulners CVE scan (non-web ports); backport-aware CVE matching (`backports.json` registry) |
-| `apps/tls_checker/` | 7 | Yes | TLS/cert analysis + cipher suite enumeration via `nmap --script ssl-enum-ciphers` (all ports) |
-| `apps/ssh_checker/` | 7 | Yes | SSH config analysis |
-| `apps/nuclei_network/` | 7 | Yes | Network protocol vuln scan (319 templates, non-web) |
-| `apps/httpx/` | 8 | No | Web probing, URL discovery |
-| `apps/historical_urls/` | 9 | No | Historical URL discovery via gau + waybackurls (Wayback Machine, OTX, Common Crawl) |
-| `apps/katana/` | 10 | No | Web crawling, endpoint discovery |
-| `apps/nuclei/` | 11 | Yes | Web vuln scan (community templates) |
-| `apps/web_checker/` | 11 | Yes | Security headers, cookies, CORS |
+| App | Phase | Phase Group | produces_findings | Description |
+|---|---|---|---|---|
+| `apps/domain_security/` | 1 | Domain Intelligence | Yes | DNS, email, RDAP checks |
+| `apps/subfinder/` | 2 | Surface Enumeration | No | Passive subdomain enumeration |
+| `apps/amass/` | 2 | Surface Enumeration | No | Active subdomain enumeration |
+| `apps/alterx/` | 2 | Surface Enumeration | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
+| `apps/dnsx/` | 3 | Surface Enumeration | No | DNS resolution, public IP filtering |
+| `apps/takeover_check/` | 4 | Surface Enumeration | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
+| `apps/naabu/` | 5 | Port Discovery | No | Port scanning (top 100 TCP) |
+| `apps/core/service_detection/` | 6 | Port Discovery | No | nmap -sV enriches Port.service + is_web |
+| `apps/nmap/` | 7 | Network Exposure | Yes | NSE vulners CVE scan (non-web ports); backport-aware CVE matching (`backports.json` registry) |
+| `apps/tls_checker/` | 7 | Network Exposure | Yes | TLS/cert analysis + cipher suite enumeration via `nmap --script ssl-enum-ciphers` (all ports) |
+| `apps/ssh_checker/` | 7 | Network Exposure | Yes | SSH config analysis |
+| `apps/nuclei_network/` | 7 | Network Exposure | Yes | Network protocol vuln scan (319 templates, non-web) |
+| `apps/httpx/` | 8 | Web Exposure | No | Web probing, URL discovery |
+| `apps/historical_urls/` | 9 | Web Exposure | No | Historical URL discovery via gau + waybackurls (Wayback Machine, OTX, Common Crawl) |
+| `apps/katana/` | 10 | Web Exposure | No | Web crawling, endpoint discovery |
+| `apps/nuclei/` | 11 | Web Exposure | Yes | Web vuln scan (community templates) |
+| `apps/web_checker/` | 11 | Web Exposure | Yes | Security headers, cookies, CORS |
 
 ### Tool app structure
 ```
