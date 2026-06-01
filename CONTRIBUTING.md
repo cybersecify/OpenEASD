@@ -141,7 +141,7 @@ See `tests/unit/test_ssh_checker.py` (33 tests) or
 - **Docs.** README/CHANGELOG/CLAUDE.md fixes are welcome PRs. Typo fixes
   go straight in; structural rewrites — open an issue first so we can
   agree on direction before you write.
-- **Frontend tweaks.** React 18 + Vite + Tailwind + shadcn/ui in
+- **Frontend tweaks.** React 19 + Vite 8 + Tailwind + shadcn/ui in
   `frontend/`. Run `npm run dev` against a Django backend on `:8000`.
 - **Tests.** We're at ~760 tests excluding slow DNS; raising that
   number always helps. `tests/unit/test_<thing>.py` matches the app it

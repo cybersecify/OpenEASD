@@ -286,7 +286,7 @@ uv run python main.py --no-worker      # web server only (no worker)
 ## CI/CD
 
 GitHub Actions runs on every push to `main` and `v*` tags:
-- **pytest** — fast test suite (~750 tests, excludes the 41 slow DNS/RDAP tests in `test_domain_security.py`)
+- **pytest** — fast test suite (~855 tests, excludes the 41 slow DNS/RDAP tests in `test_domain_security.py`)
 - **bandit** — Python SAST scan
 - **pip-audit** — dependency CVE scan
 - **Frontend build** — `npm ci && npm run build`
@@ -339,10 +339,10 @@ apps/my_tool/
 ## Running Tests
 
 ```bash
-# Fast tests (excludes slow DNS tests, ~750 tests)
+# Fast tests (excludes slow DNS tests, ~855 tests)
 uv run pytest tests/ --ignore=tests/unit/test_domain_security.py
 
-# All tests (~670 total)
+# All tests (~896 total)
 uv run pytest tests/
 ```
 
