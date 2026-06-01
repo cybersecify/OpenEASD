@@ -230,3 +230,88 @@ class TestAnalyze:
         sess = self._session()
         objs = analyze(sess, ["example.com/path"])
         assert objs == []
+
+
+# ---------------------------------------------------------------------------
+# Scanner
+# ---------------------------------------------------------------------------
+
+from apps.historical_urls.scanner import run_historical_urls
+
+
+@pytest.mark.django_db
+class TestScanner:
+    def _session(self):
+        from apps.core.scans.models import ScanSession
+        return ScanSession.objects.create(domain="example.com", scan_type="full")
+
+    def test_no_subdomains_returns_empty_without_calling_collect(self):
+        sess = self._session()
+        with patch("apps.historical_urls.scanner.collect") as mock_collect:
+            result = run_historical_urls(sess)
+        assert result == []
+        mock_collect.assert_not_called()
+
+    def test_includes_root_domain_in_targets(self):
+        from apps.core.assets.models import Subdomain
+        sess = self._session()
+        Subdomain.objects.create(
+            session=sess, domain="example.com",
+            subdomain="www.example.com", source="subfinder",
+        )
+        captured = {}
+
+        def fake_collect(targets):
+            captured["targets"] = targets
+            return []
+
+        with patch("apps.historical_urls.scanner.collect", side_effect=fake_collect):
+            run_historical_urls(sess)
+
+        assert "example.com" in captured["targets"]
+
+    def test_includes_subdomains_in_targets(self):
+        from apps.core.assets.models import Subdomain
+        sess = self._session()
+        Subdomain.objects.create(
+            session=sess, domain="example.com",
+            subdomain="blog.example.com", source="subfinder",
+        )
+        captured = {}
+
+        def fake_collect(targets):
+            captured["targets"] = targets
+            return []
+
+        with patch("apps.historical_urls.scanner.collect", side_effect=fake_collect):
+            run_historical_urls(sess)
+
+        assert "blog.example.com" in captured["targets"]
+
+    def test_saves_url_rows_to_db_and_returns_them(self):
+        from apps.core.assets.models import Subdomain
+        from apps.core.web_assets.models import URL
+
+        sess = self._session()
+        Subdomain.objects.create(
+            session=sess, domain="example.com",
+            subdomain="blog.example.com", source="subfinder",
+        )
+        fake_urls = ["https://blog.example.com/old-post", "https://blog.example.com/api/v1"]
+
+        with patch("apps.historical_urls.scanner.collect", return_value=fake_urls):
+            result = run_historical_urls(sess)
+
+        assert URL.objects.filter(session=sess, source="historical_urls").count() == 2
+        assert len(result) == 2
+
+    def test_returns_empty_when_collect_returns_nothing(self):
+        from apps.core.assets.models import Subdomain
+        sess = self._session()
+        Subdomain.objects.create(
+            session=sess, domain="example.com",
+            subdomain="sub.example.com", source="subfinder",
+        )
+        with patch("apps.historical_urls.scanner.collect", return_value=[]):
+            result = run_historical_urls(sess)
+        assert result == []
