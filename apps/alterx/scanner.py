@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 
 def run_alterx(session) -> list[Subdomain]:
-    """Generate subdomain permutations from existing session subdomains and save them."""
     subdomains = list(
         Subdomain.objects.filter(session=session)
         .values_list("subdomain", flat=True)
@@ -17,7 +16,7 @@ def run_alterx(session) -> list[Subdomain]:
     )
 
     if not subdomains:
-        logger.info("[alterx:%s] no subdomains to permute", session.id)
+        logger.info(f"[alterx:{session.id}] no subdomains to permute")
         return []
 
     raw = collect(subdomains)
@@ -27,5 +26,5 @@ def run_alterx(session) -> list[Subdomain]:
         Subdomain.objects.bulk_create(objs, ignore_conflicts=True)
 
     saved = list(Subdomain.objects.filter(session=session, source="alterx"))
-    logger.info("[alterx:%s] saved %d permutation subdomains", session.id, len(saved))
+    logger.info(f"[alterx:{session.id}] saved {len(saved)} permutation subdomains")
     return saved
