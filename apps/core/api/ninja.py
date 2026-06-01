@@ -134,3 +134,6 @@ api.add_router("/insights", insights_router)
 
 from apps.core.notifications.api import router as notifications_router
 api.add_router("/notifications", notifications_router)
+
+from apps.core.users.api import router as users_router
+api.add_router("/users", users_router)
