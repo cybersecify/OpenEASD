@@ -13,7 +13,7 @@ OpenEASD wraps the open-source recon tools security teams already use — `subfi
 
 Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok S Kamat](https://www.linkedin.com/in/ashokskamat/) of [CyberSecify](https://cybersecify.com) — the same tool we run in engagements and on our own infrastructure.
 
-![OpenEASD scan in progress against nmap.org — 11 subdomains, 22 IPs, 6 ports, 3 critical findings already, all 14 tool steps tracked live](docs/screenshots/scan-detail-live.png)
+![OpenEASD scan in progress against nmap.org — 11 subdomains, 22 IPs, 6 ports, 3 critical findings already, all 15 tool steps tracked live](docs/screenshots/scan-detail-live.png)
 
 ## Who this is for
 
@@ -341,7 +341,7 @@ uv run pytest tests/
 - **paramiko** — SSH protocol inspection
 - **cryptography** — X.509 certificate analysis
 - **xhtml2pdf** — PDF report generation
-- **django-ninja-jwt** — JWT auth for the Ninja API (wraps `djangorestframework-simplejwt`); access + refresh tokens, blacklist on logout
+- **django-ninja-jwt** — JWT auth for the Ninja API (built on PyJWT); access + refresh tokens, blacklist on logout
 
 **Frontend:**
 - **React 19 + Vite 8** — SPA with hot module replacement
