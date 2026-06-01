@@ -65,6 +65,26 @@ RUN curl -fsSL "https://github.com/owasp-amass/amass/releases/download/v${AMASS_
 RUN chmod +x subfinder dnsx naabu httpx nuclei amass
 
 # ---------------------------------------------------------------------------
+# Stage 2b: build subzy from source (no prebuilt binaries available upstream).
+# Cross-compiled from $BUILDPLATFORM for $TARGETARCH so emulated arm64 builds
+# stay fast.
+# ---------------------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM golang:1.22 AS subzy-builder
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG SUBZY_VERSION=v1.2.1
+
+ENV CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH
+
+RUN go install -ldflags="-s -w" github.com/PentestPad/subzy@${SUBZY_VERSION} \
+    && if [ -d /go/bin/${TARGETOS}_${TARGETARCH} ]; then \
+         mv /go/bin/${TARGETOS}_${TARGETARCH}/subzy /subzy; \
+       else \
+         mv /go/bin/subzy /subzy; \
+       fi
+
+# ---------------------------------------------------------------------------
 # Stage 3: runtime
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04 AS runtime
@@ -88,6 +108,7 @@ ENV PATH="/root/.local/bin:${PATH}"
 
 # Copy security tool binaries
 COPY --from=tools-builder /tools/ /usr/local/bin/
+COPY --from=subzy-builder /subzy /usr/local/bin/subzy
 ENV PATH="/usr/local/bin:${PATH}"
 
 WORKDIR /app

@@ -9,7 +9,7 @@
 
 Use it as a **red teamer** to map external surface fast on a target you're engaged with. Use it as a **defender** to see what's leaking out of your own infrastructure — subdomains, exposed ports, dangling CNAMEs, missing TLS, known CVEs — without paying $500-5000/mo for a commercial EASM platform.
 
-OpenEASD wraps the open-source recon tools security teams already use — `subfinder`, `amass`, `dnsx`, `naabu`, `httpx`, `nuclei`, `nmap` — behind a single web UI with scheduling, alerts, and findings tracking. Eleven attack vectors across DNS, email, TLS, SSH, ports, CVEs, and web hygiene. Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
+OpenEASD wraps the open-source recon tools security teams already use — `subfinder`, `amass`, `dnsx`, `subzy`, `naabu`, `httpx`, `nuclei`, `nmap` — behind a single web UI with scheduling, alerts, and findings tracking. Twelve attack vectors across DNS, email, TLS, SSH, ports, CVEs, subdomain takeover, and web hygiene. Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
 
 Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok S Kamat](https://www.linkedin.com/in/ashokskamat/) of [CyberSecify](https://cybersecify.com) — the same tool we run in engagements and on our own infrastructure.
 
@@ -47,7 +47,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ## Features
 
-- **Automated pipeline** — 14-tool scan workflow from domain to findings
+- **Automated pipeline** — 15-tool scan workflow from domain to findings
 - **Network attack surface scanning** — CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
 - **Dynamic workflows** — Create custom scan configurations, enable/disable tools per workflow
 - **Tool auto-registration** — Add new tools with zero core modification
@@ -69,6 +69,7 @@ Phase 1  Domain Security    - DNS, email (SPF/DMARC/DKIM), RDAP checks
 Phase 2  Subfinder          - Passive subdomain enumeration
 Phase 2  Amass              - Active subdomain enumeration
 Phase 3  DNSx               - DNS resolution, public IP filtering
+Phase 3.5 Takeover Check    - Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud)
 Phase 4  Naabu              - TCP port scanning (top 100)
 Phase 5  Service Detection  - Classify ports as web/non-web via nmap -sV (auto)
 Phase 6  Nmap               - CVE scanning via NSE vulners (non-web ports)
