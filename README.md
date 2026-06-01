@@ -168,6 +168,8 @@ docker stop openeasd && docker rm openeasd
 | `ALERT_SEVERITY_THRESHOLD` | `high` | Minimum severity to trigger alerts — overridden by the Notifications UI setting |
 | `SCAN_DAILY_HOUR` | `2` | Hour for daily scheduled scans (24h, UTC) |
 | `SCAN_DAILY_MINUTE` | `0` | Minute for daily scheduled scans |
+| `REPORT_CTA_URL` | — | Optional URL appended to PDF and CSV reports. Renders only when both `REPORT_CTA_URL` and `REPORT_CTA_TEXT` are set |
+| `REPORT_CTA_TEXT` | — | Optional call-to-action line shown alongside `REPORT_CTA_URL` in PDF/CSV reports |
 
 ### Kubernetes
 

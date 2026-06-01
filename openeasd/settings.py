@@ -174,6 +174,14 @@ MS_TEAMS_WEBHOOK_URL = config("MS_TEAMS_WEBHOOK_URL", default="")
 # Minimum severity to trigger an alert: critical / high / medium / low
 ALERT_SEVERITY_THRESHOLD = config("ALERT_SEVERITY_THRESHOLD", default="high")
 
+# Report CTA — optional call-to-action rendered at the end of PDF and CSV
+# exports. Both default to empty (self-hosters get a clean report with no
+# upsell). Operators of hosted-snapshot deployments can set these to point
+# report readers at a follow-up resource. The CTA block is rendered only
+# when BOTH url and text are non-empty.
+REPORT_CTA_URL = config("REPORT_CTA_URL", default="")
+REPORT_CTA_TEXT = config("REPORT_CTA_TEXT", default="")
+
 # Tool paths — defaults resolve via PATH so the same setting works for:
 #   - Container deploys (tools in /usr/local/bin, per Dockerfile)
 #   - Local dev with pdtm (~/.pdtm/go/bin is added to PATH by pdtm install)
