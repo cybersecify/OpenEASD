@@ -39,6 +39,103 @@ of the five-file pattern (`apps.py`, `models.py`, `collector.py`,
 package marker). `apps/subfinder/` is a good asset-producing example
 (`produces_findings: False`).
 
+### Phase numbers
+
+Phases are integers 1–10 matching the pipeline order in `CLAUDE.md`.
+Fractional phases (e.g. `3.5`, `4.5`) are allowed when your tool must
+run strictly after one phase but before the next — the runner sorts and
+groups by phase, so `3.5` runs after all `3` tools and before all `4`
+tools. Use the lowest fraction that correctly places your tool; don't
+use decimals just to avoid renumbering.
+
+The `requires` list is advisory — it documents which earlier-phase tools
+your tool depends on (e.g. `["subfinder"]` if you read `Subdomain`
+rows). Use the tool's `label` value from its `AppConfig`, not the app
+path.
+
+### Writing good findings
+
+Every finding your tool emits should be actionable by a security
+engineer who has never seen your tool before. Three things matter:
+
+**Severity calibration**
+
+| Severity | When to use |
+|---|---|
+| `critical` | Immediate exploitation possible with no preconditions (unauthenticated RCE, full data exposure) |
+| `high` | High-impact, straightforward to exploit (subdomain takeover, valid CVE with public PoC, expired TLS) |
+| `medium` | Meaningful risk but requires additional conditions (weak cipher suites, missing HSTS, DMARC not enforced) |
+| `low` | Defence-in-depth issue, low direct exploitability (informational header leak, SPF ~all vs -all) |
+| `info` | Observation only, no exploitability (banner version, open port with no known CVEs) |
+
+When in doubt, go one severity lower rather than one higher — alert
+fatigue from over-reported highs is worse than under-reporting a medium.
+
+**Description**
+
+Explain *why this is a problem* for this specific target. Avoid generic
+CVE copy-paste. One or two sentences is enough:
+
+```
+# Good
+"blog.example.com resolves to an unclaimed Heroku dyno. An attacker who
+registers that dyno name can serve arbitrary content under your subdomain,
+including credential phishing pages that inherit its TLS certificate."
+
+# Too generic
+"Subdomain takeover vulnerabilities allow attackers to take control of subdomains."
+```
+
+**Remediation**
+
+Tell the operator exactly what to do, not just that something is wrong:
+
+```
+# Good
+"Remove the CNAME record for blog.example.com or reclaim the Heroku dyno
+at old-app.herokuapp.com. Verify by running: dig CNAME blog.example.com"
+
+# Too vague
+"Fix the subdomain configuration."
+```
+
+Store tool-specific data (CVE IDs, cipher names, service fingerprints,
+raw tool output) in the `extra` JSONField — not in the description text.
+This keeps the description human-readable and makes the raw data
+queryable.
+
+**Common field mistakes to avoid**
+
+- `extra=` not `extras=` — the JSONField is named `extra` (no `s`)
+- `port=` takes a `Port` FK instance, not an integer — use `port_number=` for the integer
+- `url=` takes a `URL` FK instance from `apps.web_assets`
+
+### Required tests for new tool PRs
+
+Every tool app needs a `tests/unit/test_<tool>.py`. PRs without tests
+will be asked to add them before merge. Cover at minimum:
+
+**Collector**
+- Empty input returns `[]`
+- Binary not found (`shutil.which` returns `None`) returns `[]`
+- Non-zero exit code returns `[]`
+- Timeout returns `[]`
+- Happy path: valid output returns parsed records
+
+**Analyzer**
+- Empty records returns `[]`
+- Record that should not produce a finding (e.g. `vulnerable=False`) is skipped
+- Happy path: correct finding fields (`source`, `check_type`, `severity`, `title`, `extra`)
+- Deduplication works if your tool can emit duplicate records
+
+**Scanner**
+- No assets to scan returns `[]` without calling the binary
+- Happy path: findings are persisted to DB and returned
+
+Use `@pytest.mark.django_db` for tests that touch the database.
+See `tests/unit/test_ssh_checker.py` (33 tests) or
+`tests/unit/test_takeover_check.py` (35 tests) as reference.
+
 ## Other ways to help
 
 - **Bug reports.** Open an issue using the "Bug report" template — exact
@@ -50,7 +147,7 @@ package marker). `apps/subfinder/` is a good asset-producing example
   agree on direction before you write.
 - **Frontend tweaks.** React 18 + Vite + Tailwind + shadcn/ui in
   `frontend/`. Run `npm run dev` against a Django backend on `:8000`.
-- **Tests.** We're at ~590 tests excluding slow DNS; raising that
+- **Tests.** We're at ~760 tests excluding slow DNS; raising that
   number always helps. `tests/unit/test_<thing>.py` matches the app it
   tests.
 
