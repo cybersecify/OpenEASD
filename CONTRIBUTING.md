@@ -34,8 +34,10 @@ and `scanner.py` (thin orchestrator: `collect → analyze → save`). Add
 it — the tool shows up in the workflow editor and runs in pipeline order.
 
 Look at `apps/web_checker/` or `apps/ssh_checker/` for working examples
-of the four-file pattern. `apps/subfinder/` is a good asset-producing
-example (`produces_findings: False`).
+of the five-file pattern (`apps.py`, `models.py`, `collector.py`,
+`analyzer.py`, `scanner.py` — plus the standard `__init__.py` Python
+package marker). `apps/subfinder/` is a good asset-producing example
+(`produces_findings: False`).
 
 ## Other ways to help
 
