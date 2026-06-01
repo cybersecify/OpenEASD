@@ -91,6 +91,7 @@ def get_user(request):
         "username": u.username,
         "email": u.email or "",
         "must_change_password": must_change,
+        "is_superuser": u.is_superuser,
     }
 
 

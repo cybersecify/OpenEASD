@@ -175,6 +175,23 @@ class TestAuthUser:
         assert res.status_code == 401
 
 
+@pytest.mark.django_db
+class TestGetUserIsAdmin:
+    def test_regular_user_is_not_superuser(self, auth_client):
+        res = auth_client.get("/api/user/")
+        assert res.status_code == 200
+        assert res.json()["is_superuser"] is False
+
+    def test_superuser_flag_is_true(self, client, db):
+        su = User.objects.create_superuser(username="su_test", password="pass123")
+        from ninja_jwt.tokens import AccessToken
+        token = str(AccessToken.for_user(su))
+        client.defaults["HTTP_AUTHORIZATION"] = f"Bearer {token}"
+        res = client.get("/api/user/")
+        assert res.status_code == 200
+        assert res.json()["is_superuser"] is True
+
+
 class TestChangePassword:
     def test_success(self, auth_client, user):
         res = post_json(auth_client, "/api/user/change-password/", {
