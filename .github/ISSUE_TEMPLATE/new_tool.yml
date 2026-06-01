@@ -14,6 +14,12 @@ body:
         This template is for proposing — code can come in the same PR, or
         we can discuss the design first if it's not obvious.
 
+        **About this project:** OpenEASD is MIT-licensed open source
+        maintained by CyberSecify (Rathnakara G N + Ashok S Kamat).
+        We don't pay for PRs — community contributors are credited in
+        CHANGELOG / commit attribution / Discussions, and (when
+        applicable) co-credited in conference talks and publications.
+
   - type: input
     id: tool-name
     attributes:
