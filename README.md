@@ -5,9 +5,13 @@
 [![Docker Image](https://img.shields.io/badge/ghcr.io%2Fcybersecify%2Fopeneasd-latest-2496ed?logo=docker&logoColor=white)](https://github.com/cybersecify/OpenEASD/pkgs/container/openeasd)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**See your domain like an attacker does.** OpenEASD is a self-hosted scanner that wraps the open-source recon tools security teams already use — `subfinder`, `amass`, `dnsx`, `naabu`, `httpx`, `nuclei`, `nmap` — behind a single web UI with scheduling, alerts, and findings tracking. Free, MIT-licensed, one `docker run`. Results stay on your machine.
+**See what attackers see. Use it before they do.**
 
-It surfaces the **lowest hanging fruits** — what someone scanning your perimeter sees first. Eleven attack vectors across DNS, email, TLS, SSH, ports, CVEs, and web hygiene.
+Use it as a **red teamer** to map external surface fast on a target you're engaged with. Use it as a **defender** to see what's leaking out of your own infrastructure — subdomains, exposed ports, dangling CNAMEs, missing TLS, known CVEs — without paying $500-5000/mo for a commercial EASM platform.
+
+OpenEASD wraps the open-source recon tools security teams already use — `subfinder`, `amass`, `dnsx`, `naabu`, `httpx`, `nuclei`, `nmap` — behind a single web UI with scheduling, alerts, and findings tracking. Eleven attack vectors across DNS, email, TLS, SSH, ports, CVEs, and web hygiene. Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
+
+Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok S Kamat](https://www.linkedin.com/in/ashokskamat/) of [CyberSecify](https://cybersecify.com) — the same tool we run in engagements and on our own infrastructure.
 
 ![OpenEASD scan in progress against nmap.org — 11 subdomains, 22 IPs, 6 ports, 3 critical findings already, all 14 tool steps tracked live](docs/screenshots/scan-detail-live.png)
 
