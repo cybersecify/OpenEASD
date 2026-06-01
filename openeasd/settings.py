@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "apps.alterx",
     "apps.dnsx",
     "apps.takeover_check",
+    "apps.cloud_assets",
     "apps.naabu",
     # Web tools — disabled for non-web focus (re-enable for full scan)
     "apps.httpx",
@@ -199,6 +200,7 @@ TOOL_NMAP = config("TOOL_NMAP", default="nmap")
 TOOL_NUCLEI = config("TOOL_NUCLEI", default="nuclei")
 TOOL_AMASS = config("TOOL_AMASS", default="amass")
 TOOL_ALTERX = config("TOOL_ALTERX", default="alterx")
+TOOL_CLOUD_ENUM = config("TOOL_CLOUD_ENUM", default="cloud_enum")
 
 # Logging
 LOGGING = {
