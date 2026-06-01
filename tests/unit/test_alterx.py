@@ -65,3 +65,57 @@ class TestCollect:
         collect(["api.example.com", "dev.example.com"])
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["input"] == "api.example.com\ndev.example.com"
+
+
+# ---------------------------------------------------------------------------
+# Analyzer
+# ---------------------------------------------------------------------------
+
+from apps.alterx.analyzer import analyze
+
+
+@pytest.mark.django_db
+class TestAnalyze:
+    def _session(self):
+        from apps.core.scans.models import ScanSession
+        return ScanSession.objects.create(domain="example.com", scan_type="full")
+
+    def test_empty_input_returns_empty(self):
+        sess = self._session()
+        assert analyze(sess, []) == []
+
+    def test_invalid_hostname_filtered(self):
+        sess = self._session()
+        objs = analyze(sess, ["not-a-domain", "also bad!", ""])
+        assert objs == []
+
+    def test_valid_permutation_builds_subdomain_object(self):
+        from apps.core.assets.models import Subdomain
+        sess = self._session()
+        objs = analyze(sess, ["api-dev.example.com"])
+        assert len(objs) == 1
+        assert isinstance(objs[0], Subdomain)
+        assert objs[0].subdomain == "api-dev.example.com"
+        assert objs[0].source == "alterx"
+        assert objs[0].domain == "example.com"
+
+    def test_deduplicates_within_raw_list(self):
+        sess = self._session()
+        objs = analyze(sess, ["api-dev.example.com", "api-dev.example.com"])
+        assert len(objs) == 1
+
+    def test_deduplicates_against_existing_session_subdomains(self):
+        from apps.core.assets.models import Subdomain
+        sess = self._session()
+        Subdomain.objects.create(
+            session=sess, domain="example.com",
+            subdomain="api-dev.example.com", source="subfinder",
+        )
+        objs = analyze(sess, ["api-dev.example.com", "api-staging.example.com"])
+        assert len(objs) == 1
+        assert objs[0].subdomain == "api-staging.example.com"
+
+    def test_lowercases_input(self):
+        sess = self._session()
+        objs = analyze(sess, ["API-DEV.Example.COM"])
+        assert objs[0].subdomain == "api-dev.example.com"
