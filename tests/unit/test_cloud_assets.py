@@ -1,0 +1,76 @@
+"""Unit tests for apps/cloud_assets — collector, analyzer, scanner."""
+
+import subprocess
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from apps.cloud_assets.collector import collect
+
+
+class TestCollect:
+    def test_empty_keywords_returns_empty(self):
+        assert collect([]) == []
+
+    @patch("apps.cloud_assets.collector.shutil.which", return_value=None)
+    def test_missing_binary_returns_empty(self, _):
+        assert collect(["example"]) == []
+
+    @patch("apps.cloud_assets.collector.shutil.which", return_value="/usr/bin/cloud_enum")
+    @patch("apps.cloud_assets.collector.subprocess.run")
+    def test_nonzero_exit_returns_empty(self, mock_run, _):
+        mock_run.return_value = MagicMock(returncode=1, stderr="error")
+        assert collect(["example"]) == []
+
+    @patch("apps.cloud_assets.collector.shutil.which", return_value="/usr/bin/cloud_enum")
+    @patch("apps.cloud_assets.collector.subprocess.run")
+    def test_timeout_returns_empty(self, mock_run, _):
+        mock_run.side_effect = subprocess.TimeoutExpired("cloud_enum", 1800)
+        assert collect(["example"]) == []
+
+    @patch("apps.cloud_assets.collector.shutil.which", return_value="/usr/bin/cloud_enum")
+    @patch("apps.cloud_assets.collector.subprocess.run", return_value=MagicMock(returncode=0, stderr=""))
+    @patch("apps.cloud_assets.collector.os.path.exists", return_value=False)
+    def test_missing_output_file_returns_empty(self, _exists, _run, _which):
+        assert collect(["example"]) == []
+
+    def test_happy_path_returns_aws_url(self, tmp_path):
+        keywords_file = tmp_path / "kw.txt"
+        output_file = tmp_path / "kw.txt.out"
+        output_file.write_text("https://s3.amazonaws.com/example-backup\n")
+
+        mock_ntf = MagicMock()
+        mock_ntf.__enter__ = lambda s: s
+        mock_ntf.__exit__ = MagicMock(return_value=False)
+        mock_ntf.name = str(keywords_file)
+
+        with patch("apps.cloud_assets.collector.shutil.which", return_value="/usr/bin/cloud_enum"), \
+             patch("apps.cloud_assets.collector.tempfile.NamedTemporaryFile", return_value=mock_ntf), \
+             patch("apps.cloud_assets.collector.subprocess.run", return_value=MagicMock(returncode=0, stderr="")):
+            result = collect(["example"])
+
+        assert result == ["https://s3.amazonaws.com/example-backup"]
+
+    def test_all_three_providers_returned(self, tmp_path):
+        keywords_file = tmp_path / "kw2.txt"
+        output_file = tmp_path / "kw2.txt.out"
+        output_file.write_text(
+            "https://s3.amazonaws.com/example-data\n"
+            "https://example.blob.core.windows.net/files\n"
+            "https://storage.googleapis.com/example-backup\n"
+        )
+
+        mock_ntf = MagicMock()
+        mock_ntf.__enter__ = lambda s: s
+        mock_ntf.__exit__ = MagicMock(return_value=False)
+        mock_ntf.name = str(keywords_file)
+
+        with patch("apps.cloud_assets.collector.shutil.which", return_value="/usr/bin/cloud_enum"), \
+             patch("apps.cloud_assets.collector.tempfile.NamedTemporaryFile", return_value=mock_ntf), \
+             patch("apps.cloud_assets.collector.subprocess.run", return_value=MagicMock(returncode=0, stderr="")):
+            result = collect(["example"])
+
+        assert len(result) == 3
+        assert "https://s3.amazonaws.com/example-data" in result
+        assert "https://example.blob.core.windows.net/files" in result
+        assert "https://storage.googleapis.com/example-backup" in result
