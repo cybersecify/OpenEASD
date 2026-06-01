@@ -1,0 +1,42 @@
+# CODEOWNERS — auto-requests review from the right maintainer per path.
+# Order matters: later rules override earlier ones.
+# Reference: https://docs.github.com/articles/about-code-owners
+
+# Default reviewer for anything not matched below.
+*                                @rathnakaragn
+
+# ---------------------------------------------------------------------------
+# Code surfaces (technical — Rathnakar)
+# ---------------------------------------------------------------------------
+/apps/                           @rathnakaragn
+/openeasd/                       @rathnakaragn
+/tests/                          @rathnakaragn
+/frontend/src/                   @rathnakaragn
+
+# CI and tool configuration
+/.github/workflows/              @rathnakaragn
+/Dockerfile                      @rathnakaragn
+/docker-entrypoint.sh            @rathnakaragn
+/pyproject.toml                  @rathnakaragn
+/uv.lock                         @rathnakaragn
+/frontend/package.json           @rathnakaragn
+/frontend/package-lock.json      @rathnakaragn
+
+# ---------------------------------------------------------------------------
+# Strategy + community surfaces (shared — Rathnakar + Ashok)
+# ---------------------------------------------------------------------------
+/.github/ISSUE_TEMPLATE/         @rathnakaragn @ashok-kamat
+/.github/PULL_REQUEST_TEMPLATE.md @rathnakaragn @ashok-kamat
+/.github/CODEOWNERS              @rathnakaragn @ashok-kamat
+/.github/FUNDING.yml             @rathnakaragn @ashok-kamat
+/.github/dependabot.yml          @rathnakaragn
+/docs/                           @rathnakaragn @ashok-kamat
+/README.md                       @rathnakaragn @ashok-kamat
+/CHANGELOG.md                    @rathnakaragn @ashok-kamat
+/CONTRIBUTING.md                 @rathnakaragn @ashok-kamat
+/CLAUDE.md                       @rathnakaragn @ashok-kamat
+/PRD.md                          @rathnakaragn @ashok-kamat
+/LICENSE                         @rathnakaragn @ashok-kamat
+
+# Security (technical-leaning — Rathnakar primary, Ashok co-reviewer)
+/SECURITY.md                     @rathnakaragn @ashok-kamat
