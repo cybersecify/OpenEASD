@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "apps.subfinder",
     "apps.amass",
     "apps.dnsx",
+    "apps.takeover_check",
     "apps.naabu",
     # Web tools — disabled for non-web focus (re-enable for full scan)
     "apps.httpx",

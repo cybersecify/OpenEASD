@@ -311,7 +311,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (14 registered tools)
+### Tool apps (15 registered tools)
 
 | App | Phase | produces_findings | Description |
 |---|---|---|---|
@@ -319,6 +319,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/subfinder/` | 2 | No | Passive subdomain enumeration |
 | `apps/amass/` | 2 | No | Active subdomain enumeration |
 | `apps/dnsx/` | 3 | No | DNS resolution, public IP filtering |
+| `apps/takeover_check/` | 3.5 | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
 | `apps/naabu/` | 4 | No | Port scanning (top 100 TCP) |
 | `apps/core/service_detection/` | 5 | No | nmap -sV enriches Port.service + is_web |
 | `apps/nmap/` | 7 | Yes | NSE vulners CVE scan (non-web ports); backport-aware CVE matching (`backports.json` registry) |
@@ -343,7 +344,7 @@ apps/<tool>/
 ## Scan pipeline
 
 All scans run through the **dynamic workflow system**. The default "Full Scan"
-workflow executes all 14 tools in phase order. Custom workflows can include
+workflow executes all 15 tools in phase order. Custom workflows can include
 any subset of tools.
 
 ```
@@ -351,6 +352,7 @@ Phase 1  domain_security    → Finding (DNS/email/RDAP)
 Phase 2  subfinder          → Subdomain (passive enumeration)
 Phase 2  amass              → Subdomain (active enumeration)
 Phase 3  dnsx               → IPAddress (public-only filter)
+Phase 3.5 takeover_check    → Finding (subzy — dangling DNS → unclaimed cloud)
 Phase 4  naabu              → Port (top 100 TCP scan)
 Phase 5  service_detection  → enriches Port.service + Port.is_web
 Phase 7  nmap               → Finding (CVEs on non-web ports, is_web=False)  ┐
