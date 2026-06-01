@@ -117,7 +117,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.12 python3.12-venv python3-pip \
-    curl ca-certificates \
+    curl ca-certificates git \
     nmap \
     # xhtml2pdf / pycairo / svglib build deps
     build-essential libffi-dev libssl-dev libxml2 libxslt1.1 \
