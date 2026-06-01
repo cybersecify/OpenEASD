@@ -74,3 +74,60 @@ class TestCollect:
         assert "https://s3.amazonaws.com/example-data" in result
         assert "https://example.blob.core.windows.net/files" in result
         assert "https://storage.googleapis.com/example-backup" in result
+
+
+# ---------------------------------------------------------------------------
+# Analyzer
+# ---------------------------------------------------------------------------
+
+from apps.cloud_assets.analyzer import analyze
+
+
+@pytest.mark.django_db
+class TestAnalyze:
+    def _session(self):
+        from apps.core.scans.models import ScanSession
+        return ScanSession.objects.create(domain="example.com", scan_type="full")
+
+    def test_empty_urls_returns_empty(self):
+        sess = self._session()
+        assert analyze(sess, []) == []
+
+    def test_aws_s3_virtual_hosted_url(self):
+        sess = self._session()
+        findings = analyze(sess, ["https://example-backup.s3.amazonaws.com"])
+        assert len(findings) == 1
+        f = findings[0]
+        assert f.source == "cloud_assets"
+        assert f.check_type == "open_cloud_bucket"
+        assert f.severity == "high"
+        assert f.extra["provider"] == "aws"
+        assert f.extra["bucket_name"] == "example-backup"
+        assert "example-backup" in f.title
+
+    def test_aws_s3_path_style_url(self):
+        sess = self._session()
+        findings = analyze(sess, ["https://s3.amazonaws.com/example-data"])
+        assert len(findings) == 1
+        assert findings[0].extra["provider"] == "aws"
+        assert findings[0].extra["bucket_name"] == "example-data"
+
+    def test_azure_blob_url(self):
+        sess = self._session()
+        findings = analyze(sess, ["https://myaccount.blob.core.windows.net/container"])
+        assert len(findings) == 1
+        assert findings[0].extra["provider"] == "azure"
+        assert findings[0].extra["bucket_name"] == "myaccount"
+
+    def test_gcp_storage_url(self):
+        sess = self._session()
+        findings = analyze(sess, ["https://storage.googleapis.com/example-bucket"])
+        assert len(findings) == 1
+        assert findings[0].extra["provider"] == "gcp"
+        assert findings[0].extra["bucket_name"] == "example-bucket"
+
+    def test_duplicate_urls_deduped(self):
+        sess = self._session()
+        url = "https://s3.amazonaws.com/example-data"
+        findings = analyze(sess, [url, url])
+        assert len(findings) == 1
