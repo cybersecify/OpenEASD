@@ -71,6 +71,16 @@ def _serialize_domain(domain) -> dict:
             "end_time": last_scan.end_time.isoformat() if last_scan.end_time else None,
             "total_findings": last_scan.total_findings,
         }
+    auth = getattr(domain, "authorization", None)
+    auth_data = None
+    if auth is not None:
+        auth_data = {
+            "auth_type": auth.auth_type,
+            "auth_type_display": auth.get_auth_type_display(),
+            "authorized_at": auth.authorized_at.isoformat(),
+            "authorized_by": auth.authorized_by,
+            "auth_reference": auth.auth_reference,
+        }
     return {
         "id": domain.id,
         "name": domain.name,
@@ -80,6 +90,7 @@ def _serialize_domain(domain) -> dict:
         "last_scan": last_scan_data,
         "findings_summary": getattr(domain, "findings_summary", {}),
         "monitoring_interval_hours": domain.monitoring_interval_hours,
+        "authorization": auth_data,
     }
 
 
@@ -93,7 +104,7 @@ class MonitoringIn(Schema):
 
 @router.get("/")
 def list_domains(request):
-    domains = list(Domain.objects.all())
+    domains = list(Domain.objects.select_related("authorization").all())
     _enrich_domains(domains)
     return [_serialize_domain(d) for d in domains]
 
