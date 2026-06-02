@@ -61,7 +61,7 @@ export default function ScanStartPage() {
                   <label className="block text-xs text-dim mb-1 font-medium">Domain *</label>
                   <select value={domain} onChange={e => setDomain(e.target.value)} required className="field">
                     <option value="">— select domain —</option>
-                    {domains.filter(d => d.is_active).map(d => (
+                    {domains.filter(d => d.is_active && d.authorization).map(d => (
                       <option key={d.id} value={d.name}>{d.name}</option>
                     ))}
                   </select>

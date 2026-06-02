@@ -196,7 +196,15 @@ export default function DomainsPage() {
                       </TableCell>
                       <TableCell className="px-4 py-3">
                         <span className="inline-flex gap-1.5 items-center flex-wrap">
-                          <Button variant="outline" size="sm" onClick={() => navigate(`/scans/start?domain=${d.name}`)}>Scan</Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => navigate(`/scans/start?domain=${d.name}`)}
+                            disabled={!d.authorization}
+                            title={!d.authorization ? 'Not authorized — add authorization in Django admin' : undefined}
+                          >
+                            Scan
+                          </Button>
                           <Button variant="outline" size="sm" onClick={() => navigate('/scans?domain=' + d.name)}>History</Button>
                           <Button
                             variant={d.monitoring_interval_hours ? 'default' : 'outline'}
