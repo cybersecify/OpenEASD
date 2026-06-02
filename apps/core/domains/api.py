@@ -126,7 +126,7 @@ def create_domain(request, data: DomainIn):
 
 @router.post("/{pk}/toggle/")
 def toggle_domain(request, pk: int):
-    domain = get_object_or_404(Domain, pk=pk)
+    domain = get_object_or_404(Domain.objects.select_related("authorization"), pk=pk)
     domain.is_active = not domain.is_active
     domain.save()
     from apps.core.scheduler.scheduler import sync_domain_monitoring_jobs
@@ -160,7 +160,7 @@ def delete_domain(request, pk: int):
 @router.post("/{pk}/monitoring/")
 def set_monitoring(request, pk: int, data: MonitoringIn):
     VALID_INTERVALS = {6, 12, 24, 48, 168}
-    domain = get_object_or_404(Domain, pk=pk)
+    domain = get_object_or_404(Domain.objects.select_related("authorization"), pk=pk)
 
     if data.interval_hours is not None and data.interval_hours not in VALID_INTERVALS:
         raise HttpError(400, f"interval_hours must be one of {sorted(VALID_INTERVALS)} or null")
