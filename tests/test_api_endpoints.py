@@ -335,6 +335,14 @@ class TestScansList:
 class TestScansStart:
     def test_start_scan_now(self, auth_client, domain):
         from unittest.mock import patch
+        import datetime
+        from apps.core.domains.models import DomainAuthorization
+        DomainAuthorization.objects.create(
+            domain=domain,
+            auth_type="owner",
+            authorized_at=datetime.date(2026, 1, 15),
+            authorized_by="Alice Smith",
+        )
         fake_session = type("S", (), {"uuid": "test-uuid-1234", "id": 1})()
         with patch("apps.core.scans.tasks.run_scan_task"), \
              patch("apps.core.scans.pipeline.create_scan_session", return_value=fake_session):

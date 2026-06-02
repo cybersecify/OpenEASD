@@ -100,3 +100,47 @@ class TestDomainSerializationAuthorization:
         domains = resp.json()
         assert len(domains) == 1
         assert domains[0]["authorization"] is None
+
+
+# ---------------------------------------------------------------------------
+# Scan start authorization gate tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestScanStartAuthorizationGate:
+    def test_unauthorized_domain_returns_403(self, auth_client, domain):
+        # domain fixture has no DomainAuthorization — scan must be rejected
+        resp = post_json(auth_client, "/api/scans/start/", {
+            "domain": "example.com",
+            "schedule_type": "now",
+        })
+        assert resp.status_code == 403
+        assert resp.json()["error"]["message"] == "Domain is not authorized for scanning"
+
+    def test_authorized_domain_starts_scan(self, auth_client, domain):
+        from apps.core.domains.models import DomainAuthorization
+        from unittest.mock import patch
+        DomainAuthorization.objects.create(
+            domain=domain,
+            auth_type="owner",
+            authorized_at=datetime.date(2026, 1, 15),
+            authorized_by="Alice Smith",
+        )
+        fake_session = type("S", (), {"uuid": "test-uuid-9999", "id": 99})()
+        with patch("apps.core.scans.tasks.run_scan_task"), \
+             patch("apps.core.scans.pipeline.create_scan_session", return_value=fake_session):
+            resp = post_json(auth_client, "/api/scans/start/", {
+                "domain": "example.com",
+                "schedule_type": "now",
+            })
+        assert resp.status_code == 201
+        assert resp.json()["uuid"] == "test-uuid-9999"
+
+    def test_unauthorized_scheduled_scan_returns_403(self, auth_client, domain):
+        # Gate applies to scheduled scans too
+        resp = post_json(auth_client, "/api/scans/start/", {
+            "domain": "example.com",
+            "schedule_type": "once",
+            "scheduled_at": "2030-01-01T03:00:00",
+        })
+        assert resp.status_code == 403

@@ -273,6 +273,10 @@ def start_scan(request, data: ScanStartRequest):
     if not _VALID_HOSTNAME.match(domain):
         raise HttpError(400, "Invalid domain name")
 
+    from apps.core.domains.models import DomainAuthorization
+    if not DomainAuthorization.objects.filter(domain__name=domain).exists():
+        raise HttpError(403, "Domain is not authorized for scanning")
+
     if data.schedule_type == "now":
         from apps.core.scans.pipeline import create_scan_session
         from apps.core.scans.tasks import run_scan_task
