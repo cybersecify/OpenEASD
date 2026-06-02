@@ -18,13 +18,18 @@ setup:
 
 ## ── Development servers ─────────────────────────────────────────────────────
 
-## Run Django + Vite dev server together (Ctrl-C stops both)
+## Run Django + worker + Vite dev server together (Ctrl-C stops all)
 ## React served by Vite at http://localhost:5173 (proxies /api/ to Django)
 dev:
 	@trap 'kill 0' SIGINT SIGTERM EXIT; \
 	(cd frontend && npm run dev) & \
 	(uv run manage.py runserver $(PORT)) & \
+	(uv run manage.py qcluster) & \
 	wait
+
+## Run only the background task worker (required for scans to execute)
+worker:
+	uv run manage.py qcluster
 
 ## Run only the Django dev server
 backend:
