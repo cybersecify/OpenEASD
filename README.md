@@ -2,6 +2,7 @@
 
 [![GitHub Stars](https://img.shields.io/github/stars/cybersecify/OpenEASD?style=social)](https://github.com/cybersecify/OpenEASD/stargazers)
 [![CI](https://github.com/cybersecify/OpenEASD/actions/workflows/ci.yml/badge.svg)](https://github.com/cybersecify/OpenEASD/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/cybersecify/OpenEASD/actions/workflows/codeql.yml/badge.svg)](https://github.com/cybersecify/OpenEASD/actions/workflows/codeql.yml)
 [![Docker Image](https://img.shields.io/badge/ghcr.io%2Fcybersecify%2Fopeneasd-latest-2496ed?logo=docker&logoColor=white)](https://github.com/cybersecify/OpenEASD/pkgs/container/openeasd)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -27,6 +28,96 @@ Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok 
 - **Enterprise SOCs** — no RBAC, SAML, multi-tenant, or Postgres (yet)
 - **Pen testers running one-shot deep enumeration of a single target** — for that, [Tib3rius/AutoRecon](https://github.com/Tib3rius/AutoRecon) and similar CLI tools are better fits. OpenEASD optimises for continuous monitoring across multiple domains over time, not single-target deep dives
 - **Anyone needing to scan domains they don't own or aren't authorised to test** — OpenEASD is intentionally not a "scan-anyone" hosted service. Running it implies you own or have written authorisation for your targets
+
+## Supply chain transparency
+
+OpenEASD is a security tool, so it's reasonable to ask whether the tool
+itself is trustworthy. Here's what we do — and don't do — to make that
+auditable.
+
+### What's in the Docker image
+
+Every external tool we ship is downloaded inside the Docker build from
+its maintainer's official source. No repackaging, no mirroring:
+
+| Tool | Upstream source |
+|---|---|
+| `subfinder`, `dnsx`, `naabu`, `httpx`, `nuclei`, `alterx`, `katana` | [github.com/projectdiscovery](https://github.com/projectdiscovery) (signed releases) |
+| `amass` | [github.com/owasp-amass/amass](https://github.com/owasp-amass/amass) (OWASP) |
+| `subzy` | [github.com/PentestPad/subzy](https://github.com/PentestPad/subzy) (Go modules) |
+| `gau` | [github.com/lc/gau](https://github.com/lc/gau) (Go modules) |
+| `waybackurls` | [github.com/tomnomnom/waybackurls](https://github.com/tomnomnom/waybackurls) (Go modules) |
+| `cloud_enum` | [github.com/initstring/cloud_enum](https://github.com/initstring/cloud_enum) |
+| `nmap` | `apt-get install nmap` (Ubuntu 24.04 official) |
+
+Verbatim install commands are in the [Dockerfile](Dockerfile) — every
+version is pinned. To verify a binary, pull the same version directly
+from the upstream URL; it should byte-match what ships in the image.
+
+### How the image is built
+
+Every push to `main` and every `vX.Y` tag triggers
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml), which builds
+`linux/amd64` + `linux/arm64` images and publishes to
+`ghcr.io/cybersecify/openeasd`. The build is reproducible from the
+public source — the published image carries:
+
+- **SBOM** (Software Bill of Materials, SPDX format) — every package in
+  the image, retrievable via `docker buildx imagetools inspect`
+- **SLSA provenance attestation** — cryptographic proof that the image
+  was built by this repo's GitHub Actions, not swapped or rebuilt
+  elsewhere
+
+```bash
+docker buildx imagetools inspect ghcr.io/cybersecify/openeasd:v0.7.2 --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/cybersecify/openeasd:v0.7.2 --format '{{ json .Provenance }}'
+```
+
+### What we don't do
+
+- **No telemetry.** OpenEASD doesn't phone home, doesn't check for
+  updates, doesn't send your scan results anywhere.
+- **No auto-update.** The version you pulled is the version that runs.
+- **No external callbacks during scans** — the only network traffic is
+  the scan itself, originating from the tools shipped in the image.
+
+Block all egress at your firewall (except what's needed to reach scan
+targets) and OpenEASD continues to work.
+
+### Continuous security checks
+
+| Check | Tool | Runs on |
+|---|---|---|
+| Python SAST | `bandit` | Every push + PR |
+| Python CVE scan | `pip-audit` | Every push + PR |
+| Semantic security analysis | CodeQL (Python + JS/TS) | Every push + PR + weekly |
+
+GitHub Actions are pinned to commit SHAs (not floating tags) so a
+compromised action update can't silently rotate into the build.
+Dependabot keeps them current on a weekly cadence.
+
+Open security alerts are public on the
+[Security tab](../../security) — we don't hide gaps.
+
+### Want to verify? Build from source.
+
+If you don't trust the published Docker image, build it yourself —
+every step is in the [Dockerfile](Dockerfile):
+
+```bash
+git clone https://github.com/cybersecify/OpenEASD
+cd OpenEASD
+docker build -t openeasd .
+```
+
+### Known gap (named honestly)
+
+- **Docker images are not yet cosign-signed.** SBOM + SLSA provenance
+  in the manifest covers the "what's in it + who built it" question;
+  cosign would add a separate, externally-verifiable signature. On the
+  roadmap.
+
+For vulnerability reporting, see [SECURITY.md](SECURITY.md).
 
 ## Quick start
 
