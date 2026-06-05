@@ -59,6 +59,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 - **Reports** — CSV and PDF export
 - **Alerts** — Slack and Teams webhooks with configurable severity threshold; test button and alert history in the UI
 - **Scheduling** — One-time, recurring, and daily automated scans
+- **Domain authorization enforcement** — Each domain requires a recorded authorization (owner / written consent / bug bounty) before scans can start. Managed in Django admin; React blocks the Scan button and the API enforces it server-side
 - **JWT auth** — Stateless Bearer token authentication with refresh token rotation
 - **Forced password change** — Default `admin/admin` password must be changed on first login
 

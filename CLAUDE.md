@@ -115,18 +115,25 @@ git describe --tags --abbrev=0
 - **shadcn UI primitives** (`src/components/ui/`): `Button`, `Card`, `Table`, `Badge`, `AlertDialog`, `Pagination`, `Sonner`
 - **Toast notifications:** `import { toast } from '../components/Notification.jsx'` → `toast.success()` / `toast.error()`; `<Toaster>` mounted in `main.jsx`
 - Dark theme throughout: bg `#0d1117`, card `#161b22`, border `#30363d`, accent `#30c074`; mapped to shadcn CSS vars (`--background`, `--card`, `--border`, `--primary`)
-- **Dev:** Vite proxy forwards `/api/` → Django on port 8000 (no CORS config needed)
+- **Dev:** Vite proxy forwards `/api/` → Django on port **8001** (no CORS config needed)
 - **Prod:** `npm run build` → `frontend/dist/` → served by Django via WhiteNoise
 - **`/change-password` route** — forced redirect after login if `must_change_password=true`; clears flag on success
 
 ### Frontend dev setup
 ```bash
-# Terminal 1 — Django
-uv run manage.py runserver
+# Quickest: starts Django (:8001) + Vite dev server + qcluster worker together
+make dev
 
-# Terminal 2 — Vite dev server (proxies /api/ to Django)
+# Or manually in three terminals:
+# Terminal 1 — Django
+uv run manage.py runserver 8001
+
+# Terminal 2 — Vite dev server (proxies /api/ to Django at :8001)
 cd frontend && npm install && npm run dev
 # App runs at http://localhost:5173
+
+# Terminal 3 — Background worker (required for scans to execute)
+uv run manage.py qcluster
 ```
 
 ### Frontend rules

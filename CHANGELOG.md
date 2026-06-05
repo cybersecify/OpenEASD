@@ -9,6 +9,22 @@ commits to recover the reasoning.
 
 ---
 
+## [v0.8.0] — 2026-06-05
+
+### Added
+
+- **Domain authorization enforcement** — New `DomainAuthorization` model (OneToOne to `Domain`) records who authorized a domain for scanning, when, how (Domain Owner / Written Consent / Bug Bounty Program), and an optional reference document. Managed entirely in Django admin as a `StackedInline` inside the Domain change page. The domains list gains an **Authorization** column and a **By auth type** sidebar filter so unauthorized domains are immediately visible. The React **Scan** button is disabled for unauthorized domains with a tooltip explaining where to fix it. `POST /api/scans/start/` enforces the gate server-side (HTTP 403 `DOMAIN_NOT_AUTHORIZED`) as the authoritative check — React gating is UX-only. **Why:** OpenEASD's own README states it should only be used against domains the operator owns or has written authorization to test. Without an enforcement layer, there was no mechanism to ensure that constraint — the authorization model closes that gap and creates an auditable record of consent for each domain in the pipeline.
+
+- **`Makefile`** — New project-root `Makefile` with targets: `make setup` (uv sync + migrate + npm install), `make dev` (Django on :8001 + Vite HMR dev server + `qcluster` worker — all three required for scans to execute), `make backend` / `make frontend` / `make worker` (individual processes), `make test` / `make test-all`, `make lint` / `make format`, `make shell`, `make createsuperuser`, `make clean`. **Why:** the project had no standardised dev-workflow entry point — contributors had to read CLAUDE.md and manually start three processes in separate terminals.
+
+### Fixed
+
+- **Vite dev server config** — `vite.config.js` `base` was hardcoded to `'/static/'`, breaking the Vite dev server (assets 404'd). Now conditional: `'/static/'` for production builds, `'/'` for `vite dev`. Proxy target updated to `:8001` to match the new Makefile port, allowing both projects to run simultaneously in local dev.
+
+- **Missing `qcluster` in dev target** — The initial `make dev` only started Django + Vite. Scans queued but never executed because the Django-Q background worker (`qcluster`) was not running. Added `qcluster` as the third process in `make dev`.
+
+---
+
 ## [v0.7.1] — 2026-06-02
 
 ### Added
