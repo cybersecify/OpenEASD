@@ -37,17 +37,29 @@ def _parse_min_severity(request):
 
 
 def _report_auth_required(view_func):
-    """Accept Django session auth OR JWT access token via ?token= query param.
+    """Accept auth in this order:
 
-    The ?token= mechanism is intentional for direct PDF/CSV download links where
-    the browser cannot set an Authorization header. Tokens appear in server access
-    logs — acceptable for a single-user local deployment.
+    1. Django session (request.user already authenticated)
+    2. ``Authorization: Bearer <token>`` header — preferred; React SPA uses
+       this via fetch + Blob for downloads
+    3. ``?token=<token>`` query param — DEPRECATED, retained for backward
+       compatibility only and slated for removal in a future release
+
+    The ``?token=`` path leaks JWTs into browser history, ``Referer`` headers,
+    server access logs, and proxy caches. The frontend no longer generates
+    such URLs; only manually constructed links exercise this path.
     """
     @functools.wraps(view_func)
     def wrapper(request, *args, **kwargs):
         if request.user.is_authenticated:
             return view_func(request, *args, **kwargs)
-        token = request.GET.get('token', '')
+
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            token = auth_header[7:]
+        else:
+            token = request.GET.get('token', '')
+
         if token:
             try:
                 from ninja_jwt.tokens import AccessToken
