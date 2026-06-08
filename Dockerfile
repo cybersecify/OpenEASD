@@ -44,6 +44,7 @@ ARG HTTPX_VERSION=1.6.5
 ARG NUCLEI_VERSION=3.2.9
 ARG AMASS_VERSION=4.2.0
 ARG ALTERX_VERSION=0.0.4
+ARG KATANA_VERSION=1.6.1
 
 RUN curl -fsSL "https://github.com/projectdiscovery/subfinder/releases/download/v${SUBFINDER_VERSION}/subfinder_${SUBFINDER_VERSION}_linux_${TARGETARCH}.zip" \
     -o subfinder.zip && unzip subfinder.zip subfinder && rm subfinder.zip
@@ -63,10 +64,13 @@ RUN curl -fsSL "https://github.com/projectdiscovery/nuclei/releases/download/v${
 RUN curl -fsSL "https://github.com/projectdiscovery/alterx/releases/download/v${ALTERX_VERSION}/alterx_${ALTERX_VERSION}_linux_${TARGETARCH}.zip" \
     -o alterx.zip && unzip alterx.zip alterx && rm alterx.zip
 
+RUN curl -fsSL "https://github.com/projectdiscovery/katana/releases/download/v${KATANA_VERSION}/katana_${KATANA_VERSION}_linux_${TARGETARCH}.zip" \
+    -o katana.zip && unzip katana.zip katana && rm katana.zip
+
 RUN curl -fsSL "https://github.com/owasp-amass/amass/releases/download/v${AMASS_VERSION}/amass_Linux_${TARGETARCH}.zip" \
     -o amass.zip && unzip amass.zip && mv amass_Linux_${TARGETARCH}/amass . && rm -rf amass.zip amass_Linux_${TARGETARCH}
 
-RUN chmod +x subfinder dnsx naabu httpx nuclei amass alterx
+RUN chmod +x subfinder dnsx naabu httpx nuclei amass alterx katana
 
 # ---------------------------------------------------------------------------
 # Stage 2b: build subzy from source (no prebuilt binaries available upstream).
