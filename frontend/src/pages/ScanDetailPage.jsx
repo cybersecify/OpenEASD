@@ -18,6 +18,37 @@ import { auth } from '../auth.js';
 import { useFetch } from '../hooks/useFetch.js';
 import { usePolling } from '../hooks/usePolling.js';
 
+// Download report via authenticated fetch + Blob. The JWT travels in the
+// Authorization header — never in the URL — so it doesn't leak into browser
+// history, Referer, or server access logs.
+async function downloadReport(uuid, kind, minSev) {
+  const token = auth.getToken();
+  const url = `/reports/${uuid}/${kind}/?min_severity=${encodeURIComponent(minSev)}`;
+  try {
+    const res = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      throw new Error(`Server returned ${res.status}`);
+    }
+    const blob = await res.blob();
+    const dispo = res.headers.get('Content-Disposition') || '';
+    const match = dispo.match(/filename="?([^";]+)"?/);
+    const filename = match ? match[1] : `report.${kind}`;
+
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  } catch (e) {
+    toast.error(`Failed to download ${kind.toUpperCase()}: ${e.message}`);
+  }
+}
+
 function SubScanDialog({ uuid, domain, onClose, onStarted }) {
   const [tools, setTools] = useState([]);
   const [selected, setSelected] = useState(new Set());
@@ -243,12 +274,8 @@ export default function ScanDetailPage() {
                 <option value="high">High+</option>
                 <option value="critical">Critical only</option>
               </select>
-              <Button variant="outline" size="sm" asChild>
-                <a href={`/reports/${uuid}/csv/?token=${auth.getToken()}&min_severity=${minSev}`} download>CSV</a>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <a href={`/reports/${uuid}/pdf/?token=${auth.getToken()}&min_severity=${minSev}`} download>PDF</a>
-              </Button>
+              <Button variant="outline" size="sm" onClick={() => downloadReport(uuid, 'csv', minSev)}>CSV</Button>
+              <Button variant="outline" size="sm" onClick={() => downloadReport(uuid, 'pdf', minSev)}>PDF</Button>
             </>)}
             <ConfirmButton label="Delete" onConfirm={handleDelete} disabled={busy} />
           </span>
