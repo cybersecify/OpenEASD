@@ -8,7 +8,7 @@
 
 **See what attackers see. Use it before they do.**
 
-Use it as a **red teamer** to map external surface fast on a target you're engaged with. Use it as a **defender** to see what's leaking out of your own infrastructure — subdomains, exposed ports, dangling CNAMEs, missing TLS, known CVEs — without paying $500-5000/mo for a commercial EASM platform.
+Use it as a **red teamer** to map external surface fast on targets you're authorised to test. Use it as a **defender** to see what's leaking out of your own infrastructure — subdomains, exposed ports, dangling CNAMEs, missing TLS, known CVEs — without paying $500-5000/mo for a commercial EASM platform.
 
 OpenEASD wraps the open-source recon tools security teams already use — `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `naabu`, `httpx`, `gau`, `waybackurls`, `nuclei`, `nmap` — behind a single web UI with scheduling, alerts, and findings tracking. Seventeen tools across DNS, email, TLS, SSH, ports, CVEs, subdomain takeover, historical URLs, and web hygiene. Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
 
