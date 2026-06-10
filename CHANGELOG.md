@@ -9,7 +9,7 @@ commits to recover the reasoning.
 
 ---
 
-## [v0.8.0] — 2026-06-05
+## [v0.8.0] — 2026-06-10
 
 ### Added
 
@@ -17,11 +17,29 @@ commits to recover the reasoning.
 
 - **`Makefile`** — New project-root `Makefile` with targets: `make setup` (uv sync + migrate + npm install), `make dev` (Django on :8001 + Vite HMR dev server + `qcluster` worker — all three required for scans to execute), `make backend` / `make frontend` / `make worker` (individual processes), `make test` / `make test-all`, `make lint` / `make format`, `make shell`, `make createsuperuser`, `make clean`. **Why:** the project had no standardised dev-workflow entry point — contributors had to read CLAUDE.md and manually start three processes in separate terminals.
 
+- **SBOM + SLSA provenance in published images** (#115) — `docker/build-push-action` now invoked with `sbom: true` and `provenance: mode=max`. Every published image carries a Software Bill of Materials (SPDX format) and a build attestation baked into the manifest, retrievable via `docker buildx imagetools inspect`. **Why:** OpenEASD is a security tool — reviewers reasonably ask whether the tool itself is trustworthy. SBOM + provenance are the standard cryptographic answers; without them the trust story relied on "read the Dockerfile."
+
+- **GitHub Actions pinned to commit SHAs** (#115) — every `uses:` reference in `ci.yml` and `codeql.yml` pinned to a full commit SHA with the version in a trailing comment. Dependabot's `github-actions` ecosystem keeps the pins current on a weekly cadence. **Why:** closes the supply-chain attack vector where a compromised Action could silently rotate malicious code into the build via a re-tag of `v4` (the well-known `tj-actions/changed-files` attack pattern).
+
+- **`Supply chain transparency` section in README** (#115) — discoverable trust narrative covering: what's in the image (with cited upstream sources), how the image is built (CI + SBOM + provenance), what we don't do (no telemetry, no callbacks, no auto-update), continuous security checks (CodeQL + bandit + pip-audit), and build-from-source instructions. Names the one remaining gap honestly (cosign signing — roadmap).
+
+- **CodeQL badge** in README header alongside CI / Docker / License badges. **Why:** signals continuous semantic security analysis at a glance.
+
 ### Fixed
 
 - **Vite dev server config** — `vite.config.js` `base` was hardcoded to `'/static/'`, breaking the Vite dev server (assets 404'd). Now conditional: `'/static/'` for production builds, `'/'` for `vite dev`. Proxy target updated to `:8001` to match the new Makefile port, allowing both projects to run simultaneously in local dev.
 
 - **Missing `qcluster` in dev target** — The initial `make dev` only started Django + Vite. Scans queued but never executed because the Django-Q background worker (`qcluster`) was not running. Added `qcluster` as the third process in `make dev`.
+
+- **JWT access token no longer leaks in report download URLs** (#116) — CSV/PDF download buttons on the scan detail page used to embed the access token in the URL query string (`/reports/<uuid>/csv/?token=<jwt>&...`). Tokens leaked into browser history, `Referer` headers, server access logs, and proxy caches. The frontend now downloads reports via authenticated `fetch()` + Blob, sending the token in the `Authorization: Bearer` header — never in any URL. The backend gained Bearer-header support alongside the existing session and (now-deprecated) `?token=` paths; the query-param path is documented as removal-target for a future release. **Why:** the existing pattern violated OAuth 2.0 RFC 6750 §2.3 ("URI Query Parameter is NOT RECOMMENDED ... due to the security deficiencies"). Flagged during pre-launch audit.
+
+- **`katana` now installed in the runtime Docker image** (#115) — v0.7.1's `tools_healthcheck` flagged `katana: binary not found` because the Dockerfile install line was missing, even though `apps/katana/` was registered as a Phase 10 tool. Closes the "17 advertised tools, 16 actually working in Docker" gap.
+
+- **README hero contradicted its own audience section** (#118) — Hero pitched "red teamer ... on a target you're engaged with" — contractor-doing-engagement framing — while the audience section excludes "pen testers running one-shot deep enumeration of a single target." Reframed to "targets you're authorised to test" so the hero matches the audience cards.
+
+- **pyjwt 2.12.1 → 2.13.0** (#115, #116) — clears 4 advisories disclosed 2026-06-04: PYSEC-2026-175, -177, -178, -179. pyjwt is transitive via `ninja-jwt`. Without this bump every published Docker image carried four known CVEs in its JWT auth path.
+
+- **django 5.2.14 → 5.2.15 and pip 26.1 → 26.1.2** (#116) — clears 6 advisories disclosed 2026-06-08: PYSEC-2026-197, -198, -199, -200, -201 (django) and PYSEC-2026-196 (pip).
 
 ---
 
