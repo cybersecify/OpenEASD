@@ -19,7 +19,7 @@ requests>=2.31
 urllib3>=2.0
 aiohttp>=3.9
 aiofiles>=25.1.0
-httpx>=0.25
+httpx>=0.28.1
 
 # SSL/TLS
 cryptography>=42.0
