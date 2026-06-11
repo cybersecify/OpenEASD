@@ -37,7 +37,7 @@ slack-sdk>=3.42.0
 pandas>=3.0.3
 numpy>=2.4.6
 lxml>=4.9
-beautifulsoup4>=4.12
+beautifulsoup4>=4.15.0
 
 # Utilities
 python-dateutil>=2.9.0.post0
