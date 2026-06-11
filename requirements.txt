@@ -11,7 +11,7 @@ django-apscheduler>=0.7.0
 # Configuration
 python-decouple>=3.8
 pyyaml>=6.0
-python-dotenv>=1.0
+python-dotenv>=1.2.2
 
 # DNS and network
 dnspython>=2.4
