@@ -356,7 +356,7 @@ apps/<tool>/
 ## Scan pipeline
 
 All scans run through the **dynamic workflow system**. The default "Full Scan"
-workflow executes all 17 tools in phase order. Custom workflows can include
+workflow executes all 18 tools in phase order. Custom workflows can include
 any subset of tools.
 
 ```
