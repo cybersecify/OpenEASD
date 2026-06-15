@@ -1,0 +1,39 @@
+name: Refresh Backports
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Every Sunday at midnight
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Refresh backports data
+        run: |
+          # If Django is needed, you could run: python manage.py refresh_backports
+          # But for simplicity, we run the script directly:
+          python apps/nmap/management/commands/refresh_backports.py
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "Update apps/nmap/backports.json from upstream security feeds"
+          title: "Automated `backports.json` Refresh"
+          body: |
+            This PR automatically updates `apps/nmap/backports.json` by pulling the latest data from:
+            - Ubuntu USN feed
+            - Debian Security Tracker JSON
+
+            Triggered by `.github/workflows/refresh-backports.yml`.
+          branch: automated-backports-refresh
+          base: main
+          labels: "automated pr, security"
