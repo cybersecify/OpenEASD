@@ -58,3 +58,29 @@ def test_fetch_debian_backports(mock_urlopen):
 
     assert "CVE-2024-5678" in result
     assert result["CVE-2024-5678"]["openssh"] == "1:9.2p1-2+deb12u3"
+
+@patch('apps.nmap.management.commands.refresh_backports.fetch_ubuntu_backports')
+@patch('apps.nmap.management.commands.refresh_backports.fetch_debian_backports')
+@patch('builtins.open')
+def test_do_refresh_schema_merge(mock_open, mock_debian, mock_ubuntu):
+    mock_ubuntu.return_value = {"CVE-UBUNTU": {"pkg": "1.0"}}
+    mock_debian.return_value = {"CVE-DEBIAN": {"pkg": "2.0"}}
+    
+    # Import the command locally to avoid executing it on import if __main__ is not protected
+    from apps.nmap.management.commands.refresh_backports import do_refresh
+    
+    do_refresh()
+    
+    mock_ubuntu.assert_called_once()
+    mock_debian.assert_called_once()
+    mock_open.assert_called_once()
+    
+    # Extract the JSON string that was written
+    handle = mock_open.return_value.__enter__.return_value
+    written_data = "".join(call.args[0] for call in handle.write.call_args_list)
+    parsed_json = json.loads(written_data)
+    
+    assert "ubuntu" in parsed_json
+    assert "debian" in parsed_json
+    assert parsed_json["ubuntu"]["CVE-UBUNTU"]["pkg"] == "1.0"
+    assert parsed_json["debian"]["CVE-DEBIAN"]["pkg"] == "2.0"

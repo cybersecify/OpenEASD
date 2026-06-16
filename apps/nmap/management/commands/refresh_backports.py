@@ -33,7 +33,7 @@ def do_refresh():
     
     print(f"Writing to {output_path}...")
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(combined, f, indent=2)
+        json.dump(combined, f, indent=2, sort_keys=True)
     
     print("Done!")
 

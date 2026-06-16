@@ -17,11 +17,21 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh && echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Run tests
+        env:
+          SECRET_KEY: "ci-test-secret-key-not-used-in-prod"
+          DEBUG: "True"
+        run: uv run pytest tests/test_backports_refresh.py -q
+
       - name: Refresh backports data
         run: |
-          # If Django is needed, you could run: python manage.py refresh_backports
-          # But for simplicity, we run the script directly:
-          python apps/nmap/management/commands/refresh_backports.py
+          uv run python apps/nmap/management/commands/refresh_backports.py
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
