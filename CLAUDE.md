@@ -11,7 +11,18 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 - `feat/` — new features
 - `fix/` — everything else (bugs, deps, config, refactor, docs, cleanup)
 
-**Commit message prefixes** match the branch: `feat:` or `fix:`.
+**Commit message prefixes** — use the most specific one that fits:
+
+| Prefix | When to use |
+|---|---|
+| `feat:` | New user-facing feature |
+| `fix:` | Bug fix |
+| `docs:` | Documentation only (README, CHANGELOG, CONTRIBUTING, CLAUDE.md) |
+| `ci:` | GitHub Actions, CI config, Dockerfile, dependabot |
+| `chore:` | Deps, tooling, config — no behavior change |
+| `test:` | Tests only — no production code change |
+
+Branch prefix maps to commit prefix: `feat/` → `feat:`, `fix/` → any of the above.
 
 ### Steps for every task
 
