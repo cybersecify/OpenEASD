@@ -8,8 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { toast } from '../components/Notification.jsx';
 import { useNavigate } from 'react-router-dom';
-import { apiPost } from '../api/client.js';
-import { useFetch } from '../hooks/useFetch.js';
+import { apiPost, apiGet } from '../api/client.js';
+import { useQuery } from '@tanstack/react-query';
 
 const THRESHOLD_OPTIONS = [
   { label: 'Critical only',    value: 'critical' },
@@ -142,9 +142,14 @@ function statusVariant(status) {
 export default function NotificationsPage() {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
-  const { data: config, loading: configLoading, refetch: refetchConfig } = useFetch('/notifications/config/');
-  const { data: alerts, loading: alertsLoading, error: alertsError, refetch: refetchAlerts } =
-    useFetch(`/notifications/alerts/?page=${page}&page_size=25`);
+  const { data: config, isLoading: configLoading, refetch: refetchConfig } = useQuery({
+    queryKey: ['/notifications/config/'],
+    queryFn: () => apiGet('/notifications/config/'),
+  });
+  const { data: alerts, isLoading: alertsLoading, error: alertsError, refetch: refetchAlerts } = useQuery({
+    queryKey: ['/notifications/alerts/', page],
+    queryFn: () => apiGet(`/notifications/alerts/?page=${page}&page_size=25`),
+  });
 
   const totalPages = alerts ? Math.ceil(alerts.count / alerts.page_size) : 1;
 

@@ -9,8 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { toast } from '../components/Notification.jsx';
 import { useNavigate } from 'react-router-dom';
-import { apiPost } from '../api/client.js';
-import { useFetch } from '../hooks/useFetch.js';
+import { apiPost, apiGet } from '../api/client.js';
+import { useQuery } from '@tanstack/react-query';
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -25,12 +25,18 @@ export default function ScansPage() {
   const [page,    setPage]    = useState(1);
   const [busyIds, setBusyIds] = useState(new Set());
 
-  const { data: domainsData } = useFetch('/domains/');
-  const { data: scansData, pagination, loading, error, refetch } = useFetch(
-    `/scans/?domain=${domain}&status=${status}&page=${page}`,
-    [domain, status, page],
-  );
-  const { data: scheduledData, refetch: refetchScheduled } = useFetch('/scheduled/');
+  const { data: domainsData } = useQuery({
+    queryKey: ['/domains/'],
+    queryFn: () => apiGet('/domains/'),
+  });
+  const { data: scansData, isLoading: loading, error, refetch } = useQuery({
+    queryKey: ['/scans/', domain, status, page],
+    queryFn: () => apiGet(`/scans/?domain=${domain}&status=${status}&page=${page}`),
+  });
+  const { data: scheduledData, refetch: refetchScheduled } = useQuery({
+    queryKey: ['/scheduled/'],
+    queryFn: () => apiGet('/scheduled/'),
+  });
 
   const scans     = scansData?.results ?? [];
   const scheduled = scheduledData || [];
@@ -127,9 +133,9 @@ export default function ScansPage() {
                     </TableBody>
                   </Table>
                 </div>
-                {pagination && (
+                {scansData?.total_pages > 1 && (
                   <div className="px-4 py-3 border-t border-border">
-                    <Pagination page={pagination.page} totalPages={pagination.total_pages} onPage={setPage} />
+                    <Pagination page={page} totalPages={scansData.total_pages} onPage={setPage} />
                   </div>
                 )}
               </>

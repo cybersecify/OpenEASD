@@ -6,8 +6,8 @@ import { Pagination } from '../components/Pagination.jsx';
 import { Card, CardContent } from '../components/ui/card.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { toast } from '../components/Notification.jsx';
-import { apiPost } from '../api/client.js';
-import { useFetch } from '../hooks/useFetch.js';
+import { apiPost, apiGet } from '../api/client.js';
+import { useQuery } from '@tanstack/react-query';
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'info'];
 const STATUSES   = ['open', 'acknowledged', 'in_progress', 'resolved', 'false_positive'];
@@ -52,11 +52,14 @@ export default function FindingsPage() {
   const [domain,   setDomain]   = useState(params.get('domain') || '');
   const [page,     setPage]     = useState(1);
 
-  const { data: domainsData } = useFetch('/domains/');
-  const { data, loading, error, pagination, refetch } = useFetch(
-    `/scans/findings/?severity=${severity}&status=${status}&domain=${domain}&page=${page}`,
-    [severity, status, domain, page],
-  );
+  const { data: domainsData } = useQuery({
+    queryKey: ['/domains/'],
+    queryFn: () => apiGet('/domains/'),
+  });
+  const { data, isLoading: loading, error, refetch } = useQuery({
+    queryKey: ['/scans/findings/', severity, status, domain, page],
+    queryFn: () => apiGet(`/scans/findings/?severity=${severity}&status=${status}&domain=${domain}&page=${page}`),
+  });
 
   const findings = data?.findings ?? [];
   const domains  = domainsData || [];
@@ -117,9 +120,9 @@ export default function FindingsPage() {
                   </TableBody>
                 </Table>
               </div>
-              {pagination && (
+              {data?.total_pages > 1 && (
                 <div className="px-4 py-3 border-t border-border">
-                  <Pagination page={pagination.page} totalPages={pagination.total_pages} onPage={setPage} />
+                  <Pagination page={page} totalPages={data.total_pages} onPage={setPage} />
                 </div>
               )}
             </>
