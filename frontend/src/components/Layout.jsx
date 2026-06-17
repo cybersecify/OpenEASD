@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useFetch } from '../hooks/useFetch.js';
-import { apiPost } from '../api/client.js';
+import { useQuery } from '@tanstack/react-query';
+import { apiGet, apiPost } from '../api/client.js';
 import { auth } from '../auth.js';
 
 const NAV = [
@@ -39,7 +39,7 @@ function NavLink({ path, label, badge }) {
 
 export function Layout({ children }) {
   const navigate = useNavigate();
-  const { data } = useFetch('/dashboard/');
+  const { data } = useQuery({ queryKey: ['dashboard-nav'], queryFn: () => apiGet('/dashboard/') });
   const criticalHigh = data ? (data.kpi_critical ?? 0) + (data.kpi_high ?? 0) : null;
   const running      = data ? (data.kpi_active_scans ?? 0) : null;
 
