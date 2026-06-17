@@ -6,7 +6,8 @@ import { Button } from '../components/ui/button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { useNavigate } from 'react-router-dom';
-import { useFetch } from '../hooks/useFetch.js';
+import { useQuery } from '@tanstack/react-query';
+import { apiGet } from '../api/client.js';
 
 function KpiCard({ label, value, colorCls }) {
   return (
@@ -28,7 +29,10 @@ function AssetCard({ label, value }) {
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const { data, loading, error } = useFetch('/dashboard/');
+  const { data, isLoading: loading, error } = useQuery({
+    queryKey: ['/dashboard/'],
+    queryFn: () => apiGet('/dashboard/'),
+  });
 
   if (loading) return <Layout><div className="flex justify-center items-center h-64"><Spinner size={40} /></div></Layout>;
   if (error)   return <Layout><div className="text-red-400 p-4">Error: {error}</div></Layout>;

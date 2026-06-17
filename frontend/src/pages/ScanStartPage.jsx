@@ -4,16 +4,22 @@ import { Spinner } from '../components/Spinner.jsx';
 import { Button } from '../components/ui/button.jsx';
 import { Card, CardContent } from '../components/ui/card.jsx';
 import { useNavigate } from 'react-router-dom';
-import { apiPost } from '../api/client.js';
-import { useFetch } from '../hooks/useFetch.js';
+import { useQuery } from '@tanstack/react-query';
+import { apiPost, apiGet } from '../api/client.js';
 
 export default function ScanStartPage() {
   const navigate = useNavigate();
   const params     = new URLSearchParams(window.location.search);
   const initDomain = params.get('domain') || '';
 
-  const { data: domainsData,   loading: ld } = useFetch('/domains/');
-  const { data: workflowsData, loading: lw } = useFetch('/workflows/');
+  const { data: domainsData,   isLoading: ld } = useQuery({
+    queryKey: ['/domains/'],
+    queryFn: () => apiGet('/domains/'),
+  });
+  const { data: workflowsData, isLoading: lw } = useQuery({
+    queryKey: ['/workflows/'],
+    queryFn: () => apiGet('/workflows/'),
+  });
 
   const domains   = domainsData  || [];
   const workflows = workflowsData || [];
