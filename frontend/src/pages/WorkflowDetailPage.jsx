@@ -6,7 +6,7 @@ import { toast } from '../components/Notification.jsx';
 import { Button } from '../components/ui/button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
-import { navigate } from '../App.jsx';
+import { useNavigate, useParams } from 'react-router-dom';
 import { apiPost } from '../api/client.js';
 import { useFetch } from '../hooks/useFetch.js';
 
@@ -16,7 +16,8 @@ function fmtDate(iso) {
 }
 
 export default function WorkflowDetailPage() {
-  const id = window.location.pathname.split('/workflows/')[1]?.replace(/\/$/, '');
+  const navigate = useNavigate();
+  const { id } = useParams();
   const { data, loading, error, refetch } = useFetch(id ? `/workflows/${id}/` : null, [id]);
   const [name,  setName]  = useState('');
   const [desc,  setDesc]  = useState('');
