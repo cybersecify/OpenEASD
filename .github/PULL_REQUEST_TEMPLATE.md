@@ -8,6 +8,13 @@ anything's unclear.
 
 > **About contributions:** OpenEASD is MIT-licensed open source maintained by Cybersecify (Rathnakara G N + Ashok S Kamat). Community contributions are welcomed — they make the project move faster and amplify what we can give back to the security community. We don't pay for PRs or run a bug bounty program; contributions are recognised through public CHANGELOG credit, commit attribution, GitHub Discussion shout-outs, and (where applicable) conference / publication co-credit. See [SECURITY.md](https://github.com/cybersecify/OpenEASD/blob/main/SECURITY.md) for the no-bounty note and [CONTRIBUTING.md](https://github.com/cybersecify/OpenEASD/blob/main/CONTRIBUTING.md) for what we look for in a PR.
 
+## Type of change
+
+- [ ] Bug fix
+- [ ] New feature / new tool
+- [ ] Refactor (no behavior change)
+- [ ] Docs / tests only
+
 ## What this changes
 
 <!-- 1-3 sentences. The "why" matters more than the "what" — the diff
