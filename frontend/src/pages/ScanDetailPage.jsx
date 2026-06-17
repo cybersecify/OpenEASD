@@ -12,7 +12,7 @@ import {
   AlertDialog, AlertDialogCancel, AlertDialogContent,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../components/ui/alert-dialog.jsx';
-import { navigate } from '../App.jsx';
+import { useNavigate, useParams } from 'react-router-dom';
 import { apiPost, apiGet } from '../api/client.js';
 import { auth } from '../auth.js';
 import { useFetch } from '../hooks/useFetch.js';
@@ -159,7 +159,8 @@ function StatCard({ label, value, danger }) {
 }
 
 export default function ScanDetailPage() {
-  const uuid = window.location.pathname.split('/scans/')[1]?.replace(/\/$/, '');
+  const navigate = useNavigate();
+  const { uuid } = useParams();
   const [tab,  setTab]  = useState('subdomains');
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(false);

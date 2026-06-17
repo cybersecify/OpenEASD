@@ -1,4 +1,5 @@
 import { auth } from '../auth.js';
+import { router } from '../router.jsx';
 
 let _refreshPromise = null;
 
@@ -48,7 +49,7 @@ export async function apiFetch(path, options = {}) {
     }
     if (res.status === 401) {
       auth.clear();
-      window.location.replace('/login');
+      router.navigate('/login', { replace: true });
       throw Object.assign(new Error('Unauthorized'), { status: 401 });
     }
   }

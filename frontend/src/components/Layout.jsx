@@ -1,5 +1,5 @@
 import React from 'react';
-import { navigate } from '../App.jsx';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useFetch } from '../hooks/useFetch.js';
 import { apiPost } from '../api/client.js';
 import { auth } from '../auth.js';
@@ -15,8 +15,10 @@ const NAV = [
 ];
 
 function NavLink({ path, label, badge }) {
-  const active = window.location.pathname === path ||
-    (path !== '/' && window.location.pathname.startsWith(path));
+  const navigate = useNavigate();
+  const location = useLocation();
+  const active = location.pathname === path ||
+    (path !== '/' && location.pathname.startsWith(path));
   return (
     <button
       onClick={() => navigate(path)}
@@ -36,6 +38,7 @@ function NavLink({ path, label, badge }) {
 }
 
 export function Layout({ children }) {
+  const navigate = useNavigate();
   const { data } = useFetch('/dashboard/');
   const criticalHigh = data ? (data.kpi_critical ?? 0) + (data.kpi_high ?? 0) : null;
   const running      = data ? (data.kpi_active_scans ?? 0) : null;

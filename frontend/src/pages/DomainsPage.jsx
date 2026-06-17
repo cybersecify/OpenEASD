@@ -11,7 +11,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../components/ui/alert-dialog.jsx';
 import { toast } from '../components/Notification.jsx';
-import { navigate } from '../App.jsx';
+import { useNavigate } from 'react-router-dom';
 import { apiPost } from '../api/client.js';
 import { useFetch } from '../hooks/useFetch.js';
 
@@ -131,6 +131,7 @@ function AddDomainForm({ onAdded }) {
 }
 
 export default function DomainsPage() {
+  const navigate = useNavigate();
   const { data, loading, error, refetch } = useFetch('/domains/');
   const [busyIds, setBusyIds] = useState(new Set());
   const [monitoringDomain, setMonitoringDomain] = useState(null);

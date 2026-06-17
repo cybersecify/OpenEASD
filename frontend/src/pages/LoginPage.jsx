@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { Button } from '../components/ui/button.jsx';
 import { apiPost, apiGet } from '../api/client.js';
 import { auth } from '../auth.js';
-import { navigate } from '../App.jsx';
+import { useNavigate } from 'react-router-dom';
 
 export default function LoginPage() {
+  const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error,    setError]    = useState(null);

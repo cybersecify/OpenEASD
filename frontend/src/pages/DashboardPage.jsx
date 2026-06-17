@@ -5,7 +5,7 @@ import { Spinner } from '../components/Spinner.jsx';
 import { Button } from '../components/ui/button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
-import { navigate } from '../App.jsx';
+import { useNavigate } from 'react-router-dom';
 import { useFetch } from '../hooks/useFetch.js';
 
 function KpiCard({ label, value, colorCls }) {
@@ -27,6 +27,7 @@ function AssetCard({ label, value }) {
 }
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const { data, loading, error } = useFetch('/dashboard/');
 
   if (loading) return <Layout><div className="flex justify-center items-center h-64"><Spinner size={40} /></div></Layout>;
