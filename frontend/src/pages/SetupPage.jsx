@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Button } from '../components/ui/button.jsx';
 import { toast } from '../components/Notification.jsx';
 import { apiPost } from '../api/client.js';
-import { navigate } from '../App.jsx';
+import { useNavigate } from 'react-router-dom';
 
 const DOCKER_CMD =
 `docker run -d \\
@@ -17,6 +17,7 @@ const DOCKER_CMD =
   ghcr.io/cybersecify/openeasd:latest`;
 
 export default function SetupPage() {
+  const navigate = useNavigate();
   const [step, setStep] = useState(1);
 
   const [current,  setCurrent]  = useState('');

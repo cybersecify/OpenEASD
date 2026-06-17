@@ -6,7 +6,7 @@ import { toast } from '../components/Notification.jsx';
 import { Button } from '../components/ui/button.jsx';
 import { Card, CardContent } from '../components/ui/card.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
-import { navigate } from '../App.jsx';
+import { useNavigate } from 'react-router-dom';
 import { apiPost } from '../api/client.js';
 import { useFetch } from '../hooks/useFetch.js';
 
@@ -84,6 +84,7 @@ function CreateWorkflowForm({ onCreated }) {
 }
 
 export default function WorkflowsPage() {
+  const navigate = useNavigate();
   const { data, loading, error, refetch } = useFetch('/workflows/');
   const [busyIds, setBusyIds] = useState(new Set());
 

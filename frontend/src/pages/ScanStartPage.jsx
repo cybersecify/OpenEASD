@@ -3,11 +3,12 @@ import { Layout } from '../components/Layout.jsx';
 import { Spinner } from '../components/Spinner.jsx';
 import { Button } from '../components/ui/button.jsx';
 import { Card, CardContent } from '../components/ui/card.jsx';
-import { navigate } from '../App.jsx';
+import { useNavigate } from 'react-router-dom';
 import { apiPost } from '../api/client.js';
 import { useFetch } from '../hooks/useFetch.js';
 
 export default function ScanStartPage() {
+  const navigate = useNavigate();
   const params     = new URLSearchParams(window.location.search);
   const initDomain = params.get('domain') || '';
 

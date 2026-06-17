@@ -7,7 +7,7 @@ import { Button } from '../components/ui/button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { toast } from '../components/Notification.jsx';
-import { navigate } from '../App.jsx';
+import { useNavigate } from 'react-router-dom';
 import { apiPost } from '../api/client.js';
 import { useFetch } from '../hooks/useFetch.js';
 
@@ -140,6 +140,7 @@ function statusVariant(status) {
 }
 
 export default function NotificationsPage() {
+  const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const { data: config, loading: configLoading, refetch: refetchConfig } = useFetch('/notifications/config/');
   const { data: alerts, loading: alertsLoading, error: alertsError, refetch: refetchAlerts } =

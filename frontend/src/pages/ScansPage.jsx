@@ -8,7 +8,7 @@ import { Button } from '../components/ui/button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { toast } from '../components/Notification.jsx';
-import { navigate } from '../App.jsx';
+import { useNavigate } from 'react-router-dom';
 import { apiPost } from '../api/client.js';
 import { useFetch } from '../hooks/useFetch.js';
 
@@ -18,6 +18,7 @@ function fmtDate(iso) {
 }
 
 export default function ScansPage() {
+  const navigate = useNavigate();
   const params = new URLSearchParams(window.location.search);
   const [domain,  setDomain]  = useState(params.get('domain') || '');
   const [status,  setStatus]  = useState('');
