@@ -117,7 +117,7 @@ export default function WorkflowsPage() {
         <CreateWorkflowForm onCreated={() => { toast.success('Workflow created.'); refetch(); }} />
         <Card className="overflow-hidden">
           {loading ? <div className="flex justify-center p-8"><Spinner /></div>
-          : error   ? <div className="p-6 text-red-400 text-sm">Error: {error}</div>
+          : error   ? <div className="p-6 text-red-400 text-sm">Error: {error?.message ?? String(error)}</div>
           : (
             <div className="overflow-x-auto">
               <Table>

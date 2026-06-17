@@ -57,7 +57,7 @@ export default function InsightsPage() {
   });
 
   if (loading) return <Layout><div className="flex justify-center items-center h-64"><Spinner size={40} /></div></Layout>;
-  if (error)   return <Layout><div className="text-red-400 p-4">Error: {error}</div></Layout>;
+  if (error)   return <Layout><div className="text-red-400 p-4">Error: {error?.message ?? String(error)}</div></Layout>;
   if (!data)   return <Layout><div /></Layout>;
 
   const {

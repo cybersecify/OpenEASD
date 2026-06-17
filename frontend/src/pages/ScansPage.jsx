@@ -96,7 +96,7 @@ export default function ScansPage() {
           </CardHeader>
           <CardContent className="p-0">
             {loading ? <div className="flex justify-center p-8"><Spinner /></div>
-            : error   ? <div className="p-6 text-red-400 text-sm">Error: {error}</div>
+            : error   ? <div className="p-6 text-red-400 text-sm">Error: {error?.message ?? String(error)}</div>
             : (
               <>
                 <div className="overflow-x-auto">

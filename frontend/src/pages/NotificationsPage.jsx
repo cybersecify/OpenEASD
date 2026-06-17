@@ -175,7 +175,7 @@ export default function NotificationsPage() {
           {alertsLoading ? (
             <div className="flex justify-center p-8"><Spinner /></div>
           ) : alertsError ? (
-            <div className="p-6 text-red-400 text-sm">Error: {alertsError}</div>
+            <div className="p-6 text-red-400 text-sm">Error: {alertsError?.message ?? String(alertsError)}</div>
           ) : (
             <>
               <div className="overflow-x-auto">
@@ -222,7 +222,7 @@ export default function NotificationsPage() {
               </div>
               {totalPages > 1 && (
                 <div className="px-4 py-3 border-t border-border">
-                  <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+                  <Pagination page={page} totalPages={totalPages} onPage={setPage} />
                 </div>
               )}
             </>
