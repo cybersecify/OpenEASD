@@ -233,17 +233,51 @@ touches a tool collector, add or update a unit test in
 
 ## Commit messages
 
-Conventional Commits style. Examples from the recent history:
+Use the most specific prefix that fits:
+
+| Prefix | When to use |
+|---|---|
+| `feat:` | New user-facing feature |
+| `fix:` | Bug fix |
+| `docs:` | Documentation only (README, CHANGELOG, CONTRIBUTING) |
+| `ci:` | GitHub Actions, CI config, Dockerfile, dependabot |
+| `chore:` | Deps, tooling, config — no behavior change |
+| `test:` | Tests only — no production code change |
+
+Examples:
 
 ```
-feat(api): accept session_uuid on /api/scans/findings/
-fix(runner): findings_count no longer counts asset rows as findings
-docs(security): add SECURITY.md + enable GitHub PVR
+feat: add nuclei_network tool for non-web protocol vuln scanning
+fix: findings_count no longer counts asset rows as findings
+docs: update CONTRIBUTING with fork workflow
+ci: pin actions/setup-python to v6
+chore: bump pypdf 4.x → 6.x
+test: add missing collector timeout case to test_ssh_checker
 ```
 
 Body explains the *why*, not just the what — see existing commits for
-the format. Ending with a Co-Authored-By line is welcome but not
-required.
+the format. Scope is optional: `fix(runner): ...` is fine if it helps
+locate the change.
+
+### DCO — sign off your commits
+
+OpenEASD uses the [Developer Certificate of Origin (DCO)](https://developercertificate.org/)
+to confirm you have the right to submit your contribution under the
+MIT License. Add a `Signed-off-by` line to every commit:
+
+```bash
+git commit -s -m "fix: correct TLS severity mapping"
+# produces: Signed-off-by: Your Name <you@example.com>
+```
+
+If you forgot to sign off past commits before opening the PR, fix them with:
+
+```bash
+git rebase HEAD~<n> --signoff
+git push --force-with-lease
+```
+
+Maintainers will ask you to add sign-offs before merging if they're missing.
 
 ## Code style
 
