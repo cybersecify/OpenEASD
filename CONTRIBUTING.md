@@ -143,7 +143,7 @@ See `tests/unit/test_ssh_checker.py` (33 tests) or
   agree on direction before you write.
 - **Frontend tweaks.** React 19 + Vite 8 + Tailwind + shadcn/ui in
   `frontend/`. Run `npm run dev` against a Django backend on `:8000`.
-- **Tests.** We're at ~760 tests excluding slow DNS; raising that
+- **Tests.** We're at ~910 tests excluding slow DNS; raising that
   number always helps. `tests/unit/test_<thing>.py` matches the app it
   tests.
 
@@ -155,6 +155,36 @@ See `tests/unit/test_ssh_checker.py` (33 tests) or
 - `apps/core/workflows/registry.py` — the auto-registration plumbing.
 - `apps/core/findings/models.py` — the unified Finding model every
   tool writes to.
+
+## Fork and contribute
+
+OpenEASD uses a fork-based workflow for external contributors — you won't
+have write access to the main repo, so work happens in your fork.
+
+```bash
+# 1. Fork the repo on GitHub (click "Fork" top-right)
+
+# 2. Clone your fork
+git clone https://github.com/<your-username>/OpenEASD.git
+cd OpenEASD
+
+# 3. Add the upstream remote so you can stay in sync
+git remote add upstream https://github.com/cybersecify/OpenEASD.git
+
+# 4. Before starting work, sync your fork's main with upstream
+git fetch upstream
+git checkout main
+git merge upstream/main
+
+# 5. Create a branch
+git checkout -b feat/my-feature   # or fix/my-fix
+
+# 6. Push to your fork and open a PR against cybersecify/OpenEASD main
+git push origin feat/my-feature
+```
+
+Maintainers with write access can branch directly on the main repo — same
+branch naming rules apply.
 
 ## Development setup
 
@@ -168,11 +198,18 @@ cd frontend && npm install && cd ..
 # Run migrations
 uv run manage.py migrate
 
-# Terminal 1 — Django + Django-Q2 worker
-uv run python main.py
+# Quickest: starts Django (:8001) + Vite dev server + qcluster worker together
+make dev
 
-# Terminal 2 — Vite dev server (proxies /api/ to Django on port 8000)
+# Or manually in three terminals:
+# Terminal 1 — Django
+uv run manage.py runserver 8001
+
+# Terminal 2 — Vite dev server (proxies /api/ to Django at :8001)
 cd frontend && npm run dev
+
+# Terminal 3 — Background worker (required for scans to execute)
+uv run manage.py qcluster
 ```
 
 App runs at `http://localhost:5173` in dev. Default login on a fresh DB
