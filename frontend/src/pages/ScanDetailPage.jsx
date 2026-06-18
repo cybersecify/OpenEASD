@@ -15,8 +15,7 @@ import {
 import { useNavigate, useParams } from 'react-router-dom';
 import { apiPost, apiGet } from '../api/client.js';
 import { auth } from '../auth.js';
-import { useFetch } from '../hooks/useFetch.js';
-import { usePolling } from '../hooks/usePolling.js';
+import { useQuery } from '@tanstack/react-query';
 
 // Download report via authenticated fetch + Blob. The JWT travels in the
 // Authorization header — never in the URL — so it doesn't leak into browser
@@ -169,13 +168,21 @@ export default function ScanDetailPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [minSev, setMinSev] = useState('info');
 
-  const { data, loading, error, refetch } = useFetch(uuid ? `/scans/${uuid}/` : null, [uuid]);
+  const { data, isLoading: loading, error, refetch } = useQuery({
+    queryKey: ['/scans/', uuid],
+    queryFn: () => apiGet(`/scans/${uuid}/`),
+    enabled: !!uuid,
+  });
 
   // Stop polling once scan reaches a terminal state
   const currentStatus = data?.session?.status;
-  const pollPath = uuid && currentStatus && !TERMINAL.has(currentStatus)
-    ? `/scans/${uuid}/status/` : null;
-  const { data: statusData } = usePolling(pollPath, 3000);
+  const shouldPoll = !!uuid && !!currentStatus && !TERMINAL.has(currentStatus);
+  const { data: statusData } = useQuery({
+    queryKey: ['/scans/status/', uuid],
+    queryFn: () => apiGet(`/scans/${uuid}/status/`),
+    enabled: shouldPoll,
+    refetchInterval: shouldPoll ? 3000 : false,
+  });
 
   // When polling detects the scan reaching a terminal state, reload full data
   // so tabs (subdomains, IPs, ports, URLs, findings) show the completed results.
@@ -207,7 +214,7 @@ export default function ScanDetailPage() {
   }
 
   if (loading) return <Layout><div className="flex justify-center items-center h-64"><Spinner size={40} /></div></Layout>;
-  if (error)   return <Layout><div className="text-red-400 p-4">Error: {error}</div></Layout>;
+  if (error)   return <Layout><div className="text-red-400 p-4">Error: {error?.message ?? String(error)}</div></Layout>;
   if (!data)   return <Layout><div /></Layout>;
 
   const session     = data.session || {};

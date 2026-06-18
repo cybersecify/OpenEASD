@@ -7,8 +7,8 @@ import { Button } from '../components/ui/button.jsx';
 import { Card, CardContent } from '../components/ui/card.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { useNavigate } from 'react-router-dom';
-import { apiPost } from '../api/client.js';
-import { useFetch } from '../hooks/useFetch.js';
+import { useQuery } from '@tanstack/react-query';
+import { apiPost, apiGet } from '../api/client.js';
 
 function CreateWorkflowForm({ onCreated }) {
   const [name,     setName]    = useState('');
@@ -18,7 +18,10 @@ function CreateWorkflowForm({ onCreated }) {
   const [saving,   setSaving]  = useState(false);
   const [err,      setErr]     = useState(null);
 
-  const { data: toolsData } = useFetch('/workflows/tools/');
+  const { data: toolsData } = useQuery({
+    queryKey: ['/workflows/tools/'],
+    queryFn: () => apiGet('/workflows/tools/'),
+  });
   const allTools = toolsData?.tools || [];
 
   function toggleTool(key) {
@@ -85,7 +88,10 @@ function CreateWorkflowForm({ onCreated }) {
 
 export default function WorkflowsPage() {
   const navigate = useNavigate();
-  const { data, loading, error, refetch } = useFetch('/workflows/');
+  const { data, isLoading: loading, error, refetch } = useQuery({
+    queryKey: ['/workflows/'],
+    queryFn: () => apiGet('/workflows/'),
+  });
   const [busyIds, setBusyIds] = useState(new Set());
 
   const workflows = data || [];
@@ -111,7 +117,7 @@ export default function WorkflowsPage() {
         <CreateWorkflowForm onCreated={() => { toast.success('Workflow created.'); refetch(); }} />
         <Card className="overflow-hidden">
           {loading ? <div className="flex justify-center p-8"><Spinner /></div>
-          : error   ? <div className="p-6 text-red-400 text-sm">Error: {error}</div>
+          : error   ? <div className="p-6 text-red-400 text-sm">Error: {error?.message ?? String(error)}</div>
           : (
             <div className="overflow-x-auto">
               <Table>

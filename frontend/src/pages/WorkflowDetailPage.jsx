@@ -7,8 +7,8 @@ import { Button } from '../components/ui/button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { useNavigate, useParams } from 'react-router-dom';
-import { apiPost } from '../api/client.js';
-import { useFetch } from '../hooks/useFetch.js';
+import { useQuery } from '@tanstack/react-query';
+import { apiPost, apiGet } from '../api/client.js';
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -18,7 +18,11 @@ function fmtDate(iso) {
 export default function WorkflowDetailPage() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const { data, loading, error, refetch } = useFetch(id ? `/workflows/${id}/` : null, [id]);
+  const { data, isLoading: loading, error, refetch } = useQuery({
+    queryKey: ['/workflows/', id],
+    queryFn: () => apiGet(`/workflows/${id}/`),
+    enabled: !!id,
+  });
   const [name,  setName]  = useState('');
   const [desc,  setDesc]  = useState('');
   const [saving, setSaving] = useState(false);
@@ -43,7 +47,7 @@ export default function WorkflowDetailPage() {
   }
 
   if (loading) return <Layout><div className="flex justify-center items-center h-64"><Spinner size={40} /></div></Layout>;
-  if (error)   return <Layout><div className="text-red-400 p-4">Error: {error}</div></Layout>;
+  if (error)   return <Layout><div className="text-red-400 p-4">Error: {error?.message ?? String(error)}</div></Layout>;
   if (!data)   return <Layout><div /></Layout>;
 
   const workflow    = data.workflow    || {};

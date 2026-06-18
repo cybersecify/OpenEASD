@@ -4,7 +4,8 @@ import { Badge } from '../components/Badge.jsx';
 import { Spinner } from '../components/Spinner.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
-import { useFetch } from '../hooks/useFetch.js';
+import { useQuery } from '@tanstack/react-query';
+import { apiGet } from '../api/client.js';
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -50,10 +51,13 @@ function DataTable({ title, subtitle, columns, rows, renderRow, emptyMsg = 'No d
 const SEV_TEXT = { critical: 'text-red-400', high: 'text-orange-400', medium: 'text-yellow-400', low: 'text-blue-400', info: 'text-gray-400' };
 
 export default function InsightsPage() {
-  const { data, loading, error } = useFetch('/insights/');
+  const { data, isLoading: loading, error } = useQuery({
+    queryKey: ['/insights/'],
+    queryFn: () => apiGet('/insights/'),
+  });
 
   if (loading) return <Layout><div className="flex justify-center items-center h-64"><Spinner size={40} /></div></Layout>;
-  if (error)   return <Layout><div className="text-red-400 p-4">Error: {error}</div></Layout>;
+  if (error)   return <Layout><div className="text-red-400 p-4">Error: {error?.message ?? String(error)}</div></Layout>;
   if (!data)   return <Layout><div /></Layout>;
 
   const {

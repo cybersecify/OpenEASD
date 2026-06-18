@@ -12,8 +12,8 @@ import {
 } from '../components/ui/alert-dialog.jsx';
 import { toast } from '../components/Notification.jsx';
 import { useNavigate } from 'react-router-dom';
-import { apiPost } from '../api/client.js';
-import { useFetch } from '../hooks/useFetch.js';
+import { useQuery } from '@tanstack/react-query';
+import { apiPost, apiGet } from '../api/client.js';
 
 const MONITORING_OPTIONS = [
   { label: 'Every 6 hours',  value: 6   },
@@ -132,7 +132,10 @@ function AddDomainForm({ onAdded }) {
 
 export default function DomainsPage() {
   const navigate = useNavigate();
-  const { data, loading, error, refetch } = useFetch('/domains/');
+  const { data, isLoading: loading, error, refetch } = useQuery({
+    queryKey: ['/domains/'],
+    queryFn: () => apiGet('/domains/'),
+  });
   const [busyIds, setBusyIds] = useState(new Set());
   const [monitoringDomain, setMonitoringDomain] = useState(null);
 
@@ -166,7 +169,7 @@ export default function DomainsPage() {
         <AddDomainForm onAdded={() => { toast.success('Domain added.'); refetch(); }} />
         <Card className="overflow-hidden">
           {loading ? <div className="flex justify-center p-8"><Spinner /></div>
-          : error   ? <div className="p-6 text-red-400 text-sm">Error: {error}</div>
+          : error   ? <div className="p-6 text-red-400 text-sm">Error: {error?.message ?? String(error)}</div>
           : (
             <div className="overflow-x-auto">
               <Table>
