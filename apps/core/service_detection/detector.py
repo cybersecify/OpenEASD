@@ -93,7 +93,7 @@ def _probe_http(host: str, port: int, scheme: str) -> bool:
         requests.head(
             f"{scheme}://{host}:{port}",
             timeout=PROBE_TIMEOUT,
-            verify=False,  # nosec B501 — intentional: probing target hosts with self-signed certs
+            verify=False,  # nosec B501  # lgtm[py/request-without-cert-validation]  intentional: probing target hosts with self-signed certs
             allow_redirects=False,
             headers={"User-Agent": "openeasd-service-probe/1.0"},
         )

@@ -123,7 +123,7 @@ def collect(session) -> list[dict]:
                     "User-Agent": USER_AGENT,
                     "Origin": _CORS_TEST_ORIGIN,
                 },
-                verify=False,  # nosec B501 — intentional: scanning target hosts that may have self-signed certs
+                verify=False,  # nosec B501  # lgtm[py/request-without-cert-validation]  intentional: scanning target hosts that may have self-signed certs
                 allow_redirects=True,
             )
 
