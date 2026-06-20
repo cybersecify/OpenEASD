@@ -31,7 +31,7 @@ dependencies = [
     "django-ninja-jwt>=5.0",
     "whitenoise>=6.7",
     "lxml>=6.1.0",
-    "pypdf>=6.10.2",
+    "pypdf>=6.13.3",
     "urllib3>=2.7.0",
     "idna>=3.15",
 ]
