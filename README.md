@@ -26,7 +26,6 @@ Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok 
 ## Who this isn't for
 
 - **Enterprise SOCs** — no RBAC, SAML, multi-tenant, or Postgres (yet)
-- **Pen testers running one-shot deep enumeration of a single target** — for that, [Tib3rius/AutoRecon](https://github.com/Tib3rius/AutoRecon) and similar CLI tools are better fits. OpenEASD optimises for continuous monitoring across multiple domains over time, not single-target deep dives
 - **Anyone needing to scan domains they don't own or aren't authorised to test** — OpenEASD is intentionally not a "scan-anyone" hosted service. Running it implies you own or have written authorisation for your targets
 
 ## Supply chain transparency
