@@ -181,7 +181,12 @@ def reap_stuck_scans():
         new_status = "partial" if completed_step else "failed"
         session.status = new_status
         session.end_time = now
-        session.save(update_fields=["status", "end_time"])
+        # _finalize_session never ran (the wedged step held the worker), so
+        # total_findings is still 0 even though completed steps wrote Findings.
+        # Recompute it here so reaped scans show their real count, not 0.
+        from apps.core.scans.pipeline import _count_all_findings
+        session.total_findings = _count_all_findings(session)
+        session.save(update_fields=["status", "end_time", "total_findings"])
 
         if new_status == "partial":
             partial_count += 1

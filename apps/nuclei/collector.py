@@ -10,6 +10,7 @@ Nuclei scans for web vulnerabilities using community templates:
 import json
 import logging
 import os
+import signal
 import subprocess
 import tempfile
 
@@ -17,7 +18,43 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT = 3600  # 1 hour max per scan
+TIMEOUT = 1800        # hard wall-clock cap for the whole nuclei run (30 min)
+REQUEST_TIMEOUT = 5   # seconds per HTTP request (nuclei -timeout)
+RATE_LIMIT = 150      # max requests/sec across all hosts (nuclei -rate-limit)
+CONCURRENCY = 25      # parallel templates (nuclei -c)
+
+
+def _run(cmd: list[str], timeout: int) -> subprocess.CompletedProcess:
+    """Run an external tool, SIGKILL-ing its whole process group on timeout.
+
+    subprocess.run(timeout=...) only signals the *direct* child. If the tool has
+    spawned helpers that inherit the stdout pipe, the internal communicate() blocks
+    waiting for EOF long past the timeout, and the calling thread wedges — which is
+    how a single nuclei step can hang a scan until the session watchdog reaps it.
+
+    start_new_session=True puts the child in its own process group, so on timeout we
+    can kill the entire tree and the pipe actually closes. Mirrors subprocess.run's
+    contract: returns CompletedProcess, raises FileNotFoundError if the binary is
+    missing, re-raises TimeoutExpired after the group is killed.
+    """
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            proc.kill()
+        proc.communicate()  # reap — the pipe is now closed since the group is dead
+        raise
+    return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
 
 def collect(session) -> list[dict]:
@@ -45,11 +82,20 @@ def collect(session) -> list[dict]:
         f.write("\n".join(targets))
         tmp = f.name
 
-    cmd = [binary, "-list", tmp, "-jsonl", "-silent", "-no-color"]
+    # Bound nuclei explicitly so it finishes well under TIMEOUT instead of relying
+    # on the kill: -timeout caps each request, -rate-limit/-c cap throughput so a
+    # host with many ports (ast.co.rs had 25 IPs / 27 ports) can't stall the run.
+    cmd = [
+        binary, "-list", tmp, "-jsonl", "-silent", "-no-color",
+        "-timeout", str(REQUEST_TIMEOUT),
+        "-retries", "1",
+        "-rate-limit", str(RATE_LIMIT),
+        "-c", str(CONCURRENCY),
+    ]
     logger.info(f"[nuclei:{session.id}] Scanning {len(targets)} web targets")
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT, stdin=subprocess.DEVNULL)
+        result = _run(cmd, TIMEOUT)
     except FileNotFoundError:
         logger.error(f"[nuclei:{session.id}] Binary not found: {binary}")
         return []

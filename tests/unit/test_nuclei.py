@@ -209,7 +209,7 @@ class TestNucleiCollector:
         mock_result.returncode = 0
         mock_result.stderr = ""
 
-        with patch("apps.nuclei.collector.subprocess.run", return_value=mock_result) as mock_run:
+        with patch("apps.nuclei.collector._run", return_value=mock_result) as mock_run:
             records = collect(sess)
 
         assert mock_run.called
@@ -219,7 +219,7 @@ class TestNucleiCollector:
         from apps.core.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
 
-        with patch("apps.nuclei.collector.subprocess.run") as mock_run:
+        with patch("apps.nuclei.collector._run") as mock_run:
             records = collect(sess)
 
         assert records == []
@@ -227,7 +227,7 @@ class TestNucleiCollector:
 
     def test_binary_not_found(self):
         sess = self._make_session()
-        with patch("apps.nuclei.collector.subprocess.run",
+        with patch("apps.nuclei.collector._run",
                    side_effect=FileNotFoundError):
             records = collect(sess)
         assert records == []
@@ -235,8 +235,8 @@ class TestNucleiCollector:
     def test_timeout_handled(self):
         import subprocess as sp
         sess = self._make_session()
-        with patch("apps.nuclei.collector.subprocess.run",
-                   side_effect=sp.TimeoutExpired(cmd="nuclei", timeout=3600)):
+        with patch("apps.nuclei.collector._run",
+                   side_effect=sp.TimeoutExpired(cmd="nuclei", timeout=1800)):
             records = collect(sess)
         assert records == []
 
@@ -247,9 +247,71 @@ class TestNucleiCollector:
         mock_result.returncode = 0
         mock_result.stderr = ""
 
-        with patch("apps.nuclei.collector.subprocess.run", return_value=mock_result):
+        with patch("apps.nuclei.collector._run", return_value=mock_result):
             records = collect(sess)
         assert len(records) == 1
+
+    def test_cmd_includes_rate_limiting_flags(self):
+        """nuclei must be invoked with the bounding flags so it can't run unbounded."""
+        sess = self._make_session()
+        captured = {}
+
+        def fake_run(cmd, timeout):
+            captured["cmd"] = cmd
+            captured["timeout"] = timeout
+            return MagicMock(stdout="", returncode=0, stderr="")
+
+        with patch("apps.nuclei.collector._run", side_effect=fake_run):
+            collect(sess)
+
+        cmd = captured["cmd"]
+        for flag in ("-rate-limit", "-c", "-timeout", "-retries"):
+            assert flag in cmd, f"missing {flag}"
+        assert captured["timeout"] == 1800
+
+
+# ---------------------------------------------------------------------------
+# _run — process-group kill on timeout
+# ---------------------------------------------------------------------------
+
+class TestRunProcessGroupKill:
+    def test_kills_process_group_on_timeout(self):
+        """On timeout, _run must SIGKILL the whole process group and re-raise,
+        not leave a child holding the stdout pipe (the cause of the wedged scan)."""
+        import subprocess as sp
+        from apps.nuclei import collector
+
+        fake_proc = MagicMock()
+        fake_proc.pid = 4242
+        # First communicate() (with timeout) raises; second (the reap) returns.
+        fake_proc.communicate.side_effect = [
+            sp.TimeoutExpired(cmd="nuclei", timeout=1),
+            ("", ""),
+        ]
+
+        with patch("apps.nuclei.collector.subprocess.Popen", return_value=fake_proc), \
+             patch("apps.nuclei.collector.os.getpgid", return_value=4242), \
+             patch("apps.nuclei.collector.os.killpg") as mock_killpg:
+            with pytest.raises(sp.TimeoutExpired):
+                collector._run(["nuclei"], timeout=1)
+
+        mock_killpg.assert_called_once()
+        # the reap communicate() must run so the dead group is collected
+        assert fake_proc.communicate.call_count == 2
+
+    def test_returns_completed_process_on_success(self):
+        from apps.nuclei import collector
+
+        fake_proc = MagicMock()
+        fake_proc.pid = 99
+        fake_proc.returncode = 0
+        fake_proc.communicate.return_value = ("out", "err")
+
+        with patch("apps.nuclei.collector.subprocess.Popen", return_value=fake_proc):
+            result = collector._run(["nuclei"], timeout=10)
+
+        assert result.returncode == 0
+        assert result.stdout == "out"
 
 
 # ---------------------------------------------------------------------------
