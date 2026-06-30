@@ -9,6 +9,12 @@ spec:
   # SQLite (RWO PVC) — single replica required.
   # To scale horizontally, migrate to PostgreSQL.
   replicas: 1
+  # Recreate (not RollingUpdate): the single RWO data PVC can only be mounted by
+  # one pod at a time, so a rolling update deadlocks — the new pod stays Pending
+  # on the volume while the old pod refuses to terminate. Recreate tears the old
+  # pod down first, then starts the new one.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: openeasd
@@ -20,6 +26,11 @@ spec:
       initContainers:
         - name: init
           image: ghcr.io/cybersecify/openeasd:latest
+          # Always re-pull: the :latest tag is mutable, so a deploy that doesn't
+          # change the tag string must still fetch the new digest. Without this,
+          # k8s defaults to IfNotPresent semantics against the cached image and
+          # silently keeps running the old build.
+          imagePullPolicy: Always
           command: ["./docker-entrypoint.sh", "true"]
           envFrom:
             - configMapRef:
@@ -35,6 +46,7 @@ spec:
       containers:
         - name: web
           image: ghcr.io/cybersecify/openeasd:latest
+          imagePullPolicy: Always
           command:
             - gunicorn
             - openeasd.wsgi:application
@@ -88,6 +100,7 @@ spec:
 
         - name: worker
           image: ghcr.io/cybersecify/openeasd:latest
+          imagePullPolicy: Always
           command:
             - python
             - manage.py
