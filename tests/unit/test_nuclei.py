@@ -276,17 +276,19 @@ class TestNucleiCollector:
 
 class TestRunProcessGroupKill:
     def test_kills_process_group_on_timeout(self):
-        """On timeout, _run must SIGKILL the whole process group and re-raise,
-        not leave a child holding the stdout pipe (the cause of the wedged scan)."""
+        """On timeout, _run must SIGKILL the process group and re-raise. It must
+        use wait() (not communicate()) so an escaped child holding the stdout pipe
+        can't block us — the bug that wedged the scan past the timeout."""
         import subprocess as sp
         from apps.nuclei import collector
 
         fake_proc = MagicMock()
         fake_proc.pid = 4242
-        # First communicate() (with timeout) raises; second (the reap) returns.
-        fake_proc.communicate.side_effect = [
+        fake_proc.returncode = -9
+        # First wait(timeout) raises; second wait (post-kill drain) returns.
+        fake_proc.wait.side_effect = [
             sp.TimeoutExpired(cmd="nuclei", timeout=1),
-            ("", ""),
+            0,
         ]
 
         with patch("apps.nuclei.collector.subprocess.Popen", return_value=fake_proc), \
@@ -296,8 +298,10 @@ class TestRunProcessGroupKill:
                 collector._run(["nuclei"], timeout=1)
 
         mock_killpg.assert_called_once()
-        # the reap communicate() must run so the dead group is collected
-        assert fake_proc.communicate.call_count == 2
+        # the post-kill drain wait() must run so the dead process is reaped
+        assert fake_proc.wait.call_count == 2
+        # must NOT fall back to communicate() (the pipe-blocking call)
+        assert not fake_proc.communicate.called
 
     def test_returns_completed_process_on_success(self):
         from apps.nuclei import collector
@@ -305,13 +309,46 @@ class TestRunProcessGroupKill:
         fake_proc = MagicMock()
         fake_proc.pid = 99
         fake_proc.returncode = 0
-        fake_proc.communicate.return_value = ("out", "err")
+        fake_proc.wait.return_value = 0
 
         with patch("apps.nuclei.collector.subprocess.Popen", return_value=fake_proc):
             result = collector._run(["nuclei"], timeout=10)
 
         assert result.returncode == 0
-        assert result.stdout == "out"
+        # stdout/stderr come from the temp output files (empty under a mocked Popen)
+        assert result.stdout == ""
+        assert not fake_proc.communicate.called
+
+    def test_real_run_captures_output(self):
+        from apps.nuclei import collector
+        result = collector._run(["printf", "hello\nworld\n"], timeout=10)
+        assert result.returncode == 0
+        assert "hello" in result.stdout and "world" in result.stdout
+
+    def test_escaped_child_holding_fd_does_not_hang(self):
+        """The exact production bug, as a real process: a grandchild calls setsid()
+        to escape the process group and keeps the inherited output fd open while it
+        sleeps. communicate() would block on pipe-EOF until the watchdog reap; _run
+        must SIGKILL the parent and return within the drain grace regardless."""
+        import sys
+        import time
+        import subprocess as sp
+        from apps.nuclei import collector
+
+        script = (
+            "import os, sys, time\n"
+            "if os.fork() == 0:\n"
+            "    os.setsid()\n"          # escape the parent's process group
+            "    time.sleep(45)\n"       # keep holding the inherited stdout fd
+            "    sys.exit(0)\n"
+            "time.sleep(45)\n"           # parent sleeps so our timeout fires on it
+        )
+        start = time.monotonic()
+        with pytest.raises(sp.TimeoutExpired):
+            collector._run([sys.executable, "-c", script], timeout=1)
+        elapsed = time.monotonic() - start
+        # If _run still used communicate(), this would block ~45s. It must not.
+        assert elapsed < collector._DRAIN_GRACE, f"hung for {elapsed:.1f}s"
 
 
 # ---------------------------------------------------------------------------

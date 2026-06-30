@@ -24,37 +24,62 @@ RATE_LIMIT = 150      # max requests/sec across all hosts (nuclei -rate-limit)
 CONCURRENCY = 25      # parallel templates (nuclei -c)
 
 
+_DRAIN_GRACE = 30  # seconds to let a SIGKILL'd process die before we give up
+
+
 def _run(cmd: list[str], timeout: int) -> subprocess.CompletedProcess:
-    """Run an external tool, SIGKILL-ing its whole process group on timeout.
+    """Run an external tool with a timeout that cannot be defeated by child processes.
 
-    subprocess.run(timeout=...) only signals the *direct* child. If the tool has
-    spawned helpers that inherit the stdout pipe, the internal communicate() blocks
-    waiting for EOF long past the timeout, and the calling thread wedges — which is
-    how a single nuclei step can hang a scan until the session watchdog reaps it.
+    Why not subprocess.run / communicate(): communicate() reads stdout/stderr until
+    pipe EOF, which only happens once EVERY writer closes the pipe. nuclei spawns
+    helpers (interactsh poller, resolvers, headless) that can escape the process
+    group and inherit the stdout pipe, so even after we SIGKILL the group the pipe
+    never reaches EOF and communicate() blocks forever — the timeout fires but the
+    call never returns, wedging the worker thread until the session watchdog reaps it.
 
-    start_new_session=True puts the child in its own process group, so on timeout we
-    can kill the entire tree and the pipe actually closes. Mirrors subprocess.run's
-    contract: returns CompletedProcess, raises FileNotFoundError if the binary is
-    missing, re-raises TimeoutExpired after the group is killed.
+    The fix: redirect stdout/stderr to temp FILES (no pipe), and wait() on the
+    process itself. wait() returns the moment the direct child exits — it does not
+    care about inherited file descriptors — so a SIGKILL always unblocks us. An
+    escaped grandchild can leak but can no longer hang the scan.
+
+    Mirrors subprocess.run's contract: returns CompletedProcess, raises
+    FileNotFoundError if the binary is missing, re-raises TimeoutExpired after the
+    group is killed.
     """
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        stdin=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    out_fd, out_path = tempfile.mkstemp(suffix=".nuclei.out")
+    err_fd, err_path = tempfile.mkstemp(suffix=".nuclei.err")
     try:
-        stdout, stderr = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            proc.kill()
-        proc.communicate()  # reap — the pipe is now closed since the group is dead
-        raise
-    return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+        with os.fdopen(out_fd, "wb") as out_f, os.fdopen(err_fd, "wb") as err_f:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=out_f,
+                stderr=err_f,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            try:
+                proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    proc.kill()
+                try:
+                    proc.wait(timeout=_DRAIN_GRACE)
+                except subprocess.TimeoutExpired:
+                    pass
+                raise
+        with open(out_path, "r", errors="replace") as f:
+            stdout = f.read()
+        with open(err_path, "r", errors="replace") as f:
+            stderr = f.read()
+        return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+    finally:
+        for p in (out_path, err_path):
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
 
 
 def collect(session) -> list[dict]:
