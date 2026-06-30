@@ -119,6 +119,26 @@ class TestReapStuckScans:
         ds = WorkflowStepResult.objects.get(run=run, tool="domain_security")
         assert ds.status == "completed"
 
+    def test_partial_reap_recomputes_total_findings(self, db):
+        """A reaped partial scan must report the findings its completed steps
+        wrote, not 0 — _finalize_session never ran to tally them."""
+        from apps.core.findings.models import Finding
+        session = self._make_session("running", SCAN_TIMEOUT_MINUTES + 1, "count.example.com")
+        self._attach_run(session, completed_tools=["nmap"], in_flight_tools=["nuclei"])
+        for i in range(3):
+            Finding.objects.create(
+                session=session, source="nmap", target=f"1.2.3.4:{i}",
+                check_type="cve", severity="high",
+                title=f"CVE-2024-000{i}", description="desc",
+            )
+        # Sanity: tally not yet run.
+        assert session.total_findings == 0
+
+        assert reap_stuck_scans() == 1
+        session.refresh_from_db()
+        assert session.status == "partial"
+        assert session.total_findings == 3
+
     def test_failed_when_no_step_completed(self, db):
         """Stuck scan with a run but no completed steps -> failed (not partial)."""
         session = self._make_session("running", SCAN_TIMEOUT_MINUTES + 1, "f.example.com")
