@@ -156,12 +156,32 @@ for _dir in [OPENEASD_DATA_DIR, OPENEASD_LOGS_DIR]:
     _dir.mkdir(parents=True, exist_ok=True)
 
 # Django-Q2 task queue — ORM broker uses the existing Django DB (SQLite)
+#
+# Timer alignment (all three must agree or scans die mid-run):
+#   timeout  — worker hard-kill; MUST exceed a real full scan's wall-clock.
+#   retry    — re-queue window; MUST be > timeout or the broker re-runs a task
+#              that is still executing. max_attempts:1 makes this moot but the
+#              constraint is enforced anyway.
+#   watchdog — reap_stuck_scans (SCAN_TIMEOUT_MINUTES) must be >= timeout so it
+#              only reaps genuinely orphaned scans (dead worker), never a healthy
+#              long-running one.
+# The old defaults (timeout 3600 / retry 7200) killed every large scan: a full
+# scan runs past 1h, timeout kills it, then retry re-queues a zombie at exactly
+# 2h. max_attempts:1 is the real "no retries" switch the retry comment claimed.
+Q_TASK_TIMEOUT = config("Q_TASK_TIMEOUT", default=10800, cast=int)   # 3h hard cap per scan task
+Q_TASK_RETRY = config("Q_TASK_RETRY", default=Q_TASK_TIMEOUT + 1200, cast=int)
+# Guard: retry <= timeout causes the broker to re-run a task while it's still
+# running. Force retry strictly above timeout regardless of env misconfiguration.
+if Q_TASK_RETRY <= Q_TASK_TIMEOUT:
+    Q_TASK_RETRY = Q_TASK_TIMEOUT + 1200
+
 Q_CLUSTER = {
     "name": "openeasd",
     "workers": 1,       # SQLite is single-writer; >1 workers causes race conditions on task pickup
     "orm": "default",   # uses Django DB — no Redis needed
-    "timeout": 3600,    # 1 hour — accommodates long full scans
-    "retry": 7200,      # must be > timeout; effectively disables retries for our use case
+    "timeout": Q_TASK_TIMEOUT,
+    "retry": Q_TASK_RETRY,
+    "max_attempts": 1,  # a killed scan is dead, not retried — never re-queue it
     "catch_up": False,  # skip missed tasks on worker restart
 }
 
