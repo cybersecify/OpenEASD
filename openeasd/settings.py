@@ -168,7 +168,11 @@ for _dir in [OPENEASD_DATA_DIR, OPENEASD_LOGS_DIR]:
 # The old defaults (timeout 3600 / retry 7200) killed every large scan: a full
 # scan runs past 1h, timeout kills it, then retry re-queues a zombie at exactly
 # 2h. max_attempts:1 is the real "no retries" switch the retry comment claimed.
-Q_TASK_TIMEOUT = config("Q_TASK_TIMEOUT", default=10800, cast=int)   # 3h hard cap per scan task
+# Derived, not guessed: the worst-case sum of per-tool caps (same-phase tools run
+# in parallel) is ~3.4h — dominated by nuclei_network's 1h cap in phase 7. Set the
+# worker hard-kill above that ceiling so "every tool within its cap => scan always
+# completes" is a guarantee, not a hope. 4h leaves ~35m margin over the ceiling.
+Q_TASK_TIMEOUT = config("Q_TASK_TIMEOUT", default=14400, cast=int)   # 4h hard cap per scan task
 Q_TASK_RETRY = config("Q_TASK_RETRY", default=Q_TASK_TIMEOUT + 1200, cast=int)
 # Guard: retry <= timeout causes the broker to re-run a task while it's still
 # running. Force retry strictly above timeout regardless of env misconfiguration.
