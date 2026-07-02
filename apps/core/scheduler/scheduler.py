@@ -8,11 +8,11 @@ from django.utils import timezone as django_tz
 logger = logging.getLogger(__name__)
 
 from decouple import config as _config  # noqa: E402
-# Must be >= Q_CLUSTER["timeout"] (3h / 10800s). The watchdog only cleans up the
+# Must be >= Q_CLUSTER["timeout"] (4h / 14400s). The watchdog only cleans up the
 # DB status of scans whose worker died without finalizing; it must not fire while
 # a healthy scan is still legitimately running, or it flips a live scan to
-# "partial" mid-run. Keep this at/above the worker hard-kill (180m).
-SCAN_TIMEOUT_MINUTES = _config("SCAN_TIMEOUT_MINUTES", default=180, cast=int)
+# "partial" mid-run. Keep this at/above the worker hard-kill (240m).
+SCAN_TIMEOUT_MINUTES = _config("SCAN_TIMEOUT_MINUTES", default=240, cast=int)
 
 
 # ---------------------------------------------------------------------------
