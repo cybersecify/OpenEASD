@@ -331,7 +331,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (18 registered tools)
+### Tool apps (19 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
@@ -353,6 +353,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/katana/` | 10 | Web Exposure | No | Web crawling, endpoint discovery |
 | `apps/nuclei/` | 11 | Web Exposure | Yes | Web vuln scan (community templates) |
 | `apps/web_checker/` | 11 | Web Exposure | Yes | Security headers, cookies, CORS |
+| `apps/cve_intel/` | 12 | Prioritization | No | Enriches CVE findings in place with EPSS scores + CISA KEV flags (no new findings) |
 
 ### Tool app structure
 ```
@@ -367,7 +368,7 @@ apps/<tool>/
 ## Scan pipeline
 
 All scans run through the **dynamic workflow system**. The default "Full Scan"
-workflow executes all 18 tools in phase order. Custom workflows can include
+workflow executes all 19 tools in phase order. Custom workflows can include
 any subset of tools.
 
 ```

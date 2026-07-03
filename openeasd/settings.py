@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     "apps.nuclei",
     "apps.nuclei_network",
     "apps.web_checker",
+    "apps.cve_intel",
 ]
 
 MIDDLEWARE = [
