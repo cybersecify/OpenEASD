@@ -112,6 +112,11 @@ def collect(session) -> list[dict]:
     # host with many ports (ast.co.rs had 25 IPs / 27 ports) can't stall the run.
     cmd = [
         binary, "-list", tmp, "-jsonl", "-silent", "-no-color",
+        # Never touch the network for templates/version at scan time. Templates
+        # are baked into the image; a fresh pod with no templates would otherwise
+        # download the whole repo from GitHub mid-scan and hang for hours (the
+        # process wedged past its own 30-min cap on the ast.co.rs prod scan).
+        "-disable-update-check",
         "-timeout", str(REQUEST_TIMEOUT),
         "-retries", "1",
         "-rate-limit", str(RATE_LIMIT),

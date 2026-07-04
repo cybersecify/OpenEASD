@@ -138,6 +138,15 @@ COPY --from=subzy-builder /subzy /usr/local/bin/subzy
 COPY --from=history-builder /history-tools/ /usr/local/bin/
 ENV PATH="/usr/local/bin:${PATH}"
 
+# Bake nuclei templates into the image. Without this, the first scan on any
+# fresh container (every pod restart — the template dir is on the ephemeral
+# FS, not a PVC) downloads the whole template repo from GitHub mid-scan and
+# hangs for hours. Baking makes them present at every start; the collector runs
+# nuclei with -disable-update-check so no runtime fetch is ever attempted.
+# Refreshed whenever the image is rebuilt.
+RUN nuclei -update-templates -disable-update-check \
+    && test -d /root/nuclei-templates
+
 WORKDIR /app
 
 # Create virtualenv
