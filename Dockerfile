@@ -144,7 +144,10 @@ ENV PATH="/usr/local/bin:${PATH}"
 # hangs for hours. Baking makes them present at every start; the collector runs
 # nuclei with -disable-update-check so no runtime fetch is ever attempted.
 # Refreshed whenever the image is rebuilt.
-RUN nuclei -update-templates -disable-update-check \
+# NOTE: do NOT add -disable-update-check here — it suppresses the install itself
+# (nuclei exits 0 but writes nothing), so the templates dir is never created and
+# the test -d gate fails. The flag belongs only in the scan-time collector cmd.
+RUN nuclei -update-templates \
     && test -d /root/nuclei-templates
 
 WORKDIR /app
