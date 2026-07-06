@@ -269,6 +269,25 @@ class TestNucleiCollector:
             assert flag in cmd, f"missing {flag}"
         assert captured["timeout"] == 1800
 
+    def test_cmd_disables_runtime_template_update(self):
+        """nuclei must never download/update templates at scan time.
+
+        Templates are baked into the image; a runtime fetch from GitHub on a
+        fresh pod hangs for hours mid-scan. -disable-update-check stops nuclei
+        from doing any template/version update check when it runs.
+        """
+        sess = self._make_session()
+        captured = {}
+
+        def fake_run(cmd, timeout):
+            captured["cmd"] = cmd
+            return MagicMock(stdout="", returncode=0, stderr="")
+
+        with patch("apps.nuclei.collector._run", side_effect=fake_run):
+            collect(sess)
+
+        assert "-disable-update-check" in captured["cmd"]
+
 
 # ---------------------------------------------------------------------------
 # _run — process-group kill on timeout
