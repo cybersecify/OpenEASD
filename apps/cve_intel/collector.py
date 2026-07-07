@@ -34,8 +34,9 @@ def fetch_kev_catalog() -> dict:
     if cached is not None:
         return cached
 
+    http_timeout = _timeout()
     try:
-        resp = requests.get(KEV_URL, timeout=_timeout())
+        resp = requests.get(KEV_URL, timeout=http_timeout)
         resp.raise_for_status()
         data = resp.json()
     except (requests.RequestException, ValueError) as e:
@@ -66,13 +67,14 @@ def fetch_epss_scores(cves: list[str]) -> dict:
     if not unique:
         return scores
 
+    http_timeout = _timeout()
     for i in range(0, len(unique), EPSS_BATCH):
         batch = unique[i:i + EPSS_BATCH]
         try:
             resp = requests.get(
                 EPSS_URL,
                 params={"cve": ",".join(batch)},
-                timeout=_timeout(),
+                timeout=http_timeout,
             )
             resp.raise_for_status()
             data = resp.json()
