@@ -9,7 +9,7 @@ authors = [
 ]
 dependencies = [
     # Web framework
-    "django>=5.2.14",
+    "django>=5.2.16",
     "django-ninja>=1.6.2",
     # Configuration
     "python-decouple>=3.8",
