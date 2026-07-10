@@ -99,22 +99,24 @@ class TestAmassCollector:
             records = collect(sess)
         assert records[0]["host"] == "api.example.com"
 
-    def test_returns_empty_on_binary_not_found(self):
+    def test_raises_on_binary_not_found(self):
+        from apps.core.workflows.exceptions import ToolBinaryMissing
         sess = _session()
         _config()
         with patch("apps.amass.collector.subprocess.run", side_effect=FileNotFoundError):
-            records = collect(sess)
-        assert records == []
+            with pytest.raises(ToolBinaryMissing):
+                collect(sess)
 
-    def test_returns_empty_on_timeout(self):
+    def test_raises_on_timeout(self):
+        from apps.core.workflows.exceptions import ToolTimeout
         sess = _session()
         _config()
         with patch(
             "apps.amass.collector.subprocess.run",
             side_effect=subprocess.TimeoutExpired("amass", 30),
         ):
-            records = collect(sess)
-        assert records == []
+            with pytest.raises(ToolTimeout):
+                collect(sess)
 
     def test_tolerates_nonzero_returncode(self):
         sess = _session()

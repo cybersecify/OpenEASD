@@ -42,11 +42,12 @@ class TestNaabuCollector:
         records = collect(sess, [])
         assert records == []
 
-    def test_returns_empty_on_binary_not_found(self):
+    def test_raises_on_binary_not_found(self):
+        from apps.core.workflows.exceptions import ToolBinaryMissing
         sess = self._session()
         with patch("apps.naabu.collector.subprocess.run", side_effect=FileNotFoundError):
-            records = collect(sess, ["1.2.3.4"])
-        assert records == []
+            with pytest.raises(ToolBinaryMissing):
+                collect(sess, ["1.2.3.4"])
 
 
 @pytest.mark.django_db

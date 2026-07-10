@@ -8,6 +8,8 @@ import tempfile
 
 from django.conf import settings
 
+from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,10 +56,10 @@ def collect(session, host_ports: list[str]) -> list[dict]:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL)
     except FileNotFoundError:
         logger.error(f"[httpx:{session.id}] Binary not found: {binary}")
-        return []
+        raise ToolBinaryMissing(f"httpx binary not found: {binary}")
     except subprocess.TimeoutExpired:
         logger.error(f"[httpx:{session.id}] Timed out")
-        return []
+        raise ToolTimeout("httpx timed out")
     finally:
         os.unlink(tmp)
 

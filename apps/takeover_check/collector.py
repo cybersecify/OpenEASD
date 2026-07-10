@@ -21,6 +21,8 @@ import tempfile
 
 from django.conf import settings
 
+from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,8 +43,8 @@ def collect(subdomains: list[str]) -> list[dict]:
 
     binary = getattr(settings, "TOOL_SUBZY", "subzy")
     if not shutil.which(binary):
-        logger.warning("subzy binary not found at %r — skipping takeover check", binary)
-        return []
+        logger.error("subzy binary not found at %r", binary)
+        raise ToolBinaryMissing(f"subzy binary not found: {binary}")
 
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".txt", delete=False
@@ -75,7 +77,7 @@ def collect(subdomains: list[str]) -> list[dict]:
             )
         except subprocess.TimeoutExpired:
             logger.warning("subzy timed out after 1800s")
-            return []
+            raise ToolTimeout("subzy timed out after 1800s")
 
         if result.returncode != 0:
             logger.warning(

@@ -36,9 +36,11 @@ class TestCollect:
 
     @patch("apps.alterx.collector.shutil.which", return_value="/usr/bin/alterx")
     @patch("apps.alterx.collector.subprocess.run")
-    def test_timeout_returns_empty(self, mock_run, _which):
+    def test_timeout_raises(self, mock_run, _which):
+        from apps.core.workflows.exceptions import ToolTimeout
         mock_run.side_effect = subprocess.TimeoutExpired("alterx", 300)
-        assert collect(["api.example.com"]) == []
+        with pytest.raises(ToolTimeout):
+            collect(["api.example.com"])
 
     @patch("apps.alterx.collector.shutil.which", return_value="/usr/bin/alterx")
     @patch("apps.alterx.collector.subprocess.run")

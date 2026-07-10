@@ -13,6 +13,7 @@ import tempfile
 
 from django.conf import settings
 from apps.core.assets.models import Port
+from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
 
 logger = logging.getLogger(__name__)
 
@@ -109,10 +110,10 @@ def collect(session) -> list[dict]:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT, stdin=subprocess.DEVNULL)
     except FileNotFoundError:
         logger.error(f"[nuclei_network:{session.id}] Binary not found: {binary}")
-        return []
+        raise ToolBinaryMissing(f"nuclei binary not found: {binary}")
     except subprocess.TimeoutExpired:
         logger.error(f"[nuclei_network:{session.id}] Timed out after {TIMEOUT}s")
-        return []
+        raise ToolTimeout(f"nuclei_network timed out after {TIMEOUT}s")
     finally:
         os.unlink(tmp)
 

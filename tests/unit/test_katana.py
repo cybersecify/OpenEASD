@@ -37,18 +37,20 @@ class TestKatanaCollector:
         records = collect(sess, [])
         assert records == []
 
-    def test_returns_empty_on_binary_not_found(self):
+    def test_raises_on_binary_not_found(self):
+        from apps.core.workflows.exceptions import ToolBinaryMissing
         sess = self._session()
         with patch("apps.katana.collector.subprocess.run", side_effect=FileNotFoundError):
-            records = collect(sess, ["https://example.com"])
-        assert records == []
+            with pytest.raises(ToolBinaryMissing):
+                collect(sess, ["https://example.com"])
 
-    def test_returns_empty_on_timeout(self):
+    def test_raises_on_timeout(self):
         import subprocess
+        from apps.core.workflows.exceptions import ToolTimeout
         sess = self._session()
         with patch("apps.katana.collector.subprocess.run", side_effect=subprocess.TimeoutExpired("katana", 30)):
-            records = collect(sess, ["https://example.com"])
-        assert records == []
+            with pytest.raises(ToolTimeout):
+                collect(sess, ["https://example.com"])
 
     def test_skips_invalid_json_lines(self):
         sess = self._session()

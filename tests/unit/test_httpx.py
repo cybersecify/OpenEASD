@@ -32,11 +32,12 @@ class TestHttpxCollector:
         records = collect(sess, [])
         assert records == []
 
-    def test_returns_empty_on_binary_not_found(self):
+    def test_raises_on_binary_not_found(self):
+        from apps.core.workflows.exceptions import ToolBinaryMissing
         sess = self._session()
         with patch("apps.httpx.collector.subprocess.run", side_effect=FileNotFoundError):
-            records = collect(sess, ["www.example.com:80"])
-        assert records == []
+            with pytest.raises(ToolBinaryMissing):
+                collect(sess, ["www.example.com:80"])
 
 
 @pytest.mark.django_db

@@ -4,6 +4,8 @@ import subprocess
 
 from django.conf import settings
 
+from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 300
@@ -31,9 +33,9 @@ def collect(subdomains: list[str]) -> list[str]:
         )
     except subprocess.TimeoutExpired:
         logger.warning("alterx timed out after %ss", _TIMEOUT)
-        return []
+        raise ToolTimeout(f"alterx timed out after {_TIMEOUT}s")
     except FileNotFoundError:
-        return []
+        raise ToolBinaryMissing("alterx binary not found")
 
     if result.returncode != 0:
         logger.warning(

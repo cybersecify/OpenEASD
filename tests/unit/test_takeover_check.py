@@ -174,8 +174,10 @@ class TestCollectorEdgeCases:
         assert collect([]) == []
 
     @patch("apps.takeover_check.collector.shutil.which", return_value=None)
-    def test_missing_binary_returns_empty(self, _which):
-        assert collect(["foo.example.com"]) == []
+    def test_missing_binary_raises(self, _which):
+        from apps.core.workflows.exceptions import ToolBinaryMissing
+        with pytest.raises(ToolBinaryMissing):
+            collect(["foo.example.com"])
 
     @patch("apps.takeover_check.collector.shutil.which", return_value="/usr/local/bin/subzy")
     @patch("apps.takeover_check.collector.subprocess.run")
