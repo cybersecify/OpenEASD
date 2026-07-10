@@ -119,13 +119,19 @@ spec:
             capabilities:
               add:
                 - NET_RAW   # required for nmap and naabu port scanning
+          # nuclei loads ~10k community templates into memory at scan time,
+          # which spikes well past 1Gi. At the old 1Gi limit the kernel
+          # OOM-killed the worker mid-scan (exit 137) — proc.wait() never
+          # returned, so the scan orphaned "running" until the 240m watchdog
+          # reaped it as partial. Raised to 4Gi (node has ~52Gi free) so the
+          # template load fits and full scans complete.
           resources:
             requests:
               cpu: "500m"
-              memory: "512Mi"
+              memory: "1Gi"
             limits:
               cpu: "2000m"
-              memory: "1Gi"
+              memory: "4Gi"
 
       volumes:
         - name: data
