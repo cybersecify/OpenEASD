@@ -24,9 +24,11 @@ class TestCollect:
 
     @patch("apps.cloud_assets.collector.shutil.which", return_value="/usr/bin/cloud_enum")
     @patch("apps.cloud_assets.collector.subprocess.run")
-    def test_timeout_returns_empty(self, mock_run, _):
+    def test_timeout_raises(self, mock_run, _):
+        from apps.core.workflows.exceptions import ToolTimeout
         mock_run.side_effect = subprocess.TimeoutExpired("cloud_enum", 1800)
-        assert collect(["example"]) == []
+        with pytest.raises(ToolTimeout):
+            collect(["example"])
 
     @patch("apps.cloud_assets.collector.shutil.which", return_value="/usr/bin/cloud_enum")
     @patch("apps.cloud_assets.collector.subprocess.run", return_value=MagicMock(returncode=0, stderr=""))

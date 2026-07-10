@@ -10,6 +10,8 @@ import tempfile
 import yaml
 from django.conf import settings
 
+from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+
 logger = logging.getLogger(__name__)
 
 # RFC 1035 / RFC 1123 — must have at least one dot and a valid TLD (2+ alpha chars)
@@ -51,10 +53,10 @@ def collect(session) -> list[dict]:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
     except FileNotFoundError:
         logger.error(f"[subfinder:{session.id}] Binary not found: {binary}")
-        return []
+        raise ToolBinaryMissing(f"subfinder binary not found: {binary}")
     except subprocess.TimeoutExpired:
         logger.error(f"[subfinder:{session.id}] Timed out")
-        return []
+        raise ToolTimeout("subfinder timed out")
     finally:
         if provider_tmp:
             os.unlink(provider_tmp)

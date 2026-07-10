@@ -16,6 +16,8 @@ import tempfile
 
 from django.conf import settings
 
+from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 1800        # hard wall-clock cap for the whole nuclei run (30 min)
@@ -128,10 +130,10 @@ def collect(session) -> list[dict]:
         result = _run(cmd, TIMEOUT)
     except FileNotFoundError:
         logger.error(f"[nuclei:{session.id}] Binary not found: {binary}")
-        return []
+        raise ToolBinaryMissing(f"nuclei binary not found: {binary}")
     except subprocess.TimeoutExpired:
         logger.error(f"[nuclei:{session.id}] Timed out after {TIMEOUT}s")
-        return []
+        raise ToolTimeout(f"nuclei timed out after {TIMEOUT}s")
     finally:
         os.unlink(tmp)
 

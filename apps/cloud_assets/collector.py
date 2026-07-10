@@ -6,6 +6,8 @@ import tempfile
 
 from django.conf import settings
 
+from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 1800  # 30 minutes — cloud_enum probes many permutations
@@ -38,7 +40,9 @@ def collect(keywords: list[str]) -> list[str]:
             )
         except subprocess.TimeoutExpired:
             logger.warning("cloud_enum timed out after %ss", _TIMEOUT)
-            return []
+            raise ToolTimeout(f"cloud_enum timed out after {_TIMEOUT}s")
+        except FileNotFoundError:
+            raise ToolBinaryMissing(f"cloud_enum binary not found: {binary}")
 
         if result.returncode != 0:
             logger.warning(

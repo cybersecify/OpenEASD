@@ -9,6 +9,8 @@ import tempfile
 import yaml
 from django.conf import settings
 
+from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+
 logger = logging.getLogger(__name__)
 
 
@@ -71,10 +73,10 @@ def collect(session) -> list[dict]:
         )
     except FileNotFoundError:
         logger.error(f"[amass:{session.id}] Binary not found: {binary}")
-        return []
+        raise ToolBinaryMissing(f"amass binary not found: {binary}")
     except subprocess.TimeoutExpired:
         logger.error(f"[amass:{session.id}] Timed out after {config.scan_timeout}m")
-        return []
+        raise ToolTimeout(f"amass timed out after {config.scan_timeout}m")
     finally:
         if config_tmp:
             os.unlink(config_tmp)

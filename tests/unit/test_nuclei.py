@@ -225,20 +225,25 @@ class TestNucleiCollector:
         assert records == []
         assert not mock_run.called
 
-    def test_binary_not_found(self):
+    def test_binary_not_found_raises(self):
+        """A missing binary must surface as ToolBinaryMissing, not a silent [] —
+        otherwise the runner marks the step 'completed' and the failure hides."""
+        from apps.core.workflows.exceptions import ToolBinaryMissing
         sess = self._make_session()
-        with patch("apps.nuclei.collector._run",
-                   side_effect=FileNotFoundError):
-            records = collect(sess)
-        assert records == []
+        with patch("apps.nuclei.collector._run", side_effect=FileNotFoundError):
+            with pytest.raises(ToolBinaryMissing):
+                collect(sess)
 
-    def test_timeout_handled(self):
+    def test_timeout_raises(self):
+        """A wall-clock timeout must surface as ToolTimeout, not a silent [] —
+        this is the false-green that made nuclei look 'completed' with 0 findings."""
         import subprocess as sp
+        from apps.core.workflows.exceptions import ToolTimeout
         sess = self._make_session()
         with patch("apps.nuclei.collector._run",
                    side_effect=sp.TimeoutExpired(cmd="nuclei", timeout=1800)):
-            records = collect(sess)
-        assert records == []
+            with pytest.raises(ToolTimeout):
+                collect(sess)
 
     def test_invalid_json_skipped(self):
         sess = self._make_session()

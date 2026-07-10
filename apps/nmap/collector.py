@@ -6,6 +6,8 @@ from collections import defaultdict
 
 from django.conf import settings
 
+from apps.core.workflows.exceptions import ToolBinaryMissing
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,8 +47,10 @@ def collect(session, ip_to_ports: dict[str, list[int]]) -> dict[str, str]:
             results[ip] = proc.stdout
         except FileNotFoundError:
             logger.error(f"[nmap:{session.id}] Binary not found: {binary}")
-            return results
+            raise ToolBinaryMissing(f"nmap binary not found: {binary}")
         except subprocess.TimeoutExpired:
+            # One IP timing out is degraded, not a tool failure — skip it and
+            # keep scanning the rest.
             logger.warning(f"[nmap:{session.id}] Timeout on {ip}")
             continue
 
