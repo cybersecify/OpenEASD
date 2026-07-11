@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 from django.utils import timezone
 
 from apps.core.scheduler.scheduler import (
+    SCAN_PENDING_TIMEOUT_MINUTES,
     SCAN_TIMEOUT_MINUTES,
     purge_expired_blacklisted_tokens,
     reap_stuck_scans,
@@ -48,6 +49,36 @@ class TestReapStuckScans:
         assert count == 1
         session.refresh_from_db()
         assert session.status == "failed"
+
+    def test_reaps_orphaned_pending_scan_before_running_timeout(self, db):
+        """A pending scan past the (shorter) pending cutoff is reaped even though
+        it has not reached the running timeout. This is the orphaned-pending case
+        that would otherwise block the domain for the full running budget."""
+        # Between the two thresholds: old behavior (single 240m cutoff) left it.
+        assert SCAN_PENDING_TIMEOUT_MINUTES + 5 < SCAN_TIMEOUT_MINUTES
+        session = self._make_session("pending", SCAN_PENDING_TIMEOUT_MINUTES + 5)
+        count = reap_stuck_scans()
+        assert count == 1
+        session.refresh_from_db()
+        assert session.status == "failed"
+        assert session.end_time is not None
+
+    def test_does_not_reap_recently_pending_scan(self, db):
+        """A just-queued pending scan (under the pending cutoff) is left alone."""
+        session = self._make_session("pending", SCAN_PENDING_TIMEOUT_MINUTES - 5)
+        count = reap_stuck_scans()
+        assert count == 0
+        session.refresh_from_db()
+        assert session.status == "pending"
+
+    def test_running_scan_keeps_longer_timeout(self, db):
+        """A running scan older than the pending cutoff but under the running
+        timeout is NOT reaped — running scans keep the full SCAN_TIMEOUT budget."""
+        session = self._make_session("running", SCAN_PENDING_TIMEOUT_MINUTES + 5)
+        count = reap_stuck_scans()
+        assert count == 0
+        session.refresh_from_db()
+        assert session.status == "running"
 
     def test_does_not_reap_recent_running_scan(self, db):
         session = self._make_session("running", SCAN_TIMEOUT_MINUTES - 1)
