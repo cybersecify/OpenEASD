@@ -1,3 +1,7 @@
+<p align="center">
+  <a href="https://cybersecify.com"><img src="docs/brand/cybersecify-horizontal.svg" alt="Cybersecify" height="72"></a>
+</p>
+
 # OpenEASD
 
 [![GitHub Stars](https://img.shields.io/github/stars/cybersecify/OpenEASD?style=social)](https://github.com/cybersecify/OpenEASD/stargazers)
