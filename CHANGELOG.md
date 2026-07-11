@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v0.9.0] — 2026-07-12
+
 ### Added
 
 - **Cybersecify branding on the README and PDF report** — Company logo added to the README header (brand SVG) and the PDF report cover (white variant, sized for the dark `#0d1117` cover), embedded as a base64 data-URI so the PDF engine (xhtml2pdf/pisa) needs no `link_callback` or static-file resolution. **Why:** brings the repo's public copy and the customer-facing report in line with the `cybersecify.com` brand; the report previously carried no company logo.
