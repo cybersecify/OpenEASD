@@ -32,7 +32,7 @@ Exit code is non-zero if any tool is FAIL or SUSPECT, so this can gate CI.
 
 Usage:
     manage.py verify_tools                       # latest terminal scan for the default domain
-    manage.py verify_tools --domain ast.co.rs
+    manage.py verify_tools --domain example.com
     manage.py verify_tools --session 35
 """
 
@@ -104,7 +104,7 @@ MULTI_BINARY = {"historical_urls": ["TOOL_GAU", "TOOL_WAYBACKURLS"]}
 # almost certainly a no-op (missing binary / empty input), not real work.
 SUSPICIOUS_FAST = 2.0
 
-DEFAULT_DOMAIN = "ast.co.rs"
+DEFAULT_DOMAIN = "example.com"
 
 
 class Command(BaseCommand):

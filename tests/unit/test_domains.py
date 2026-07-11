@@ -17,7 +17,7 @@ class TestDomainModel:
 
     def test_create_related_domain(self):
         from apps.core.domains.models import Domain
-        d = Domain.objects.create(name="cybersecify.in", is_primary=False)
+        d = Domain.objects.create(name="example.org", is_primary=False)
         assert d.is_primary is False
 
     def test_domain_name_unique(self):
