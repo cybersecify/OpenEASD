@@ -20,9 +20,21 @@ from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT = 1800        # hard wall-clock cap for the whole nuclei run (30 min)
+# Wall-clock cap for the whole nuclei run. Raised from 30m to 2h: on real
+# web-bearing targets nuclei is the single highest-value tool (36-42 findings
+# on cybersecify.com/.in vs a false 0 on ast.co.rs, where the old 30m wall
+# SIGKILL'd it at ~4% done). Time is not the constraint here — value and not
+# missing findings are — and this stays under the 4h worker/watchdog budget
+# even with nuclei_network (1h) also in the Full Scan. If a very large target
+# still exceeds it, the collector raises ToolTimeout so the scan reports
+# `partial` honestly rather than a misleading 0.
+TIMEOUT = 7200        # hard wall-clock cap for the whole nuclei run (2h)
 REQUEST_TIMEOUT = 5   # seconds per HTTP request (nuclei -timeout)
-RATE_LIMIT = 150      # max requests/sec across all hosts (nuclei -rate-limit)
+# Lowered 150 -> 100 to be gentler on targets. Observed hosts already self-
+# throttle to ~85-95 rps so this rarely binds, but it caps load on hosts that
+# could absorb more. 100 rps still completes the full template set on the
+# ast.co.rs-scale worst case (~330k requests) well within the 2h cap.
+RATE_LIMIT = 100      # max requests/sec across all hosts (nuclei -rate-limit)
 CONCURRENCY = 25      # parallel templates (nuclei -c)
 
 

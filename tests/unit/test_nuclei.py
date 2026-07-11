@@ -272,7 +272,9 @@ class TestNucleiCollector:
         cmd = captured["cmd"]
         for flag in ("-rate-limit", "-c", "-timeout", "-retries"):
             assert flag in cmd, f"missing {flag}"
-        assert captured["timeout"] == 1800
+        assert captured["timeout"] == 7200
+        # gentler rate limit for politeness (see collector RATE_LIMIT)
+        assert "100" in cmd
 
     def test_cmd_disables_runtime_template_update(self):
         """nuclei must never download/update templates at scan time.
