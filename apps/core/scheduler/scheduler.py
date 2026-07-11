@@ -14,6 +14,18 @@ from decouple import config as _config  # noqa: E402
 # "partial" mid-run. Keep this at/above the worker hard-kill (240m).
 SCAN_TIMEOUT_MINUTES = _config("SCAN_TIMEOUT_MINUTES", default=240, cast=int)
 
+# A scan stuck in "pending" never started running — its enqueued Django-Q task was
+# lost (e.g. the qcluster worker restarted between enqueue and pickup), so it sits
+# in "pending" forever. Because the per-domain concurrency guard counts pending
+# scans as active, one orphaned pending scan blocks every new scan for that domain
+# indefinitely (observed in prod: a scan sat pending ~6h and blocked the domain).
+# Reap these far sooner than running scans: a pending scan has no work in flight,
+# so it doesn't need the 4h running budget — it only needs long enough to be sure
+# a healthy worker would already have picked it up (queue behind other scans is
+# possible, so keep a generous margin over normal wait). Tunable for deployments
+# that legitimately queue scans for long stretches behind long-running ones.
+SCAN_PENDING_TIMEOUT_MINUTES = _config("SCAN_PENDING_TIMEOUT_MINUTES", default=60, cast=int)
+
 
 # ---------------------------------------------------------------------------
 # Core schedule setup (called once on qcluster startup)
@@ -151,23 +163,34 @@ def daily_scan():
 
 def reap_stuck_scans():
     """
-    Reap scans that have been running/pending beyond SCAN_TIMEOUT_MINUTES.
+    Reap scans wedged past their timeout, using a separate cutoff per status.
+
+    - `running` scans are reaped after SCAN_TIMEOUT_MINUTES (must stay >= the
+      worker hard-kill so a healthy long scan is never flipped mid-run).
+    - `pending` scans are reaped after SCAN_PENDING_TIMEOUT_MINUTES, which is far
+      shorter: a pending scan never started, so it doesn't need the running budget.
+      This is what stops an orphaned pending scan (lost Django-Q task after a worker
+      restart) from blocking a domain for hours via the pending-counting guard.
 
     A scan that had at least one step complete before the timeout is reaped as
     `partial` (its findings are kept and shown). A scan with no completed steps
-    is reaped as `failed`. Any step still in-flight at reap time is marked
-    `failed` with a reason in `error` so the UI shows what was killed.
+    (all pending scans, since they never created a WorkflowRun) is reaped as
+    `failed`. Any step still in-flight at reap time is marked `failed` with a
+    reason in `error` so the UI shows what was killed.
     """
+    from django.db.models import Q
+
     from apps.core.scans.models import ScanSession
 
     now = django_tz.now()
-    cutoff = now - django_tz.timedelta(minutes=SCAN_TIMEOUT_MINUTES)
+    running_cutoff = now - django_tz.timedelta(minutes=SCAN_TIMEOUT_MINUTES)
+    pending_cutoff = now - django_tz.timedelta(minutes=SCAN_PENDING_TIMEOUT_MINUTES)
     stuck_qs = ScanSession.objects.filter(
-        status__in=["pending", "running"],
-        start_time__lt=cutoff,
+        Q(status="running", start_time__lt=running_cutoff)
+        | Q(status="pending", start_time__lt=pending_cutoff)
     ).select_related("workflow_run")
 
-    reap_msg = f"reaped by watchdog after {SCAN_TIMEOUT_MINUTES}m"
+    reap_msg = "reaped by watchdog after timeout"
     partial_count = 0
     failed_count = 0
 

@@ -310,5 +310,5 @@ Readiness/liveness probe: `GET /health/` (unauthenticated).
 |---|---|---|
 | Daily scan | `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (02:00) | Full scan of all active domains |
 | Per-domain monitoring | 6h / 12h / 24h / 48h / weekly | Configurable per domain; managed by `sync_domain_monitoring_jobs()` |
-| Stuck-scan watchdog | Every 5 min | Reaps `running` scans stalled past `SCAN_TIMEOUT_MINUTES` (default 90) as `partial` or `failed` |
+| Stuck-scan watchdog | Every 15 min | Reaps `running` scans stalled past `SCAN_TIMEOUT_MINUTES` (default 240) and orphaned `pending` scans past `SCAN_PENDING_TIMEOUT_MINUTES` (default 60) as `partial` or `failed` |
 | JWT token purge | Daily | Clears expired simplejwt `OutstandingToken` rows |
