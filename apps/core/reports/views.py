@@ -1,9 +1,11 @@
 """Report export views — CSV and PDF."""
 
+import base64
 import csv
 import functools
 import logging
 from io import BytesIO
+from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -22,6 +24,22 @@ logger = logging.getLogger(__name__)
 
 _SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
 _ALLOWED_SEVERITIES = frozenset(_SEVERITY_ORDER)
+
+# Cybersecify report logo, embedded as a base64 data-URI so the PDF engine
+# (xhtml2pdf/pisa) needs no link_callback or static-file resolution. White
+# variant for the dark (#0d1117) report cover.
+_REPORT_LOGO = Path(__file__).resolve().parent / "brand" / "cybersecify-white-horizontal.png"
+
+
+@functools.lru_cache(maxsize=1)
+def _logo_data_uri() -> str:
+    """Return the report logo as a `data:image/png;base64,...` URI, or "" if missing."""
+    try:
+        encoded = base64.b64encode(_REPORT_LOGO.read_bytes()).decode("ascii")
+        return f"data:image/png;base64,{encoded}"
+    except OSError:
+        logger.warning("[reports] logo asset missing at %s", _REPORT_LOGO)
+        return ""
 
 
 def _parse_min_severity(request):
@@ -167,6 +185,7 @@ def export_scan_pdf(request, session_uuid):
         "asset_counts": asset_counts,
         "scan_duration": scan_duration,
         "generated_at": timezone.now(),
+        "logo_data_uri": _logo_data_uri(),
         # Optional CTA — template renders the block only when both are truthy.
         "report_cta_url": getattr(settings, "REPORT_CTA_URL", "") or "",
         "report_cta_text": getattr(settings, "REPORT_CTA_TEXT", "") or "",

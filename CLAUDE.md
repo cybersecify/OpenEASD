@@ -507,4 +507,4 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | `tests/integration/test_scan_flow.py` | 13 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 71 | Smoke tests for all 35 API endpoints (auth + payload shape) |
 
-**Total: ~910 tests** (~869 fast + 41 slow domain_security)
+**Total: ~963 tests** (~922 fast + 41 slow domain_security)

@@ -107,7 +107,7 @@ A self-hosted web platform that automatically discovers and monitors an organiza
 - **Community infrastructure** — `CONTRIBUTING.md`, `SECURITY.md` (with GitHub Private Vulnerability Reporting enabled), issue templates (Bug / Feature / New Tool), PR template, Dependabot config with grouped weekly PRs, Discussions tab enabled, repo topics expanded from 7 to 17
 - **Tool startup health check** — `tools_healthcheck` management command probes all 8 external tools at container boot, surfaces silent-failure modes early
 - **Partial-status watchdog** — scans reaped by the 90-min watchdog are marked `partial` (not `failed`) if any pipeline step completed, preserving the findings that were captured before the reap
-- **README hero rewrite** — sharpened "see your domain like an attacker does" framing + live scan screenshot of a real `nmap.org` scan
+- **README hero rewrite** — sharpened "see your domain like an attacker does" framing + live scan screenshot of a real scan
 - **README claims-trace audit** — every customer-visible README claim grep-verified against analyzer/scanner code; two drifts corrected (nuclei "319 templates" → timeless phrasing; PyJWT → django-ninja-jwt)
 - **Documentation discipline** — every CHANGELOG entry, PR body, and non-trivial commit now captures What / Why / Hypothesis / Evidence (data-oriented vs speculative vs user-driven vs external-signal) so future readers can reconstruct the reasoning
 

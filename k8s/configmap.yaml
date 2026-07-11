@@ -4,8 +4,9 @@ metadata:
   name: openeasd-config
   namespace: default
 data:
-  ALLOWED_HOSTS: "openeasd.cybersecify.com,openeasd.local,localhost"
-  CSRF_TRUSTED_ORIGINS: "https://openeasd.cybersecify.com,http://openeasd.local"
+  # Replace openeasd.example.com with the hostname you serve OpenEASD on.
+  ALLOWED_HOSTS: "openeasd.example.com,openeasd.local,localhost"
+  CSRF_TRUSTED_ORIGINS: "https://openeasd.example.com,http://openeasd.local"
   DEBUG: "False"
   DB_NAME: "data/openeasd.db"
   ALERT_SEVERITY_THRESHOLD: "high"

@@ -1,3 +1,7 @@
+<p align="center">
+  <a href="https://cybersecify.com"><img src="docs/brand/cybersecify-horizontal.svg" alt="Cybersecify" height="72"></a>
+</p>
+
 # OpenEASD
 
 [![GitHub Stars](https://img.shields.io/github/stars/cybersecify/OpenEASD?style=social)](https://github.com/cybersecify/OpenEASD/stargazers)
@@ -14,7 +18,7 @@ OpenEASD wraps the open-source recon tools security teams already use — `subfi
 
 Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok S Kamat](https://www.linkedin.com/in/ashokskamat/) of [Cybersecify](https://cybersecify.com) — the same tool we run in engagements and on our own infrastructure.
 
-![OpenEASD scan in progress against nmap.org — 11 subdomains, 22 IPs, 6 ports, 3 critical findings already, all 18 tool steps tracked live](docs/screenshots/scan-detail-live.png)
+![OpenEASD scan detail — live asset inventory (subdomains, IPs, ports, URLs) and findings tracked per tool step](docs/screenshots/scan-detail-live.png)
 
 ## Who this is for
 
@@ -68,8 +72,8 @@ public source — the published image carries:
   elsewhere
 
 ```bash
-docker buildx imagetools inspect ghcr.io/cybersecify/openeasd:v0.7.2 --format '{{ json .SBOM }}'
-docker buildx imagetools inspect ghcr.io/cybersecify/openeasd:v0.7.2 --format '{{ json .Provenance }}'
+docker buildx imagetools inspect ghcr.io/cybersecify/openeasd:v0.8.0 --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/cybersecify/openeasd:v0.8.0 --format '{{ json .Provenance }}'
 ```
 
 ### What we don't do
@@ -378,7 +382,7 @@ uv run python main.py --no-worker      # web server only (no worker)
 ## CI/CD
 
 GitHub Actions runs on every push to `main` and `v*` tags:
-- **pytest** — fast test suite (~855 tests, excludes the 41 slow DNS/RDAP tests in `test_domain_security.py`)
+- **pytest** — fast test suite (~922 tests, excludes the 41 slow DNS/RDAP tests in `test_domain_security.py`)
 - **bandit** — Python SAST scan
 - **pip-audit** — dependency CVE scan
 - **Frontend build** — `npm ci && npm run build`
@@ -431,7 +435,7 @@ apps/my_tool/
 ## Running Tests
 
 ```bash
-# Fast tests (excludes slow DNS tests, ~855 tests)
+# Fast tests (excludes slow DNS tests, ~922 tests)
 uv run pytest tests/ --ignore=tests/unit/test_domain_security.py
 
 # All tests (~896 total)

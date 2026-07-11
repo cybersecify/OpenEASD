@@ -21,9 +21,9 @@ from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
 logger = logging.getLogger(__name__)
 
 # Wall-clock cap for the whole nuclei run. Raised from 30m to 2h: on real
-# web-bearing targets nuclei is the single highest-value tool (36-42 findings
-# on cybersecify.com/.in vs a false 0 on ast.co.rs, where the old 30m wall
-# SIGKILL'd it at ~4% done). Time is not the constraint here — value and not
+# web-bearing targets nuclei is the single highest-value tool (tens of findings
+# each) but the old 30m wall SIGKILL'd it at ~4% done, reporting a false 0.
+# Time is not the constraint here — value and not
 # missing findings are — and this stays under the 4h worker/watchdog budget
 # even with nuclei_network (1h) also in the Full Scan. If a very large target
 # still exceeds it, the collector raises ToolTimeout so the scan reports
@@ -32,8 +32,8 @@ TIMEOUT = 7200        # hard wall-clock cap for the whole nuclei run (2h)
 REQUEST_TIMEOUT = 5   # seconds per HTTP request (nuclei -timeout)
 # Lowered 150 -> 100 to be gentler on targets. Observed hosts already self-
 # throttle to ~85-95 rps so this rarely binds, but it caps load on hosts that
-# could absorb more. 100 rps still completes the full template set on the
-# ast.co.rs-scale worst case (~330k requests) well within the 2h cap.
+# could absorb more. 100 rps still completes the full template set on a
+# large-target worst case (~330k requests) well within the 2h cap.
 RATE_LIMIT = 100      # max requests/sec across all hosts (nuclei -rate-limit)
 CONCURRENCY = 25      # parallel templates (nuclei -c)
 
@@ -123,13 +123,13 @@ def collect(session) -> list[dict]:
 
     # Bound nuclei explicitly so it finishes well under TIMEOUT instead of relying
     # on the kill: -timeout caps each request, -rate-limit/-c cap throughput so a
-    # host with many ports (ast.co.rs had 25 IPs / 27 ports) can't stall the run.
+    # host with many ports (e.g. 25 IPs / 27 ports) can't stall the run.
     cmd = [
         binary, "-list", tmp, "-jsonl", "-silent", "-no-color",
         # Never touch the network for templates/version at scan time. Templates
         # are baked into the image; a fresh pod with no templates would otherwise
         # download the whole repo from GitHub mid-scan and hang for hours (the
-        # process wedged past its own 30-min cap on the ast.co.rs prod scan).
+        # process wedged past its own 30-min cap on a large prod scan).
         "-disable-update-check",
         "-timeout", str(REQUEST_TIMEOUT),
         "-retries", "1",
