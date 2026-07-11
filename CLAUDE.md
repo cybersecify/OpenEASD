@@ -189,19 +189,28 @@ container: worker      → python manage.py qcluster  (NET_RAW capability for nm
 **Files:**
 ```
 k8s/
-  configmap.yaml        — env vars (ALLOWED_HOSTS, CSRF_TRUSTED_ORIGINS, etc.)
-  secret.yaml           — SECRET_KEY template (fill in before applying)
+  configmap.yaml        — non-secret env vars; ALLOWED_HOSTS/CSRF are PLACEHOLDERS only
+  secret.yaml           — template for SECRET_KEY + real ALLOWED_HOSTS/CSRF (apply out-of-band)
   pvc.yaml              — openeasd-data (10Gi) + openeasd-logs (2Gi), RWO
   deployment.yaml       — single pod with init + web + worker containers
   service.yaml          — ClusterIP, port 80 → 8000
   ingress.yaml          — nginx Ingress; TLS annotations ready to uncomment
-  kustomization.yaml    — kubectl apply -k k8s/
+  kustomization.yaml    — kubectl apply -k k8s/ (does NOT include secret.yaml)
 ```
 
 **Key constraints:**
 - `replicas: 1` required — SQLite RWO PVC allows single-node access only
 - Only `worker` container gets `NET_RAW`; `web` does not need it
 - `GET /health/` — unauthenticated endpoint used by K8s readiness/liveness probes
+- **Real `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` live in `openeasd-secret`, never in
+  the committed configmap.** `configmap.yaml` carries only placeholders; the real
+  hostname is set in the secret, which is applied out-of-band and is intentionally
+  omitted from the kustomize base. Because the deployment's `envFrom` lists
+  `secretRef` after `configMapRef` (last source wins), the secret's values override
+  the configmap placeholders at runtime. This is deliberate: it keeps the real host
+  out of the public repo AND makes `kubectl apply -k k8s/` safe — a re-apply can
+  never clobber `ALLOWED_HOSTS` back to the placeholder and 400 the live host.
+  Set them when creating the secret (see `k8s/secret.yaml` and `kustomization.yaml`).
 
 **Update running deployment:**
 ```bash

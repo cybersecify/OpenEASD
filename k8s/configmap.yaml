@@ -4,7 +4,17 @@ metadata:
   name: openeasd-config
   namespace: default
 data:
-  # Replace openeasd.example.com with the hostname you serve OpenEASD on.
+  # ALLOWED_HOSTS / CSRF_TRUSTED_ORIGINS below are PLACEHOLDERS only. Set the real
+  # production hostname in openeasd-secret (see secret.yaml), NOT in this file.
+  #
+  # Why: the secret is applied out-of-band and is deliberately NOT part of the
+  # kustomize base (kustomization.yaml lists only configmap/pvc/deployment/service),
+  # so `kubectl apply -k k8s/` can never overwrite it. The deployment's envFrom
+  # lists secretRef AFTER configMapRef, and the last envFrom source wins — so the
+  # secret's ALLOWED_HOSTS/CSRF_TRUSTED_ORIGINS override these placeholders at
+  # runtime. Committing the real host here would leak it into the public repo AND
+  # let a routine `apply -k` clobber it back to the placeholder, 400-ing every
+  # request on the real host. Leave these as-is.
   ALLOWED_HOSTS: "openeasd.example.com,openeasd.local,localhost"
   CSRF_TRUSTED_ORIGINS: "https://openeasd.example.com,http://openeasd.local"
   DEBUG: "False"

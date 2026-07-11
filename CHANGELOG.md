@@ -7,6 +7,10 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`kubectl apply -k k8s/` can no longer take the site offline by clobbering `ALLOWED_HOSTS`** — The committed `configmap.yaml` held the deployment's real serving hostname in `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS`. Two problems: it leaked a private hostname into the public repo, and because the configmap is part of the kustomize base, running the documented `kubectl apply -k k8s/` deploy step would overwrite the live host with whatever the file said — so scrubbing it to a placeholder turned a routine re-apply into an outage (Django `400`s every request whose `Host` isn't in `ALLOWED_HOSTS`). Fix: move the real `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` into `openeasd-secret`, which is applied out-of-band and is deliberately **not** listed in `kustomization.yaml`, so `apply -k` never touches it. `configmap.yaml` now carries placeholders only, and the deployment's `envFrom` already lists `secretRef` after `configMapRef` (last source wins), so the secret's values override the placeholders at runtime. **Why:** the deploy path documented in CLAUDE.md must be safe to run at any time; a config re-apply should never be able to knock the live host offline, and the real hostname should never be in the repo. **Evidence:** verified against the live cluster — the rendered `kubectl kustomize k8s/` output manages only configmap/service/pvc/deployment (no Secret), the secret now durably holds the real host, and the deployment `envFrom` order makes the secret win over the configmap placeholder.
+
 ## [v0.9.0] — 2026-07-12
 
 ### Added
