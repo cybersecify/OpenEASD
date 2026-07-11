@@ -18,8 +18,6 @@ OpenEASD wraps the open-source recon tools security teams already use — `subfi
 
 Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok S Kamat](https://www.linkedin.com/in/ashokskamat/) of [Cybersecify](https://cybersecify.com) — the same tool we run in engagements and on our own infrastructure.
 
-![OpenEASD scan detail — live asset inventory (subdomains, IPs, ports, URLs) and findings tracked per tool step](docs/screenshots/scan-detail-live.png)
-
 ## Who this is for
 
 - **In-house security engineers and IT-doing-security teams** at small-to-mid orgs scanning their own external surface
