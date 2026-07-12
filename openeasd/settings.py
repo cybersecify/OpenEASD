@@ -147,6 +147,15 @@ SCAN_DAILY_MINUTE = config("SCAN_DAILY_MINUTE", default=0, cast=int)
 # Set to False on extra gunicorn workers so only one process runs the scheduler
 SCHEDULER_ENABLED = config("SCHEDULER_ENABLED", default=True, cast=bool)
 
+# Master switch for unattended scanning (daily scan + per-domain monitoring).
+# Default True preserves self-hosted behaviour. Set False for a manual-only
+# deployment (e.g. a managed instance that must never scan without an explicit,
+# per-request approval) — no auto-scan schedules are registered, and any that
+# already exist are removed on the next scheduler startup. Manual/API scans are
+# unaffected. Independent of the authorization gate below, which blocks
+# unauthorized domains even when this is True.
+SCHEDULED_SCANS_ENABLED = config("SCHEDULED_SCANS_ENABLED", default=True, cast=bool)
+
 # OpenEASD Configuration
 OPENEASD_CONFIG_DIR = BASE_DIR / "config"
 OPENEASD_DATA_DIR = BASE_DIR / "data"

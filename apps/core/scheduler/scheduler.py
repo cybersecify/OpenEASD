@@ -32,22 +32,18 @@ SCAN_PENDING_TIMEOUT_MINUTES = _config("SCAN_PENDING_TIMEOUT_MINUTES", default=6
 # ---------------------------------------------------------------------------
 
 def setup_core_schedules():
-    """Register/update the three fixed system schedules in Django-Q2."""
+    """Register/update the fixed system schedules in Django-Q2.
+
+    System-hygiene schedules (stuck-scan watchdog, token purge) always run.
+    The unattended-scan schedules (daily scan + per-domain monitoring) are
+    registered only when SCHEDULED_SCANS_ENABLED is True; when False they are
+    actively removed, so flipping the flag on a running deployment takes effect
+    on the next startup even if the schedules were created by an earlier boot.
+    """
     from django.conf import settings
     from django_q.models import Schedule
 
-    hour   = settings.SCAN_DAILY_HOUR
-    minute = settings.SCAN_DAILY_MINUTE
-
-    Schedule.objects.update_or_create(
-        name="daily_scan",
-        defaults={
-            "func":          "apps.core.scheduler.scheduler.daily_scan",
-            "schedule_type": Schedule.CRON,
-            "cron":          f"{minute} {hour} * * *",
-            "repeats":       -1,
-        },
-    )
+    # --- System-hygiene schedules (always on) ---
     Schedule.objects.update_or_create(
         name="watchdog_reap_stuck_scans",
         defaults={
@@ -63,6 +59,28 @@ def setup_core_schedules():
             "func":          "apps.core.scheduler.scheduler.purge_expired_blacklisted_tokens",
             "schedule_type": Schedule.CRON,
             "cron":          "0 3 * * *",
+            "repeats":       -1,
+        },
+    )
+
+    # --- Unattended-scan schedules (gated by the master switch) ---
+    if not settings.SCHEDULED_SCANS_ENABLED:
+        removed = Schedule.objects.filter(name="daily_scan").delete()[0]
+        removed += Schedule.objects.filter(name__startswith="monitor_").delete()[0]
+        logger.info(
+            "[scheduler] SCHEDULED_SCANS_ENABLED=False — manual-only mode; "
+            f"removed {removed} auto-scan schedule(s). Hygiene schedules registered."
+        )
+        return
+
+    hour   = settings.SCAN_DAILY_HOUR
+    minute = settings.SCAN_DAILY_MINUTE
+    Schedule.objects.update_or_create(
+        name="daily_scan",
+        defaults={
+            "func":          "apps.core.scheduler.scheduler.daily_scan",
+            "schedule_type": Schedule.CRON,
+            "cron":          f"{minute} {hour} * * *",
             "repeats":       -1,
         },
     )
@@ -82,7 +100,14 @@ def sync_domain_monitoring_jobs():
     from django_q.models import Schedule
 
     wanted_names = set()
-    for domain in Domain.objects.filter(is_active=True, monitoring_interval_hours__isnull=False):
+    # Only monitor domains that are both active and authorized — an unauthorized
+    # domain must never be scanned unattended, mirroring the daily_scan gate.
+    monitored = Domain.objects.filter(
+        is_active=True,
+        monitoring_interval_hours__isnull=False,
+        authorization__isnull=False,
+    )
+    for domain in monitored:
         name     = f"monitor_{domain.name}"
         interval = domain.monitoring_interval_hours
         wanted_names.add(name)
@@ -111,10 +136,27 @@ def sync_domain_monitoring_jobs():
 # Callable functions (must be importable module-level paths for Django-Q2)
 # ---------------------------------------------------------------------------
 
+def _is_authorized(domain: str) -> bool:
+    """True only if the domain has a DomainAuthorization record on file.
+
+    The consent gate for every unattended scan entry point. Manual/API scans
+    enforce this separately at the view layer; this guards the scheduler paths
+    so a lingering schedule can never scan a domain whose authorization was
+    revoked after the schedule was created.
+    """
+    from apps.core.domains.models import Domain
+
+    return Domain.objects.filter(name=domain, authorization__isnull=False).exists()
+
+
 def run_monitoring_scan(domain: str):
     """Run a monitoring scan for a single domain."""
     from apps.core.scans.pipeline import create_scan_session
     from apps.core.scans.tasks import run_scan_task
+
+    if not _is_authorized(domain):
+        logger.warning(f"[monitoring] Skipping {domain} — no domain authorization on file")
+        return
 
     session = create_scan_session(domain, triggered_by="monitoring")
     if session is None:
@@ -138,14 +180,19 @@ def run_scheduled_scan(domain: str, triggered_by: str = "scheduled"):
 
 
 def daily_scan():
-    """Run a scan for every active domain."""
+    """Run a scan for every active, authorized domain.
+
+    Gated on DomainAuthorization: a domain with no authorization record is never
+    scanned unattended, even when active. This mirrors the manual entry-point
+    gate (scan-start API + UI dropdown) so the scheduler can't bypass consent.
+    """
     from apps.core.domains.models import Domain
     from apps.core.scans.pipeline import create_scan_session
     from apps.core.scans.tasks import run_scan_task
 
-    active_domains = Domain.objects.filter(is_active=True)
+    active_domains = Domain.objects.filter(is_active=True, authorization__isnull=False)
     if not active_domains.exists():
-        logger.info("[daily_scan] No active domains found")
+        logger.info("[daily_scan] No active authorized domains found")
         return
 
     for domain in active_domains:

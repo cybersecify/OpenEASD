@@ -5,11 +5,26 @@ import pytest
 
 @pytest.mark.django_db
 class TestSyncDomainMonitoringJobs:
-    def _make_domain(self, name, is_active=True, interval=None):
-        from apps.core.domains.models import Domain
-        return Domain.objects.create(
+    def _make_domain(self, name, is_active=True, interval=None, authorized=True):
+        from django.utils import timezone
+        from apps.core.domains.models import Domain, DomainAuthorization
+        domain = Domain.objects.create(
             name=name, is_active=is_active, monitoring_interval_hours=interval,
         )
+        if authorized:
+            DomainAuthorization.objects.create(
+                domain=domain, auth_type="owner",
+                authorized_at=timezone.now().date(), authorized_by="test",
+            )
+        return domain
+
+    def test_no_schedule_for_unauthorized_domain(self, db):
+        """A monitored, active domain with no authorization gets no schedule."""
+        from django_q.models import Schedule
+        from apps.core.scheduler.scheduler import sync_domain_monitoring_jobs
+        self._make_domain("unauth.com", interval=6, authorized=False)
+        sync_domain_monitoring_jobs()
+        assert not Schedule.objects.filter(name="monitor_unauth.com").exists()
 
     def test_creates_schedule_for_active_monitored_domain(self, db):
         from django_q.models import Schedule
