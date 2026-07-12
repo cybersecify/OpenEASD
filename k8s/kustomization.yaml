@@ -12,6 +12,13 @@ resources:
 # ingress.yaml is omitted — Caddy on the host terminates TLS and proxies to the
 # NodePort (service.yaml). Re-add the ingress + a controller (e.g. nginx-ingress)
 # if you want in-cluster ingress instead.
-# Apply secret.yaml separately with a real SECRET_KEY (do not commit real values):
+# secret.yaml is intentionally NOT listed above — it is applied separately with
+# real values that must never be committed, and keeping it out of the base means
+# `kubectl apply -k k8s/` can never overwrite it. The secret holds SECRET_KEY AND
+# the real ALLOWED_HOSTS / CSRF_TRUSTED_ORIGINS (configmap.yaml carries only
+# placeholders; secretRef overrides configMapRef in the deployment envFrom). Apply
+# it out-of-band, e.g.:
 #   kubectl create secret generic openeasd-secret -n default \
-#     --from-literal=SECRET_KEY="$(openssl rand -hex 32)"
+#     --from-literal=SECRET_KEY="$(openssl rand -hex 32)" \
+#     --from-literal=ALLOWED_HOSTS="your.host,localhost" \
+#     --from-literal=CSRF_TRUSTED_ORIGINS="https://your.host"
