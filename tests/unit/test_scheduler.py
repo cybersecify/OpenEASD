@@ -239,16 +239,31 @@ class TestPurgeExpiredBlacklistedTokens:
 
 
 # ---------------------------------------------------------------------------
+# Authorization helper
+# ---------------------------------------------------------------------------
+
+def _authorize(domain):
+    """Attach a DomainAuthorization so `domain` counts as authorized to scan."""
+    from apps.core.domains.models import DomainAuthorization
+    return DomainAuthorization.objects.create(
+        domain=domain,
+        auth_type="owner",
+        authorized_at=timezone.now().date(),
+        authorized_by="test",
+    )
+
+
+# ---------------------------------------------------------------------------
 # daily_scan
 # ---------------------------------------------------------------------------
 
 class TestDailyScan:
-    def test_launches_scan_for_each_active_domain(self, db):
+    def test_launches_scan_for_each_active_authorized_domain(self, db):
         from apps.core.domains.models import Domain
         from apps.core.scheduler.scheduler import daily_scan
 
-        Domain.objects.create(name="a.example.com", is_active=True)
-        Domain.objects.create(name="b.example.com", is_active=True)
+        _authorize(Domain.objects.create(name="a.example.com", is_active=True))
+        _authorize(Domain.objects.create(name="b.example.com", is_active=True))
 
         with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
              patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
@@ -262,12 +277,30 @@ class TestDailyScan:
         assert mock_create.call_count == 2
         assert mock_task.call_count == 2
 
+    def test_skips_unauthorized_domains(self, db):
+        """An active domain with no authorization record is never auto-scanned."""
+        from apps.core.domains.models import Domain
+        from apps.core.scheduler.scheduler import daily_scan
+
+        _authorize(Domain.objects.create(name="authorized.example.com", is_active=True))
+        Domain.objects.create(name="unauthorized.example.com", is_active=True)  # no auth
+
+        with patch("apps.core.scans.tasks.run_scan_task"), \
+             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+            fake_session = MagicMock()
+            fake_session.id = 1
+            mock_create.return_value = fake_session
+            daily_scan()
+
+        assert mock_create.call_count == 1
+        assert mock_create.call_args[0][0] == "authorized.example.com"
+
     def test_skips_inactive_domains(self, db):
         from apps.core.domains.models import Domain
         from apps.core.scheduler.scheduler import daily_scan
 
-        Domain.objects.create(name="active.example.com", is_active=True)
-        Domain.objects.create(name="inactive.example.com", is_active=False)
+        _authorize(Domain.objects.create(name="active.example.com", is_active=True))
+        _authorize(Domain.objects.create(name="inactive.example.com", is_active=False))
 
         with patch("apps.core.scans.tasks.run_scan_task"), \
              patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
@@ -284,7 +317,7 @@ class TestDailyScan:
         from apps.core.domains.models import Domain
         from apps.core.scheduler.scheduler import daily_scan
 
-        Domain.objects.create(name="busy.example.com", is_active=True)
+        _authorize(Domain.objects.create(name="busy.example.com", is_active=True))
 
         with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
              patch("apps.core.scans.pipeline.create_scan_session", return_value=None):
@@ -301,3 +334,89 @@ class TestDailyScan:
 
         mock_create.assert_not_called()
         mock_task.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# run_monitoring_scan authorization gate
+# ---------------------------------------------------------------------------
+
+class TestRunMonitoringScanAuthorization:
+    def test_runs_for_authorized_domain(self, db):
+        from apps.core.domains.models import Domain
+        from apps.core.scheduler.scheduler import run_monitoring_scan
+
+        _authorize(Domain.objects.create(name="mon-ok.example.com", is_active=True))
+
+        with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
+             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+            fake_session = MagicMock()
+            fake_session.id = 1
+            mock_create.return_value = fake_session
+            run_monitoring_scan("mon-ok.example.com")
+
+        mock_create.assert_called_once()
+        mock_task.assert_called_once()
+
+    def test_skips_unauthorized_domain(self, db):
+        from apps.core.domains.models import Domain
+        from apps.core.scheduler.scheduler import run_monitoring_scan
+
+        Domain.objects.create(name="mon-bad.example.com", is_active=True)  # no auth
+
+        with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
+             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+            run_monitoring_scan("mon-bad.example.com")
+
+        mock_create.assert_not_called()
+        mock_task.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# setup_core_schedules master switch (SCHEDULED_SCANS_ENABLED)
+# ---------------------------------------------------------------------------
+
+class TestSetupCoreSchedules:
+    def test_registers_daily_scan_when_enabled(self, db, settings):
+        from django_q.models import Schedule
+        from apps.core.scheduler.scheduler import setup_core_schedules
+
+        settings.SCHEDULED_SCANS_ENABLED = True
+        setup_core_schedules()
+
+        assert Schedule.objects.filter(name="daily_scan").exists()
+        # Hygiene schedules always present.
+        assert Schedule.objects.filter(name="watchdog_reap_stuck_scans").exists()
+        assert Schedule.objects.filter(name="purge_blacklisted_tokens").exists()
+
+    def test_no_daily_scan_when_disabled(self, db, settings):
+        from django_q.models import Schedule
+        from apps.core.scheduler.scheduler import setup_core_schedules
+
+        settings.SCHEDULED_SCANS_ENABLED = False
+        setup_core_schedules()
+
+        assert not Schedule.objects.filter(name="daily_scan").exists()
+        # Hygiene schedules still registered in manual-only mode.
+        assert Schedule.objects.filter(name="watchdog_reap_stuck_scans").exists()
+        assert Schedule.objects.filter(name="purge_blacklisted_tokens").exists()
+
+    def test_disabled_removes_preexisting_auto_scan_schedules(self, db, settings):
+        """Flipping the switch off removes schedules a prior boot created."""
+        from django_q.models import Schedule
+        from apps.core.scheduler.scheduler import setup_core_schedules
+
+        Schedule.objects.create(
+            name="daily_scan", func="apps.core.scheduler.scheduler.daily_scan",
+            schedule_type=Schedule.CRON, cron="0 2 * * *", repeats=-1,
+        )
+        Schedule.objects.create(
+            name="monitor_example.com",
+            func="apps.core.scheduler.scheduler.run_monitoring_scan",
+            schedule_type=Schedule.MINUTES, minutes=60, repeats=-1,
+        )
+
+        settings.SCHEDULED_SCANS_ENABLED = False
+        setup_core_schedules()
+
+        assert not Schedule.objects.filter(name="daily_scan").exists()
+        assert not Schedule.objects.filter(name__startswith="monitor_").exists()

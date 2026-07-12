@@ -22,6 +22,10 @@ data:
   ALERT_SEVERITY_THRESHOLD: "high"
   SCAN_DAILY_HOUR: "2"
   SCAN_DAILY_MINUTE: "0"
+  # Manual-only mode: no unattended (daily / monitoring) scans are scheduled, so
+  # this deployment only scans on an explicit per-request action. Set "true" (or
+  # remove) to enable auto-scanning of active, authorized domains.
+  SCHEDULED_SCANS_ENABLED: "false"
   # Optional report CTA — both must be set to render. Empty defaults disable it.
   REPORT_CTA_URL: ""
   REPORT_CTA_TEXT: ""
