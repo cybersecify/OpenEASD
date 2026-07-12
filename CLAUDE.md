@@ -295,6 +295,7 @@ Per-module routers (each file exports a `router = Router(auth=JWTAuth())`):
     apps/core/scans/api.py       — /api/scans/ + findings
     apps/core/workflows/api.py   — /api/workflows/ CRUD + /tools/
     apps/core/insights/api.py    — /api/insights/
+    apps/core/notifications/api.py — /api/notifications/ config + test + alerts
     (scheduled router in scans/api.py) — /api/scheduled/
 ```
 
@@ -459,12 +460,15 @@ GET  /api/domains/                        — list domains (enriched)
 POST /api/domains/                        — add domain
 POST /api/domains/<pk>/toggle/            — activate/deactivate
 POST /api/domains/<pk>/delete/            — delete domain + all scan data
+POST /api/domains/<pk>/monitoring/        — set/clear per-domain monitoring interval
 GET  /api/scans/                          — paginated scan list (?domain=&status=&page=)
 POST /api/scans/start/                    — start/schedule scan
 GET  /api/scans/<uuid>/                   — full scan detail (assets + findings)
 GET  /api/scans/<uuid>/status/            — lightweight status (React polls every 3s)
 POST /api/scans/<uuid>/stop/              — cancel running scan
 POST /api/scans/<uuid>/delete/            — delete scan session
+POST /api/scans/<uuid>/subscan/           — re-run a single tool / subset against an existing scan
+GET  /api/scans/urls/                     — paginated web-asset URLs (?domain=&page=)
 GET  /api/scans/findings/                 — paginated findings (?severity=&domain=&status=&source=)
 POST /api/scans/findings/<id>/status/     — update finding lifecycle status
 GET  /api/scheduled/                      — scheduled jobs list
@@ -474,9 +478,14 @@ POST /api/workflows/create/               — create workflow
 GET  /api/workflows/tools/                — all registered tool choices (for create form)
 GET  /api/workflows/<pk>/                 — workflow detail + tool_steps + recent runs
 POST /api/workflows/<pk>/update/          — update workflow name/tools
+POST /api/workflows/<pk>/rename/          — rename workflow
 POST /api/workflows/<pk>/delete/          — delete workflow
 POST /api/workflows/<pk>/steps/<tool>/toggle/ — toggle single tool step
 GET  /api/insights/                       — trends, top hosts, asset growth, KPIs
+GET  /api/notifications/config/           — get Slack/Teams notification config
+POST /api/notifications/config/           — update notification config
+POST /api/notifications/test/             — send a test alert
+GET  /api/notifications/alerts/           — alert history
 ```
 
 ### Other routes
@@ -491,31 +500,42 @@ GET  /api/insights/                       — trends, top hosts, asset growth, K
 | File | Tests | Notes |
 |---|---|---|
 | `tests/unit/test_alerts.py` | 7 | Slack/Teams dispatcher |
-| `tests/unit/test_assets.py` | 13 | Asset model constraints, FK chains, cascade delete |
-| `tests/unit/test_core.py` | 10 | Dashboard view |
-| `tests/unit/test_dnsx.py` | 20 | Public IP filter, analyzer, scanner |
-| `tests/unit/test_domain_security.py` | 41 | DNS/email/RDAP — **slow, real network** |
-| `tests/unit/test_domains.py` | 15 | Domain CRUD |
-| `tests/unit/test_httpx.py` | 11 | JSON parser, Port lookup, Subdomain link |
-| `tests/unit/test_katana.py` | 18 | JSONL parser, Port/Subdomain FK links, scanner orchestrator |
-| `tests/unit/test_historical_urls.py` | 37 | collector (_run_tool: missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner (root domain, subdomains, persist, dedup) |
-| `tests/unit/test_insights.py` | 11 | Insights builder + view |
-| `tests/unit/test_naabu.py` | 9 | JSON parser, FK to IPAddress |
-| `tests/unit/test_nmap.py` | 23 | Severity mapping, vulners XML parser, web/non-web exclusion, backport matching |
-| `tests/unit/test_reports.py` | 20 | CSV export content/structure, PDF export (mocked pisa), min_severity filter |
-| `tests/unit/test_scans.py` | 55 | ScanSession, scheduling, scan_start views |
-| `tests/unit/test_scheduler.py` | 15 | reap_stuck_scans, purge_expired_tokens, daily_scan |
-| `tests/unit/test_subfinder.py` | 11 | JSON parser, dedup, hostname normalization |
-| `tests/unit/test_alterx.py` | 17 | collector (binary missing, timeout, happy path, stdin), analyzer (dedup, validation, session dedup, lowercase), scanner (no subdomains, persist, return) |
-| `tests/unit/test_tls_checker.py` | 87 | Cert parsing, ciphers, protocols, HSTS, collector, scanner, cipher enumeration |
-| `tests/unit/test_ssh_checker.py` | 33 | SSH probe, host key, kex/cipher/MAC, auth, collector |
-| `tests/unit/test_nuclei.py` | 25 | CVE parsing, severity, dedup, URL linking, collector |
-| `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
-| `tests/unit/test_service_detection.py` | 16 | XML parsing, Port enrichment, is_web |
-| `tests/unit/test_workflow_runner.py` | 31 | run_workflow, service_detection injection, step failure, cancellation, phase parallelism |
-| `tests/unit/test_takeover_check.py` | 35 | collector (binary missing, bad JSON, happy path), analyzer (vulnerable/non-vulnerable, FK link, dedup, extra field), scanner (no subdomains, persist + return) |
+| `tests/unit/test_alterx.py` | 17 | collector (binary missing, timeout, happy path, stdin), analyzer, scanner |
+| `tests/unit/test_amass.py` | 19 | Active subdomain enum collector, analyzer, scanner |
+| `tests/unit/test_assets.py` | 12 | Asset model constraints, FK chains, cascade delete |
 | `tests/unit/test_cloud_assets.py` | 20 | cloud_assets collector, analyzer, keyword derivation, scanner |
-| `tests/integration/test_scan_flow.py` | 13 | Full pipeline (mocked) + delete cascade |
-| `tests/test_api_endpoints.py` | 71 | Smoke tests for all 35 API endpoints (auth + payload shape) |
+| `tests/unit/test_cve_intel.py` | 24 | EPSS/KEV enrichment, CVE extraction (both finding shapes), feed-failure fallback |
+| `tests/unit/test_dnsx.py` | 21 | Public IP filter, analyzer, scanner |
+| `tests/unit/test_domain_authorization.py` | 9 | DomainAuthorization model + scan-entry gating |
+| `tests/unit/test_domain_security.py` | 41 | DNS/email/RDAP — **slow, real network** |
+| `tests/unit/test_domains.py` | 13 | Domain CRUD |
+| `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
+| `tests/unit/test_httpx.py` | 11 | JSON parser, Port lookup, Subdomain link |
+| `tests/unit/test_k8s_manifests.py` | 57 | k8s manifest structure, envFrom order, probes, secret/configmap split |
+| `tests/unit/test_katana.py` | 18 | JSONL parser, Port/Subdomain FK links, scanner orchestrator |
+| `tests/unit/test_management_commands.py` | 11 | `verify_tools` + other management commands |
+| `tests/unit/test_monitoring.py` | 17 | sync_domain_monitoring_jobs, per-domain monitoring, authorization gate |
+| `tests/unit/test_naabu.py` | 10 | JSON parser, FK to IPAddress |
+| `tests/unit/test_nmap.py` | 23 | Severity mapping, vulners XML parser, web/non-web exclusion, backport matching |
+| `tests/unit/test_notifications.py` | 25 | NotificationConfig, Slack/Teams alerts, alert-history API |
+| `tests/unit/test_nuclei.py` | 31 | CVE parsing, severity, dedup, URL linking, collector |
+| `tests/unit/test_nuclei_network.py` | 28 | Network-template parsing, non-web targeting, collector |
+| `tests/unit/test_pipeline_phases.py` | 1 | Phase ordering sanity |
+| `tests/unit/test_qcluster_config.py` | 4 | Django-Q cluster config |
+| `tests/unit/test_reports.py` | 26 | CSV export content/structure, PDF export (mocked pisa), min_severity filter |
+| `tests/unit/test_scans.py` | 30 | ScanSession, scheduling, scan_start views |
+| `tests/unit/test_scheduler.py` | 28 | reap_stuck_scans, token purge, daily_scan, authorization gate, `SCHEDULED_SCANS_ENABLED` switch |
+| `tests/unit/test_service_detection.py` | 64 | XML parsing, Port enrichment, is_web |
+| `tests/unit/test_ssh_checker.py` | 34 | SSH probe, host key, kex/cipher/MAC, auth, collector |
+| `tests/unit/test_subfinder.py` | 10 | JSON parser, dedup, hostname normalization |
+| `tests/unit/test_subscan.py` | 12 | Targeted re-scan of a single tool / subset |
+| `tests/unit/test_takeover_check.py` | 35 | collector (missing binary, bad JSON, happy path), analyzer (vulnerable/non-vulnerable, FK link, dedup), scanner |
+| `tests/unit/test_tls_checker.py` | 87 | Cert parsing, ciphers, protocols, HSTS, collector, scanner, cipher enumeration |
+| `tests/unit/test_tools_healthcheck.py` | 14 | Tool binary preflight / health checks |
+| `tests/unit/test_user_profile.py` | 7 | UserProfile `must_change_password` flag |
+| `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
+| `tests/unit/test_workflow_runner.py` | 31 | run_workflow, service_detection injection, step failure, cancellation, phase parallelism |
+| `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
+| `tests/test_api_endpoints.py` | 84 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: ~963 tests** (~922 fast + 41 slow domain_security)
+**Total: 970 tests** (929 fast + 41 slow domain_security)

@@ -42,3 +42,6 @@ docs/superpowers/
 
 # Claude Code runtime artifacts
 .claude/
+
+# macOS
+.DS_Store
