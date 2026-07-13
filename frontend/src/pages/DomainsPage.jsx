@@ -204,8 +204,6 @@ export default function DomainsPage() {
                             variant="outline"
                             size="sm"
                             onClick={() => navigate(`/scans/start?domain=${d.name}`)}
-                            disabled={!d.authorization}
-                            title={!d.authorization ? 'Not authorized — add authorization in Django admin' : undefined}
                           >
                             Scan
                           </Button>

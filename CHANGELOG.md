@@ -10,10 +10,14 @@ commits to recover the reasoning.
 ### Added
 
 - **Self-serve add-and-scan-once from the Start Scan page.**
-  - **What:** `/scans/start` now lets you enter a brand-new domain and run a
-    one-off scan without opening Django admin. A new `POST /api/domains/{pk}/authorize/`
-    endpoint records a `DomainAuthorization` (auth_type `owner`, the logged-in user,
-    today's date) after a required "I have authority to scan this domain" attestation.
+  - **What:** `/scans/start` is a single flow — one domain field (type a new or
+    existing domain, with autocomplete), one "I have authority to scan this domain"
+    attestation checkbox, one **Start Scan Now** button. Submitting creates the
+    domain if new, authorizes it via a new `POST /api/domains/{pk}/authorize/`
+    endpoint (records a `DomainAuthorization` — auth_type `owner`, the logged-in
+    user, today's date), and starts the scan. No Django admin, no separate
+    add/authorize steps. The Domains-page **Scan** button routes into the same
+    form for any domain (no longer dead-ends at "authorize in Django admin").
   - **Why:** Authorization could previously be granted only through Django admin, so
     the intended "add a domain and scan it" flow could not be completed in the UI.
   - **Hypothesis:** (user-driven) operators need to scan newly-supplied domains on
