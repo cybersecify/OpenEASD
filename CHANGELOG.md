@@ -7,6 +7,25 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+
+- **Self-serve add-and-scan-once from the Start Scan page.**
+  - **What:** `/scans/start` now lets you enter a brand-new domain and run a
+    one-off scan without opening Django admin. A new `POST /api/domains/{pk}/authorize/`
+    endpoint records a `DomainAuthorization` (auth_type `owner`, the logged-in user,
+    today's date) after a required "I have authority to scan this domain" attestation.
+  - **Why:** Authorization could previously be granted only through Django admin, so
+    the intended "add a domain and scan it" flow could not be completed in the UI.
+  - **Hypothesis:** (user-driven) operators need to scan newly-supplied domains on
+    demand without an admin round-trip; a lightweight on-the-record attestation keeps
+    the consent gate for the public Docker build while removing the admin friction.
+  - **Evidence:** (user-driven) reported directly — "I want to add domains and scan
+    them once via UI; it's not happening." The gate is deliberately retained because
+    the same image ships as the public GitHub Docker download, where it is the user's
+    responsibility to confirm they have authority.
+  - Does not touch the scheduler or `SCHEDULED_SCANS_ENABLED`; automatic scanning
+    remains disabled on the managed deployment.
+
 ### Housekeeping
 
 - **Docs drift + version sync** — Rebuilt the CLAUDE.md test-count table against the actual suite (dropped two removed files, added 13 missing ones, corrected stale counts → **970 tests, 929 fast + 41 slow**), added the undocumented API routes (`/api/notifications/*`, `domains/<pk>/monitoring/`, `scans/<uuid>/subscan/`, `scans/urls/`, `workflows/<pk>/rename/`), reverted `pyproject.toml` `1.0.0` → `0.9.0` to match the latest tag + CHANGELOG (it had been bumped ahead of a release that hasn't been cut), and gitignored `.DS_Store`. **Why:** a claims-trace audit found the counts and endpoint list had drifted from the code; keeping the version ahead of the tag invites shipping a mislabelled build.

@@ -461,6 +461,7 @@ POST /api/domains/                        — add domain
 POST /api/domains/<pk>/toggle/            — activate/deactivate
 POST /api/domains/<pk>/delete/            — delete domain + all scan data
 POST /api/domains/<pk>/monitoring/        — set/clear per-domain monitoring interval
+POST /api/domains/<pk>/authorize/         — grant DomainAuthorization (attestation required)
 GET  /api/scans/                          — paginated scan list (?domain=&status=&page=)
 POST /api/scans/start/                    — start/schedule scan
 GET  /api/scans/<uuid>/                   — full scan detail (assets + findings)
@@ -536,6 +537,6 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
 | `tests/unit/test_workflow_runner.py` | 31 | run_workflow, service_detection injection, step failure, cancellation, phase parallelism |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
-| `tests/test_api_endpoints.py` | 84 | Smoke tests for all API endpoints (auth + payload shape) |
+| `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: 970 tests** (929 fast + 41 slow domain_security)
+**Total: 975 tests** (934 fast + 41 slow domain_security)
