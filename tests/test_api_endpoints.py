@@ -295,6 +295,53 @@ class TestDomainsToggle:
         assert post_json(auth_client, "/api/domains/99999/toggle/", {}).status_code == 404
 
 
+class TestDomainsAuthorize:
+    def test_creates_authorization_record(self, auth_client, domain):
+        from apps.core.domains.models import DomainAuthorization
+        res = post_json(
+            auth_client, f"/api/domains/{domain.pk}/authorize/", {"attestation": True}
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["authorization"] is not None
+        assert body["authorization"]["auth_type"] == "owner"
+        auth = DomainAuthorization.objects.get(domain=domain)
+        assert auth.authorized_by == "apitest"  # from the `user` fixture
+
+    def test_attestation_required(self, auth_client, domain):
+        from apps.core.domains.models import DomainAuthorization
+        res = post_json(
+            auth_client, f"/api/domains/{domain.pk}/authorize/", {"attestation": False}
+        )
+        assert res.status_code == 400
+        assert not DomainAuthorization.objects.filter(domain=domain).exists()
+
+    def test_idempotent_when_already_authorized(self, auth_client, domain):
+        from apps.core.domains.models import DomainAuthorization
+        from django.utils import timezone
+        DomainAuthorization.objects.create(
+            domain=domain, auth_type="owner",
+            authorized_at=timezone.localdate(), authorized_by="someone",
+        )
+        # Second call (even without attestation) returns 200, does not duplicate.
+        res = post_json(
+            auth_client, f"/api/domains/{domain.pk}/authorize/", {"attestation": False}
+        )
+        assert res.status_code == 200
+        assert DomainAuthorization.objects.filter(domain=domain).count() == 1
+        assert DomainAuthorization.objects.get(domain=domain).authorized_by == "someone"
+
+    def test_not_found(self, auth_client):
+        assert post_json(
+            auth_client, "/api/domains/99999/authorize/", {"attestation": True}
+        ).status_code == 404
+
+    def test_requires_auth(self, client, domain):
+        assert post_json(
+            client, f"/api/domains/{domain.pk}/authorize/", {"attestation": True}
+        ).status_code == 401
+
+
 class TestDomainsDelete:
     def test_deletes_domain(self, auth_client, domain):
         res = post_json(auth_client, f"/api/domains/{domain.pk}/delete/", {})

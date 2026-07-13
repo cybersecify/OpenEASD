@@ -6,12 +6,13 @@ import re
 from django.db import transaction
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 
 from ninja import Router, Schema, Status
 from ninja.errors import HttpError
 
 from ninja_jwt.authentication import JWTAuth
-from apps.core.domains.models import Domain
+from apps.core.domains.models import Domain, DomainAuthorization
 from apps.core.findings.models import Finding
 from apps.core.insights.builder import rebuild_finding_type_summaries
 from apps.core.insights.models import ScanSummary
@@ -131,6 +132,44 @@ def toggle_domain(request, pk: int):
     domain.save()
     from apps.core.scheduler.scheduler import sync_domain_monitoring_jobs
     sync_domain_monitoring_jobs()
+    _enrich_domains([domain])
+    return _serialize_domain(domain)
+
+
+class AuthorizeIn(Schema):
+    attestation: bool = False
+    auth_type: str = "owner"
+
+
+@router.post("/{pk}/authorize/")
+def authorize_domain(request, pk: int, data: AuthorizeIn):
+    """Grant a DomainAuthorization record so the domain becomes scannable.
+
+    Requires an explicit `attestation` that the caller has authority to scan
+    the domain. Idempotent: if already authorized, returns the existing record.
+    """
+    domain = get_object_or_404(
+        Domain.objects.select_related("authorization"), pk=pk
+    )
+
+    if getattr(domain, "authorization", None) is not None:
+        _enrich_domains([domain])
+        return _serialize_domain(domain)
+
+    if not data.attestation:
+        raise HttpError(400, "Authorization attestation is required")
+
+    valid_types = {choice[0] for choice in DomainAuthorization.AUTH_TYPES}
+    auth_type = data.auth_type if data.auth_type in valid_types else "owner"
+
+    DomainAuthorization.objects.create(
+        domain=domain,
+        auth_type=auth_type,
+        authorized_at=timezone.localdate(),
+        authorized_by=request.auth.username,
+    )
+
+    domain = Domain.objects.select_related("authorization").get(pk=pk)
     _enrich_domains([domain])
     return _serialize_domain(domain)
 
