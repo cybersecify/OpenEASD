@@ -7,6 +7,9 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiPost, apiGet } from '../api/client.js';
 
+// Mirrors the API's RFC 1123 hostname check (apps/core/domains/api.py)
+const HOSTNAME_RE = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+
 export default function ScanStartPage() {
   const navigate = useNavigate();
   const params     = new URLSearchParams(window.location.search);
@@ -31,6 +34,9 @@ export default function ScanStartPage() {
   const [schedTime,  setSchedTime] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error,      setError]     = useState(null);
+  const [newDomainMode, setNewDomainMode] = useState(false);
+  const [newDomain,     setNewDomain]     = useState('');
+  const [attested,      setAttested]      = useState(false);
 
   useEffect(() => {
     if (defaultWf && !workflowId) setWorkflow(String(defaultWf.id));
@@ -38,10 +44,32 @@ export default function ScanStartPage() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!domain) { setError('Select a domain.'); return; }
+    const target = newDomainMode ? newDomain.trim().toLowerCase() : domain;
+    if (!target) {
+      setError(newDomainMode ? 'Enter a domain.' : 'Select a domain.');
+      return;
+    }
+    if (newDomainMode) {
+      if (!HOSTNAME_RE.test(target)) { setError('Enter a valid domain name.'); return; }
+      if (!attested) {
+        setError('Please confirm you have authority to scan this domain.');
+        return;
+      }
+    }
     setError(null); setSubmitting(true);
     try {
-      const body = { domain, schedule_type: scheduled ? 'once' : 'now' };
+      if (newDomainMode) {
+        let created;
+        try {
+          created = await apiPost('/domains/', { name: target });
+        } catch (err) {
+          // Domain already exists — reuse the one from the loaded list.
+          if (err.status === 400) created = domains.find(d => d.name === target);
+          if (!created) throw err;
+        }
+        await apiPost(`/domains/${created.id}/authorize/`, { attestation: true });
+      }
+      const body = { domain: target, schedule_type: scheduled ? 'once' : 'now' };
       if (workflowId) body.workflow_id = Number(workflowId);
       if (scheduled && schedTime) body.scheduled_at = schedTime;
       await apiPost('/scans/start/', body);
@@ -65,13 +93,44 @@ export default function ScanStartPage() {
             <CardContent className="p-6">
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-xs text-dim mb-1 font-medium">Domain *</label>
-                  <select value={domain} onChange={e => setDomain(e.target.value)} required className="field">
-                    <option value="">— select domain —</option>
-                    {domains.filter(d => d.is_active && d.authorization).map(d => (
-                      <option key={d.id} value={d.name}>{d.name}</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs text-dim font-medium">Domain *</label>
+                    <button
+                      type="button"
+                      className="text-xs text-brand hover:underline"
+                      onClick={() => { setNewDomainMode(m => !m); setError(null); }}
+                    >
+                      {newDomainMode ? 'Pick existing domain' : '＋ Scan a new domain'}
+                    </button>
+                  </div>
+                  {newDomainMode ? (
+                    <>
+                      <input
+                        type="text"
+                        value={newDomain}
+                        onChange={e => setNewDomain(e.target.value)}
+                        placeholder="example.com"
+                        className="field"
+                        autoFocus
+                      />
+                      <label className="mt-2 flex items-start gap-2 text-sm text-body cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={attested}
+                          onChange={e => setAttested(e.target.checked)}
+                          className="accent-brand mt-0.5"
+                        />
+                        <span>I confirm I have authority to scan this domain (I own it or have written permission).</span>
+                      </label>
+                    </>
+                  ) : (
+                    <select value={domain} onChange={e => setDomain(e.target.value)} className="field">
+                      <option value="">— select domain —</option>
+                      {domains.filter(d => d.is_active && d.authorization).map(d => (
+                        <option key={d.id} value={d.name}>{d.name}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs text-dim mb-1 font-medium">Workflow</label>
@@ -94,7 +153,10 @@ export default function ScanStartPage() {
                 )}
                 {error && <p className="text-red-400 text-sm">{error}</p>}
                 <div className="flex gap-3 pt-1">
-                  <Button type="submit" disabled={submitting}>
+                  <Button
+                    type="submit"
+                    disabled={submitting || (newDomainMode && (!newDomain.trim() || !attested))}
+                  >
                     {submitting ? 'Starting…' : scheduled ? 'Schedule Scan' : 'Start Scan Now'}
                   </Button>
                   <Button type="button" variant="outline" onClick={() => navigate('/scans')}>Cancel</Button>
