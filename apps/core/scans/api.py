@@ -483,18 +483,22 @@ def scan_detail(request, session_uuid: uuid.UUID):
     ports = list(Port.objects.filter(session=session).select_related("ip_address").order_by("address", "port"))
     urls = list(URL.objects.filter(session=session).select_related("port", "subdomain").order_by("url"))
 
+    # select_related("session"): _serialize_finding reads finding.session.uuid,
+    # which would otherwise fire one query per finding (N+1) on this detail load.
     nmap_findings = list(
-        Finding.objects.filter(session=session, source="nmap").select_related("port").order_by("-discovered_at")
+        Finding.objects.filter(session=session, source="nmap")
+        .select_related("port", "session")
+        .order_by("-discovered_at")
     )
     domain_findings = list(
         Finding.objects.filter(session=session, source="domain_security")
-        .select_related("subdomain")
+        .select_related("subdomain", "session")
         .order_by("-severity", "-discovered_at")
     )
     other_findings = list(
         Finding.objects.filter(session=session)
         .exclude(source__in=["nmap", "domain_security"])
-        .select_related("port", "url")
+        .select_related("port", "url", "session")
         .order_by("-discovered_at")
     )
 
