@@ -15,7 +15,7 @@ import json as _json
 from ninja import Router, Schema, Status
 from ninja.errors import HttpError
 
-from ninja_jwt.authentication import JWTAuth
+from apps.core.api.auth import JWTAuth
 from apps.core.constants import SEVERITY_LEVELS
 from apps.core.insights.builder import rebuild_finding_type_summaries
 from apps.core.queries import latest_session_ids

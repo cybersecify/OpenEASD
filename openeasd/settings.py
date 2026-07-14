@@ -5,8 +5,11 @@ OpenEASD - Automated External Attack Surface Detection
 Company: Cybersecify | Author: Rathnakara G N
 """
 
+import sys
 from datetime import timedelta
 from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
 from decouple import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -14,6 +17,30 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config("SECRET_KEY", default="django-insecure-change-me-in-production")
 
 DEBUG = config("DEBUG", default=False, cast=bool)
+
+
+def _validate_secret_key(secret_key: str, debug: bool) -> None:
+    """Fail fast in production on an unset/placeholder SECRET_KEY.
+
+    The key also signs JWTs (NINJA_JWT["SIGNING_KEY"] below), so the well-known
+    default would let anyone forge access/refresh tokens for any user. DEBUG
+    builds keep the default for local dev.
+    """
+    if not debug and secret_key.startswith("django-insecure"):
+        raise ImproperlyConfigured(
+            "SECRET_KEY is unset or still the insecure default while DEBUG=False. "
+            "Generate one with `openssl rand -hex 32` and set it via the SECRET_KEY "
+            "environment variable. This key also signs JWT access/refresh tokens, so "
+            "the default value allows anyone to forge authentication tokens."
+        )
+
+
+# Skip enforcement under the test runner: pytest-django imports settings before
+# any conftest/env hook can set a key, and token-signing key strength is
+# irrelevant to tests. The logic itself is covered by unit tests that call
+# _validate_secret_key directly.
+if "pytest" not in sys.modules:
+    _validate_secret_key(SECRET_KEY, DEBUG)
 
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
 

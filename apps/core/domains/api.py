@@ -11,7 +11,7 @@ from django.utils import timezone
 from ninja import Router, Schema, Status
 from ninja.errors import HttpError
 
-from ninja_jwt.authentication import JWTAuth
+from apps.core.api.auth import JWTAuth
 from apps.core.domains.models import Domain, DomainAuthorization
 from apps.core.findings.models import Finding
 from apps.core.insights.builder import rebuild_finding_type_summaries
