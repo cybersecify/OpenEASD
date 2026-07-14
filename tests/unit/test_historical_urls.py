@@ -231,6 +231,27 @@ class TestAnalyze:
         objs = analyze(sess, ["example.com/path"])
         assert objs == []
 
+    def test_rejects_javascript_scheme(self):
+        sess = self._session()
+        objs = analyze(sess, ["javascript://example.com/%0aalert(1)"])
+        assert objs == []
+
+    def test_rejects_data_scheme(self):
+        sess = self._session()
+        objs = analyze(sess, ["data://example.com/text/html,<script>alert(1)</script>"])
+        assert objs == []
+
+    def test_rejects_ftp_scheme(self):
+        sess = self._session()
+        objs = analyze(sess, ["ftp://example.com/file"])
+        assert objs == []
+
+    def test_accepts_uppercase_http_scheme(self):
+        sess = self._session()
+        objs = analyze(sess, ["HTTPS://example.com/admin"])
+        assert len(objs) == 1
+        assert objs[0].scheme == "https"
+
 
 # ---------------------------------------------------------------------------
 # Scanner

@@ -36,12 +36,15 @@ logger = logging.getLogger(__name__)
 def _detect_deltas(session):
     # Exclude subscans: they only run a subset of tools, so using one as the
     # baseline would produce spurious "new finding" deltas on the next full scan.
+    # Filter on scan_type (immutable) rather than parent_session, which is
+    # SET_NULL and would promote a subscan to a baseline once its parent is
+    # deleted.
     previous = (
         ScanSession.objects.filter(
             domain=session.domain, status__in=["completed", "partial"]
         )
         .exclude(id=session.id)
-        .filter(parent_session__isnull=True)
+        .exclude(scan_type="subscan")
         .order_by("-start_time")
         .first()
     )
@@ -92,6 +95,14 @@ def _finalize_session(session):
     session.end_time = django_tz.now()
     session.save(update_fields=["total_findings", "status", "end_time"])
     logger.info(f"[scan:{session_id}] Completed — {total} findings")
+
+    # Subscans run only a subset of tools against copied parent assets. Delta
+    # detection, insights, and alerts all assume a full scan's finding set — a
+    # subscan's subset would diff against the last full scan (spurious "removed"
+    # deltas) and re-fire alerts the parent already sent. Skip them for subscans.
+    if session.scan_type == "subscan":
+        logger.info(f"[scan:{session_id}] Subscan — skipping deltas, insights, and alerts")
+        return
 
     _detect_deltas(session)
 
@@ -329,6 +340,15 @@ def create_subscan_session(parent_uuid: str, tools: list[str], triggered_by: str
 def run_scan(session_id: int):
     """Execute a scan session via its attached workflow, then finalise."""
     session = ScanSession.objects.select_related("workflow", "parent_session").get(id=session_id)
+    # A queued task may be picked up after the session was already cancelled
+    # (stop issued while pending) or reaped by the watchdog (marked failed while
+    # sitting in a deep queue). Flipping such a session back to "running" would
+    # resurrect it — re-executing a cancelled scan, or running a second copy
+    # alongside the replacement the reap allowed to start. Only pending sessions
+    # are meant to run.
+    if session.status != "pending":
+        logger.info(f"[scan:{session_id}] Session status is '{session.status}', not 'pending' — skipping run")
+        return
     session.status = "running"
     session.save(update_fields=["status"])
     logger.info(f"[scan:{session_id}] Starting {'subscan' if session.parent_session_id else 'scan'} for {session.domain}")
