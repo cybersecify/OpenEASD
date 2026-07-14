@@ -227,6 +227,11 @@ Runs on every container start (init container in K8s, or `CMD` override in Docke
 ### First login
 `docker-entrypoint.sh` creates `admin/admin` with `must_change_password=True` on first run. The React app redirects to `/change-password` before allowing access. On every startup, if the default password is still in use, the flag is re-set.
 
+**Server-side enforcement:** the flag is not only a React redirect. All API routers authenticate via `apps/core/api/auth.py::JWTAuth` (a subclass of ninja-jwt's), which returns **403** for any request from a user whose `must_change_password` is set — except `GET /api/user/` (to read the flag) and `POST /api/user/change-password/`. So a holder of default `admin/admin` credentials cannot use the API by calling it directly; they must change the password first.
+
+### SECRET_KEY guard
+`openeasd/settings.py` calls `_validate_secret_key()` at import: when `DEBUG=False` and `SECRET_KEY` is unset/still the `django-insecure…` placeholder, it raises `ImproperlyConfigured` and the process refuses to start. The key also signs JWTs (`NINJA_JWT["SIGNING_KEY"]`), so the default would let anyone forge tokens. Enforcement is skipped under pytest (pytest-django imports settings before any env hook can set a key); the logic is unit-tested directly.
+
 ### microk8s deployment (host IP changed)
 If the host IP changes, microk8s certs and kubeconfigs reference the old IP and the cluster goes "not running":
 1. Update IP-SAN in `/var/snap/microk8s/current/certs/csr.conf.template` (the `IP.3` line), then `sudo microk8s refresh-certs --cert server.crt`.
@@ -537,6 +542,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
 | `tests/unit/test_workflow_runner.py` | 31 | run_workflow, service_detection injection, step failure, cancellation, phase parallelism |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
-| `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
+| `tests/unit/test_settings_security.py` | 4 | SECRET_KEY production guard (`_validate_secret_key`) |
+| `tests/test_api_endpoints.py` | 94 | Smoke tests for all API endpoints (auth + payload shape); must_change_password 403 gate |
 
-**Total: 975 tests** (934 fast + 41 slow domain_security)
+**Total: 984 tests** (943 fast + 41 slow domain_security)

@@ -4,7 +4,7 @@ import logging
 
 from ninja import Router, Schema
 from ninja.errors import HttpError
-from ninja_jwt.authentication import JWTAuth
+from apps.core.api.auth import JWTAuth
 
 logger = logging.getLogger(__name__)
 

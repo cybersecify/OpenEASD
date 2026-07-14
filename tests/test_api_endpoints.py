@@ -234,6 +234,53 @@ class TestChangePassword:
         assert res.status_code == 401
 
 
+class TestMustChangePasswordGate:
+    """Server-side enforcement of the forced-password-change flag.
+
+    While the flag is set, the JWT authenticates but access to everything except
+    reading the own user record and changing the password is blocked (403) — so
+    the React redirect is not the only barrier.
+    """
+
+    def _flag(self, user):
+        from apps.core.dashboard.models import UserProfile
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.must_change_password = True
+        profile.save()
+
+    def test_flagged_user_blocked_from_protected_endpoint(self, auth_client, user):
+        self._flag(user)
+        res = auth_client.get("/api/domains/")
+        assert res.status_code == 403
+
+    def test_flagged_user_can_read_own_user(self, auth_client, user):
+        self._flag(user)
+        res = auth_client.get("/api/user/")
+        assert res.status_code == 200
+        assert res.json()["must_change_password"] is True
+
+    def test_flagged_user_can_change_password(self, auth_client, user):
+        self._flag(user)
+        res = post_json(auth_client, "/api/user/change-password/", {
+            "current_password": "pass123",
+            "new_password": "newpass456",
+        })
+        assert res.status_code == 200
+
+    def test_unflagged_user_reaches_protected_endpoint(self, auth_client, user):
+        res = auth_client.get("/api/domains/")
+        assert res.status_code == 200
+
+    def test_gate_lifts_after_password_change(self, auth_client, user):
+        self._flag(user)
+        post_json(auth_client, "/api/user/change-password/", {
+            "current_password": "pass123",
+            "new_password": "newpass456",
+        })
+        res = auth_client.get("/api/domains/")
+        assert res.status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------

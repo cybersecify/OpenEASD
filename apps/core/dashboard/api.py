@@ -4,7 +4,7 @@ from django.db.models import Max
 
 from ninja import Router
 
-from ninja_jwt.authentication import JWTAuth
+from apps.core.api.auth import JWTAuth
 from apps.core.scans.models import ScanSession
 from apps.core.findings.models import Finding
 from apps.core.domains.models import Domain
