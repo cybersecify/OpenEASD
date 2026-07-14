@@ -351,6 +351,26 @@ class TestDomainsDelete:
     def test_requires_auth(self, client, domain):
         assert post_json(client, f"/api/domains/{domain.pk}/delete/", {}).status_code == 401
 
+    def test_removes_recurring_and_once_schedules(self, auth_client, domain):
+        """Deleting a domain must not leave its scan schedules firing unattended."""
+        from django_q.models import Schedule
+
+        Schedule.objects.create(
+            name=f"recurring_{domain.name}",
+            func="apps.core.scheduler.scheduler.run_scheduled_scan",
+            schedule_type=Schedule.CRON, cron="0 2 * * *", repeats=-1,
+        )
+        Schedule.objects.create(
+            name=f"once_{domain.name}_" + "a" * 32,
+            func="apps.core.scheduler.scheduler.run_scheduled_scan",
+            schedule_type=Schedule.ONCE, repeats=1,
+        )
+
+        res = post_json(auth_client, f"/api/domains/{domain.pk}/delete/", {})
+        assert res.status_code == 200
+        assert not Schedule.objects.filter(name=f"recurring_{domain.name}").exists()
+        assert not Schedule.objects.filter(name__startswith=f"once_{domain.name}_").exists()
+
 
 # ---------------------------------------------------------------------------
 # Scans

@@ -372,6 +372,65 @@ class TestRunMonitoringScanAuthorization:
 
 
 # ---------------------------------------------------------------------------
+# run_scheduled_scan consent gate (recurring / one-time jobs)
+# ---------------------------------------------------------------------------
+
+class TestRunScheduledScanConsentGate:
+    def test_runs_for_active_authorized_domain(self, db):
+        from apps.core.domains.models import Domain
+        from apps.core.scheduler.scheduler import run_scheduled_scan
+
+        _authorize(Domain.objects.create(name="sched-ok.example.com", is_active=True))
+
+        with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
+             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+            fake_session = MagicMock()
+            fake_session.id = 1
+            mock_create.return_value = fake_session
+            run_scheduled_scan("sched-ok.example.com", "recurring")
+
+        mock_create.assert_called_once()
+        mock_task.assert_called_once()
+
+    def test_skips_unauthorized_domain(self, db):
+        from apps.core.domains.models import Domain
+        from apps.core.scheduler.scheduler import run_scheduled_scan
+
+        Domain.objects.create(name="sched-noauth.example.com", is_active=True)  # no auth
+
+        with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
+             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+            run_scheduled_scan("sched-noauth.example.com", "recurring")
+
+        mock_create.assert_not_called()
+        mock_task.assert_not_called()
+
+    def test_skips_inactive_domain(self, db):
+        from apps.core.domains.models import Domain
+        from apps.core.scheduler.scheduler import run_scheduled_scan
+
+        _authorize(Domain.objects.create(name="sched-inactive.example.com", is_active=False))
+
+        with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
+             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+            run_scheduled_scan("sched-inactive.example.com", "recurring")
+
+        mock_create.assert_not_called()
+        mock_task.assert_not_called()
+
+    def test_skips_deleted_domain(self, db):
+        """A recurring schedule left behind by a deleted domain must not scan."""
+        from apps.core.scheduler.scheduler import run_scheduled_scan
+
+        with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
+             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+            run_scheduled_scan("gone.example.com", "recurring")  # no Domain row at all
+
+        mock_create.assert_not_called()
+        mock_task.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # setup_core_schedules master switch (SCHEDULED_SCANS_ENABLED)
 # ---------------------------------------------------------------------------
 
@@ -420,3 +479,25 @@ class TestSetupCoreSchedules:
 
         assert not Schedule.objects.filter(name="daily_scan").exists()
         assert not Schedule.objects.filter(name__startswith="monitor_").exists()
+
+    def test_disabled_removes_recurring_and_once_schedules(self, db, settings):
+        """Manual-only mode must also drop user-created recurring/one-time jobs."""
+        from django_q.models import Schedule
+        from apps.core.scheduler.scheduler import setup_core_schedules
+
+        Schedule.objects.create(
+            name="recurring_example.com",
+            func="apps.core.scheduler.scheduler.run_scheduled_scan",
+            schedule_type=Schedule.CRON, cron="0 2 * * *", repeats=-1,
+        )
+        Schedule.objects.create(
+            name="once_example.com_" + "a" * 32,
+            func="apps.core.scheduler.scheduler.run_scheduled_scan",
+            schedule_type=Schedule.ONCE, repeats=1,
+        )
+
+        settings.SCHEDULED_SCANS_ENABLED = False
+        setup_core_schedules()
+
+        assert not Schedule.objects.filter(name__startswith="recurring_").exists()
+        assert not Schedule.objects.filter(name__startswith="once_").exists()
