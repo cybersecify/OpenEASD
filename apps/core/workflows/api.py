@@ -7,7 +7,7 @@ from django.shortcuts import get_object_or_404
 from ninja import Router, Schema, Status
 from ninja.errors import HttpError
 
-from ninja_jwt.authentication import JWTAuth
+from apps.core.api.auth import JWTAuth
 from apps.core.workflows.models import Workflow, WorkflowStep
 from apps.core.workflows.registry import (
     get_tool_choices,
