@@ -148,6 +148,11 @@ const SCHEME_CLS = {
   http:  'bg-yellow-900/40 text-yellow-400 border border-yellow-800',
 };
 
+// Discovered URLs can originate from third-party archive sources; only link out
+// to genuine http(s) URLs so a hostile scheme (javascript:, data:) can't render
+// as a clickable link. Anything else is shown as inert text.
+const SAFE_URL = /^https?:\/\//i;
+
 function StatCard({ label, value, danger }) {
   return (
     <div className={`border rounded-lg px-4 py-3 text-center ${danger ? 'border-red-800 bg-red-900/10' : 'border-rim bg-card'}`}>
@@ -403,7 +408,9 @@ export default function ScanDetailPage() {
                             </span>
                           </TableCell>
                           <TableCell className="px-4 py-3 font-mono text-brand text-xs max-w-xs truncate">
-                            <a href={u.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{u.url}</a>
+                            {SAFE_URL.test(u.url)
+                              ? <a href={u.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{u.url}</a>
+                              : <span className="text-dim" title="Non-navigable URL scheme — not linked">{u.url}</span>}
                           </TableCell>
                           <TableCell className={`px-4 py-3 font-mono font-semibold ${statusColor(u.status_code)}`}>
                             {u.status_code || '—'}
