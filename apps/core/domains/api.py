@@ -193,6 +193,16 @@ def delete_domain(request, pk: int):
     rebuild_finding_type_summaries()
     from apps.core.scheduler.scheduler import sync_domain_monitoring_jobs
     sync_domain_monitoring_jobs()
+
+    # Remove the domain's recurring/one-time scan schedules. sync_domain_monitoring_jobs
+    # only reaps monitor_* jobs; a leftover recurring_<domain> would keep firing
+    # unattended for a domain that no longer exists (its authorization was
+    # cascade-deleted, so run_scheduled_scan's gate now no-ops it — but the dead
+    # schedule row and its noise should not linger).
+    from django_q.models import Schedule
+    Schedule.objects.filter(name=f"recurring_{domain_name}").delete()
+    Schedule.objects.filter(name__startswith=f"once_{domain_name}_").delete()
+
     return {"deleted": domain_name}
 
 

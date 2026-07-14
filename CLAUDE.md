@@ -241,8 +241,8 @@ Don't enable the `ingress` addon if the host already runs Caddy on :80/:443 — 
 ### Scheduler
 - Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (uses `TIME_ZONE` in settings, default 02:00)
 - Configured via env vars: `SCAN_DAILY_HOUR`, `SCAN_DAILY_MINUTE`
-- **Auto-scan consent gate:** `daily_scan` and per-domain monitoring only scan domains with a `DomainAuthorization` record (`is_active=True, authorization__isnull=False`); `run_monitoring_scan` re-checks at run time. The scheduler cannot bypass the authorization gate the manual API/UI already enforce.
-- **`SCHEDULED_SCANS_ENABLED`** (env, default `True`) is the master switch for unattended scanning. When `False`, `setup_core_schedules()` registers only the hygiene jobs (watchdog + token purge) and removes any existing `daily_scan`/`monitor_*` schedules on startup — this is how a deployment is made durably manual-only (set in `k8s/configmap.yaml`). Manual/API scans are unaffected.
+- **Auto-scan consent gate:** every unattended entry point — `daily_scan`, per-domain monitoring (`run_monitoring_scan`), and user-created recurring/one-time jobs (`run_scheduled_scan`) — re-checks at run time that the domain is active and has a `DomainAuthorization` record (`is_active=True, authorization__isnull=False`) before scanning. The scheduler cannot bypass the authorization gate the manual API/UI already enforce, and a schedule whose domain was later revoked or deleted no-ops instead of scanning.
+- **`SCHEDULED_SCANS_ENABLED`** (env, default `True`) is the master switch for unattended scanning. When `False`, `setup_core_schedules()` registers only the hygiene jobs (watchdog + token purge) and removes every existing unattended-scan schedule — `daily_scan`, `monitor_*`, `recurring_*`, and `once_*` — on startup, so no schedule of any kind can fire. This is how a deployment is made durably manual-only (set in `k8s/configmap.yaml`). Manual/API scans are unaffected.
 - Schedule history visible in Django admin under "Django Q" → "Scheduled tasks"
 - Scheduler code lives in `apps/core/scheduler/scheduler.py`
 - `setup_core_schedules()` called from `apps/core/scheduler/apps.py` → `SchedulerConfig.ready()`
@@ -525,7 +525,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_qcluster_config.py` | 4 | Django-Q cluster config |
 | `tests/unit/test_reports.py` | 26 | CSV export content/structure, PDF export (mocked pisa), min_severity filter |
 | `tests/unit/test_scans.py` | 30 | ScanSession, scheduling, scan_start views |
-| `tests/unit/test_scheduler.py` | 28 | reap_stuck_scans, token purge, daily_scan, authorization gate, `SCHEDULED_SCANS_ENABLED` switch |
+| `tests/unit/test_scheduler.py` | 33 | reap_stuck_scans, token purge, daily_scan, run_scheduled_scan + monitoring authorization gates, `SCHEDULED_SCANS_ENABLED` switch |
 | `tests/unit/test_service_detection.py` | 64 | XML parsing, Port enrichment, is_web |
 | `tests/unit/test_ssh_checker.py` | 34 | SSH probe, host key, kex/cipher/MAC, auth, collector |
 | `tests/unit/test_subfinder.py` | 10 | JSON parser, dedup, hostname normalization |
@@ -537,6 +537,6 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
 | `tests/unit/test_workflow_runner.py` | 31 | run_workflow, service_detection injection, step failure, cancellation, phase parallelism |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
-| `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
+| `tests/test_api_endpoints.py` | 90 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: 975 tests** (934 fast + 41 slow domain_security)
+**Total: 981 tests** (940 fast + 41 slow domain_security)
