@@ -417,6 +417,24 @@ class TestScanDetail:
     def test_not_found(self, auth_client):
         assert auth_client.get("/api/scans/00000000-0000-0000-0000-000000000000/").status_code == 404
 
+    def test_no_n_plus_one_on_findings(self, auth_client, django_assert_max_num_queries, scan):
+        """scan_detail must not issue one query per finding to resolve session.uuid."""
+        from apps.core.findings.models import Finding
+
+        for i in range(25):
+            Finding.objects.create(
+                session=scan, source="web_checker", target=f"h{i}.example.com",
+                check_type="hdr", severity="low", title=f"Finding {i}",
+                description="d", remediation="r",
+            )
+        # Warm up one-time caches (content types, auth) so the bound reflects
+        # steady state, not first-request setup.
+        auth_client.get(f"/api/scans/{scan.uuid}/")
+        # With select_related("session") the query count is constant; without it
+        # this load would issue 25+ extra per-finding queries.
+        with django_assert_max_num_queries(20):
+            auth_client.get(f"/api/scans/{scan.uuid}/")
+
     def test_requires_auth(self, client, scan):
         assert client.get(f"/api/scans/{scan.uuid}/").status_code == 401
 

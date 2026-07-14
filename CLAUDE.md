@@ -512,6 +512,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_domains.py` | 13 | Domain CRUD |
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
 | `tests/unit/test_httpx.py` | 11 | JSON parser, Port lookup, Subdomain link |
+| `tests/unit/test_insights_builder.py` | 4 | rebuild_finding_type_summaries upsert + prune (stale/deleted types, error-safe) |
 | `tests/unit/test_k8s_manifests.py` | 57 | k8s manifest structure, envFrom order, probes, secret/configmap split |
 | `tests/unit/test_katana.py` | 18 | JSONL parser, Port/Subdomain FK links, scanner orchestrator |
 | `tests/unit/test_management_commands.py` | 11 | `verify_tools` + other management commands |
@@ -537,6 +538,6 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
 | `tests/unit/test_workflow_runner.py` | 31 | run_workflow, service_detection injection, step failure, cancellation, phase parallelism |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
-| `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
+| `tests/test_api_endpoints.py` | 90 | Smoke tests for all API endpoints (auth + payload shape); scan_detail N+1 guard |
 
-**Total: 975 tests** (934 fast + 41 slow domain_security)
+**Total: 980 tests** (939 fast + 41 slow domain_security)
