@@ -10,6 +10,7 @@ All tool finding models must have a `severity` field with values:
 
 import logging
 
+from django.db import transaction
 from django.db.models import Count, Max
 from django.utils import timezone as django_tz
 
@@ -83,6 +84,11 @@ def rebuild_finding_type_summaries() -> None:
                 else existing["last_seen"],
         }
 
+    # Track whether both aggregations ran cleanly. If either raised, `aggregated`
+    # is incomplete, so we must NOT prune — deleting rows we simply failed to
+    # recompute would drop live finding types from the global view.
+    aggregation_complete = True
+
     try:
         rows = (
             Finding.objects
@@ -94,6 +100,7 @@ def rebuild_finding_type_summaries() -> None:
         for row in rows:
             _merge((row["title"], row["check_type"]), row["severity"], row["count"], row["last"])
     except Exception as e:
+        aggregation_complete = False
         logger.warning(f"[insights] Finding aggregation failed: {e}")
 
     try:
@@ -108,16 +115,35 @@ def rebuild_finding_type_summaries() -> None:
             cve = row.get("extra__cve") or ""
             _merge((cve, "cve"), row["severity"], row["count"], row["last"])
     except Exception as e:
+        aggregation_complete = False
         logger.warning(f"[insights] Nmap CVE aggregation failed: {e}")
 
-    # Bulk upsert
-    for (title, check_type), data in aggregated.items():
-        FindingTypeSummary.objects.update_or_create(
-            title=title,
-            check_type=check_type,
-            defaults={
-                "severity": data["severity"],
-                "occurrence_count": data["occurrence_count"],
-                "last_seen": data["last_seen"],
-            },
-        )
+    # Upsert the current set and prune rows that no longer appear in any latest
+    # scan (resolved/disappeared finding types, or types from deleted domains).
+    # Without the prune this table only ever grows and reports stale counts.
+    with transaction.atomic():
+        for (title, check_type), data in aggregated.items():
+            FindingTypeSummary.objects.update_or_create(
+                title=title,
+                check_type=check_type,
+                defaults={
+                    "severity": data["severity"],
+                    "occurrence_count": data["occurrence_count"],
+                    "last_seen": data["last_seen"],
+                },
+            )
+
+        if aggregation_complete:
+            wanted = set(aggregated.keys())
+            stale_ids = [
+                row_id
+                for row_id, title, check_type in FindingTypeSummary.objects.values_list(
+                    "id", "title", "check_type"
+                )
+                if (title, check_type) not in wanted
+            ]
+            if stale_ids:
+                FindingTypeSummary.objects.filter(id__in=stale_ids).delete()
+                logger.info(f"[insights] Pruned {len(stale_ids)} stale finding-type summary row(s)")
+        else:
+            logger.warning("[insights] Skipping prune — finding aggregation incomplete this run")
