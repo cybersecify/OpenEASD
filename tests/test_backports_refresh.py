@@ -37,7 +37,11 @@ DEBIAN_MOCK_DATA = {
 def test_fetch_ubuntu_backports(mock_urlopen):
     # Setup mock response
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps(UBUNTU_MOCK_DATA).encode('utf-8')
+    # First call returns data, second call returns empty notices to break loop
+    mock_response.read.side_effect = [
+        json.dumps(UBUNTU_MOCK_DATA).encode('utf-8'),
+        json.dumps({"notices": []}).encode('utf-8')
+    ]
     mock_response.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_response
 

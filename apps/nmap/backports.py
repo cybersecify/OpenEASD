@@ -55,7 +55,7 @@ def check_backport(product: str, version_string: str, cve: str) -> dict:
     #   "OpenSSH 9.6p1 Ubuntu Linux; 3ubuntu13.3"     → distro_version = "3ubuntu13.3"
     # We specifically require the suffix to START with a digit to avoid capturing
     # words like "protocol" that appear in the common "Ubuntu Linux; protocol 2.0" format.
-    match = re.search(r'(?i)(ubuntu|debian)(?:[^;]*?[-; ])(\d[a-z0-9.~+-]*)', version_string)
+    match = re.search(r'(?i)(ubuntu|debian)(?:[^;]*?[-; ])\s*(\d[a-z0-9.~+-]*)', version_string)
     
     distro = None
     distro_version = None
