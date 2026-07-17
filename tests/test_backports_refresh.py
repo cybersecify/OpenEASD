@@ -61,13 +61,14 @@ def test_fetch_debian_backports(mock_urlopen):
     result = fetch_debian_backports()
 
     assert "CVE-2024-5678" in result
-    assert result["CVE-2024-5678"]["openssh"] == "1:9.2p1-2+deb12u3"
+    assert result["CVE-2024-5678"]["bookworm"]["openssh"] == "1:9.2p1-2+deb12u3"
 
 @patch('apps.nmap.management.commands.refresh_backports.fetch_ubuntu_backports')
 @patch('apps.nmap.management.commands.refresh_backports.fetch_debian_backports')
 @patch('apps.nmap.management.commands.refresh_backports.fetch_alpine_backports')
 @patch('builtins.open')
-def test_do_refresh_schema_merge(mock_open, mock_alpine, mock_debian, mock_ubuntu):
+@patch('os.replace')
+def test_do_refresh_schema_merge(mock_replace, mock_open, mock_alpine, mock_debian, mock_ubuntu):
     mock_ubuntu.return_value = {"CVE-UBUNTU": {"pkg": "1.0"}}
     mock_debian.return_value = {"CVE-DEBIAN": {"pkg": "2.0"}}
     mock_alpine.return_value = {"CVE-ALPINE": {"pkg": "3.0"}}
