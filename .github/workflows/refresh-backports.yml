@@ -1,0 +1,54 @@
+name: Refresh Backports
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Every Sunday at midnight
+  workflow_dispatch: # Allow manual trigger
+
+# Explicit least-privilege permissions (matches ci.yml posture)
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh && echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Run tests
+        env:
+          SECRET_KEY: "ci-test-secret-key-not-used-in-prod"
+          DEBUG: "True"
+        run: uv run pytest tests/test_backports_refresh.py -q
+
+      - name: Refresh backports data
+        run: |
+          uv run python apps/nmap/management/commands/refresh_backports.py
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@5e914681df9dc83aa4e4905692ca88beb2f9e91  # v6.0.5
+        with:
+          commit-message: "Update apps/nmap/backports.json from upstream security feeds"
+          title: "Automated `backports.json` Refresh"
+          body: |
+            This PR automatically updates `apps/nmap/backports.json` by pulling the latest data from:
+            - Ubuntu USN feed
+            - Debian Security Tracker JSON
+
+            Triggered by `.github/workflows/refresh-backports.yml`.
+          branch: automated-backports-refresh
+          base: main
+          labels: "automated pr, security"

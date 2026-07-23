@@ -103,6 +103,8 @@ def analyze(session, xml_outputs: dict[str, str]) -> list[Finding]:
                 service_el = port_el.find("service")
                 service_name = service_el.get("name", "") if service_el is not None else ""
                 version = ""
+                product = ""      # default — avoids NameError if service_el is None
+                extrainfo = ""    # default — avoids NameError if service_el is None
                 if service_el is not None:
                     product = service_el.get("product", "")
                     ver = service_el.get("version", "")
