@@ -11,7 +11,7 @@ def fetch_debian_backports() -> Dict[str, Dict[str, str]]:
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
     
     try:
-        with urllib.request.urlopen(req, timeout=30) as response:
+        with urllib.request.urlopen(req, timeout=30) as response:  # nosec B310
             data = json.loads(response.read().decode('utf-8'))
     except Exception as e:
         print(f"Error fetching Debian Security Tracker: {e}")
