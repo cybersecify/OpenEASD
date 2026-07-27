@@ -139,10 +139,12 @@ def export_scan_pdf(request, session_uuid):
         "severity", "-discovered_at"
     )
 
-    # Severity counts
-    SEV_ORDER = ["critical", "high", "medium", "low", "info"]
-    vuln_counts = {sev: 0 for sev in SEV_ORDER}
-    for row in findings.values("severity").annotate(total=Count("id")):
+    # Severity counts. Reset the queryset ordering with .order_by() first: the
+    # `findings` queryset is ordered by (severity, -discovered_at), and that
+    # trailing sort field would otherwise leak into the GROUP BY, collapsing
+    # every severity bucket to a count of 1 (one group per distinct timestamp).
+    vuln_counts = {sev: 0 for sev in _SEVERITY_ORDER}
+    for row in findings.order_by().values("severity").annotate(total=Count("id")):
         if row["severity"] in vuln_counts:
             vuln_counts[row["severity"]] = row["total"]
 
@@ -151,7 +153,7 @@ def export_scan_pdf(request, session_uuid):
     by_sev = defaultdict(list)
     for f in findings:
         by_sev[f.severity].append(f)
-    grouped_findings = [(sev, by_sev[sev]) for sev in SEV_ORDER if by_sev[sev]]
+    grouped_findings = [(sev, by_sev[sev]) for sev in _SEVERITY_ORDER if by_sev[sev]]
 
     # Asset counts
     asset_counts = {

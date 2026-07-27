@@ -279,3 +279,37 @@ class TestReportCtaPdfContext:
         assert "report-cta" in captured["html"]
         assert "Need help acting on these findings?" in captured["html"]
         assert "https://example.com/help" in captured["html"]
+
+
+class TestPdfSeverityCounts:
+    """Regression: the severity summary must count EVERY finding, not collapse
+    to one per severity. The findings queryset is ordered by
+    (severity, -discovered_at); that trailing sort field must not leak into the
+    GROUP BY of the per-severity Count(), or every bucket collapses to 1."""
+
+    def test_counts_all_findings_per_severity(self, authed_client, session):
+        from apps.core.findings.models import Finding
+        for sev, n in [("critical", 2), ("high", 3)]:
+            for i in range(n):
+                Finding.objects.create(
+                    session=session, source="tls_checker", check_type="x",
+                    severity=sev, title=f"{sev}-{i}", target="report.example.com",
+                    description="d", remediation="f", status="open",
+                )
+        captured = {}
+
+        def capture_html(html_str, dest):
+            captured["html"] = html_str
+            mock = MagicMock()
+            mock.err = 0
+            return mock
+
+        with patch("xhtml2pdf.pisa.CreatePDF", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+
+        assert res.status_code == 200
+        html = captured["html"]
+        # Correct counts — would render 1/1/2 under the GROUP BY leak bug.
+        assert '<div class="sev-big-num c-critical">2</div>' in html
+        assert '<div class="sev-big-num c-high">3</div>' in html
+        assert '<div class="metric-num">5</div>' in html
