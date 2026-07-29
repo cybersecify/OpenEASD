@@ -523,7 +523,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_nuclei_network.py` | 28 | Network-template parsing, non-web targeting, collector |
 | `tests/unit/test_pipeline_phases.py` | 1 | Phase ordering sanity |
 | `tests/unit/test_qcluster_config.py` | 4 | Django-Q cluster config |
-| `tests/unit/test_reports.py` | 29 | CSV export content/structure, PDF export (mocked pisa), min_severity filter, per-severity count aggregation, issue grouping |
+| `tests/unit/test_reports.py` | 32 | CSV export content/structure, PDF export (mocked pisa), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment |
 | `tests/unit/test_scans.py` | 30 | ScanSession, scheduling, scan_start views |
 | `tests/unit/test_scheduler.py` | 28 | reap_stuck_scans, token purge, daily_scan, authorization gate, `SCHEDULED_SCANS_ENABLED` switch |
 | `tests/unit/test_service_detection.py` | 64 | XML parsing, Port enrichment, is_web |
@@ -539,4 +539,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: 978 tests** (937 fast + 41 slow domain_security)
+**Total: 981 tests** (940 fast + 41 slow domain_security)

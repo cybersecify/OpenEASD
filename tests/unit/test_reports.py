@@ -310,8 +310,8 @@ class TestPdfSeverityCounts:
         assert res.status_code == 200
         html = captured["html"]
         # Correct counts — would render 1/1/2 under the GROUP BY leak bug.
-        assert '<div class="sev-big-num c-critical">2</div>' in html
-        assert '<div class="sev-big-num c-high">3</div>' in html
+        assert '<div class="metric-num c-critical">2</div>' in html
+        assert '<div class="metric-num c-high">3</div>' in html
         assert '<div class="metric-num">5</div>' in html
 
 
@@ -369,3 +369,49 @@ class TestFindingGrouping:
         # But all three targets are still listed under Affected Targets.
         for ip in ("1.1.1.1:443", "2.2.2.2:443", "3.3.3.3:443"):
             assert ip in html
+
+
+class TestReportEnrichment:
+    """Scope / CWE / CVSS / ID enrichment applied to issue groups."""
+
+    def test_risk_rating_uses_highest_populated_severity(self):
+        from apps.core.reports.views import _risk_rating
+        assert _risk_rating({"critical": 2, "high": 1}) == "CRITICAL"
+        assert _risk_rating({"critical": 0, "high": 3, "medium": 1}) == "HIGH"
+        assert _risk_rating({"medium": 4}) == "MEDIUM"
+        assert _risk_rating({"low": 1}) == "LOW"
+        assert _risk_rating({"critical": 0, "high": 0}) == "INFORMATIONAL"
+
+    def test_finding_scope_check_type_overrides_source(self):
+        from apps.core.reports.views import _finding_scope
+        assert _finding_scope("domain_security", "rdap") == "Domain"       # check_type wins
+        assert _finding_scope("domain_security", "dmarc") == "Email / DNS"  # source fallback
+        assert _finding_scope("tls_checker", "san_mismatch") == "TLS / HTTPS"
+        assert _finding_scope("mystery", "unknown") == "General"
+
+    def test_group_carries_id_scope_cwe_cvss_cves(self, db, session):
+        from apps.core.reports.views import _group_findings_by_issue
+        from apps.core.findings.models import Finding
+        Finding.objects.create(
+            session=session, source="nmap", check_type="cve", severity="high",
+            title="OpenSSH CVEs on 1.1.1.1:22", target="1.1.1.1:22",
+            description="d", remediation="r", status="open",
+            extra={"cvss_score": 8.1, "cve_ids": ["CVE-2026-1", "CVE-2026-2"]},
+        )
+        Finding.objects.create(
+            session=session, source="tls_checker", check_type="san_mismatch", severity="medium",
+            title="SAN mismatch on 2.2.2.2:443", target="2.2.2.2:443",
+            description="d2", remediation="r2", status="open",
+        )
+        groups = _group_findings_by_issue(
+            Finding.objects.filter(session=session).order_by("severity", "-discovered_at")
+        )
+        by_check = {g["check_type"]: g for g in groups}
+        cve = by_check["cve"]
+        assert cve["fid"].startswith("OE-") and cve["fid"].endswith("001")  # first after sort
+        assert cve["scope"] == "Network"
+        assert cve["cvss"] == 8.1                       # real CVSS from extra
+        assert cve["cves"] == ["CVE-2026-1", "CVE-2026-2"]
+        san = by_check["san_mismatch"]
+        assert san["cvss"] == 5.3                        # severity-band default (medium)
+        assert san["cwe"].startswith("CWE-295")

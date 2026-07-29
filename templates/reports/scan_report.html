@@ -4,482 +4,258 @@
   <meta charset="utf-8">
   <title>Attack Surface Report — {{ session.domain }}</title>
   <style>
-    /* ── Base ─────────────────────────────────────────────── */
-    body {
-      font-family: Helvetica, Arial, sans-serif;
-      font-size: 10px;
-      color: #1a1a1a;
-      margin: 0;
-      padding: 0;
+    /* ── Page geometry + running footer ───────────────────── */
+    @page {
+      size: a4 portrait;
+      margin: 1.9cm 1.5cm 2cm 1.5cm;
+      @frame footer_frame {
+        -pdf-frame-content: 'pdf-footer';
+        left: 1.5cm; width: 18cm; top: 27.4cm; height: 1cm;
+      }
     }
 
-    /* ── Page breaks ──────────────────────────────────────── */
+    body { font-family: Helvetica, Arial, sans-serif; font-size: 10px; color: #1f2933; margin: 0; padding: 0; }
+    p { line-height: 1.55; }
+
     .page-break { page-break-before: always; }
     .no-break   { page-break-inside: avoid; }
 
-    /* ── Cover ────────────────────────────────────────────── */
-    /* Single-cell table: xhtml2pdf fills a <td> background continuously, whereas
-       a <div> background bands per child block (leaving white gaps). */
-    .cover-table {
-      width: 100%;
-      border-collapse: collapse;
-      page-break-after: always;
-    }
-    .cover-cell {
-      background-color: #0d1117;
-      padding: 44px 50px 40px 50px;
-    }
-    .cover-brand {
-      font-size: 13px;
-      font-weight: bold;
-      color: #30c074;
-      letter-spacing: 3px;
-      text-transform: uppercase;
-      margin-bottom: 24px;
-    }
-    .cover-title {
-      font-size: 30px;
-      font-weight: bold;
-      color: #e6edf3;
-      margin-bottom: 6px;
-    }
-    .cover-subtitle {
-      font-size: 13px;
-      color: #8b949e;
-      margin-bottom: 32px;
-    }
-    .cover-domain {
-      font-size: 22px;
-      font-weight: bold;
-      color: #30c074;
-      margin-bottom: 6px;
-    }
-    .cover-meta {
-      font-size: 10px;
-      color: #8b949e;
-      margin-bottom: 26px;
-      line-height: 1.8;
-    }
-    .cover-sev-table {
-      width: 100%;
-      border-collapse: separate;
-      border-spacing: 8px 0;
-    }
-    .cover-sev-table td {
-      text-align: center;
-      padding: 15px 10px;
-      border: 1px solid #30363d;
-      width: 20%;
-    }
-    .sev-big-num {
-      font-size: 36px;
-      font-weight: bold;
-      line-height: 1;
-    }
-    .sev-lbl {
-      font-size: 9px;
-      font-weight: bold;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-top: 6px;
-    }
-    .cover-confidential {
-      margin-top: 26px;
-      color: #484f58;
+    /* ── Brand accent ─────────────────────────────────────── */
+    .accent { color: #2f9e57; }
+
+    /* ── Running footer ───────────────────────────────────── */
+    .footer-bar {
+      border-top: 1.5px solid #2f9e57;
+      padding-top: 4px;
       font-size: 8px;
-      text-align: center;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-    }
-
-    /* ── Severity colors ──────────────────────────────────── */
-    .c-critical { color: #f85149; }
-    .c-high     { color: #f0883e; }
-    .c-medium   { color: #e3b341; }
-    .c-low      { color: #58a6ff; }
-    .c-info     { color: #8b949e; }
-
-    .bg-critical { background-color: #f85149; }
-    .bg-high     { background-color: #f0883e; }
-    .bg-medium   { background-color: #e3b341; }
-    .bg-low      { background-color: #58a6ff; }
-    .bg-info     { background-color: #8b949e; }
-
-    /* ── Section title ────────────────────────────────────── */
-    .section-title {
-      background-color: #161b22;
-      color: #e6edf3;
-      padding: 9px 14px;
-      font-size: 12px;
-      font-weight: bold;
-      margin-top: 24px;
-      margin-bottom: 12px;
-      border-left: 4px solid #30c074;
-    }
-
-    /* ── Metric grid ──────────────────────────────────────── */
-    .metric-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-    .metric-table td {
-      text-align: center;
-      padding: 14px 10px;
-      border: 1px solid #e5e7eb;
-    }
-    .metric-num { font-size: 26px; font-weight: bold; }
-    .metric-lbl {
-      font-size: 8px;
-      color: #9ca3af;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-top: 4px;
-    }
-
-    /* ── Info table ───────────────────────────────────────── */
-    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10px; }
-    .info-table th {
-      background-color: #1f2937;
-      color: #f9fafb;
-      padding: 8px 12px;
-      text-align: left;
-      font-size: 9px;
-      width: 28%;
-      font-weight: bold;
-    }
-    .info-table td { padding: 7px 12px; border-bottom: 1px solid #f3f4f6; }
-    .info-table tr:last-child td { border-bottom: none; }
-
-    /* ── Findings overview table ──────────────────────────── */
-    .overview-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 9px; }
-    .overview-table thead th {
-      background-color: #1f2937;
-      color: #f9fafb;
-      padding: 8px 10px;
-      text-align: left;
-    }
-    .overview-table tbody td {
-      padding: 6px 10px;
-      border-bottom: 1px solid #f3f4f6;
-      vertical-align: top;
-    }
-    .overview-table tbody tr:nth-child(even) td { background-color: #f9fafb; }
-
-    /* ── Inline severity badge ────────────────────────────── */
-    .badge {
-      padding: 2px 7px;
-      font-size: 8px;
-      font-weight: bold;
-      color: #ffffff;
-      text-transform: uppercase;
-    }
-
-    /* ── Severity group header ────────────────────────────── */
-    .sev-group-hdr {
-      padding: 7px 14px;
-      color: #ffffff;
-      font-weight: bold;
-      font-size: 10px;
-      margin-bottom: 8px;
-      margin-top: 20px;
-    }
-
-    /* ── Finding card ─────────────────────────────────────── */
-    .finding-card { border: 1px solid #d1d5db; margin-bottom: 14px; }
-    .finding-hdr  { padding: 9px 14px; color: #ffffff; font-weight: bold; font-size: 11px; }
-    .finding-body { padding: 12px 14px; }
-    .finding-meta-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 10px;
-      font-size: 9px;
-    }
-    .finding-meta-table th {
-      background-color: #f3f4f6;
       color: #6b7280;
-      padding: 4px 10px;
-      text-align: left;
-      font-weight: bold;
-      width: 15%;
-      border: 1px solid #e5e7eb;
     }
-    .finding-meta-table td { padding: 4px 10px; border: 1px solid #e5e7eb; }
-    .field-lbl {
-      font-size: 8px;
-      font-weight: bold;
-      color: #9ca3af;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-top: 10px;
-      margin-bottom: 3px;
-    }
-    .field-val { font-size: 10px; color: #374151; line-height: 1.5; }
+    .footer-bar .r { text-align: right; }
 
-    /* ── Affected targets table (grouped findings) ────────── */
-    .targets-table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 9px; }
-    .targets-table thead th {
-      background-color: #f3f4f6;
-      color: #6b7280;
-      padding: 4px 10px;
-      text-align: left;
-      font-weight: bold;
-      border: 1px solid #e5e7eb;
+    /* ── Cover (dark, single continuous panel) ────────────── */
+    .cover-table { width: 100%; border-collapse: collapse; page-break-after: always; }
+    .cover-cell { background-color: #0d1117; padding: 44px 44px 40px 44px; }
+    .cover-badge {
+      float: right; background-color: #2f9e57; color: #ffffff;
+      font-size: 9px; font-weight: bold; letter-spacing: 1px;
+      padding: 5px 12px; text-transform: uppercase;
     }
-    .targets-table tbody td {
-      padding: 4px 10px;
-      border: 1px solid #e5e7eb;
-      vertical-align: top;
-      word-break: break-all;
-    }
-    .targets-table tbody tr:nth-child(even) td { background-color: #f9fafb; }
-    .count-pill {
-      font-size: 8px;
-      font-weight: bold;
-      color: #ffffff;
-      border: 1px solid #ffffff;
-      padding: 1px 6px;
-    }
+    .cover-brand { font-size: 12px; font-weight: bold; color: #30c074; letter-spacing: 3px; text-transform: uppercase; margin: 30px 0 26px; }
+    .cover-title { font-size: 30px; font-weight: bold; color: #e6edf3; line-height: 1.15; margin-bottom: 8px; }
+    .cover-title .hl { color: #30c074; }
+    .cover-subtitle { font-size: 12px; color: #8b949e; margin-bottom: 30px; }
+    .cover-domain { font-size: 22px; font-weight: bold; color: #30c074; margin-bottom: 6px; }
+    .cover-meta { font-size: 10px; color: #8b949e; line-height: 1.9; margin-bottom: 30px; }
+    .cover-sev-table { width: 100%; border-collapse: separate; border-spacing: 7px 0; }
+    .cover-sev-table td { text-align: center; padding: 14px 8px; border: 1px solid #30363d; width: 20%; }
+    .sev-big-num { font-size: 32px; font-weight: bold; line-height: 1; }
+    .sev-lbl { font-size: 8px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin-top: 6px; }
+    .cover-confidential { margin-top: 26px; color: #484f58; font-size: 8px; text-align: center; letter-spacing: 2px; text-transform: uppercase; }
 
-    /* ── Footer ───────────────────────────────────────────── */
-    .report-footer {
-      text-align: center;
-      color: #9ca3af;
-      font-size: 8px;
-      margin-top: 30px;
-      padding-top: 8px;
-      border-top: 1px solid #e5e7eb;
-    }
+    /* ── Severity colours ─────────────────────────────────── */
+    .c-critical { color: #d9342b; } .c-high { color: #e8590c; } .c-medium { color: #d1a017; } .c-low { color: #2f7fd1; } .c-info { color: #6b7280; }
+    .bg-critical { background-color: #d9342b; } .bg-high { background-color: #e8590c; } .bg-medium { background-color: #d1a017; } .bg-low { background-color: #2f7fd1; } .bg-info { background-color: #8b949e; }
+
+    /* ── Section heading (light body) ─────────────────────── */
+    .h1 { color: #2f9e57; font-size: 17px; font-weight: bold; border-bottom: 2px solid #2f9e57; padding-bottom: 6px; margin: 4px 0 14px; }
+    .h2 { font-size: 12px; font-weight: bold; color: #1f2933; margin: 18px 0 8px; }
+    .lead { font-size: 10px; color: #4b5563; margin: 0 0 14px; }
+
+    /* ── Generic tables ───────────────────────────────────── */
+    .kv { width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 8px; }
+    .kv th { background-color: #f3f5f7; color: #374151; text-align: left; font-weight: bold; padding: 6px 10px; width: 26%; border: 1px solid #e5e7eb; }
+    .kv td { padding: 6px 10px; border: 1px solid #e5e7eb; }
+
+    .grid { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-bottom: 14px; }
+    .grid thead th { background-color: #2f9e57; color: #ffffff; text-align: left; padding: 7px 9px; font-size: 9px; }
+    .grid tbody td { padding: 6px 9px; border: 1px solid #e5e7eb; vertical-align: top; word-break: break-all; }
+    .grid tbody tr:nth-child(even) td { background-color: #f8faf9; }
+
+    .metric-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    .metric-table td { text-align: center; padding: 12px 8px; border: 1px solid #e5e7eb; }
+    .metric-num { font-size: 24px; font-weight: bold; }
+    .metric-lbl { font-size: 8px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+
+    /* ── Risk rating box ──────────────────────────────────── */
+    .risk-box { border: 1px solid; padding: 12px 16px; margin-bottom: 16px; }
+    .risk-lbl { font-size: 9px; font-weight: bold; letter-spacing: 2px; text-transform: uppercase; }
+    .risk-val { font-size: 28px; font-weight: bold; line-height: 1.1; }
+
+    /* ── Badges ───────────────────────────────────────────── */
+    .badge { padding: 2px 7px; font-size: 8px; font-weight: bold; color: #ffffff; text-transform: uppercase; }
+    .pill-open { background-color: #e8590c; color: #ffffff; font-size: 8px; font-weight: bold; padding: 3px 10px; text-transform: uppercase; }
+
+    /* ── Severity section banner (detailed findings) ──────── */
+    .sev-banner { color: #ffffff; font-weight: bold; font-size: 12px; padding: 8px 14px; margin: 20px 0 12px; }
+
+    /* ── Finding card (AST style) ─────────────────────────── */
+    .fcard { border: 1px solid #e2e5e9; padding: 12px 14px 14px; margin-bottom: 14px; }
+    .fkicker { font-size: 8px; font-weight: bold; color: #9ca3af; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3px; }
+    .ftitle { font-size: 14px; font-weight: bold; color: #111827; margin-bottom: 8px; }
+    .sevbar { color: #ffffff; text-align: center; font-weight: bold; font-size: 10px; letter-spacing: 1px; padding: 4px; }
+    .sect-lbl { font-size: 9px; font-weight: bold; color: #2f9e57; letter-spacing: 1px; text-transform: uppercase; margin: 12px 0 4px; }
+    .prose { font-size: 10px; color: #374151; line-height: 1.55; }
+    .evidence { font-family: Courier, monospace; font-size: 8.5px; color: #374151; background-color: #f6f8fa; border: 1px solid #e5e7eb; padding: 8px 10px; line-height: 1.5; }
+    .ep { font-family: Courier, monospace; font-size: 8.5px; color: #1f2933; background-color: #f3f5f7; border: 1px solid #dfe3e8; padding: 2px 6px; margin: 0 4px 4px 0; }
   </style>
 </head>
 <body>
 
-<!-- ===========================================================
-     COVER PAGE
-     =========================================================== -->
-<table class="cover-table">
-<tr><td class="cover-cell">
-  {% if logo_data_uri %}<img src="{{ logo_data_uri }}" width="210" height="56" alt="Cybersecify" style="margin-bottom: 22px;" />{% endif %}
-  <div class="cover-brand">OpenEASD</div>
+<!-- Running footer (repeats on every page) -->
+<div id="pdf-footer">
+  <table style="width:100%; border-collapse:collapse;"><tr>
+    <td class="footer-bar">CONFIDENTIAL &middot; {{ session.domain }} &middot; Do Not Distribute</td>
+    <td class="footer-bar r">Page <pdf:pagenumber> / <pdf:pagecount></td>
+  </tr></table>
+</div>
 
-  <div class="cover-title">Attack Surface Report</div>
+<!-- ============================ COVER ============================ -->
+<table class="cover-table"><tr><td class="cover-cell">
+  <table style="width:100%; border-collapse:collapse; margin-bottom:18px;"><tr>
+    <td style="vertical-align:middle;">{% if logo_data_uri %}<img src="{{ logo_data_uri }}" width="200" height="53" alt="Cybersecify" />{% endif %}</td>
+    <td style="vertical-align:middle; text-align:right;"><span style="background-color:#2f9e57; color:#ffffff; font-size:9px; font-weight:bold; letter-spacing:1px; padding:5px 12px;">CONFIDENTIAL</span></td>
+  </tr></table>
+  <div class="cover-brand" style="margin:8px 0 24px;">OpenEASD</div>
+  <div class="cover-title">External Attack Surface<br><span class="hl">Detection</span> Report</div>
   <div class="cover-subtitle">External Attack Surface Detection &amp; Vulnerability Analysis</div>
-
   <div class="cover-domain">{{ session.domain }}</div>
   <div class="cover-meta">
     Scan Date: {{ session.end_time|default:generated_at|date:"F j, Y" }}<br>
     Generated: {{ generated_at|date:"F j, Y · H:i" }} UTC<br>
     Scan ID:&nbsp;&nbsp; {{ session.uuid }}
   </div>
-
-  <table class="cover-sev-table">
-    <tr>
-      <td>
-        <div class="sev-big-num c-critical">{{ vuln_counts.critical }}</div>
-        <div class="sev-lbl c-critical">Critical</div>
-      </td>
-      <td>
-        <div class="sev-big-num c-high">{{ vuln_counts.high }}</div>
-        <div class="sev-lbl c-high">High</div>
-      </td>
-      <td>
-        <div class="sev-big-num c-medium">{{ vuln_counts.medium }}</div>
-        <div class="sev-lbl c-medium">Medium</div>
-      </td>
-      <td>
-        <div class="sev-big-num c-low">{{ vuln_counts.low }}</div>
-        <div class="sev-lbl c-low">Low</div>
-      </td>
-      <td>
-        <div class="sev-big-num c-info">{{ vuln_counts.info }}</div>
-        <div class="sev-lbl c-info">Info</div>
-      </td>
-    </tr>
-  </table>
-
+  <table class="cover-sev-table"><tr>
+    <td><div class="sev-big-num c-critical" style="color:#f85149;">{{ vuln_counts.critical }}</div><div class="sev-lbl" style="color:#f85149;">Critical</div></td>
+    <td><div class="sev-big-num" style="color:#f0883e;">{{ vuln_counts.high }}</div><div class="sev-lbl" style="color:#f0883e;">High</div></td>
+    <td><div class="sev-big-num" style="color:#e3b341;">{{ vuln_counts.medium }}</div><div class="sev-lbl" style="color:#e3b341;">Medium</div></td>
+    <td><div class="sev-big-num" style="color:#58a6ff;">{{ vuln_counts.low }}</div><div class="sev-lbl" style="color:#58a6ff;">Low</div></td>
+    <td><div class="sev-big-num" style="color:#8b949e;">{{ vuln_counts.info }}</div><div class="sev-lbl" style="color:#8b949e;">Info</div></td>
+  </tr></table>
   <div class="cover-confidential">Confidential — For Authorized Use Only</div>
-</td></tr>
-</table>
+</td></tr></table>
 
-<!-- ===========================================================
-     PAGE 2 — EXECUTIVE SUMMARY
-     =========================================================== -->
-<div class="section-title">Executive Summary</div>
-
-<table class="metric-table">
-  <tr>
-    <td>
-      <div class="metric-num">{{ total_findings }}</div>
-      <div class="metric-lbl">Total Findings</div>
-    </td>
-    <td>
-      <div class="metric-num c-critical">{{ vuln_counts.critical }}</div>
-      <div class="metric-lbl">Critical</div>
-    </td>
-    <td>
-      <div class="metric-num c-high">{{ vuln_counts.high }}</div>
-      <div class="metric-lbl">High</div>
-    </td>
-    <td>
-      <div class="metric-num c-medium">{{ vuln_counts.medium }}</div>
-      <div class="metric-lbl">Medium</div>
-    </td>
-    <td>
-      <div class="metric-num c-low">{{ vuln_counts.low }}</div>
-      <div class="metric-lbl">Low</div>
-    </td>
-    <td>
-      <div class="metric-num c-info">{{ vuln_counts.info }}</div>
-      <div class="metric-lbl">Info</div>
-    </td>
-  </tr>
-</table>
-
-<div class="section-title">Scan Information</div>
-<table class="info-table">
-  <tr><th>Target Domain</th><td><strong>{{ session.domain }}</strong></td></tr>
-  <tr><th>Scan Type</th><td>{{ session.scan_type|title }}</td></tr>
-  <tr><th>Triggered By</th><td>{{ session.triggered_by|title }}</td></tr>
-  <tr><th>Started</th><td>{{ session.start_time|date:"Y-m-d H:i:s" }} UTC</td></tr>
-  <tr><th>Completed</th><td>{% if session.end_time %}{{ session.end_time|date:"Y-m-d H:i:s" }} UTC{% else %}—{% endif %}</td></tr>
-  {% if scan_duration %}<tr><th>Duration</th><td>{{ scan_duration }}</td></tr>{% endif %}
-  <tr><th>Status</th><td>{{ session.status|title }}</td></tr>
+<!-- ==================== 1. DOCUMENT CONTROL ===================== -->
+<div class="h1">Document Control</div>
+<table class="kv">
+  <tr><th>Title</th><td>External Attack Surface Detection Report (OpenEASD)</td></tr>
+  <tr><th>Target</th><td><strong>{{ session.domain }}</strong> and associated internet-facing hosts (no authenticated or internal access)</td></tr>
+  <tr><th>Assessment Type</th><td>Automated external attack surface detection &amp; vulnerability analysis</td></tr>
+  <tr><th>Scan Window</th><td>{{ session.start_time|date:"Y-m-d H:i:s" }} UTC &ndash; {% if session.end_time %}{{ session.end_time|date:"Y-m-d H:i:s" }} UTC{% else %}&mdash;{% endif %}{% if scan_duration %} ({{ scan_duration }}){% endif %}</td></tr>
+  <tr><th>Scan Status</th><td>{{ session.status|title }}</td></tr>
+  <tr><th>Report Date</th><td>{{ generated_at|date:"F j, Y" }}</td></tr>
+  <tr><th>Classification</th><td>Confidential — Authorized Use Only</td></tr>
   <tr><th>Scan ID</th><td>{{ session.uuid }}</td></tr>
 </table>
+<p class="lead" style="font-style:italic;">Note on counts: this report consolidates {{ total_findings }} raw scanner detection{{ total_findings|pluralize }} into {{ unique_issue_count }} unique issue{{ unique_issue_count|pluralize }} by grouping identical issues repeated across hosts, ports, or CVEs. Every affected endpoint is preserved under each finding.</p>
 
-<div class="section-title">Asset Discovery</div>
-<table class="metric-table">
-  <tr>
-    <td>
-      <div class="metric-num">{{ asset_counts.subdomains }}</div>
-      <div class="metric-lbl">Subdomains</div>
-    </td>
-    <td>
-      <div class="metric-num">{{ asset_counts.ips }}</div>
-      <div class="metric-lbl">IP Addresses</div>
-    </td>
-    <td>
-      <div class="metric-num">{{ asset_counts.ports }}</div>
-      <div class="metric-lbl">Open Ports</div>
-    </td>
-    <td>
-      <div class="metric-num">{{ asset_counts.urls }}</div>
-      <div class="metric-lbl">Web URLs</div>
-    </td>
-  </tr>
-</table>
-
-<!-- ===========================================================
-     PAGE 3 — FINDINGS OVERVIEW TABLE
-     =========================================================== -->
+<!-- ==================== 2. EXECUTIVE SUMMARY ==================== -->
 <div class="page-break"></div>
-<div class="section-title">Findings Overview</div>
+<div class="h1">Executive Summary</div>
+<p class="lead">An automated external attack surface detection scan (OpenEASD) was run against {{ session.domain }} and the hosts discovered under it. Testing was non-intrusive and performed from the public internet with no authenticated or internal access. The scan surfaced <strong>{{ unique_issue_count }} unique finding{{ unique_issue_count|pluralize }}</strong> ({{ vuln_counts.critical }} Critical, {{ vuln_counts.high }} High, {{ vuln_counts.medium }} Medium, {{ vuln_counts.low }} Low, {{ vuln_counts.info }} Informational) across {{ total_findings }} raw detection{{ total_findings|pluralize }}.</p>
 
+<table class="risk-box no-break" style="border-color:#e8590c;"><tr>
+  <td>
+    <div class="risk-lbl accent" style="color:#e8590c;">Overall Risk Rating</div>
+    <div class="risk-val" style="color:#e8590c;">{{ risk_rating }}</div>
+  </td>
+</tr></table>
+
+<div class="h2">Severity Distribution</div>
+<table class="metric-table"><tr>
+  <td><div class="metric-num">{{ total_findings }}</div><div class="metric-lbl">Total Findings</div></td>
+  <td><div class="metric-num c-critical">{{ vuln_counts.critical }}</div><div class="metric-lbl">Critical</div></td>
+  <td><div class="metric-num c-high">{{ vuln_counts.high }}</div><div class="metric-lbl">High</div></td>
+  <td><div class="metric-num c-medium">{{ vuln_counts.medium }}</div><div class="metric-lbl">Medium</div></td>
+  <td><div class="metric-num c-low">{{ vuln_counts.low }}</div><div class="metric-lbl">Low</div></td>
+  <td><div class="metric-num c-info">{{ vuln_counts.info }}</div><div class="metric-lbl">Info</div></td>
+</tr></table>
+
+<div class="h2">Asset Discovery</div>
+<table class="metric-table"><tr>
+  <td><div class="metric-num">{{ asset_counts.subdomains }}</div><div class="metric-lbl">Subdomains</div></td>
+  <td><div class="metric-num">{{ asset_counts.ips }}</div><div class="metric-lbl">IP Addresses</div></td>
+  <td><div class="metric-num">{{ asset_counts.ports }}</div><div class="metric-lbl">Open Ports</div></td>
+  <td><div class="metric-num">{{ asset_counts.urls }}</div><div class="metric-lbl">Web URLs</div></td>
+</tr></table>
+
+<!-- ==================== 3. FINDINGS SUMMARY ==================== -->
+<div class="page-break"></div>
+<div class="h1">Findings Summary</div>
 {% if issue_groups %}
-<p style="font-size:9px; color:#6b7280; margin: 0 0 10px;">
-  {{ total_findings }} finding{{ total_findings|pluralize }} across {{ unique_issue_count }} issue type{{ unique_issue_count|pluralize }}.
-  Repeated issues are grouped below; every affected target is listed under its issue in Detailed Findings.
-</p>
-<table class="overview-table">
-  <thead>
-    <tr>
-      <th style="width:4%;">#</th>
-      <th style="width:10%;">Severity</th>
-      <th style="width:42%;">Issue</th>
-      <th style="width:16%;">Source</th>
-      <th style="width:18%;">Check Type</th>
-      <th style="width:10%;">Targets</th>
-    </tr>
-  </thead>
+<p class="lead">All findings are Open pending remediation. Counts are unique issues after consolidation; &ldquo;Hosts&rdquo; is the number of distinct endpoints affected by each finding.</p>
+<table class="grid">
+  <thead><tr>
+    <th style="width:12%;">ID</th><th style="width:34%;">Title</th><th style="width:16%;">Scope</th>
+    <th style="width:11%;">Severity</th><th style="width:8%;">CVSS</th><th style="width:7%;">Hosts</th><th style="width:12%;">Status</th>
+  </tr></thead>
   <tbody>
     {% for g in issue_groups %}
     <tr>
-      <td>{{ forloop.counter }}</td>
-      <td><span class="badge bg-{{ g.severity }}">{{ g.severity|upper }}</span></td>
+      <td>{{ g.fid }}</td>
       <td><strong>{{ g.title }}</strong></td>
-      <td>{{ g.source }}</td>
-      <td>{{ g.check_type }}</td>
+      <td>{{ g.scope }}</td>
+      <td><span class="badge bg-{{ g.severity }}">{{ g.severity|upper }}</span></td>
+      <td>{% if g.cvss %}{{ g.cvss }}{% else %}&mdash;{% endif %}</td>
       <td>{{ g.instances|length }}</td>
+      <td><span class="pill-open">{{ g.instances.0.get_status_display|default:"Open" }}</span></td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 {% else %}
-<p style="color:#6b7280; font-style:italic; margin: 20px 0;">No findings recorded for this scan.</p>
+<p class="lead" style="font-style:italic;">No findings recorded for this scan.</p>
 {% endif %}
 
-<!-- ===========================================================
-     DETAILED FINDINGS — grouped by severity
-     =========================================================== -->
-{% if issue_groups %}
+<!-- ==================== 4. DETAILED FINDINGS =================== -->
+{% if groups_by_severity %}
 <div class="page-break"></div>
-<div class="section-title">Detailed Findings</div>
+<div class="h1">Detailed Findings</div>
+<p class="lead">Each finding is documented with description, evidence, and remediation. Affected Endpoints list every host or port on which the issue was detected.</p>
 
-{% for g in issue_groups %}
-<div class="finding-card">
-  <div class="finding-hdr bg-{{ g.severity }}">
-    {{ g.title }}
-    <span class="count-pill">{{ g.instances|length }} target{{ g.instances|length|pluralize }}</span>
-  </div>
-  <div class="finding-body">
+{% for severity, groups in groups_by_severity %}
+<div class="sev-banner bg-{{ severity }}">{{ severity|upper }} — {{ groups|length }} Finding{{ groups|length|pluralize }}</div>
 
-    <table class="finding-meta-table">
-      <tr>
-        <th>Severity</th>
-        <td><span class="badge bg-{{ g.severity }}">{{ g.severity|upper }}</span></td>
-        <th style="width:15%;">Check Type</th>
-        <td>{{ g.check_type }}</td>
-      </tr>
-      <tr>
-        <th>Source</th>
-        <td>{{ g.source }}</td>
-        <th>Affected</th>
-        <td>{{ g.instances|length }} target{{ g.instances|length|pluralize }}</td>
-      </tr>
-    </table>
+{% for g in groups %}
+<div class="fcard no-break">
+  <div class="fkicker">{{ g.fid }} &middot; {{ g.scope }} &middot; {{ g.source }}</div>
+  <div class="ftitle">{{ g.title }} <span class="pill-open" style="float:right;">{{ g.instances.0.get_status_display|default:"Open" }}</span></div>
 
-    <div class="field-lbl">Description</div>
-    <div class="field-val">{{ g.description }}</div>
+  <table class="kv">
+    <tr><th>Severity</th><td><div class="sevbar bg-{{ g.severity }}">{{ g.severity|upper }}</div></td></tr>
+    <tr><th>CVSS v3.1</th><td>{% if g.cvss %}{{ g.cvss }}{% else %}&mdash;{% endif %}</td></tr>
+    <tr><th>Category</th><td>{% if g.cwe %}{{ g.cwe }}{% else %}&mdash;{% endif %}</td></tr>
+    <tr><th>Source / Check</th><td><span style="font-family:Courier,monospace;">{{ g.source }} &middot; {{ g.check_type }}</span></td></tr>
+    {% if g.cves %}<tr><th>CVEs</th><td><span style="font-family:Courier,monospace;">{{ g.cves|join:", " }}</span></td></tr>{% endif %}
+    <tr><th>Affected Endpoints</th><td>
+      {% for f in g.instances %}<span class="ep">{% if f.url %}{{ f.url.url }}{% else %}{{ f.target }}{% endif %}</span> {% endfor %}
+    </td></tr>
+  </table>
 
-    {% if g.remediation %}
-    <div class="field-lbl">Remediation</div>
-    <div class="field-val">{{ g.remediation }}</div>
-    {% endif %}
+  <div class="sect-lbl">Description</div>
+  <div class="prose">{{ g.description }}</div>
 
-    <div class="field-lbl">Affected Targets</div>
-    <table class="targets-table">
-      <thead>
-        <tr>
-          <th style="width:6%;">#</th>
-          <th style="width:46%;">Target</th>
-          <th style="width:22%;">Port / Service</th>
-          <th style="width:26%;">Detail</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for f in g.instances %}
-        <tr>
-          <td>{{ forloop.counter }}</td>
-          <td>{% if f.url %}{{ f.url.url }}{% else %}{{ f.target }}{% endif %}</td>
-          <td>{% if f.port %}{{ f.port.port }}/{{ f.port.protocol }}{% if f.port.service %} ({{ f.port.service }}){% endif %}{% else %}&mdash;{% endif %}</td>
-          <td>{% if f.extra.cve %}{{ f.extra.cve }}{% if f.extra.cvss_score %} &middot; CVSS {{ f.extra.cvss_score }}{% endif %}{% elif f.extra.cvss_score %}CVSS {{ f.extra.cvss_score }}{% else %}&mdash;{% endif %}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="sect-lbl">Evidence</div>
+  <div class="evidence">{{ g.source }} reported {{ g.check_type }} on {{ g.instances|length }} endpoint{{ g.instances|length|pluralize }} (first observed {{ g.instances.0.discovered_at|date:"Y-m-d H:i" }}).</div>
 
-  </div>
+  {% if g.remediation %}
+  <div class="sect-lbl">Remediation</div>
+  <div class="prose">{{ g.remediation }}</div>
+  {% endif %}
 </div>
+{% endfor %}
 {% endfor %}
 {% endif %}
 
 {% if report_cta_url and report_cta_text %}
-<div class="report-cta" style="margin: 30px 50px; padding: 18px 22px; background-color: #161b22; border-left: 3px solid #30c074; color: #e6edf3; font-size: 11px; line-height: 1.6;">
-  {{ report_cta_text }}<br>
-  <a href="{{ report_cta_url }}" style="color: #30c074;">{{ report_cta_url }}</a>
+<div class="report-cta fcard" style="border-left:3px solid #2f9e57;">
+  <div class="prose">{{ report_cta_text }}<br><a href="{{ report_cta_url }}" class="accent">{{ report_cta_url }}</a></div>
 </div>
 {% endif %}
 
-<div class="report-footer">
-  OpenEASD Attack Surface Report &nbsp;·&nbsp; {{ session.domain }} &nbsp;·&nbsp;
-  Generated {{ generated_at|date:"Y-m-d H:i" }} UTC &nbsp;·&nbsp; CONFIDENTIAL
-</div>
+<!-- ==================== 5. DISCLAIMER ========================== -->
+<div class="page-break"></div>
+<div class="h1">Disclaimer</div>
+<p class="prose">This document contains confidential information produced by an automated external attack surface scan. Findings reflect externally observable configuration at the time of scanning and should be validated before remediation. The assessment covered public-facing hosts only; no authenticated, internal, or application-layer testing was performed. Where the scanner reported a non-clean status, coverage may be partial and a re-scan is recommended. Automated version-to-CVE matching can over-report where a vendor backports fixes without changing the version banner; such matches should be validated against the actual package build before treating them as confirmed exploitation.</p>
 
 </body>
 </html>
