@@ -18,10 +18,16 @@
     .no-break   { page-break-inside: avoid; }
 
     /* ── Cover ────────────────────────────────────────────── */
-    .cover-wrap {
-      background-color: #0d1117;
-      padding: 80px 50px 60px 50px;
+    /* Single-cell table: xhtml2pdf fills a <td> background continuously, whereas
+       a <div> background bands per child block (leaving white gaps). */
+    .cover-table {
+      width: 100%;
+      border-collapse: collapse;
       page-break-after: always;
+    }
+    .cover-cell {
+      background-color: #0d1117;
+      padding: 44px 50px 40px 50px;
     }
     .cover-brand {
       font-size: 13px;
@@ -29,7 +35,7 @@
       color: #30c074;
       letter-spacing: 3px;
       text-transform: uppercase;
-      margin-bottom: 70px;
+      margin-bottom: 24px;
     }
     .cover-title {
       font-size: 30px;
@@ -40,7 +46,7 @@
     .cover-subtitle {
       font-size: 13px;
       color: #8b949e;
-      margin-bottom: 50px;
+      margin-bottom: 32px;
     }
     .cover-domain {
       font-size: 22px;
@@ -51,8 +57,8 @@
     .cover-meta {
       font-size: 10px;
       color: #8b949e;
-      margin-bottom: 60px;
-      line-height: 1.9;
+      margin-bottom: 26px;
+      line-height: 1.8;
     }
     .cover-sev-table {
       width: 100%;
@@ -61,7 +67,7 @@
     }
     .cover-sev-table td {
       text-align: center;
-      padding: 18px 10px;
+      padding: 15px 10px;
       border: 1px solid #30363d;
       width: 20%;
     }
@@ -78,7 +84,7 @@
       margin-top: 6px;
     }
     .cover-confidential {
-      margin-top: 60px;
+      margin-top: 26px;
       color: #484f58;
       font-size: 8px;
       text-align: center;
@@ -206,6 +212,31 @@
     }
     .field-val { font-size: 10px; color: #374151; line-height: 1.5; }
 
+    /* ── Affected targets table (grouped findings) ────────── */
+    .targets-table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 9px; }
+    .targets-table thead th {
+      background-color: #f3f4f6;
+      color: #6b7280;
+      padding: 4px 10px;
+      text-align: left;
+      font-weight: bold;
+      border: 1px solid #e5e7eb;
+    }
+    .targets-table tbody td {
+      padding: 4px 10px;
+      border: 1px solid #e5e7eb;
+      vertical-align: top;
+      word-break: break-all;
+    }
+    .targets-table tbody tr:nth-child(even) td { background-color: #f9fafb; }
+    .count-pill {
+      font-size: 8px;
+      font-weight: bold;
+      color: #ffffff;
+      border: 1px solid #ffffff;
+      padding: 1px 6px;
+    }
+
     /* ── Footer ───────────────────────────────────────────── */
     .report-footer {
       text-align: center;
@@ -222,8 +253,9 @@
 <!-- ===========================================================
      COVER PAGE
      =========================================================== -->
-<div class="cover-wrap">
-  {% if logo_data_uri %}<img src="{{ logo_data_uri }}" width="210" height="56" alt="Cybersecify" style="margin-bottom: 44px;" />{% endif %}
+<table class="cover-table">
+<tr><td class="cover-cell">
+  {% if logo_data_uri %}<img src="{{ logo_data_uri }}" width="210" height="56" alt="Cybersecify" style="margin-bottom: 22px;" />{% endif %}
   <div class="cover-brand">OpenEASD</div>
 
   <div class="cover-title">Attack Surface Report</div>
@@ -262,7 +294,8 @@
   </table>
 
   <div class="cover-confidential">Confidential — For Authorized Use Only</div>
-</div>
+</td></tr>
+</table>
 
 <!-- ===========================================================
      PAGE 2 — EXECUTIVE SUMMARY
@@ -338,29 +371,31 @@
 <div class="page-break"></div>
 <div class="section-title">Findings Overview</div>
 
-{% if findings %}
+{% if issue_groups %}
+<p style="font-size:9px; color:#6b7280; margin: 0 0 10px;">
+  {{ total_findings }} finding{{ total_findings|pluralize }} across {{ unique_issue_count }} issue type{{ unique_issue_count|pluralize }}.
+  Repeated issues are grouped below; every affected target is listed under its issue in Detailed Findings.
+</p>
 <table class="overview-table">
   <thead>
     <tr>
       <th style="width:4%;">#</th>
       <th style="width:10%;">Severity</th>
-      <th style="width:32%;">Title</th>
-      <th style="width:14%;">Source</th>
-      <th style="width:20%;">Target</th>
-      <th style="width:12%;">Check Type</th>
-      <th style="width:8%;">Status</th>
+      <th style="width:42%;">Issue</th>
+      <th style="width:16%;">Source</th>
+      <th style="width:18%;">Check Type</th>
+      <th style="width:10%;">Targets</th>
     </tr>
   </thead>
   <tbody>
-    {% for f in findings %}
+    {% for g in issue_groups %}
     <tr>
       <td>{{ forloop.counter }}</td>
-      <td><span class="badge bg-{{ f.severity }}">{{ f.severity|upper }}</span></td>
-      <td><strong>{{ f.title }}</strong></td>
-      <td>{{ f.source }}</td>
-      <td>{{ f.target }}</td>
-      <td>{{ f.check_type }}</td>
-      <td>{{ f.get_status_display }}</td>
+      <td><span class="badge bg-{{ g.severity }}">{{ g.severity|upper }}</span></td>
+      <td><strong>{{ g.title }}</strong></td>
+      <td>{{ g.source }}</td>
+      <td>{{ g.check_type }}</td>
+      <td>{{ g.instances|length }}</td>
     </tr>
     {% endfor %}
   </tbody>
@@ -372,74 +407,66 @@
 <!-- ===========================================================
      DETAILED FINDINGS — grouped by severity
      =========================================================== -->
-{% if grouped_findings %}
+{% if issue_groups %}
 <div class="page-break"></div>
 <div class="section-title">Detailed Findings</div>
 
-{% for severity, sev_findings in grouped_findings %}{% if sev_findings %}
-
-<div class="sev-group-hdr bg-{{ severity }}">
-  {{ severity|upper }} — {{ sev_findings|length }} Finding{{ sev_findings|length|pluralize }}
-</div>
-
-{% for f in sev_findings %}
-<div class="finding-card no-break">
-  <div class="finding-hdr bg-{{ f.severity }}">
-    {{ f.title }}
+{% for g in issue_groups %}
+<div class="finding-card">
+  <div class="finding-hdr bg-{{ g.severity }}">
+    {{ g.title }}
+    <span class="count-pill">{{ g.instances|length }} target{{ g.instances|length|pluralize }}</span>
   </div>
   <div class="finding-body">
 
     <table class="finding-meta-table">
       <tr>
-        <th>Source</th>
-        <td>{{ f.source }}</td>
+        <th>Severity</th>
+        <td><span class="badge bg-{{ g.severity }}">{{ g.severity|upper }}</span></td>
         <th style="width:15%;">Check Type</th>
-        <td>{{ f.check_type }}</td>
+        <td>{{ g.check_type }}</td>
       </tr>
       <tr>
-        <th>Target</th>
-        <td colspan="3">{{ f.target }}</td>
+        <th>Source</th>
+        <td>{{ g.source }}</td>
+        <th>Affected</th>
+        <td>{{ g.instances|length }} target{{ g.instances|length|pluralize }}</td>
       </tr>
-      <tr>
-        <th>Status</th>
-        <td>{{ f.get_status_display }}</td>
-        <th>Discovered</th>
-        <td>{{ f.discovered_at|date:"Y-m-d H:i" }}</td>
-      </tr>
-      {% if f.port %}
-      <tr>
-        <th>Port</th>
-        <td colspan="3">{{ f.port.port }}/{{ f.port.protocol }}{% if f.port.service %} ({{ f.port.service }}){% endif %}</td>
-      </tr>
-      {% endif %}
-      {% if f.url %}
-      <tr>
-        <th>URL</th>
-        <td colspan="3">{{ f.url.url }}</td>
-      </tr>
-      {% endif %}
-      {% if f.extra.cvss_score %}
-      <tr>
-        <th>CVSS Score</th>
-        <td>{{ f.extra.cvss_score }}</td>
-        {% if f.extra.cve %}<th>CVE</th><td>{{ f.extra.cve }}</td>{% else %}<th></th><td></td>{% endif %}
-      </tr>
-      {% endif %}
     </table>
 
     <div class="field-lbl">Description</div>
-    <div class="field-val">{{ f.description }}</div>
+    <div class="field-val">{{ g.description }}</div>
 
-    {% if f.remediation %}
+    {% if g.remediation %}
     <div class="field-lbl">Remediation</div>
-    <div class="field-val">{{ f.remediation }}</div>
+    <div class="field-val">{{ g.remediation }}</div>
     {% endif %}
+
+    <div class="field-lbl">Affected Targets</div>
+    <table class="targets-table">
+      <thead>
+        <tr>
+          <th style="width:6%;">#</th>
+          <th style="width:46%;">Target</th>
+          <th style="width:22%;">Port / Service</th>
+          <th style="width:26%;">Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in g.instances %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td>{% if f.url %}{{ f.url.url }}{% else %}{{ f.target }}{% endif %}</td>
+          <td>{% if f.port %}{{ f.port.port }}/{{ f.port.protocol }}{% if f.port.service %} ({{ f.port.service }}){% endif %}{% else %}&mdash;{% endif %}</td>
+          <td>{% if f.extra.cve %}{{ f.extra.cve }}{% if f.extra.cvss_score %} &middot; CVSS {{ f.extra.cvss_score }}{% endif %}{% elif f.extra.cvss_score %}CVSS {{ f.extra.cvss_score }}{% else %}&mdash;{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
 
   </div>
 </div>
 {% endfor %}
-
-{% endif %}{% endfor %}
 {% endif %}
 
 {% if report_cta_url and report_cta_text %}

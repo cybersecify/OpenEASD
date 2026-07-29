@@ -313,3 +313,59 @@ class TestPdfSeverityCounts:
         assert '<div class="sev-big-num c-critical">2</div>' in html
         assert '<div class="sev-big-num c-high">3</div>' in html
         assert '<div class="metric-num">5</div>' in html
+
+
+class TestFindingGrouping:
+    """Repeated issues (identical write-up across targets) collapse into one
+    block with a table of affected targets, instead of one full card each."""
+
+    def _mk(self, session, **kw):
+        from apps.core.findings.models import Finding
+        base = dict(
+            session=session, source="tls_checker", check_type="unencrypted_service",
+            severity="critical", target="1.1.1.1:443", description="Plaintext service.",
+            remediation="Enable TLS.", status="open", title="Unencrypted HTTPS on 1.1.1.1:443",
+        )
+        base.update(kw)
+        return Finding.objects.create(**base)
+
+    def test_identical_writeups_collapse_and_strip_target(self, db, session):
+        from apps.core.reports.views import _group_findings_by_issue
+        from apps.core.findings.models import Finding
+        for ip in ("1.1.1.1:443", "2.2.2.2:443", "3.3.3.3:443"):
+            self._mk(session, target=ip, title=f"Unencrypted HTTPS on {ip}")
+        self._mk(session, source="web_checker", check_type="missing_csp", severity="high",
+                 target="http://x:80", title="Missing CSP on http://x:80",
+                 description="No CSP header.", remediation="Add CSP.")
+        findings = Finding.objects.filter(session=session).order_by("severity", "-discovered_at")
+        groups = _group_findings_by_issue(findings)
+
+        assert len(groups) == 2  # 3 identical collapse to 1; the unique one stands alone
+        crit = next(g for g in groups if g["severity"] == "critical")
+        assert crit["title"] == "Unencrypted HTTPS"        # " on <target>" stripped
+        assert len(crit["instances"]) == 3
+        high = next(g for g in groups if g["severity"] == "high")
+        assert high["title"] == "Missing CSP"
+        assert len(high["instances"]) == 1
+
+    def test_pdf_renders_description_once_not_per_instance(self, authed_client, session):
+        for ip in ("1.1.1.1:443", "2.2.2.2:443", "3.3.3.3:443"):
+            self._mk(session, target=ip, title=f"Unencrypted HTTPS on {ip}")
+        captured = {}
+
+        def capture_html(html_str, dest):
+            captured["html"] = html_str
+            mock = MagicMock()
+            mock.err = 0
+            return mock
+
+        with patch("xhtml2pdf.pisa.CreatePDF", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+
+        assert res.status_code == 200
+        html = captured["html"]
+        # Description block rendered once for the group, not once per target.
+        assert html.count("Plaintext service.") == 1
+        # But all three targets are still listed under Affected Targets.
+        for ip in ("1.1.1.1:443", "2.2.2.2:443", "3.3.3.3:443"):
+            assert ip in html

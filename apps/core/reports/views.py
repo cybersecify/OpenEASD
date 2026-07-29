@@ -128,6 +128,55 @@ def export_findings_csv(request, session_uuid):
     return response
 
 
+def _group_findings_by_issue(findings):
+    """Collapse findings that share an identical write-up into one issue group.
+
+    Many tools raise the same issue (identical severity/source/check_type/
+    description/remediation) once per affected target — e.g. 20 "Unencrypted
+    HTTPS" findings differing only by IP:port. Grouping renders the description
+    and remediation once, with a compact table of every affected target beneath,
+    instead of repeating the full block per instance. No information is lost:
+    every target is still listed.
+
+    Returns a list of dicts ordered by severity, then by instance count (desc):
+        {severity, source, check_type, title, description, remediation, instances}
+    where `instances` is the list of Finding objects sharing that write-up.
+    The group title strips a trailing " on <target>" so the heading reads as the
+    issue ("Unencrypted HTTPS") rather than one instance's target.
+    """
+    groups = {}
+    order = []
+    for f in findings:
+        key = (f.severity, f.source, f.check_type, f.description, f.remediation)
+        g = groups.get(key)
+        if g is None:
+            title = f.title or ""
+            suffix = " on " + (f.target or "")
+            if f.target and title.endswith(suffix):
+                title = title[: -len(suffix)]
+            g = groups[key] = {
+                "severity": f.severity,
+                "source": f.source,
+                "check_type": f.check_type,
+                "title": title,
+                "description": f.description,
+                "remediation": f.remediation,
+                "instances": [],
+            }
+            order.append(key)
+        g["instances"].append(f)
+
+    result = [groups[k] for k in order]
+    result.sort(
+        key=lambda grp: (
+            _SEVERITY_ORDER.index(grp["severity"]) if grp["severity"] in _SEVERITY_ORDER else 99,
+            -len(grp["instances"]),
+            grp["title"].lower(),
+        )
+    )
+    return result
+
+
 @_report_auth_required
 def export_scan_pdf(request, session_uuid):
     """Export a scan report as PDF, optionally filtered by ?min_severity=."""
@@ -148,12 +197,9 @@ def export_scan_pdf(request, session_uuid):
         if row["severity"] in vuln_counts:
             vuln_counts[row["severity"]] = row["total"]
 
-    # Findings grouped by severity (for detail section)
-    from collections import defaultdict
-    by_sev = defaultdict(list)
-    for f in findings:
-        by_sev[f.severity].append(f)
-    grouped_findings = [(sev, by_sev[sev]) for sev in _SEVERITY_ORDER if by_sev[sev]]
+    # Findings collapsed into issue groups (identical write-up → one block with
+    # a table of affected targets) for both the overview and the detail section.
+    issue_groups = _group_findings_by_issue(findings)
 
     # Asset counts
     asset_counts = {
@@ -180,8 +226,8 @@ def export_scan_pdf(request, session_uuid):
     template = get_template("reports/scan_report.html")
     html = template.render({
         "session": session,
-        "findings": findings,
-        "grouped_findings": grouped_findings,
+        "issue_groups": issue_groups,
+        "unique_issue_count": len(issue_groups),
         "vuln_counts": vuln_counts,
         "total_findings": sum(vuln_counts.values()),
         "asset_counts": asset_counts,
