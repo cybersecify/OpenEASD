@@ -207,13 +207,18 @@ def _group_findings_by_issue(findings):
     groups = {}
     order = []
     for f in findings:
-        key = (f.severity, f.source, f.check_type, f.description, f.remediation)
+        # Normalise the title by stripping a trailing " on <target>" so the same
+        # issue across targets shares one heading ("Unencrypted HTTPS").
+        title = f.title or ""
+        suffix = " on " + (f.target or "")
+        if f.target and title.endswith(suffix):
+            title = title[: -len(suffix)]
+        # Group on the issue identity (severity + source + check_type + heading),
+        # NOT on the full description — real findings embed per-target text in the
+        # description, which would otherwise split one issue into many groups.
+        key = (f.severity, f.source, f.check_type, title)
         g = groups.get(key)
         if g is None:
-            title = f.title or ""
-            suffix = " on " + (f.target or "")
-            if f.target and title.endswith(suffix):
-                title = title[: -len(suffix)]
             g = groups[key] = {
                 "severity": f.severity,
                 "source": f.source,
