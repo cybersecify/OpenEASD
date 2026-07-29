@@ -258,6 +258,10 @@ def _group_findings_by_issue(findings):
                 if c and c not in cves:
                     cves.append(c)
         grp["cves"] = cves
+        # Affected endpoints as a pill grid (3 per row) — xhtml2pdf renders
+        # bordered table cells reliably but not inline-block spans.
+        endpoints = [(f.url.url if f.url else f.target) for f in grp["instances"]]
+        grp["endpoint_rows"] = [endpoints[i:i + 3] for i in range(0, len(endpoints), 3)]
     return result
 
 
@@ -299,6 +303,29 @@ def export_scan_pdf(request, session_uuid):
         "urls": URL.objects.filter(session=session).count(),
     }
 
+    # Scope & methodology — the registered scan pipeline, grouped by phase group,
+    # with the findings each group raised in this scan. Purely from the registry.
+    from apps.core.workflows.registry import get_registry
+    src_counts = {}
+    for row in findings.order_by().values("source").annotate(n=Count("id")):
+        src_counts[row["source"]] = row["n"]
+    _pg = {}
+    for name, info in get_registry().items():
+        if info.get("core"):
+            continue
+        group = info.get("phase_group") or "Other"
+        d = _pg.setdefault(group, {"phase": info["phase"], "tools": [], "findings": 0, "produces": False})
+        d["phase"] = min(d["phase"], info["phase"])
+        d["tools"].append(info["label"])
+        d["findings"] += src_counts.get(name, 0)
+        d["produces"] = d["produces"] or info.get("produces_findings", False)
+    methodology = sorted(
+        ({"vector": g, "tools": v["tools"], "findings": v["findings"],
+          "produces": v["produces"], "phase": v["phase"]} for g, v in _pg.items()),
+        key=lambda r: r["phase"],
+    )
+    tool_count = sum(1 for _n, i in get_registry().items() if not i.get("core"))
+
     # Scan duration
     scan_duration = None
     if session.end_time and session.start_time:
@@ -323,6 +350,9 @@ def export_scan_pdf(request, session_uuid):
         "total_findings": sum(vuln_counts.values()),
         "risk_rating": risk_rating,
         "asset_counts": asset_counts,
+        "methodology": methodology,
+        "tool_count": tool_count,
+        "vector_count": len(methodology),
         "scan_duration": scan_duration,
         "generated_at": timezone.now(),
         "logo_data_uri": _logo_data_uri(),

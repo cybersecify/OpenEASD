@@ -97,6 +97,8 @@
     .prose { font-size: 10px; color: #374151; line-height: 1.55; }
     .evidence { font-family: Courier, monospace; font-size: 8.5px; color: #374151; background-color: #f6f8fa; border: 1px solid #e5e7eb; padding: 8px 10px; line-height: 1.5; }
     .ep { font-family: Courier, monospace; font-size: 8.5px; color: #1f2933; background-color: #f3f5f7; border: 1px solid #dfe3e8; padding: 2px 6px; margin: 0 4px 4px 0; }
+    .ep-grid { width: 100%; border-collapse: separate; border-spacing: 4px; }
+    .ep-cell { font-family: Courier, monospace; font-size: 8px; color: #1f2933; background-color: #f3f5f7; border: 1px solid #dfe3e8; padding: 3px 6px; width: 33%; word-break: break-all; }
   </style>
 </head>
 <body>
@@ -178,7 +180,26 @@
   <td><div class="metric-num">{{ asset_counts.urls }}</div><div class="metric-lbl">Web URLs</div></td>
 </tr></table>
 
-<!-- ==================== 3. FINDINGS SUMMARY ==================== -->
+<!-- ==================== 3. SCOPE & METHODOLOGY ================= -->
+<div class="page-break"></div>
+<div class="h1">Scope &amp; Methodology</div>
+<p class="lead">OpenEASD is an automated, external (black-box) attack surface scan. From a single domain it runs a fixed pipeline of {{ vector_count }} vector{{ vector_count|pluralize }} backed by {{ tool_count }} tool{{ tool_count|pluralize }} &mdash; subdomain and asset discovery, then per-service checks for known vulnerabilities, TLS/SSL, SSH, web hygiene, and email/DNS posture. Testing was non-intrusive and performed from the public internet with no authenticated, internal, or application-layer access.</p>
+<div class="h2">Scan Pipeline &mdash; {{ vector_count }} Vector{{ vector_count|pluralize }}, {{ tool_count }} Tool{{ tool_count|pluralize }}</div>
+<table class="grid">
+  <thead><tr><th style="width:30%;">Attack Vector</th><th style="width:50%;">Tooling</th><th style="width:20%;">Result</th></tr></thead>
+  <tbody>
+    {% for row in methodology %}
+    <tr>
+      <td><strong>{{ row.vector }}</strong></td>
+      <td>{{ row.tools|join:", " }}</td>
+      <td>{% if row.produces %}{{ row.findings }} finding{{ row.findings|pluralize }}{% else %}Discovery{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="lead" style="font-style:italic;">Every finding is traceable to a specific tool, check type, and target in Detailed Findings. Automated version-to-CVE matching can over-report where a vendor backports fixes without changing the version banner; such matches should be validated against the actual package build.</p>
+
+<!-- ==================== 4. FINDINGS SUMMARY ==================== -->
 <div class="page-break"></div>
 <div class="h1">Findings Summary</div>
 {% if issue_groups %}
@@ -226,8 +247,10 @@
     <tr><th>Category</th><td>{% if g.cwe %}{{ g.cwe }}{% else %}&mdash;{% endif %}</td></tr>
     <tr><th>Source / Check</th><td><span style="font-family:Courier,monospace;">{{ g.source }} &middot; {{ g.check_type }}</span></td></tr>
     {% if g.cves %}<tr><th>CVEs</th><td><span style="font-family:Courier,monospace;">{{ g.cves|join:", " }}</span></td></tr>{% endif %}
-    <tr><th>Affected Endpoints</th><td>
-      {% for f in g.instances %}<span class="ep">{% if f.url %}{{ f.url.url }}{% else %}{{ f.target }}{% endif %}</span> {% endfor %}
+    <tr><th>Affected Endpoints</th><td style="padding:4px 6px;">
+      <table class="ep-grid">
+        {% for row in g.endpoint_rows %}<tr>{% for ep in row %}<td class="ep-cell">{{ ep }}</td>{% endfor %}</tr>{% endfor %}
+      </table>
     </td></tr>
   </table>
 

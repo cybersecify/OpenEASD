@@ -415,3 +415,30 @@ class TestReportEnrichment:
         san = by_check["san_mismatch"]
         assert san["cvss"] == 5.3                        # severity-band default (medium)
         assert san["cwe"].startswith("CWE-295")
+        # endpoints chunked into rows of 3 for the pill grid
+        assert cve["endpoint_rows"] == [["1.1.1.1:22"]]
+
+    def test_methodology_and_endpoint_pills_render(self, authed_client, session):
+        from apps.core.findings.models import Finding
+        for ip in ("1.1.1.1:443", "2.2.2.2:443"):
+            Finding.objects.create(
+                session=session, source="tls_checker", check_type="san_mismatch",
+                severity="high", title=f"SAN mismatch on {ip}", target=ip,
+                description="d", remediation="r", status="open",
+            )
+        captured = {}
+
+        def capture_html(html_str, dest):
+            captured["html"] = html_str
+            mock = MagicMock()
+            mock.err = 0
+            return mock
+
+        with patch("xhtml2pdf.pisa.CreatePDF", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+
+        assert res.status_code == 200
+        html = captured["html"]
+        assert "Scope &amp; Methodology" in html
+        assert "Network Exposure" in html          # a registry phase group
+        assert 'class="ep-cell"' in html           # endpoints render as a pill grid
