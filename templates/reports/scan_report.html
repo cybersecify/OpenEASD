@@ -7,7 +7,11 @@
     /* ── Page geometry + running footer ───────────────────── */
     @page {
       size: a4 portrait;
-      margin: 1.9cm 1.5cm 2cm 1.5cm;
+      margin: 2.5cm 1.5cm 2cm 1.5cm;
+      @frame header_frame {
+        -pdf-frame-content: 'pdf-header';
+        left: 1.5cm; width: 18cm; top: 1cm; height: 1.3cm;
+      }
       @frame footer_frame {
         -pdf-frame-content: 'pdf-footer';
         left: 1.5cm; width: 18cm; top: 27.4cm; height: 1cm;
@@ -82,7 +86,7 @@
     .kv td { padding: 6px 10px; border: 1px solid #9aa2ad; }
 
     .grid { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-bottom: 14px; border: 1.5px solid #4b5563; }
-    .grid thead th { background-color: #24303a; color: #ffffff; text-align: left; padding: 8px 9px; font-size: 9px; border: 1px solid #24303a; }
+    .grid thead th { background-color: #2f9e57; color: #ffffff; text-align: left; padding: 8px 9px; font-size: 9px; border: 1px solid #2f9e57; }
     .grid tbody td { padding: 6px 9px; border: 1px solid #9aa2ad; vertical-align: top; word-break: break-all; }
     .grid tbody tr:nth-child(even) td { background-color: #eaeef3; }
 
@@ -117,6 +121,14 @@
   </style>
 </head>
 <body>
+
+<!-- Running header (repeats on every page) -->
+<div id="pdf-header">
+  <table style="width:100%; border-collapse:collapse;"><tr>
+    <td style="vertical-align:middle; border-bottom:2px solid #2f9e57; padding-bottom:5px;"><span style="font-weight:bold; color:#2f9e57; font-size:12px; letter-spacing:2px;">CYBER SECIFY</span></td>
+    <td style="vertical-align:middle; text-align:right; border-bottom:2px solid #2f9e57; padding-bottom:5px;"><span style="font-style:italic; color:#6b7280; font-size:9px;">cybersecify.com</span></td>
+  </tr></table>
+</div>
 
 <!-- Running footer (repeats on every page) -->
 <div id="pdf-footer">
@@ -171,7 +183,7 @@
 
 <!-- ==================== 2. EXECUTIVE SUMMARY ==================== -->
 <div class="page-break"></div>
-<div class="h1">Executive Summary</div>
+<div class="h1">1. Executive Summary</div>
 <p class="lead">An automated external attack surface detection scan (OpenEASD) was run against {{ session.domain }} and the hosts discovered under it. Testing was non-intrusive and performed from the public internet with no authenticated or internal access. The scan surfaced <strong>{{ unique_issue_count }} unique finding{{ unique_issue_count|pluralize }}</strong> ({{ vuln_counts.critical }} Critical, {{ vuln_counts.high }} High, {{ vuln_counts.medium }} Medium, {{ vuln_counts.low }} Low, {{ vuln_counts.info }} Informational) across {{ total_findings }} raw detection{{ total_findings|pluralize }}.</p>
 
 <table class="risk-box no-break" style="border-color:#e8590c;"><tr>
@@ -201,7 +213,7 @@
 
 <!-- ==================== 3. SCOPE & METHODOLOGY ================= -->
 <div class="page-break"></div>
-<div class="h1">Scope &amp; Methodology</div>
+<div class="h1">2. Scope &amp; Methodology</div>
 <p class="lead">OpenEASD is an automated, external (black-box) attack surface scan. From a single domain it runs a fixed pipeline of {{ vector_count }} vector{{ vector_count|pluralize }} backed by {{ tool_count }} tool{{ tool_count|pluralize }} &mdash; subdomain and asset discovery, then per-service checks for known vulnerabilities, TLS/SSL, SSH, web hygiene, and email/DNS posture. Testing was non-intrusive and performed from the public internet with no authenticated, internal, or application-layer access.</p>
 <div class="h2">Scan Pipeline &mdash; {{ vector_count }} Vector{{ vector_count|pluralize }}, {{ tool_count }} Tool{{ tool_count|pluralize }}</div>
 <table class="grid">
@@ -220,7 +232,7 @@
 
 <!-- ==================== 4. FINDINGS SUMMARY ==================== -->
 <div class="page-break"></div>
-<div class="h1">Findings Summary</div>
+<div class="h1">3. Findings Summary</div>
 {% if issue_groups %}
 <p class="lead">All findings are Open pending remediation. Counts are unique issues after consolidation; &ldquo;Hosts&rdquo; is the number of distinct endpoints affected by each finding.</p>
 <table class="grid">
@@ -249,7 +261,7 @@
 <!-- ==================== 4. DETAILED FINDINGS =================== -->
 {% if groups_by_severity %}
 <div class="page-break"></div>
-<div class="h1">Detailed Findings</div>
+<div class="h1">4. Detailed Findings</div>
 <p class="lead">Each finding is documented with description, evidence, and remediation. Affected Endpoints list every host or port on which the issue was detected.</p>
 
 {% for severity, groups in groups_by_severity %}
@@ -296,7 +308,7 @@
 
 <!-- ==================== 5. DISCLAIMER ========================== -->
 <div class="page-break"></div>
-<div class="h1">Disclaimer</div>
+<div class="h1">5. Disclaimer</div>
 <p class="prose">This document contains confidential information produced by an automated external attack surface scan. Findings reflect externally observable configuration at the time of scanning and should be validated before remediation. The assessment covered public-facing hosts only; no authenticated, internal, or application-layer testing was performed. Where the scanner reported a non-clean status, coverage may be partial and a re-scan is recommended. Automated version-to-CVE matching can over-report where a vendor backports fixes without changing the version banner; such matches should be validated against the actual package build before treating them as confirmed exploitation.</p>
 
 </body>
