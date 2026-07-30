@@ -52,6 +52,21 @@
     .sev-lbl { font-size: 8px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin-top: 6px; }
     .cover-confidential { margin-top: 26px; color: #484f58; font-size: 8px; text-align: center; letter-spacing: 2px; text-transform: uppercase; }
 
+    /* ── Light cover (dark logo band + white body + filled tiles) ── */
+    .cover-headband { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+    .cover-headband td { background-color: #0d1117; padding: 20px 26px; }
+    .cover-kicker { font-size: 11px; font-weight: bold; color: #2f9e57; letter-spacing: 2px; text-transform: uppercase; margin: 30px 0 12px; }
+    .cover-title-l { font-size: 31px; font-weight: bold; color: #1f2933; line-height: 1.15; margin-bottom: 10px; }
+    .cover-title-l .hl { color: #2f9e57; }
+    .cover-sub-l { font-size: 12px; color: #6b7280; margin-bottom: 30px; }
+    .cover-domain-l { font-size: 23px; font-weight: bold; color: #2f9e57; margin-bottom: 8px; }
+    .cover-meta-l { font-size: 10px; color: #6b7280; line-height: 1.95; margin-bottom: 26px; }
+    .cover-sevfilled { width: 100%; border-collapse: separate; border-spacing: 6px 0; margin: 6px 0 24px; }
+    .cover-sevfilled td { text-align: center; padding: 16px 6px; width: 20%; }
+    .cover-sevfilled .n { font-size: 30px; font-weight: bold; color: #ffffff; line-height: 1; }
+    .cover-sevfilled .l { font-size: 8px; font-weight: bold; color: #ffffff; text-transform: uppercase; letter-spacing: 1px; margin-top: 6px; }
+    .cover-note-l { font-size: 8px; color: #9ca3af; letter-spacing: 2px; text-transform: uppercase; }
+
     /* ── Severity colours ─────────────────────────────────── */
     .c-critical { color: #d9342b; } .c-high { color: #e8590c; } .c-medium { color: #d1a017; } .c-low { color: #2f7fd1; } .c-info { color: #6b7280; }
     .bg-critical { background-color: #d9342b; } .bg-high { background-color: #e8590c; } .bg-medium { background-color: #d1a017; } .bg-low { background-color: #2f7fd1; } .bg-info { background-color: #8b949e; }
@@ -62,17 +77,17 @@
     .lead { font-size: 10px; color: #4b5563; margin: 0 0 14px; }
 
     /* ── Generic tables ───────────────────────────────────── */
-    .kv { width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 8px; }
-    .kv th { background-color: #f3f5f7; color: #374151; text-align: left; font-weight: bold; padding: 6px 10px; width: 26%; border: 1px solid #e5e7eb; }
-    .kv td { padding: 6px 10px; border: 1px solid #e5e7eb; }
+    .kv { width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 8px; border: 1.5px solid #7a828d; }
+    .kv th { background-color: #e7ebf0; color: #1f2933; text-align: left; font-weight: bold; padding: 6px 10px; width: 26%; border: 1px solid #9aa2ad; }
+    .kv td { padding: 6px 10px; border: 1px solid #9aa2ad; }
 
-    .grid { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-bottom: 14px; }
-    .grid thead th { background-color: #2f9e57; color: #ffffff; text-align: left; padding: 7px 9px; font-size: 9px; }
-    .grid tbody td { padding: 6px 9px; border: 1px solid #e5e7eb; vertical-align: top; word-break: break-all; }
-    .grid tbody tr:nth-child(even) td { background-color: #f8faf9; }
+    .grid { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-bottom: 14px; border: 1.5px solid #4b5563; }
+    .grid thead th { background-color: #24303a; color: #ffffff; text-align: left; padding: 8px 9px; font-size: 9px; border: 1px solid #24303a; }
+    .grid tbody td { padding: 6px 9px; border: 1px solid #9aa2ad; vertical-align: top; word-break: break-all; }
+    .grid tbody tr:nth-child(even) td { background-color: #eaeef3; }
 
-    .metric-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-    .metric-table td { text-align: center; padding: 12px 8px; border: 1px solid #e5e7eb; }
+    .metric-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; border: 1.5px solid #7a828d; }
+    .metric-table td { text-align: center; padding: 12px 8px; border: 1.5px solid #9aa2ad; }
     .metric-num { font-size: 24px; font-weight: bold; }
     .metric-lbl { font-size: 8px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
 
@@ -82,14 +97,14 @@
     .risk-val { font-size: 28px; font-weight: bold; line-height: 1.1; }
 
     /* ── Badges ───────────────────────────────────────────── */
-    .badge { padding: 2px 7px; font-size: 8px; font-weight: bold; color: #ffffff; text-transform: uppercase; }
-    .pill-open { background-color: #e8590c; color: #ffffff; font-size: 8px; font-weight: bold; padding: 3px 10px; text-transform: uppercase; }
+    .badge { padding: 3px 10px; font-size: 8.5px; font-weight: bold; color: #ffffff; text-transform: uppercase; }
+    .pill-open { background-color: #e8590c; color: #ffffff; font-size: 8.5px; font-weight: bold; padding: 3px 11px; text-transform: uppercase; }
 
     /* ── Severity section banner (detailed findings) ──────── */
     .sev-banner { color: #ffffff; font-weight: bold; font-size: 12px; padding: 8px 14px; margin: 20px 0 12px; }
 
     /* ── Finding card (AST style) ─────────────────────────── */
-    .fcard { border: 1px solid #e2e5e9; padding: 12px 14px 14px; margin-bottom: 14px; }
+    .fcard { border: 1.5px solid #9aa2ad; padding: 12px 14px 14px; margin-bottom: 14px; }
     .fkicker { font-size: 8px; font-weight: bold; color: #9ca3af; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3px; }
     .ftitle { font-size: 14px; font-weight: bold; color: #111827; margin-bottom: 8px; }
     .sevbar { color: #ffffff; text-align: center; font-weight: bold; font-size: 10px; letter-spacing: 1px; padding: 4px; }
@@ -98,7 +113,7 @@
     .evidence { font-family: Courier, monospace; font-size: 8.5px; color: #374151; background-color: #f6f8fa; border: 1px solid #e5e7eb; padding: 8px 10px; line-height: 1.5; }
     .ep { font-family: Courier, monospace; font-size: 8.5px; color: #1f2933; background-color: #f3f5f7; border: 1px solid #dfe3e8; padding: 2px 6px; margin: 0 4px 4px 0; }
     .ep-grid { width: 100%; border-collapse: separate; border-spacing: 4px; }
-    .ep-cell { font-family: Courier, monospace; font-size: 8px; color: #1f2933; background-color: #f3f5f7; border: 1px solid #dfe3e8; padding: 3px 6px; width: 33%; word-break: break-all; }
+    .ep-cell { font-family: Courier, monospace; font-size: 8px; color: #1f2933; background-color: #eef1f4; border: 1px solid #9aa2ad; padding: 3px 6px; width: 33%; word-break: break-all; }
   </style>
 </head>
 <body>
@@ -112,29 +127,33 @@
 </div>
 
 <!-- ============================ COVER ============================ -->
-<table class="cover-table"><tr><td class="cover-cell">
-  <table style="width:100%; border-collapse:collapse; margin-bottom:18px;"><tr>
+<table class="cover-headband"><tr><td>
+  <table style="width:100%; border-collapse:collapse;"><tr>
     <td style="vertical-align:middle;">{% if logo_data_uri %}<img src="{{ logo_data_uri }}" width="200" height="53" alt="Cybersecify" />{% endif %}</td>
     <td style="vertical-align:middle; text-align:right;"><span style="background-color:#2f9e57; color:#ffffff; font-size:9px; font-weight:bold; letter-spacing:1px; padding:5px 12px;">CONFIDENTIAL</span></td>
   </tr></table>
-  <div class="cover-brand" style="margin:8px 0 24px;">OpenEASD</div>
-  <div class="cover-title">External Attack Surface<br><span class="hl">Detection</span> Report</div>
-  <div class="cover-subtitle">External Attack Surface Detection &amp; Vulnerability Analysis</div>
-  <div class="cover-domain">{{ session.domain }}</div>
-  <div class="cover-meta">
-    Scan Date: {{ session.end_time|default:generated_at|date:"F j, Y" }}<br>
-    Generated: {{ generated_at|date:"F j, Y · H:i" }} UTC<br>
-    Scan ID:&nbsp;&nbsp; {{ session.uuid }}
-  </div>
-  <table class="cover-sev-table"><tr>
-    <td><div class="sev-big-num c-critical" style="color:#f85149;">{{ vuln_counts.critical }}</div><div class="sev-lbl" style="color:#f85149;">Critical</div></td>
-    <td><div class="sev-big-num" style="color:#f0883e;">{{ vuln_counts.high }}</div><div class="sev-lbl" style="color:#f0883e;">High</div></td>
-    <td><div class="sev-big-num" style="color:#e3b341;">{{ vuln_counts.medium }}</div><div class="sev-lbl" style="color:#e3b341;">Medium</div></td>
-    <td><div class="sev-big-num" style="color:#58a6ff;">{{ vuln_counts.low }}</div><div class="sev-lbl" style="color:#58a6ff;">Low</div></td>
-    <td><div class="sev-big-num" style="color:#8b949e;">{{ vuln_counts.info }}</div><div class="sev-lbl" style="color:#8b949e;">Info</div></td>
-  </tr></table>
-  <div class="cover-confidential">Confidential — For Authorized Use Only</div>
 </td></tr></table>
+
+<div class="cover-kicker">OpenEASD &middot; External Attack Surface Detection</div>
+<div class="cover-title-l">External Attack Surface <span class="hl">Detection</span> Report</div>
+<div class="cover-sub-l">External Attack Surface Detection &amp; Vulnerability Analysis</div>
+<div class="cover-domain-l">{{ session.domain }}</div>
+<div class="cover-meta-l">
+  Scan Date: {{ session.end_time|default:generated_at|date:"F j, Y" }}<br>
+  Generated: {{ generated_at|date:"F j, Y · H:i" }} UTC<br>
+  Scan ID: {{ session.uuid }}
+</div>
+
+<table class="cover-sevfilled"><tr>
+  <td class="bg-critical"><div class="n">{{ vuln_counts.critical }}</div><div class="l">Critical</div></td>
+  <td class="bg-high"><div class="n">{{ vuln_counts.high }}</div><div class="l">High</div></td>
+  <td class="bg-medium"><div class="n">{{ vuln_counts.medium }}</div><div class="l">Medium</div></td>
+  <td class="bg-low"><div class="n">{{ vuln_counts.low }}</div><div class="l">Low</div></td>
+  <td class="bg-info"><div class="n">{{ vuln_counts.info }}</div><div class="l">Info</div></td>
+</tr></table>
+
+<div class="cover-note-l">Confidential — For Authorized Use Only</div>
+<div class="page-break"></div>
 
 <!-- ==================== 1. DOCUMENT CONTROL ===================== -->
 <div class="h1">Document Control</div>
