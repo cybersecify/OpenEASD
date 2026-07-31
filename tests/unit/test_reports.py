@@ -314,6 +314,34 @@ class TestPdfSeverityCounts:
         assert '<div class="metric-num c-high">3</div>' in html
         assert '<div class="metric-num">5</div>' in html
 
+    def test_headline_tiles_show_unique_not_raw(self, authed_client, session):
+        """Tiles + risk reflect consolidated unique issues, not raw detections;
+        the raw count appears only in the consolidation note."""
+        from apps.core.findings.models import Finding
+        for ip in ("1.1.1.1:443", "2.2.2.2:443", "3.3.3.3:443"):
+            Finding.objects.create(
+                session=session, source="tls_checker", check_type="unencrypted_service",
+                severity="critical", title=f"Unencrypted HTTPS on {ip}", target=ip,
+                description="d", remediation="r", status="open",
+            )
+        captured = {}
+
+        def capture_html(html_str, dest):
+            captured["html"] = html_str
+            mock = MagicMock()
+            mock.err = 0
+            return mock
+
+        with patch("xhtml2pdf.pisa.CreatePDF", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+
+        assert res.status_code == 200
+        html = captured["html"]
+        # 3 raw detections consolidate to 1 unique critical issue.
+        assert '<div class="metric-num c-critical">1</div>' in html
+        assert '<div class="metric-num">1</div>' in html  # total tile = unique
+        assert "3 raw scanner detections into 1 unique issue" in html
+
 
 class TestFindingGrouping:
     """Repeated issues (identical write-up across targets) collapse into one

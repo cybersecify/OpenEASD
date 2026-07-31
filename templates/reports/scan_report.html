@@ -125,7 +125,7 @@
 <!-- Running header (repeats on every page) -->
 <div id="pdf-header">
   <table style="width:100%; border-collapse:collapse;"><tr>
-    <td style="vertical-align:middle; border-bottom:2px solid #2f9e57; padding-bottom:5px;"><span style="font-weight:bold; color:#2f9e57; font-size:12px; letter-spacing:2px;">CYBER SECIFY</span></td>
+    <td style="vertical-align:middle; border-bottom:2px solid #2f9e57; padding-bottom:5px;"><span style="font-weight:bold; color:#2f9e57; font-size:12px; letter-spacing:2px;">CYBERSECIFY</span></td>
     <td style="vertical-align:middle; text-align:right; border-bottom:2px solid #2f9e57; padding-bottom:5px;"><span style="font-style:italic; color:#6b7280; font-size:9px;">cybersecify.com</span></td>
   </tr></table>
 </div>
@@ -179,12 +179,12 @@
   <tr><th>Classification</th><td>Confidential — Authorized Use Only</td></tr>
   <tr><th>Scan ID</th><td>{{ session.uuid }}</td></tr>
 </table>
-<p class="lead" style="font-style:italic;">Note on counts: this report consolidates {{ total_findings }} raw scanner detection{{ total_findings|pluralize }} into {{ unique_issue_count }} unique issue{{ unique_issue_count|pluralize }} by grouping identical issues repeated across hosts, ports, or CVEs. Every affected endpoint is preserved under each finding.</p>
+<p class="lead" style="font-style:italic;">Note on counts: this report consolidates {{ raw_total }} raw scanner detection{{ raw_total|pluralize }} into {{ unique_issue_count }} unique issue{{ unique_issue_count|pluralize }} by grouping identical issues repeated across hosts, ports, or CVEs. Headline counts and the risk rating reflect unique issues; every affected endpoint is preserved under each finding.</p>
 
 <!-- ==================== 2. EXECUTIVE SUMMARY ==================== -->
 <div class="page-break"></div>
 <div class="h1">1. Executive Summary</div>
-<p class="lead">An automated external attack surface detection scan (OpenEASD) was run against {{ session.domain }} and the hosts discovered under it. Testing was non-intrusive and performed from the public internet with no authenticated or internal access. The scan surfaced <strong>{{ unique_issue_count }} unique finding{{ unique_issue_count|pluralize }}</strong> ({{ vuln_counts.critical }} Critical, {{ vuln_counts.high }} High, {{ vuln_counts.medium }} Medium, {{ vuln_counts.low }} Low, {{ vuln_counts.info }} Informational) across {{ total_findings }} raw detection{{ total_findings|pluralize }}.</p>
+<p class="lead">An automated external attack surface detection scan (OpenEASD) was run against {{ session.domain }} and the hosts discovered under it. Testing was non-intrusive and performed from the public internet with no authenticated or internal access. The scan surfaced <strong>{{ unique_issue_count }} unique finding{{ unique_issue_count|pluralize }}</strong> ({{ vuln_counts.critical }} Critical, {{ vuln_counts.high }} High, {{ vuln_counts.medium }} Medium, {{ vuln_counts.low }} Low, {{ vuln_counts.info }} Informational) consolidated from {{ raw_total }} raw detection{{ raw_total|pluralize }}.</p>
 
 <table class="risk-box no-break" style="border-color:#e8590c;"><tr>
   <td>
@@ -309,7 +309,7 @@
 <!-- ==================== 5. DISCLAIMER ========================== -->
 <div class="page-break"></div>
 <div class="h1">5. Disclaimer</div>
-<p class="prose">This document contains confidential information produced by an automated external attack surface scan. Findings reflect externally observable configuration at the time of scanning and should be validated before remediation. The assessment covered public-facing hosts only; no authenticated, internal, or application-layer testing was performed. Where the scanner reported a non-clean status, coverage may be partial and a re-scan is recommended. Automated version-to-CVE matching can over-report where a vendor backports fixes without changing the version banner; such matches should be validated against the actual package build before treating them as confirmed exploitation.</p>
+<p class="prose">This document contains confidential information produced by an automated external attack surface scan. Findings reflect externally observable configuration at the time of scanning and should be validated before remediation. The assessment covered public-facing hosts only; no authenticated, internal, or application-layer testing was performed. Where the scanner reported a non-clean status, coverage may be partial and a re-scan is recommended. Automated version-to-CVE matching can over-report where a vendor backports fixes without changing the version banner; such matches should be validated against the actual package build before treating them as confirmed exploitation. TLS/HTTPS findings observed on shared, CDN, or edge IP addresses (for example Cloudflare or CloudFront) may reflect the edge infrastructure rather than an origin misconfiguration, and should be confirmed against the origin before remediation.</p>
 
 </body>
 </html>

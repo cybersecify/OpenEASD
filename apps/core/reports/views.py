@@ -298,7 +298,15 @@ def export_scan_pdf(request, session_uuid):
         for sev in _SEVERITY_ORDER
     ]
     groups_by_severity = [(sev, gs) for sev, gs in groups_by_severity if gs]
-    risk_rating = _risk_rating(vuln_counts)
+    # Consolidated (unique-issue) severity counts drive the headline tiles and the
+    # risk rating, so they match the findings table. The raw per-detection counts
+    # (vuln_counts) are surfaced only as the "N raw detections" note.
+    unique_counts = {sev: 0 for sev in _SEVERITY_ORDER}
+    for g in issue_groups:
+        if g["severity"] in unique_counts:
+            unique_counts[g["severity"]] += 1
+    raw_total = sum(vuln_counts.values())
+    risk_rating = _risk_rating(unique_counts)
 
     # Asset counts
     asset_counts = {
@@ -351,8 +359,9 @@ def export_scan_pdf(request, session_uuid):
         "issue_groups": issue_groups,
         "groups_by_severity": groups_by_severity,
         "unique_issue_count": len(issue_groups),
-        "vuln_counts": vuln_counts,
-        "total_findings": sum(vuln_counts.values()),
+        "vuln_counts": unique_counts,          # tiles/risk reflect consolidated issues
+        "total_findings": len(issue_groups),   # headline = unique issue count
+        "raw_total": raw_total,                # raw detections, shown only in the note
         "risk_rating": risk_rating,
         "asset_counts": asset_counts,
         "methodology": methodology,
