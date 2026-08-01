@@ -85,20 +85,21 @@ def _risk_rating(vuln_counts):
         return "LOW"
     return "INFORMATIONAL"
 
-# Cybersecify report logo, embedded as a base64 data-URI so the PDF engine
-# (xhtml2pdf/pisa) needs no link_callback or static-file resolution. White
-# variant for the dark (#0d1117) report cover.
-_REPORT_LOGO = Path(__file__).resolve().parent / "brand" / "cybersecify-white-horizontal.png"
+# Cybersecify report logos, embedded as base64 data-URIs. "white" is used on the
+# dark (#0d1117) cover; "brand" (green) is used in the running header on white
+# body pages, where the white logo would be invisible.
+_BRAND_DIR = Path(__file__).resolve().parent / "brand"
 
 
-@functools.lru_cache(maxsize=1)
-def _logo_data_uri() -> str:
-    """Return the report logo as a `data:image/png;base64,...` URI, or "" if missing."""
+@functools.lru_cache(maxsize=4)
+def _logo_data_uri(variant: str = "white") -> str:
+    """Return a report logo as a `data:image/png;base64,...` URI, or "" if missing."""
+    path = _BRAND_DIR / f"cybersecify-{variant}-horizontal.png"
     try:
-        encoded = base64.b64encode(_REPORT_LOGO.read_bytes()).decode("ascii")
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
         return f"data:image/png;base64,{encoded}"
     except OSError:
-        logger.warning("[reports] logo asset missing at %s", _REPORT_LOGO)
+        logger.warning("[reports] logo asset missing at %s", path)
         return ""
 
 
@@ -381,7 +382,8 @@ def export_scan_pdf(request, session_uuid):
         "vector_count": len(methodology),
         "scan_duration": scan_duration,
         "generated_at": timezone.now(),
-        "logo_data_uri": _logo_data_uri(),
+        "logo_data_uri": _logo_data_uri("white"),          # dark cover
+        "header_logo_data_uri": _logo_data_uri("brand"),   # light-page running header
         # Optional CTA — template renders the block only when both are truthy.
         "report_cta_url": getattr(settings, "REPORT_CTA_URL", "") or "",
         "report_cta_text": getattr(settings, "REPORT_CTA_TEXT", "") or "",
