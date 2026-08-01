@@ -123,9 +123,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.12 python3.12-venv python3-pip \
     curl ca-certificates git \
     nmap \
-    # xhtml2pdf / pycairo / svglib build deps
+    # PDF report rendering (WeasyPrint): pango + cairo + gdk-pixbuf runtime libs
     build-essential libffi-dev libssl-dev libxml2 libxslt1.1 \
-    libcairo2-dev pkg-config python3-dev \
+    libcairo2 libcairo2-dev pkg-config python3-dev \
+    libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv

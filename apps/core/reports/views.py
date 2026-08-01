@@ -270,6 +270,18 @@ def _group_findings_by_issue(findings):
     return result
 
 
+def _render_pdf(html: str) -> bytes:
+    """Render report HTML to PDF bytes via WeasyPrint.
+
+    WeasyPrint needs the pango / cairo / gdk-pixbuf system libraries. This is
+    isolated in one function so tests can patch it without importing WeasyPrint
+    or requiring those libraries.
+    """
+    from weasyprint import HTML
+
+    return HTML(string=html).write_pdf()
+
+
 @_report_auth_required
 def export_scan_pdf(request, session_uuid):
     """Export a scan report as PDF, optionally filtered by ?min_severity=."""
@@ -375,14 +387,13 @@ def export_scan_pdf(request, session_uuid):
         "report_cta_text": getattr(settings, "REPORT_CTA_TEXT", "") or "",
     })
 
-    from xhtml2pdf import pisa
-
-    result = BytesIO()
-    pdf = pisa.CreatePDF(html, dest=result)
-    if pdf.err:
+    try:
+        pdf_bytes = _render_pdf(html)
+    except Exception:
+        logger.exception("[reports] PDF generation failed")
         return HttpResponse("PDF generation failed", status=500)
 
-    response = HttpResponse(result.getvalue(), content_type="application/pdf")
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = (
         f'attachment; filename="scan_report_{session.domain}_{session.id}.pdf"'
     )

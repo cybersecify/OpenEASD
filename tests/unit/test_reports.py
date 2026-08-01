@@ -2,7 +2,7 @@
 Unit tests for apps/core/reports/views.py
 
 Tests CSV export content/structure and PDF export response.
-PDF rendering is mocked to avoid the xhtml2pdf dependency in CI.
+PDF rendering is mocked (via _render_pdf) so tests need no WeasyPrint libs.
 """
 
 import csv
@@ -155,38 +155,26 @@ class TestExportFindingsCsv:
 
 class TestExportScanPdf:
     def test_returns_200_with_mocked_pdf(self, authed_client, session, findings):
-        fake_result = MagicMock()
-        fake_result.err = 0
-
-        with patch("xhtml2pdf.pisa.CreatePDF", return_value=fake_result):
+        with patch("apps.core.reports.views._render_pdf", return_value=b"%PDF-1.7"):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 200
 
     def test_content_type_is_pdf(self, authed_client, session, findings):
-        fake_result = MagicMock()
-        fake_result.err = 0
-
-        with patch("xhtml2pdf.pisa.CreatePDF", return_value=fake_result):
+        with patch("apps.core.reports.views._render_pdf", return_value=b"%PDF-1.7"):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert "application/pdf" in res["Content-Type"]
 
     def test_content_disposition_has_filename(self, authed_client, session, findings):
-        fake_result = MagicMock()
-        fake_result.err = 0
-
-        with patch("xhtml2pdf.pisa.CreatePDF", return_value=fake_result):
+        with patch("apps.core.reports.views._render_pdf", return_value=b"%PDF-1.7"):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert "attachment" in res["Content-Disposition"]
         assert "scan_report_" in res["Content-Disposition"]
 
     def test_pdf_error_returns_500(self, authed_client, session, findings):
-        fake_result = MagicMock()
-        fake_result.err = 1  # pisa error
-
-        with patch("xhtml2pdf.pisa.CreatePDF", return_value=fake_result):
+        with patch("apps.core.reports.views._render_pdf", side_effect=RuntimeError("render failed")):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 500
@@ -197,7 +185,7 @@ class TestExportScanPdf:
         assert res.status_code in (302, 301)
 
     def test_not_found_returns_404(self, authed_client):
-        with patch("xhtml2pdf.pisa.CreatePDF", return_value=MagicMock(err=0)):
+        with patch("apps.core.reports.views._render_pdf", return_value=b"%PDF-1.7"):
             res = authed_client.get("/reports/00000000-0000-0000-0000-000000000000/pdf/")
         assert res.status_code == 404
 
@@ -241,7 +229,7 @@ class TestReportCtaCsv:
 
 class TestReportCtaPdfContext:
     """The PDF view passes report_cta_url/report_cta_text into the template
-    context only when configured. Verified by mocking pisa and inspecting
+    context only when configured. Verified by mocking the renderer and inspecting
     the rendered HTML before PDF conversion."""
 
     def test_cta_context_empty_when_settings_empty(self, authed_client, session, findings, settings):
@@ -249,13 +237,11 @@ class TestReportCtaPdfContext:
         settings.REPORT_CTA_TEXT = ""
         captured = {}
 
-        def capture_html(html_str, dest):
-            captured["html"] = html_str
-            mock = MagicMock()
-            mock.err = 0
-            return mock
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
 
-        with patch("xhtml2pdf.pisa.CreatePDF", side_effect=capture_html):
+        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 200
@@ -266,13 +252,11 @@ class TestReportCtaPdfContext:
         settings.REPORT_CTA_TEXT = "Need help acting on these findings?"
         captured = {}
 
-        def capture_html(html_str, dest):
-            captured["html"] = html_str
-            mock = MagicMock()
-            mock.err = 0
-            return mock
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
 
-        with patch("xhtml2pdf.pisa.CreatePDF", side_effect=capture_html):
+        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 200
@@ -298,21 +282,19 @@ class TestPdfSeverityCounts:
                 )
         captured = {}
 
-        def capture_html(html_str, dest):
-            captured["html"] = html_str
-            mock = MagicMock()
-            mock.err = 0
-            return mock
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
 
-        with patch("xhtml2pdf.pisa.CreatePDF", side_effect=capture_html):
+        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 200
         html = captured["html"]
         # Correct counts — would render 1/1/2 under the GROUP BY leak bug.
-        assert '<div class="metric-num c-critical">2</div>' in html
-        assert '<div class="metric-num c-high">3</div>' in html
-        assert '<div class="metric-num">5</div>' in html
+        assert '<div class="n c-critical">2</div>' in html
+        assert '<div class="n c-high">3</div>' in html
+        assert '<div class="n">5</div>' in html
 
     def test_headline_tiles_show_unique_not_raw(self, authed_client, session):
         """Tiles + risk reflect consolidated unique issues, not raw detections;
@@ -326,20 +308,18 @@ class TestPdfSeverityCounts:
             )
         captured = {}
 
-        def capture_html(html_str, dest):
-            captured["html"] = html_str
-            mock = MagicMock()
-            mock.err = 0
-            return mock
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
 
-        with patch("xhtml2pdf.pisa.CreatePDF", side_effect=capture_html):
+        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 200
         html = captured["html"]
         # 3 raw detections consolidate to 1 unique critical issue.
-        assert '<div class="metric-num c-critical">1</div>' in html
-        assert '<div class="metric-num">1</div>' in html  # total tile = unique
+        assert '<div class="n c-critical">1</div>' in html
+        assert '<div class="n">1</div>' in html  # total tile = unique
         assert "3 raw scanner detections into 1 unique issue" in html
 
 
@@ -381,13 +361,11 @@ class TestFindingGrouping:
             self._mk(session, target=ip, title=f"Unencrypted HTTPS on {ip}")
         captured = {}
 
-        def capture_html(html_str, dest):
-            captured["html"] = html_str
-            mock = MagicMock()
-            mock.err = 0
-            return mock
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
 
-        with patch("xhtml2pdf.pisa.CreatePDF", side_effect=capture_html):
+        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 200
@@ -456,13 +434,11 @@ class TestReportEnrichment:
             )
         captured = {}
 
-        def capture_html(html_str, dest):
-            captured["html"] = html_str
-            mock = MagicMock()
-            mock.err = 0
-            return mock
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
 
-        with patch("xhtml2pdf.pisa.CreatePDF", side_effect=capture_html):
+        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 200
