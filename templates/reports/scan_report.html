@@ -202,13 +202,13 @@
 <p class="lead">All findings are Open pending remediation. Counts are unique issues after consolidation; “Hosts” is the number of distinct endpoints affected by each finding.</p>
 <table class="grid">
   <thead><tr>
-    <th style="width:11%;">ID</th><th style="width:31%;">Title</th><th style="width:15%;">Scope</th>
-    <th style="width:14%;">Severity</th><th style="width:8%;">CVSS</th><th style="width:7%;">Hosts</th><th style="width:14%;">Status</th>
+    <th style="width:12%;">ID</th><th style="width:29%;">Title</th><th style="width:15%;">Scope</th>
+    <th style="width:14%;">Severity</th><th style="width:7%;">CVSS</th><th style="width:7%;">Hosts</th><th style="width:16%;">Status</th>
   </tr></thead>
   <tbody>
     {% for g in issue_groups %}
     <tr>
-      <td>{{ g.fid }}</td>
+      <td style="white-space:nowrap; word-break:normal;">{{ g.fid }}</td>
       <td><strong>{{ g.title }}</strong></td>
       <td>{{ g.scope }}</td>
       <td><span class="badge bg-{{ g.severity }}">{{ g.severity|upper }}</span></td>
