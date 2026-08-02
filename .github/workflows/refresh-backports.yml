@@ -1,8 +1,12 @@
 name: Refresh Backports
 
 on:
-  schedule:
-    - cron: '0 0 * * 0' # Every Sunday at midnight
+  # Manual-first rollout: the weekly cron is disabled until the Ubuntu/Debian/
+  # Alpine feed parsers have proven stable against upstream format drift. Refresh
+  # on demand via the "Run workflow" button below, or the `refresh_backports`
+  # management command. Re-enable the schedule once the parsers are trusted.
+  # schedule:
+  #   - cron: '0 0 * * 0' # Every Sunday at midnight
   workflow_dispatch: # Allow manual trigger
 
 # Explicit least-privilege permissions (matches ci.yml posture)
