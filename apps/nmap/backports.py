@@ -49,10 +49,13 @@ def check_backport(product: str, version_string: str, cve: str) -> dict:
     
     # Identify distro and distro-specific version from nmap extrainfo strings.
     # Examples:
-    #   "OpenSSH 9.6p1 Ubuntu Linux; 3ubuntu13.4"
-    #   "OpenSSH 9.6p1 Ubuntu-3ubuntu13.4"
-    #   "OpenSSH 8.4p1 Debian-5+deb11u3"
-    match = re.search(r'(?i)(ubuntu|debian)(?:\s+linux)?[-; ]+([a-z0-9.~+-]+)', version_string)
+    #   "OpenSSH 9.6p1 Ubuntu Linux; protocol 2.0"   → no version suffix (skip)
+    #   "OpenSSH 9.6p1 Ubuntu-3ubuntu13.4"            → distro_version = "3ubuntu13.4"
+    #   "OpenSSH 8.4p1 Debian-5+deb11u3"              → distro_version = "5+deb11u3"
+    #   "OpenSSH 9.6p1 Ubuntu Linux; 3ubuntu13.3"     → distro_version = "3ubuntu13.3"
+    # We specifically require the suffix to START with a digit to avoid capturing
+    # words like "protocol" that appear in the common "Ubuntu Linux; protocol 2.0" format.
+    match = re.search(r'(?i)(ubuntu|debian)(?:[^;]*?[-; ])\s*(\d[a-z0-9.~+-]*)', version_string)
     
     distro = None
     distro_version = None

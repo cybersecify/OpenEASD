@@ -1,6 +1,7 @@
 """Unit tests for apps/nuclei — collector, analyzer, scanner."""
 
 import json
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -300,6 +301,7 @@ class TestNucleiCollector:
 # _run — process-group kill on timeout
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skipif(sys.platform == 'win32', reason="UNIX specific tests")
 class TestRunProcessGroupKill:
     def test_kills_process_group_on_timeout(self):
         """On timeout, _run must SIGKILL the process group and re-raise. It must
