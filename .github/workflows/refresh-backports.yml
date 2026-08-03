@@ -43,7 +43,7 @@ jobs:
           uv run python apps/nmap/management/commands/refresh_backports.py
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@5e914681df9dc83aa4e4905692ca88beb2f9e91  # v6.0.5
+        uses: peter-evans/create-pull-request@11fa467881691ac900904a2eea702c5ea848ad13  # v6.0.5
         with:
           commit-message: "Update apps/nmap/backports.json from upstream security feeds"
           title: "Automated `backports.json` Refresh"
