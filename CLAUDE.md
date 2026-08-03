@@ -227,11 +227,6 @@ Runs on every container start (init container in K8s, or `CMD` override in Docke
 ### First login
 `docker-entrypoint.sh` creates `admin/admin` with `must_change_password=True` on first run. The React app redirects to `/change-password` before allowing access. On every startup, if the default password is still in use, the flag is re-set.
 
-**Server-side enforcement:** the flag is not only a React redirect. All API routers authenticate via `apps/core/api/auth.py::JWTAuth` (a subclass of ninja-jwt's), which returns **403** for any request from a user whose `must_change_password` is set — except `GET /api/user/` (to read the flag) and `POST /api/user/change-password/`. So a holder of default `admin/admin` credentials cannot use the API by calling it directly; they must change the password first.
-
-### SECRET_KEY guard
-`openeasd/settings.py` calls `_validate_secret_key()` at import: when `DEBUG=False` and `SECRET_KEY` is unset/still the `django-insecure…` placeholder, it raises `ImproperlyConfigured` and the process refuses to start. The key also signs JWTs (`NINJA_JWT["SIGNING_KEY"]`), so the default would let anyone forge tokens. Enforcement is skipped under pytest (pytest-django imports settings before any env hook can set a key); the logic is unit-tested directly.
-
 ### microk8s deployment (host IP changed)
 If the host IP changes, microk8s certs and kubeconfigs reference the old IP and the cluster goes "not running":
 1. Update IP-SAN in `/var/snap/microk8s/current/certs/csr.conf.template` (the `IP.3` line), then `sudo microk8s refresh-certs --cert server.crt`.
@@ -246,8 +241,8 @@ Don't enable the `ingress` addon if the host already runs Caddy on :80/:443 — 
 ### Scheduler
 - Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (uses `TIME_ZONE` in settings, default 02:00)
 - Configured via env vars: `SCAN_DAILY_HOUR`, `SCAN_DAILY_MINUTE`
-- **Auto-scan consent gate:** every unattended entry point — `daily_scan`, per-domain monitoring (`run_monitoring_scan`), and user-created recurring/one-time jobs (`run_scheduled_scan`) — re-checks at run time that the domain is active and has a `DomainAuthorization` record (`is_active=True, authorization__isnull=False`) before scanning. The scheduler cannot bypass the authorization gate the manual API/UI already enforce, and a schedule whose domain was later revoked or deleted no-ops instead of scanning.
-- **`SCHEDULED_SCANS_ENABLED`** (env, default `True`) is the master switch for unattended scanning. When `False`, `setup_core_schedules()` registers only the hygiene jobs (watchdog + token purge) and removes every existing unattended-scan schedule — `daily_scan`, `monitor_*`, `recurring_*`, and `once_*` — on startup, so no schedule of any kind can fire. This is how a deployment is made durably manual-only (set in `k8s/configmap.yaml`). Manual/API scans are unaffected.
+- **Auto-scan consent gate:** `daily_scan` and per-domain monitoring only scan domains with a `DomainAuthorization` record (`is_active=True, authorization__isnull=False`); `run_monitoring_scan` re-checks at run time. The scheduler cannot bypass the authorization gate the manual API/UI already enforce.
+- **`SCHEDULED_SCANS_ENABLED`** (env, default `True`) is the master switch for unattended scanning. When `False`, `setup_core_schedules()` registers only the hygiene jobs (watchdog + token purge) and removes any existing `daily_scan`/`monitor_*` schedules on startup — this is how a deployment is made durably manual-only (set in `k8s/configmap.yaml`). Manual/API scans are unaffected.
 - Schedule history visible in Django admin under "Django Q" → "Scheduled tasks"
 - Scheduler code lives in `apps/core/scheduler/scheduler.py`
 - `setup_core_schedules()` called from `apps/core/scheduler/apps.py` → `SchedulerConfig.ready()`
@@ -517,7 +512,6 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_domains.py` | 13 | Domain CRUD |
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
 | `tests/unit/test_httpx.py` | 11 | JSON parser, Port lookup, Subdomain link |
-| `tests/unit/test_insights_builder.py` | 4 | rebuild_finding_type_summaries upsert + prune (stale/deleted types, error-safe) |
 | `tests/unit/test_k8s_manifests.py` | 57 | k8s manifest structure, envFrom order, probes, secret/configmap split |
 | `tests/unit/test_katana.py` | 18 | JSONL parser, Port/Subdomain FK links, scanner orchestrator |
 | `tests/unit/test_management_commands.py` | 11 | `verify_tools` + other management commands |
@@ -531,7 +525,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_qcluster_config.py` | 4 | Django-Q cluster config |
 | `tests/unit/test_reports.py` | 34 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment |
 | `tests/unit/test_scans.py` | 30 | ScanSession, scheduling, scan_start views |
-| `tests/unit/test_scheduler.py` | 33 | reap_stuck_scans, token purge, daily_scan, run_scheduled_scan + monitoring authorization gates, `SCHEDULED_SCANS_ENABLED` switch |
+| `tests/unit/test_scheduler.py` | 33 | reap_stuck_scans, token purge, daily_scan, authorization gate, `SCHEDULED_SCANS_ENABLED` switch |
 | `tests/unit/test_service_detection.py` | 64 | XML parsing, Port enrichment, is_web |
 | `tests/unit/test_ssh_checker.py` | 34 | SSH probe, host key, kex/cipher/MAC, auth, collector |
 | `tests/unit/test_subfinder.py` | 10 | JSON parser, dedup, hostname normalization |
@@ -540,9 +534,11 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_tls_checker.py` | 87 | Cert parsing, ciphers, protocols, HSTS, collector, scanner, cipher enumeration |
 | `tests/unit/test_tools_healthcheck.py` | 14 | Tool binary preflight / health checks |
 | `tests/unit/test_user_profile.py` | 7 | UserProfile `must_change_password` flag |
+| `tests/unit/test_settings_security.py` | 4 | SECRET_KEY strength guard (DEBUG=False + insecure default) |
+| `tests/unit/test_insights_builder.py` | 4 | FindingTypeSummary prune only when aggregation_complete |
 | `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
 | `tests/unit/test_workflow_runner.py` | 31 | run_workflow, service_detection injection, step failure, cancellation, phase parallelism |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
-| `tests/test_api_endpoints.py` | 90 | Smoke tests for all API endpoints (auth + payload shape); scan_detail N+1 guard |
+| `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: 980 tests** (939 fast + 41 slow domain_security)
+**Total: 1020 tests** (979 fast + 41 slow domain_security)
