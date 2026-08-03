@@ -525,7 +525,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_qcluster_config.py` | 4 | Django-Q cluster config |
 | `tests/unit/test_reports.py` | 34 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment |
 | `tests/unit/test_scans.py` | 30 | ScanSession, scheduling, scan_start views |
-| `tests/unit/test_scheduler.py` | 28 | reap_stuck_scans, token purge, daily_scan, authorization gate, `SCHEDULED_SCANS_ENABLED` switch |
+| `tests/unit/test_scheduler.py` | 33 | reap_stuck_scans, token purge, daily_scan, authorization gate, `SCHEDULED_SCANS_ENABLED` switch |
 | `tests/unit/test_service_detection.py` | 64 | XML parsing, Port enrichment, is_web |
 | `tests/unit/test_ssh_checker.py` | 34 | SSH probe, host key, kex/cipher/MAC, auth, collector |
 | `tests/unit/test_subfinder.py` | 10 | JSON parser, dedup, hostname normalization |
@@ -534,9 +534,11 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_tls_checker.py` | 87 | Cert parsing, ciphers, protocols, HSTS, collector, scanner, cipher enumeration |
 | `tests/unit/test_tools_healthcheck.py` | 14 | Tool binary preflight / health checks |
 | `tests/unit/test_user_profile.py` | 7 | UserProfile `must_change_password` flag |
+| `tests/unit/test_settings_security.py` | 4 | SECRET_KEY strength guard (DEBUG=False + insecure default) |
+| `tests/unit/test_insights_builder.py` | 4 | FindingTypeSummary prune only when aggregation_complete |
 | `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
 | `tests/unit/test_workflow_runner.py` | 31 | run_workflow, service_detection injection, step failure, cancellation, phase parallelism |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: 983 tests** (942 fast + 41 slow domain_security)
+**Total: 1020 tests** (979 fast + 41 slow domain_security)

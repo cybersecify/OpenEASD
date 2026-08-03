@@ -234,6 +234,53 @@ class TestChangePassword:
         assert res.status_code == 401
 
 
+class TestMustChangePasswordGate:
+    """Server-side enforcement of the forced-password-change flag.
+
+    While the flag is set, the JWT authenticates but access to everything except
+    reading the own user record and changing the password is blocked (403) — so
+    the React redirect is not the only barrier.
+    """
+
+    def _flag(self, user):
+        from apps.core.dashboard.models import UserProfile
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.must_change_password = True
+        profile.save()
+
+    def test_flagged_user_blocked_from_protected_endpoint(self, auth_client, user):
+        self._flag(user)
+        res = auth_client.get("/api/domains/")
+        assert res.status_code == 403
+
+    def test_flagged_user_can_read_own_user(self, auth_client, user):
+        self._flag(user)
+        res = auth_client.get("/api/user/")
+        assert res.status_code == 200
+        assert res.json()["must_change_password"] is True
+
+    def test_flagged_user_can_change_password(self, auth_client, user):
+        self._flag(user)
+        res = post_json(auth_client, "/api/user/change-password/", {
+            "current_password": "pass123",
+            "new_password": "newpass456",
+        })
+        assert res.status_code == 200
+
+    def test_unflagged_user_reaches_protected_endpoint(self, auth_client, user):
+        res = auth_client.get("/api/domains/")
+        assert res.status_code == 200
+
+    def test_gate_lifts_after_password_change(self, auth_client, user):
+        self._flag(user)
+        post_json(auth_client, "/api/user/change-password/", {
+            "current_password": "pass123",
+            "new_password": "newpass456",
+        })
+        res = auth_client.get("/api/domains/")
+        assert res.status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
@@ -351,6 +398,26 @@ class TestDomainsDelete:
     def test_requires_auth(self, client, domain):
         assert post_json(client, f"/api/domains/{domain.pk}/delete/", {}).status_code == 401
 
+    def test_removes_recurring_and_once_schedules(self, auth_client, domain):
+        """Deleting a domain must not leave its scan schedules firing unattended."""
+        from django_q.models import Schedule
+
+        Schedule.objects.create(
+            name=f"recurring_{domain.name}",
+            func="apps.core.scheduler.scheduler.run_scheduled_scan",
+            schedule_type=Schedule.CRON, cron="0 2 * * *", repeats=-1,
+        )
+        Schedule.objects.create(
+            name=f"once_{domain.name}_" + "a" * 32,
+            func="apps.core.scheduler.scheduler.run_scheduled_scan",
+            schedule_type=Schedule.ONCE, repeats=1,
+        )
+
+        res = post_json(auth_client, f"/api/domains/{domain.pk}/delete/", {})
+        assert res.status_code == 200
+        assert not Schedule.objects.filter(name=f"recurring_{domain.name}").exists()
+        assert not Schedule.objects.filter(name__startswith=f"once_{domain.name}_").exists()
+
 
 # ---------------------------------------------------------------------------
 # Scans
@@ -416,6 +483,24 @@ class TestScanDetail:
 
     def test_not_found(self, auth_client):
         assert auth_client.get("/api/scans/00000000-0000-0000-0000-000000000000/").status_code == 404
+
+    def test_no_n_plus_one_on_findings(self, auth_client, django_assert_max_num_queries, scan):
+        """scan_detail must not issue one query per finding to resolve session.uuid."""
+        from apps.core.findings.models import Finding
+
+        for i in range(25):
+            Finding.objects.create(
+                session=scan, source="web_checker", target=f"h{i}.example.com",
+                check_type="hdr", severity="low", title=f"Finding {i}",
+                description="d", remediation="r",
+            )
+        # Warm up one-time caches (content types, auth) so the bound reflects
+        # steady state, not first-request setup.
+        auth_client.get(f"/api/scans/{scan.uuid}/")
+        # With select_related("session") the query count is constant; without it
+        # this load would issue 25+ extra per-finding queries.
+        with django_assert_max_num_queries(20):
+            auth_client.get(f"/api/scans/{scan.uuid}/")
 
     def test_requires_auth(self, client, scan):
         assert client.get(f"/api/scans/{scan.uuid}/").status_code == 401

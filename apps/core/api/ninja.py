@@ -6,8 +6,9 @@ from ninja.errors import HttpError, ValidationError
 from ninja_jwt.routers.obtain import obtain_pair_router   # POST /pair, POST /refresh
 from ninja_jwt.routers.verify import verify_router        # POST /verify
 from ninja_jwt.routers.blacklist import blacklist_router  # POST /blacklist
-from ninja_jwt.authentication import JWTAuth
 from ninja_jwt.exceptions import AuthenticationFailed as JWTAuthenticationFailed, TokenError
+
+from apps.core.api.auth import JWTAuth
 
 api = NinjaAPI(title="OpenEASD API", version="1.0", docs_url="/docs")
 

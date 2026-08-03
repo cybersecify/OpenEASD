@@ -35,10 +35,12 @@ def setup_core_schedules():
     """Register/update the fixed system schedules in Django-Q2.
 
     System-hygiene schedules (stuck-scan watchdog, token purge) always run.
-    The unattended-scan schedules (daily scan + per-domain monitoring) are
-    registered only when SCHEDULED_SCANS_ENABLED is True; when False they are
-    actively removed, so flipping the flag on a running deployment takes effect
-    on the next startup even if the schedules were created by an earlier boot.
+    Every unattended-scan schedule (daily scan, per-domain monitoring, and
+    user-created recurring/one-time jobs) is registered/kept only when
+    SCHEDULED_SCANS_ENABLED is True; when False they are all actively removed,
+    so flipping the flag on a running deployment takes effect on the next
+    startup even if the schedules were created by an earlier boot. This is what
+    makes the switch a durable, complete "manual-only" mode.
     """
     from django.conf import settings
     from django_q.models import Schedule
@@ -67,6 +69,11 @@ def setup_core_schedules():
     if not settings.SCHEDULED_SCANS_ENABLED:
         removed = Schedule.objects.filter(name="daily_scan").delete()[0]
         removed += Schedule.objects.filter(name__startswith="monitor_").delete()[0]
+        # User-created recurring/one-time jobs are unattended scans too — remove
+        # them as well, or the switch wouldn't actually make the deployment
+        # manual-only (they would keep firing run_scheduled_scan).
+        removed += Schedule.objects.filter(name__startswith="recurring_").delete()[0]
+        removed += Schedule.objects.filter(name__startswith="once_").delete()[0]
         logger.info(
             "[scheduler] SCHEDULED_SCANS_ENABLED=False — manual-only mode; "
             f"removed {removed} auto-scan schedule(s). Hygiene schedules registered."
@@ -167,9 +174,26 @@ def run_monitoring_scan(domain: str):
 
 
 def run_scheduled_scan(domain: str, triggered_by: str = "scheduled"):
-    """Top-level callable for Django-Q2 one-time and recurring scan jobs."""
+    """Top-level callable for Django-Q2 one-time and recurring scan jobs.
+
+    Re-checks consent at run time, mirroring daily_scan/run_monitoring_scan.
+    A user-created recurring/one-time schedule is authorization-checked only
+    when created (scans/api.start_scan); without this gate it would keep
+    scanning a domain whose authorization was later revoked, that was
+    deactivated, or that was deleted (a deleted domain has no row, so the
+    active+authorized filter skips it). Gated on both is_active and
+    authorization to match the daily_scan guarantee.
+    """
+    from apps.core.domains.models import Domain
     from apps.core.scans.pipeline import create_scan_session
     from apps.core.scans.tasks import run_scan_task
+
+    is_scannable = Domain.objects.filter(
+        name=domain, is_active=True, authorization__isnull=False
+    ).exists()
+    if not is_scannable:
+        logger.warning(f"[scheduled_scan] Skipping {domain} — not an active, authorized domain")
+        return
 
     session = create_scan_session(domain, triggered_by=triggered_by)
     if session is None:
