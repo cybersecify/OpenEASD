@@ -61,6 +61,13 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 3
+    groups:
+      # init + analyze must move together — a split bump leaves the two
+      # codeql-action steps on mismatched versions and the Analyze job
+      # fails ("Not all workflow steps ... use the same version").
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
     labels:
       - "dependencies"
       - "ci"
