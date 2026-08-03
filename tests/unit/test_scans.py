@@ -176,6 +176,125 @@ class TestDetectDeltas:
         _detect_deltas(s)
         assert ScanDelta.objects.filter(session=s).count() == 0
 
+    def test_subscan_not_used_as_baseline(self, db):
+        """A subscan between two full scans must not become the delta baseline."""
+        from apps.core.scans.models import ScanSession, ScanDelta
+        from apps.core.findings.models import Finding
+        from apps.core.scans.pipeline import _detect_deltas
+        from django.utils import timezone
+
+        full1 = ScanSession.objects.create(domain="b.com", scan_type="full", status="completed", end_time=timezone.now())
+        Finding.objects.create(session=full1, source="web_checker", target="b.com", check_type="hdr", severity="low", title="Missing HSTS")
+        # A subscan (subset of tools) runs later — highest id, but not a valid baseline.
+        sub = ScanSession.objects.create(domain="b.com", scan_type="subscan", status="completed", end_time=timezone.now())
+        Finding.objects.create(session=sub, source="tls_checker", target="b.com:443", check_type="cipher", severity="medium", title="Weak cipher")
+        full2 = ScanSession.objects.create(domain="b.com", scan_type="full", status="completed", end_time=timezone.now())
+        Finding.objects.create(session=full2, source="web_checker", target="b.com", check_type="hdr", severity="low", title="Missing HSTS")
+
+        _detect_deltas(full2)
+
+        # Baseline is full1, so the unchanged HSTS finding yields no deltas — the
+        # subscan's TLS finding must not appear as a spurious "removed".
+        assert ScanDelta.objects.filter(session=full2).count() == 0
+
+
+@pytest.mark.django_db
+class TestFinalizeSubscan:
+    def test_finalize_skips_deltas_insights_alerts_for_subscan(self, db):
+        from unittest.mock import patch
+        from apps.core.scans.models import ScanSession
+        from apps.core.scans.pipeline import _finalize_session
+        from django.utils import timezone
+
+        parent = ScanSession.objects.create(domain="s.com", scan_type="full", status="completed", end_time=timezone.now())
+        sub = ScanSession.objects.create(domain="s.com", scan_type="subscan", status="running", parent_session=parent)
+
+        with patch("apps.core.scans.pipeline._detect_deltas") as m_delta, \
+             patch("apps.core.insights.builder.build_insights") as m_insights, \
+             patch("apps.core.scans.pipeline._dispatch_alerts") as m_alerts:
+            _finalize_session(sub)
+
+        sub.refresh_from_db()
+        assert sub.status == "completed"
+        m_delta.assert_not_called()
+        m_insights.assert_not_called()
+        m_alerts.assert_not_called()
+
+    def test_finalize_runs_deltas_insights_alerts_for_full_scan(self, db):
+        from unittest.mock import patch
+        from apps.core.scans.models import ScanSession
+        from apps.core.scans.pipeline import _finalize_session
+        from django.utils import timezone
+
+        s = ScanSession.objects.create(domain="f.com", scan_type="full", status="running", end_time=timezone.now())
+
+        with patch("apps.core.scans.pipeline._detect_deltas") as m_delta, \
+             patch("apps.core.insights.builder.build_insights") as m_insights, \
+             patch("apps.core.scans.pipeline._dispatch_alerts") as m_alerts:
+            _finalize_session(s)
+
+        m_delta.assert_called_once()
+        m_insights.assert_called_once()
+        m_alerts.assert_called_once()
+
+
+@pytest.mark.django_db
+class TestRunScanPendingGuard:
+    def test_cancelled_session_is_not_resurrected(self, db):
+        """A stop issued while pending must not be overwritten by the queued task."""
+        from unittest.mock import patch
+        from apps.core.scans.models import ScanSession
+        from apps.core.scans.pipeline import run_scan
+
+        s = ScanSession.objects.create(domain="c.com", scan_type="full", status="cancelled")
+        with patch("apps.core.scans.pipeline._run_via_workflow") as m_run:
+            run_scan(s.id)
+
+        s.refresh_from_db()
+        assert s.status == "cancelled"
+        m_run.assert_not_called()
+
+    def test_failed_session_is_not_resurrected(self, db):
+        from unittest.mock import patch
+        from apps.core.scans.models import ScanSession
+        from apps.core.scans.pipeline import run_scan
+
+        s = ScanSession.objects.create(domain="d.com", scan_type="full", status="failed")
+        with patch("apps.core.scans.pipeline._run_via_workflow") as m_run:
+            run_scan(s.id)
+
+        s.refresh_from_db()
+        assert s.status == "failed"
+        m_run.assert_not_called()
+
+    def test_pending_session_runs(self, db):
+        from unittest.mock import patch
+        from apps.core.scans.models import ScanSession
+        from apps.core.scans.pipeline import run_scan
+
+        s = ScanSession.objects.create(domain="p.com", scan_type="full", status="pending")
+        with patch("apps.core.scans.pipeline._run_via_workflow") as m_run, \
+             patch("apps.core.scans.pipeline._seed_apex_into_assets"), \
+             patch("apps.core.scans.pipeline._finalize_session"):
+            run_scan(s.id)
+
+        m_run.assert_called_once()
+
+
+@pytest.mark.django_db
+class TestLatestSessionIdsExcludesSubscans:
+    def test_subscan_excluded_from_latest(self, db):
+        from apps.core.scans.models import ScanSession
+        from apps.core.queries import latest_session_ids
+        from django.utils import timezone
+
+        full = ScanSession.objects.create(domain="x.com", scan_type="full", status="completed", end_time=timezone.now())
+        # Subscan has the higher id but must not be treated as the domain's latest.
+        ScanSession.objects.create(domain="x.com", scan_type="subscan", status="completed", end_time=timezone.now())
+
+        ids = latest_session_ids(["x.com"])
+        assert ids == [full.id]
+
 
 # ---------------------------------------------------------------------------
 # Model tests

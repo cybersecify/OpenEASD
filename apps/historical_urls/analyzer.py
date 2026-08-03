@@ -24,6 +24,13 @@ _NOISE_EXTENSIONS = frozenset([
 
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 
+# Only http(s) URLs are kept. Archive sources (Wayback/OTX/Common Crawl) are
+# third-party-influenceable and can return non-navigable schemes such as
+# ``javascript:`` or ``data:``; storing those risks rendering them as clickable
+# links in the UI (→ XSS / token theft). gau/waybackurls emit essentially only
+# http(s), so this drops no legitimate endpoints.
+_ALLOWED_SCHEMES = frozenset({"http", "https"})
+
 
 def _is_noise(url: str) -> bool:
     """Return True if the URL points at a non-interesting static asset."""
@@ -72,9 +79,9 @@ def analyze(session, raw_urls: list[str]) -> list[URL]:
             parsed = urlparse(url_str)
         except ValueError:
             continue
-        scheme = parsed.scheme
+        scheme = parsed.scheme.lower()
         host = parsed.hostname or ""
-        if not host or not scheme:
+        if scheme not in _ALLOWED_SCHEMES or not host:
             continue
 
         seen.add(url_str)
