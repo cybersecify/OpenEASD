@@ -42,6 +42,14 @@ updates:
           - "@radix-ui/*"
           - "class-variance-authority"
           - "tailwind*"
+    ignore:
+      # Tailwind v4 is a breaking migration (PostCSS plugin moved to
+      # @tailwindcss/postcss, CSS-first config). We intentionally pin
+      # Tailwind 3; the v4 jump will be handled as its own tracked
+      # migration, not an unattended group bump. Minor/patch v3 updates
+      # still flow through.
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
     labels:
       - "dependencies"
       - "frontend"
