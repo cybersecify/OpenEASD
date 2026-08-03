@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v0.10.0] — 2026-08-03
+
 ### Added
 
 - **Self-serve add-and-scan-once from the Start Scan page.**
