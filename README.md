@@ -12,11 +12,11 @@
 
 **See what attackers see. Use it before they do.**
 
-Use it as a **red teamer** to map external surface fast on targets you're authorised to test. Use it as a **defender** to see what's leaking out of your own infrastructure — subdomains, exposed ports, dangling CNAMEs, missing TLS, known CVEs — without paying $500-5000/mo for a commercial EASM platform.
+Use it as a **red teamer** to map external surface fast on targets you're authorised to test. Use it as a **defender** to see what's leaking out of your own infrastructure: subdomains, exposed ports, dangling CNAMEs, missing TLS, known CVEs, without paying $500-5000/mo for a commercial EASM platform.
 
-OpenEASD wraps the open-source recon tools security teams already use — `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `cloud_enum`, `naabu`, `nmap`, `httpx`, `gau`, `waybackurls`, `katana`, `nuclei` — behind a single web UI with scheduling, alerts, and findings tracking. Nineteen tools across DNS, email, TLS, SSH, ports, CVEs, subdomain takeover, historical URLs, cloud assets, web hygiene, and CVE prioritisation (EPSS + CISA KEV). Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
+OpenEASD wraps the open-source recon tools security teams already use: `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `cloud_enum`, `naabu`, `nmap`, `httpx`, `gau`, `waybackurls`, `katana`, `nuclei`, behind a single web UI with scheduling, alerts, and findings tracking. Nineteen tools across DNS, email, TLS, SSH, ports, CVEs, subdomain takeover, historical URLs, cloud assets, web hygiene, and CVE prioritisation (EPSS + CISA KEV). Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
 
-Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok S Kamat](https://www.linkedin.com/in/ashokskamat/) of [Cybersecify](https://cybersecify.com) — the same tool we run in engagements and on our own infrastructure.
+Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok S Kamat](https://www.linkedin.com/in/ashokskamat/) of [Cybersecify](https://cybersecify.com), the same tool we run in engagements and on our own infrastructure.
 
 ## Who this is for
 
@@ -27,13 +27,13 @@ Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok 
 
 ## Who this isn't for
 
-- **Enterprise SOCs** — no RBAC, SAML, multi-tenant, or Postgres (yet)
-- **Anyone needing to scan domains they don't own or aren't authorised to test** — OpenEASD is intentionally not a "scan-anyone" hosted service. Running it implies you own or have written authorisation for your targets
+- **Enterprise SOCs**: no RBAC, SAML, multi-tenant, or Postgres (yet)
+- **Anyone needing to scan domains they don't own or aren't authorised to test**: OpenEASD is intentionally not a "scan-anyone" hosted service. Running it implies you own or have written authorisation for your targets
 
 ## Supply chain transparency
 
 OpenEASD is a security tool, so it's reasonable to ask whether the tool
-itself is trustworthy. Here's what we do — and don't do — to make that
+itself is trustworthy. Here's what we do (and don't do) to make that
 auditable.
 
 ### What's in the Docker image
@@ -51,7 +51,7 @@ its maintainer's official source. No repackaging, no mirroring:
 | `cloud_enum` | [github.com/initstring/cloud_enum](https://github.com/initstring/cloud_enum) |
 | `nmap` | `apt-get install nmap` (Ubuntu 24.04 official) |
 
-Verbatim install commands are in the [Dockerfile](Dockerfile) — every
+Verbatim install commands are in the [Dockerfile](Dockerfile); every
 version is pinned. To verify a binary, pull the same version directly
 from the upstream URL; it should byte-match what ships in the image.
 
@@ -61,11 +61,11 @@ Every push to `main` and every `vX.Y` tag triggers
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml), which builds
 `linux/amd64` + `linux/arm64` images and publishes to
 `ghcr.io/cybersecify/openeasd`. The build is reproducible from the
-public source — the published image carries:
+public source; the published image carries:
 
-- **SBOM** (Software Bill of Materials, SPDX format) — every package in
+- **SBOM** (Software Bill of Materials, SPDX format): every package in
   the image, retrievable via `docker buildx imagetools inspect`
-- **SLSA provenance attestation** — cryptographic proof that the image
+- **SLSA provenance attestation**: cryptographic proof that the image
   was built by this repo's GitHub Actions, not swapped or rebuilt
   elsewhere
 
@@ -79,7 +79,7 @@ docker buildx imagetools inspect ghcr.io/cybersecify/openeasd:v0.8.0 --format '{
 - **No telemetry.** OpenEASD doesn't phone home, doesn't check for
   updates, doesn't send your scan results anywhere.
 - **No auto-update.** The version you pulled is the version that runs.
-- **No external callbacks during scans** — the only network traffic is
+- **No external callbacks during scans**: the only network traffic is
   the scan itself, originating from the tools shipped in the image.
 
 Block all egress at your firewall (except what's needed to reach scan
@@ -98,11 +98,11 @@ compromised action update can't silently rotate into the build.
 Dependabot keeps them current on a weekly cadence.
 
 Open security alerts are public on the
-[Security tab](../../security) — we don't hide gaps.
+[Security tab](../../security); we don't hide gaps.
 
 ### Want to verify? Build from source.
 
-If you don't trust the published Docker image, build it yourself —
+If you don't trust the published Docker image, build it yourself;
 every step is in the [Dockerfile](Dockerfile):
 
 ```bash
@@ -139,22 +139,22 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ## Features
 
-- **Automated pipeline** — 19-tool scan workflow from domain to findings
-- **Network attack surface scanning** — CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
-- **CVE prioritisation** — EPSS exploit-probability scores + CISA KEV (known-exploited-in-the-wild) flags enrich CVE findings in place, so you triage by real-world risk rather than severity alone
-- **Dynamic workflows** — Create custom scan configurations, enable/disable tools per workflow
-- **Tool auto-registration** — Add new tools with zero core modification
-- **Live scan progress** — Real-time pipeline status with per-tool step tracking
-- **Scan stop/cancel** — Graceful cancellation between tool steps
-- **Unified findings** — All tools write to a single Finding model with lifecycle tracking
-- **Continuous monitoring** — Per-domain rescans on a configurable schedule (6h / 12h / 24h / 48h / weekly)
-- **Subscan** — Re-run specific tools on existing scan assets without full rediscovery
-- **Reports** — CSV and PDF export
-- **Alerts** — Slack and Teams webhooks with configurable severity threshold; test button and alert history in the UI
-- **Scheduling** — One-time, recurring, and daily automated scans
-- **Domain authorization enforcement** — Each domain requires a recorded authorization (owner / written consent / bug bounty) before scans can start. Managed in Django admin; React blocks the Scan button and the API enforces it server-side
-- **JWT auth** — Stateless Bearer token authentication with refresh token rotation
-- **Forced password change** — Default `admin/admin` password must be changed on first login
+- **Automated pipeline**: 19-tool scan workflow from domain to findings
+- **Network attack surface scanning**: CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
+- **CVE prioritisation**: EPSS exploit-probability scores + CISA KEV (known-exploited-in-the-wild) flags enrich CVE findings in place, so you triage by real-world risk rather than severity alone
+- **Dynamic workflows**: Create custom scan configurations, enable/disable tools per workflow
+- **Tool auto-registration**: Add new tools with zero core modification
+- **Live scan progress**: Real-time pipeline status with per-tool step tracking
+- **Scan stop/cancel**: Graceful cancellation between tool steps
+- **Unified findings**: All tools write to a single Finding model with lifecycle tracking
+- **Continuous monitoring**: Per-domain rescans on a configurable schedule (6h / 12h / 24h / 48h / weekly)
+- **Subscan**: Re-run specific tools on existing scan assets without full rediscovery
+- **Reports**: CSV and PDF export
+- **Alerts**: Slack and Teams webhooks with configurable severity threshold; test button and alert history in the UI
+- **Scheduling**: One-time, recurring, and daily automated scans
+- **Domain authorization enforcement**: Each domain requires a recorded authorization (owner / written consent / bug bounty) before scans can start. Managed in Django admin; React blocks the Scan button and the API enforces it server-side
+- **JWT auth**: Stateless Bearer token authentication with refresh token rotation
+- **Forced password change**: Default `admin/admin` password must be changed on first login
 
 ## Scan Pipeline
 
@@ -250,7 +250,7 @@ docker run -d \
   ghcr.io/cybersecify/openeasd:latest
 ```
 
-Open http://localhost:8000 — log in with `admin` / `admin`. You will be forced to set a new password before accessing the app.
+Open http://localhost:8000, then log in with `admin` / `admin`. You will be forced to set a new password before accessing the app.
 
 > **Production note:** `ALLOWED_HOSTS="*"` is fine for evaluation on a private network. For internet-facing deployments, narrow it to your actual hostname or IP (e.g. `ALLOWED_HOSTS="scanner.example.com,127.0.0.1"`) and set `CSRF_TRUSTED_ORIGINS` if accessing over a domain.
 
@@ -259,25 +259,25 @@ Open http://localhost:8000 — log in with `admin` / `admin`. You will be forced
 ```bash
 docker pull ghcr.io/cybersecify/openeasd:latest
 docker stop openeasd && docker rm openeasd
-# re-run the docker run command above — volumes preserve all data
+# re-run the docker run command above, volumes preserve all data
 ```
 
 #### Environment variables
 
 | Variable | Default | Description |
 |---|---|---|
-| `SECRET_KEY` | insecure default | Django secret key — **set this in production** |
+| `SECRET_KEY` | insecure default | Django secret key; **set this in production** |
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated hostnames (add your server IP/domain) |
-| `CSRF_TRUSTED_ORIGINS` | — | Required if accessing via a domain, e.g. `https://openeasd.example.com` |
+| `CSRF_TRUSTED_ORIGINS` | *(none)* | Required if accessing via a domain, e.g. `https://openeasd.example.com` |
 | `DEBUG` | `False` | Set `True` only for local development |
 | `DB_NAME` | `data/openeasd.db` | SQLite path relative to `/app` |
-| `SLACK_WEBHOOK_URL` | — | Slack incoming webhook for scan alerts (can also be set in the Notifications UI) |
-| `MS_TEAMS_WEBHOOK_URL` | — | Teams incoming webhook for scan alerts (can also be set in the Notifications UI) |
-| `ALERT_SEVERITY_THRESHOLD` | `high` | Minimum severity to trigger alerts — overridden by the Notifications UI setting |
+| `SLACK_WEBHOOK_URL` | *(none)* | Slack incoming webhook for scan alerts (can also be set in the Notifications UI) |
+| `MS_TEAMS_WEBHOOK_URL` | *(none)* | Teams incoming webhook for scan alerts (can also be set in the Notifications UI) |
+| `ALERT_SEVERITY_THRESHOLD` | `high` | Minimum severity to trigger alerts; overridden by the Notifications UI setting |
 | `SCAN_DAILY_HOUR` | `2` | Hour for daily scheduled scans (24h, UTC) |
 | `SCAN_DAILY_MINUTE` | `0` | Minute for daily scheduled scans |
-| `REPORT_CTA_URL` | — | Optional URL appended to PDF and CSV reports. Renders only when both `REPORT_CTA_URL` and `REPORT_CTA_TEXT` are set |
-| `REPORT_CTA_TEXT` | — | Optional call-to-action line shown alongside `REPORT_CTA_URL` in PDF/CSV reports |
+| `REPORT_CTA_URL` | *(none)* | Optional URL appended to PDF and CSV reports. Renders only when both `REPORT_CTA_URL` and `REPORT_CTA_TEXT` are set |
+| `REPORT_CTA_TEXT` | *(none)* | Optional call-to-action line shown alongside `REPORT_CTA_URL` in PDF/CSV reports |
 
 ### Kubernetes
 
@@ -322,7 +322,7 @@ An init container runs migrations and admin user setup before the main container
 
 #### Health check
 
-`GET /health/` returns `{"status": "ok"}` — used by K8s readiness and liveness probes (no auth required).
+`GET /health/` returns `{"status": "ok"}`, used by K8s readiness and liveness probes (no auth required).
 
 ### Standalone (no Docker)
 
@@ -360,10 +360,10 @@ uv run manage.py qcluster   # second terminal
 ### Development Mode
 
 ```bash
-# Terminal 1 — Django + Django-Q2 worker
+# Terminal 1: Django + Django-Q2 worker
 uv run python main.py
 
-# Terminal 2 — Vite dev server (proxies /api/ to Django on port 8000)
+# Terminal 2: Vite dev server (proxies /api/ to Django on port 8000)
 cd frontend && npm run dev
 # React app at http://localhost:5173
 ```
@@ -380,12 +380,12 @@ uv run python main.py --no-worker      # web server only (no worker)
 ## CI/CD
 
 GitHub Actions runs on every push to `main` and `v*` tags:
-- **pytest** — fast test suite (~922 tests, excludes the 41 slow DNS/RDAP tests in `test_domain_security.py`)
-- **bandit** — Python SAST scan
-- **pip-audit** — dependency CVE scan
-- **Frontend build** — `npm ci && npm run build`
-- **Docker build** — amd64 smoke-build on every push
-- **Publish to GHCR** — multi-arch (`amd64` + `arm64`) image published on every `main` push and version tags
+- **pytest**: fast test suite (~922 tests, excludes the 41 slow DNS/RDAP tests in `test_domain_security.py`)
+- **bandit**: Python SAST scan
+- **pip-audit**: dependency CVE scan
+- **Frontend build**: `npm ci && npm run build`
+- **Docker build**: amd64 smoke-build on every push
+- **Publish to GHCR**: multi-arch (`amd64` + `arm64`) image published on every `main` push and version tags
 
 ## API
 
@@ -397,7 +397,7 @@ The REST API is served at `/api/` via Django Ninja with JWT Bearer authenticatio
 
 ## Adding a New Tool
 
-Create a tool app with `tool_meta` in its AppConfig — no core files to modify:
+Create a tool app with `tool_meta` in its AppConfig; no core files to modify:
 
 ```python
 # apps/my_tool/apps.py
@@ -443,21 +443,21 @@ uv run pytest tests/
 ## Tech Stack
 
 **Backend:**
-- **Django 5** — Web framework
-- **Django Ninja** — REST API with OpenAPI docs
-- **Django-Q2** — Background task queue and scheduler (ORM broker, replaces APScheduler)
-- **croniter** — Cron expression parsing for Django-Q2 CRON schedules
-- **WhiteNoise** — Serves static files in production (Docker) with gzip compression
-- **SQLite** — Database (dev), configurable via `DB_NAME`
-- **paramiko** — SSH protocol inspection
-- **cryptography** — X.509 certificate analysis
-- **xhtml2pdf** — PDF report generation
-- **django-ninja-jwt** — JWT auth for the Ninja API (built on PyJWT); access + refresh tokens, blacklist on logout
+- **Django 5**: Web framework
+- **Django Ninja**: REST API with OpenAPI docs
+- **Django-Q2**: Background task queue and scheduler (ORM broker, replaces APScheduler)
+- **croniter**: Cron expression parsing for Django-Q2 CRON schedules
+- **WhiteNoise**: Serves static files in production (Docker) with gzip compression
+- **SQLite**: Database (dev), configurable via `DB_NAME`
+- **paramiko**: SSH protocol inspection
+- **cryptography**: X.509 certificate analysis
+- **xhtml2pdf**: PDF report generation
+- **django-ninja-jwt**: JWT auth for the Ninja API (built on PyJWT); access + refresh tokens, blacklist on logout
 
 **Frontend:**
-- **React 19 + Vite 8** — SPA with hot module replacement
-- **Tailwind CSS 3 + shadcn/ui** — Utility-first styling with Radix UI component primitives
-- **sonner** — Toast notifications
+- **React 19 + Vite 8**: SPA with hot module replacement
+- **Tailwind CSS 3 + shadcn/ui**: Utility-first styling with Radix UI component primitives
+- **sonner**: Toast notifications
 - Vanilla popstate router (no react-router)
 
 ## License
