@@ -11,9 +11,9 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../components/ui/alert-dialog.jsx';
 import { toast } from '../components/Notification.jsx';
-import { navigate } from '../App.jsx';
-import { apiPost } from '../api/client.js';
-import { useFetch } from '../hooks/useFetch.js';
+import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { apiPost, apiGet } from '../api/client.js';
 
 const MONITORING_OPTIONS = [
   { label: 'Every 6 hours',  value: 6   },
@@ -131,7 +131,11 @@ function AddDomainForm({ onAdded }) {
 }
 
 export default function DomainsPage() {
-  const { data, loading, error, refetch } = useFetch('/domains/');
+  const navigate = useNavigate();
+  const { data, isLoading: loading, error, refetch } = useQuery({
+    queryKey: ['/domains/'],
+    queryFn: () => apiGet('/domains/'),
+  });
   const [busyIds, setBusyIds] = useState(new Set());
   const [monitoringDomain, setMonitoringDomain] = useState(null);
 
@@ -165,7 +169,7 @@ export default function DomainsPage() {
         <AddDomainForm onAdded={() => { toast.success('Domain added.'); refetch(); }} />
         <Card className="overflow-hidden">
           {loading ? <div className="flex justify-center p-8"><Spinner /></div>
-          : error   ? <div className="p-6 text-red-400 text-sm">Error: {error}</div>
+          : error   ? <div className="p-6 text-red-400 text-sm">Error: {error?.message ?? String(error)}</div>
           : (
             <div className="overflow-x-auto">
               <Table>
@@ -196,7 +200,13 @@ export default function DomainsPage() {
                       </TableCell>
                       <TableCell className="px-4 py-3">
                         <span className="inline-flex gap-1.5 items-center flex-wrap">
-                          <Button variant="outline" size="sm" onClick={() => navigate(`/scans/start?domain=${d.name}`)}>Scan</Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => navigate(`/scans/start?domain=${d.name}`)}
+                          >
+                            Scan
+                          </Button>
                           <Button variant="outline" size="sm" onClick={() => navigate('/scans?domain=' + d.name)}>History</Button>
                           <Button
                             variant={d.monitoring_interval_hours ? 'default' : 'outline'}
@@ -206,9 +216,21 @@ export default function DomainsPage() {
                           >
                             {d.monitoring_interval_hours ? `Every ${d.monitoring_interval_hours}h` : 'Monitor'}
                           </Button>
-                          <Button variant="outline" size="sm" onClick={() => handleToggle(d.id)} disabled={busy(d.id)}>
-                            {d.is_active ? 'Deactivate' : 'Activate'}
-                          </Button>
+                          {d.is_active ? (
+                            <ConfirmButton
+                              label="Deactivate"
+                              confirmLabel={`Deactivate ${d.name}?`}
+                              description="Scheduled scans will stop. You can reactivate from this page anytime."
+                              actionLabel="Deactivate"
+                              variant="outline"
+                              onConfirm={() => handleToggle(d.id)}
+                              disabled={busy(d.id)}
+                            />
+                          ) : (
+                            <Button variant="outline" size="sm" onClick={() => handleToggle(d.id)} disabled={busy(d.id)}>
+                              Activate
+                            </Button>
+                          )}
                           <ConfirmButton label="Delete" disabled={busy(d.id)} onConfirm={() => handleDelete(d.id, d.name)} />
                         </span>
                       </TableCell>
