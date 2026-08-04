@@ -18,7 +18,8 @@ dependencies = [
     "requests>=2.31",
     "pyyaml>=6.0",
     # SSL / crypto / SSH
-    "cryptography>=42.0",
+    # floor raised to 50.0 for CVE-2026-69247 (fixed in 50.0.0)
+    "cryptography>=50.0",
     "paramiko>=5.0.0",
     # Reports (PDF generation) — WeasyPrint renders full CSS (backgrounds,
     # @page rules, rounded corners); needs pango/gdk-pixbuf system libs.
