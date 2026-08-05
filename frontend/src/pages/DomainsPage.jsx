@@ -216,9 +216,21 @@ export default function DomainsPage() {
                           >
                             {d.monitoring_interval_hours ? `Every ${d.monitoring_interval_hours}h` : 'Monitor'}
                           </Button>
-                          <Button variant="outline" size="sm" onClick={() => handleToggle(d.id)} disabled={busy(d.id)}>
-                            {d.is_active ? 'Deactivate' : 'Activate'}
-                          </Button>
+                          {d.is_active ? (
+                            <ConfirmButton
+                              label="Deactivate"
+                              confirmLabel={`Deactivate ${d.name}?`}
+                              description="Scheduled scans will stop. You can reactivate from this page anytime."
+                              actionLabel="Deactivate"
+                              variant="outline"
+                              onConfirm={() => handleToggle(d.id)}
+                              disabled={busy(d.id)}
+                            />
+                          ) : (
+                            <Button variant="outline" size="sm" onClick={() => handleToggle(d.id)} disabled={busy(d.id)}>
+                              Activate
+                            </Button>
+                          )}
                           <ConfirmButton label="Delete" disabled={busy(d.id)} onConfirm={() => handleDelete(d.id, d.name)} />
                         </span>
                       </TableCell>
