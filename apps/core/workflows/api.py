@@ -10,6 +10,7 @@ from ninja.errors import HttpError
 from apps.core.api.auth import JWTAuth
 from apps.core.workflows.models import Workflow, WorkflowStep
 from apps.core.workflows.registry import (
+    get_registry,
     get_tool_choices,
     get_tool_phases,
     get_tool_produces_findings,
@@ -21,11 +22,21 @@ logger = logging.getLogger(__name__)
 router = Router(auth=JWTAuth())
 
 
+def _core_steps() -> list[dict]:
+    """Return always-on core tools (e.g. service_detection) as locked virtual steps."""
+    reg = get_registry()
+    return [
+        {"tool": name, "order": info["phase"], "enabled": True, "locked": True}
+        for name, info in reg.items()
+        if info.get("core")
+    ]
+
+
 def _serialize_workflow(workflow) -> dict:
     steps = [
         {"tool": step.tool, "order": step.order, "enabled": step.enabled}
         for step in workflow.steps.all()
-    ]
+    ] + _core_steps()
     return {
         "id": workflow.id,
         "name": workflow.name,
@@ -119,9 +130,21 @@ def get_workflow(request, pk: int):
             "label": label,
             "enabled": enabled_tools.get(key, False),
             "phase": tool_phases.get(key, 99),
+            "locked": False,
         }
         for key, label in tool_choices
     ]
+    reg = get_registry()
+    for name, info in reg.items():
+        if info.get("core"):
+            tool_steps.append({
+                "key": name,
+                "label": info["label"],
+                "enabled": True,
+                "phase": info["phase"],
+                "locked": True,
+            })
+    tool_steps.sort(key=lambda s: s["phase"])
 
     recent_runs = workflow.runs.select_related("session").order_by("-started_at")[:10]
     return {

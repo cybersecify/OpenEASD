@@ -62,6 +62,36 @@ _CIPHER_REMEDIATIONS = {
     ),
 }
 
+# CVSS v3.1 base scores per check type (used to populate extra["cvss_score"])
+_CHECK_CVSS: dict[str, float] = {
+    "null_cipher":            9.8,
+    "export_cipher":          7.5,
+    "rc4_cipher":             7.5,
+    "anon_cipher":            9.1,
+    "sweet32":                5.9,
+    "des_cipher":             7.5,
+    "md5_cipher":             7.5,
+    "sha1_cipher":            5.9,
+    "cbc_cipher":             5.9,
+    "no_forward_secrecy":     5.9,
+    "tls10_supported":        5.9,
+    "tls11_supported":        5.9,
+    "tls13_not_supported":    3.7,
+    "cert_expired":           7.5,
+    "cert_expiring_critical": 7.5,
+    "cert_expiring_soon":     5.3,
+    "cert_expiring":          3.7,
+    "weak_rsa_key":           7.5,
+    "weak_ec_key":            7.5,
+    "dsa_key":                5.3,
+    "self_signed_cert":       7.5,
+    "sha1_cert_signature":    5.9,
+    "san_mismatch":           7.5,
+    "no_sct":                 5.3,
+    "untrusted_ca":           7.5,
+    "unencrypted_service":    9.1,
+}
+
 # RSA key exchange: cipher name starts with "RSA" but is NOT "ECDHE-RSA" or "DHE-RSA"
 _RSA_KEX_PATTERN = re.compile(r"^RSA[_-]", re.IGNORECASE)
 
@@ -102,6 +132,7 @@ def _weak_cipher_findings(result: dict, session) -> list[Finding]:
                     "cipher_bits": result.get("cipher_bits"),
                     "tls_version": result.get("tls_version"),
                     "address": ip, "port_number": port_num,
+                    "cvss_score": _CHECK_CVSS.get(check_type),
                 },
             ))
 
@@ -130,6 +161,7 @@ def _weak_cipher_findings(result: dict, session) -> list[Finding]:
             extra={
                 "cipher_name": result["cipher_name"],
                 "address": ip, "port_number": port_num,
+                "cvss_score": _CHECK_CVSS.get("no_forward_secrecy"),
             },
         ))
 
@@ -191,7 +223,7 @@ def _supported_cipher_findings(result: dict, session) -> list[Finding]:
             remediation=_CIPHER_REMEDIATIONS[check_type],
             port=port_fk,
             target=f"{ip}:{port_num}",
-            extra={"cipher_names": cipher_names, "address": ip, "port_number": port_num},
+            extra={"cipher_names": cipher_names, "address": ip, "port_number": port_num, "cvss_score": _CHECK_CVSS.get(check_type)},
         ))
 
     rsa_kex_ciphers = [name for name in all_ciphers if _check_rsa_key_exchange(name)]
@@ -219,7 +251,7 @@ def _supported_cipher_findings(result: dict, session) -> list[Finding]:
             ),
             port=port_fk,
             target=f"{ip}:{port_num}",
-            extra={"cipher_names": rsa_kex_ciphers, "address": ip, "port_number": port_num},
+            extra={"cipher_names": rsa_kex_ciphers, "address": ip, "port_number": port_num, "cvss_score": _CHECK_CVSS.get("no_forward_secrecy")},
         ))
 
     return findings
@@ -258,7 +290,7 @@ def _protocol_findings(result: dict, session) -> list[Finding]:
             ),
             port=port_fk,
             target=f"{ip}:{port_num}",
-            extra={"address": ip, "port_number": port_num, "deprecated_version": "TLSv1"},
+            extra={"address": ip, "port_number": port_num, "deprecated_version": "TLSv1", "cvss_score": _CHECK_CVSS.get("tls10_supported")},
         ))
 
     # TLS 1.1 — deprecated RFC 8996
@@ -281,7 +313,7 @@ def _protocol_findings(result: dict, session) -> list[Finding]:
             ),
             port=port_fk,
             target=f"{ip}:{port_num}",
-            extra={"address": ip, "port_number": port_num, "deprecated_version": "TLSv1.1"},
+            extra={"address": ip, "port_number": port_num, "deprecated_version": "TLSv1.1", "cvss_score": _CHECK_CVSS.get("tls11_supported")},
         ))
 
     # TLS 1.2 only (no 1.3) — medium, not ideal
@@ -305,7 +337,7 @@ def _protocol_findings(result: dict, session) -> list[Finding]:
             ),
             port=port_fk,
             target=f"{ip}:{port_num}",
-            extra={"address": ip, "port_number": port_num, "negotiated_version": tls_version},
+            extra={"address": ip, "port_number": port_num, "negotiated_version": tls_version, "cvss_score": _CHECK_CVSS.get("tls13_not_supported")},
         ))
 
     return findings
@@ -344,7 +376,7 @@ def _cert_findings(result: dict, session) -> list[Finding]:
                 ),
                 port=port_fk,
                 target=f"{ip}:{port_num}",
-                extra={"cert_expiry_days": days, "address": ip, "port_number": port_num},
+                extra={"cert_expiry_days": days, "address": ip, "port_number": port_num, "cvss_score": _CHECK_CVSS.get("cert_expired")},
             ))
         elif days <= 14:
             findings.append(Finding(
@@ -363,7 +395,7 @@ def _cert_findings(result: dict, session) -> list[Finding]:
                 ),
                 port=port_fk,
                 target=f"{ip}:{port_num}",
-                extra={"cert_expiry_days": days, "address": ip, "port_number": port_num},
+                extra={"cert_expiry_days": days, "address": ip, "port_number": port_num, "cvss_score": _CHECK_CVSS.get("cert_expiring_critical")},
             ))
         elif days <= 30:
             findings.append(Finding(
@@ -382,7 +414,7 @@ def _cert_findings(result: dict, session) -> list[Finding]:
                 ),
                 port=port_fk,
                 target=f"{ip}:{port_num}",
-                extra={"cert_expiry_days": days, "address": ip, "port_number": port_num},
+                extra={"cert_expiry_days": days, "address": ip, "port_number": port_num, "cvss_score": _CHECK_CVSS.get("cert_expiring_soon")},
             ))
         elif days <= 90:
             findings.append(Finding(
@@ -402,7 +434,7 @@ def _cert_findings(result: dict, session) -> list[Finding]:
                 ),
                 port=port_fk,
                 target=f"{ip}:{port_num}",
-                extra={"cert_expiry_days": days, "address": ip, "port_number": port_num},
+                extra={"cert_expiry_days": days, "address": ip, "port_number": port_num, "cvss_score": _CHECK_CVSS.get("cert_expiring")},
             ))
 
     # Weak key
@@ -428,7 +460,7 @@ def _cert_findings(result: dict, session) -> list[Finding]:
             port=port_fk,
             target=f"{ip}:{port_num}",
             extra={"cert_key_type": key_type, "cert_key_bits": key_bits,
-                   "address": ip, "port_number": port_num},
+                   "address": ip, "port_number": port_num, "cvss_score": _CHECK_CVSS.get("weak_rsa_key")},
         ))
     elif key_type == "EC" and key_bits is not None and key_bits < 256:
         findings.append(Finding(
@@ -448,7 +480,7 @@ def _cert_findings(result: dict, session) -> list[Finding]:
             port=port_fk,
             target=f"{ip}:{port_num}",
             extra={"cert_key_type": key_type, "cert_key_bits": key_bits,
-                   "address": ip, "port_number": port_num},
+                   "address": ip, "port_number": port_num, "cvss_score": _CHECK_CVSS.get("weak_ec_key")},
         ))
     elif key_type == "DSA":
         findings.append(Finding(
@@ -469,7 +501,7 @@ def _cert_findings(result: dict, session) -> list[Finding]:
             port=port_fk,
             target=f"{ip}:{port_num}",
             extra={"cert_key_type": key_type, "cert_key_bits": key_bits,
-                   "address": ip, "port_number": port_num},
+                   "address": ip, "port_number": port_num, "cvss_score": _CHECK_CVSS.get("dsa_key")},
         ))
 
     # Self-signed certificate
@@ -493,7 +525,7 @@ def _cert_findings(result: dict, session) -> list[Finding]:
             ),
             port=port_fk,
             target=f"{ip}:{port_num}",
-            extra={"address": ip, "port_number": port_num},
+            extra={"address": ip, "port_number": port_num, "cvss_score": _CHECK_CVSS.get("self_signed_cert")},
         ))
 
     return findings
@@ -532,6 +564,7 @@ def _sig_algorithm_findings(result: dict, session) -> list[Finding]:
         extra={
             "cert_sig_algorithm": result.get("cert_sig_algorithm"),
             "address": ip, "port_number": port_num,
+            "cvss_score": _CHECK_CVSS.get("sha1_cert_signature"),
         },
     )]
 
@@ -571,6 +604,7 @@ def _san_mismatch_findings(result: dict, session) -> list[Finding]:
         extra={
             "cert_san_list": san_list,
             "address": ip, "port_number": port_num,
+            "cvss_score": _CHECK_CVSS.get("san_mismatch"),
         },
     )]
 
@@ -611,7 +645,7 @@ def _sct_findings(result: dict, session) -> list[Finding]:
         ),
         port=result["port_fk"],
         target=f"{ip}:{port_num}",
-        extra={"address": ip, "port_number": port_num},
+        extra={"address": ip, "port_number": port_num, "cvss_score": _CHECK_CVSS.get("no_sct")},
     )]
 
 
@@ -656,6 +690,7 @@ def _untrusted_ca_findings(result: dict, session) -> list[Finding]:
         extra={
             "cert_san_list": result.get("cert_san_list", []),
             "address": ip, "port_number": port_num,
+            "cvss_score": _CHECK_CVSS.get("untrusted_ca"),
         },
     )]
 
@@ -751,6 +786,7 @@ def analyze(session, results: list[dict]) -> list[Finding]:
                 extra={
                     "service": service, "port_number": port_num, "address": ip,
                     "inherently_insecure": is_inherently_insecure,
+                    "cvss_score": _CHECK_CVSS.get("unencrypted_service"),
                 },
             ))
 

@@ -98,19 +98,26 @@ export default function WorkflowDetailPage() {
                   {steps.length === 0 ? (
                     <TableRow><TableCell colSpan={4} className="px-4 py-8 text-center text-dim">No steps.</TableCell></TableRow>
                   ) : steps.map(s => (
-                    <TableRow key={s.key} className="hover:bg-hover transition-colors">
+                    <TableRow key={s.key} className={`transition-colors ${s.locked ? 'opacity-50' : 'hover:bg-hover'}`}>
                       <TableCell className="px-4 py-3 text-dim text-xs">{s.phase ?? s.key}</TableCell>
-                      <TableCell className="px-4 py-3 text-lit font-medium">{s.label || s.key}</TableCell>
+                      <TableCell className="px-4 py-3 text-lit font-medium">
+                        {s.label || s.key}
+                        {s.locked && <span className="ml-2 text-xs text-dim">(always on)</span>}
+                      </TableCell>
                       <TableCell className="px-4 py-3"><Badge value={s.enabled !== false ? 'active' : 'inactive'} /></TableCell>
                       <TableCell className="px-4 py-3">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleToggle(s.key)}
-                          disabled={toggling === s.key}
-                        >
-                          {toggling === s.key ? '…' : s.enabled !== false ? 'Disable' : 'Enable'}
-                        </Button>
+                        {s.locked ? (
+                          <span className="text-xs text-dim italic">Required</span>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleToggle(s.key)}
+                            disabled={toggling === s.key}
+                          >
+                            {toggling === s.key ? '…' : s.enabled !== false ? 'Disable' : 'Enable'}
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
