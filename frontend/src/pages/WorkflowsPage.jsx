@@ -63,7 +63,11 @@ function CreateWorkflowForm({ onCreated }) {
           </label>
           {allTools.length > 0 && (
             <div>
-              <p className="text-xs text-dim mb-2">Tools</p>
+              <div className="flex items-center gap-2 mb-2">
+                <p className="text-xs text-dim">Tools</p>
+                <span className="text-xs text-dim">·</span>
+                <span className="text-xs text-dim italic">Service Detection is always included automatically — it identifies services on open ports (nmap -sV) and is required by TLS Checker, SSH Checker, and Nmap to work correctly</span>
+              </div>
               <div className="flex flex-wrap gap-2">
                 {allTools.map(tool => (
                   <label key={tool.key}

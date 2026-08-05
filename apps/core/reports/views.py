@@ -329,15 +329,23 @@ def export_scan_pdf(request, session_uuid):
         "urls": URL.objects.filter(session=session).count(),
     }
 
-    # Scope & methodology — the registered scan pipeline, grouped by phase group,
-    # with the findings each group raised in this scan. Purely from the registry.
+    # Scope & methodology — tools that ran in this scan's workflow, grouped by
+    # phase group, with findings each group raised.
     from apps.core.workflows.registry import get_registry
+    registry = get_registry()
+    # Workflow's chosen tools + always-on core tools (e.g. service_detection)
+    workflow_tools = (
+        set(session.workflow.enabled_tools()) if session.workflow_id
+        else {n for n, i in registry.items() if not i.get("core")}
+    )
+    core_tools = {n for n, i in registry.items() if i.get("core")}
+    active_tools = workflow_tools | core_tools
     src_counts = {}
     for row in findings.order_by().values("source").annotate(n=Count("id")):
         src_counts[row["source"]] = row["n"]
     _pg = {}
-    for name, info in get_registry().items():
-        if info.get("core"):
+    for name, info in registry.items():
+        if name not in active_tools:
             continue
         group = info.get("phase_group") or "Other"
         d = _pg.setdefault(group, {"phase": info["phase"], "tools": [], "findings": 0, "produces": False})
@@ -350,7 +358,7 @@ def export_scan_pdf(request, session_uuid):
           "produces": v["produces"], "phase": v["phase"]} for g, v in _pg.items()),
         key=lambda r: r["phase"],
     )
-    tool_count = sum(1 for _n, i in get_registry().items() if not i.get("core"))
+    tool_count = len(active_tools)
 
     # Scan duration
     scan_duration = None

@@ -277,15 +277,22 @@ LOGGING = {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "verbose",
+            "level": "WARNING",
+        },
+        "console_access": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+            "level": "INFO",
         },
         "file": {
             "class": "logging.FileHandler",
             "filename": BASE_DIR / "logs" / "openeasd.log",
             "formatter": "verbose",
+            "level": "DEBUG",
         },
     },
     "root": {
-        "handlers": ["console"],
+        "handlers": ["console", "file"],
         "level": "INFO",
     },
     "loggers": {
@@ -295,8 +302,33 @@ LOGGING = {
             "propagate": False,
         },
         "src": {
-            "handlers": ["console"],
+            "handlers": ["file"],
             "level": "INFO",
+            "propagate": False,
+        },
+        "django_q": {
+            "handlers": ["file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django.server": {
+            "handlers": ["console_access", "file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console", "file"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+        "weasyprint": {
+            "handlers": ["file"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+        "fontTools": {
+            "handlers": ["file"],
+            "level": "WARNING",
             "propagate": False,
         },
     },

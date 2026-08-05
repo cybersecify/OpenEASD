@@ -122,7 +122,7 @@
   <div class="cover-assess">{{ session.domain }} · External Attack Surface Detection Report</div>
   <div class="cover-line">
     Scan Date <strong>{{ session.end_time|default:generated_at|date:"F j, Y" }}</strong> · Generated <strong>{{ generated_at|date:"F j, Y · H:i" }} UTC</strong><br>
-    Target <strong>{{ session.domain }}</strong> · Scan Type {{ session.scan_type|title }} · Scan ID {{ session.uuid }}
+    Target <strong>{{ session.domain }}</strong> · Scan Type {{ session.workflow.name|default:session.scan_type|title }} · Scan ID {{ session.uuid }}
   </div>
 
   <table class="cover-tiles"><tr>
