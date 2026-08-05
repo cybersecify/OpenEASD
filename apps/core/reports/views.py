@@ -1,4 +1,4 @@
-"""Report export views — CSV and PDF."""
+"""Report export views — CSV and PDF generation."""
 
 import base64
 import csv
