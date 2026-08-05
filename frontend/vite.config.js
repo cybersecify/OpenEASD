@@ -18,6 +18,7 @@ export default defineConfig(({ command }) => ({
     proxy: {
       '/api': { target: 'http://localhost:8001', changeOrigin: true },
       '/accounts': { target: 'http://localhost:8001', changeOrigin: true },
+      '/reports': { target: 'http://localhost:8001', changeOrigin: true },
     },
   },
 }));
