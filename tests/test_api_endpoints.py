@@ -711,7 +711,13 @@ class TestWorkflowCreate:
         assert res.status_code == 201
         data = res.json()
         assert data["name"] == "Test Workflow"
-        assert len(data["steps"]) == 1
+        # 1 user-selected tool + service_detection (always-on core step)
+        assert len(data["steps"]) == 2
+        tools = {s["tool"] for s in data["steps"]}
+        assert "subfinder" in tools
+        assert "service_detection" in tools
+        locked = [s for s in data["steps"] if s.get("locked")]
+        assert len(locked) == 1 and locked[0]["tool"] == "service_detection"
 
     def test_empty_name_returns_400(self, auth_client, db):
         res = post_json(auth_client, "/api/workflows/create/", {"name": ""})
