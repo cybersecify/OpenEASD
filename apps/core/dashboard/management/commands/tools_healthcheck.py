@@ -77,7 +77,7 @@ def _functional_probes() -> list[Probe]:
         Probe(
             name="katana",
             cmd=[_tool_binary("TOOL_KATANA", "katana"), "-version"],
-            expect_in_stdout="katana",
+            expect_in_stdout="Current version",
         ),
         Probe(
             name="nuclei",
