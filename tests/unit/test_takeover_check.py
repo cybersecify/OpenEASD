@@ -125,18 +125,24 @@ class TestAnalyze:
     def test_links_subdomain_fk_when_session_has_match(self):
         sess = self._session()
         sub = self._subdomain(sess, "blog.example.com")
-        records = [{"subdomain": "blog.example.com", "vulnerable": True}]
+        records = [{"subdomain": "blog.example.com", "vulnerable": True, "service": "GitHub Pages"}]
         findings = analyze(sess, records)
         assert findings[0].subdomain_id == sub.id
 
     def test_no_subdomain_fk_when_session_missing_match(self):
         sess = self._session()
-        # Note: no Subdomain row created
-        records = [{"subdomain": "blog.example.com", "vulnerable": True}]
+        # No Subdomain row created, but service is known — finding still created
+        records = [{"subdomain": "blog.example.com", "vulnerable": True, "service": "GitHub Pages"}]
         findings = analyze(sess, records)
         assert findings[0].subdomain is None
-        # But target field still populated for free-floating findings
         assert findings[0].target == "blog.example.com"
+
+    def test_skips_record_with_unknown_service(self):
+        sess = self._session()
+        # subzy returned no fingerprint — "unknown" service must not become a finding
+        records = [{"subdomain": "blog.example.com", "vulnerable": True}]
+        findings = analyze(sess, records)
+        assert findings == []
 
     def test_dedupes_by_subdomain_name(self):
         sess = self._session()
