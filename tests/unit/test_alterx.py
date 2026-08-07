@@ -136,6 +136,13 @@ class TestScanner:
         from apps.core.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
+    def _subdomain(self, session, name):
+        from apps.core.assets.models import Subdomain
+        return Subdomain.objects.create(
+            session=session, domain="example.com",
+            subdomain=name, source="subfinder",
+        )
+
     def test_no_subdomains_returns_empty_without_calling_collect(self):
         sess = self._session()
         with patch("apps.alterx.scanner.collect") as mock_collect:
@@ -144,44 +151,53 @@ class TestScanner:
         mock_collect.assert_not_called()
 
     def test_passes_existing_subdomain_names_to_collect(self):
-        from apps.core.assets.models import Subdomain
         sess = self._session()
-        Subdomain.objects.create(
-            session=sess, domain="example.com",
-            subdomain="api.example.com", source="subfinder",
-        )
+        self._subdomain(sess, "api.example.com")
         captured = {}
 
         def fake_collect(subdomains):
             captured["subdomains"] = subdomains
             return []
 
-        with patch("apps.alterx.scanner.collect", side_effect=fake_collect):
-            run_alterx(sess)
+        with patch("apps.alterx.scanner._has_wildcard_dns", return_value=False):
+            with patch("apps.alterx.scanner.collect", side_effect=fake_collect):
+                run_alterx(sess)
 
         assert "api.example.com" in captured["subdomains"]
 
     def test_saves_permutations_and_returns_them(self):
         from apps.core.assets.models import Subdomain
         sess = self._session()
-        Subdomain.objects.create(
-            session=sess, domain="example.com",
-            subdomain="api.example.com", source="subfinder",
-        )
+        self._subdomain(sess, "api.example.com")
 
-        with patch("apps.alterx.scanner.collect", return_value=["api-dev.example.com", "api2.example.com"]):
-            result = run_alterx(sess)
+        with patch("apps.alterx.scanner._has_wildcard_dns", return_value=False):
+            with patch("apps.alterx.scanner.collect", return_value=["api-dev.example.com", "api2.example.com"]):
+                result = run_alterx(sess)
 
         assert Subdomain.objects.filter(session=sess, source="alterx").count() == 2
         assert len(result) == 2
 
     def test_returns_empty_when_collect_returns_nothing(self):
-        from apps.core.assets.models import Subdomain
         sess = self._session()
-        Subdomain.objects.create(
-            session=sess, domain="example.com",
-            subdomain="api.example.com", source="subfinder",
-        )
-        with patch("apps.alterx.scanner.collect", return_value=[]):
-            result = run_alterx(sess)
+        self._subdomain(sess, "api.example.com")
+        with patch("apps.alterx.scanner._has_wildcard_dns", return_value=False):
+            with patch("apps.alterx.scanner.collect", return_value=[]):
+                result = run_alterx(sess)
         assert result == []
+
+    def test_skips_collect_when_wildcard_dns_detected(self):
+        sess = self._session()
+        self._subdomain(sess, "api.example.com")
+        with patch("apps.alterx.scanner._has_wildcard_dns", return_value=True):
+            with patch("apps.alterx.scanner.collect") as mock_collect:
+                result = run_alterx(sess)
+        assert result == []
+        mock_collect.assert_not_called()
+
+    def test_runs_collect_when_no_wildcard_dns(self):
+        sess = self._session()
+        self._subdomain(sess, "api.example.com")
+        with patch("apps.alterx.scanner._has_wildcard_dns", return_value=False):
+            with patch("apps.alterx.scanner.collect", return_value=[]) as mock_collect:
+                run_alterx(sess)
+        mock_collect.assert_called_once()
