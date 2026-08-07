@@ -9,7 +9,7 @@ import tempfile
 import yaml
 from django.conf import settings
 
-from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+from apps.core.workflows.exceptions import ToolBinaryMissing
 
 logger = logging.getLogger(__name__)
 
@@ -63,32 +63,39 @@ def collect(session) -> list[dict]:
         f"(mode=active{brute}, timeout={config.scan_timeout}m)"
     )
 
+    stdout = ""
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=config.scan_timeout * 60 + 30,  # seconds, with 30s grace
             stdin=subprocess.DEVNULL,
         )
+        try:
+            stdout, stderr = proc.communicate(timeout=config.scan_timeout * 60 + 30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            logger.warning(
+                f"[amass:{session.id}] Hit timeout after {config.scan_timeout}m "
+                f"— returning partial results"
+            )
+        else:
+            if proc.returncode != 0:
+                logger.warning(f"[amass:{session.id}] Exited with code {proc.returncode}")
+                if stderr:
+                    logger.warning(f"[amass:{session.id}] stderr: {stderr[:500]}")
     except FileNotFoundError:
         logger.error(f"[amass:{session.id}] Binary not found: {binary}")
         raise ToolBinaryMissing(f"amass binary not found: {binary}")
-    except subprocess.TimeoutExpired:
-        logger.error(f"[amass:{session.id}] Timed out after {config.scan_timeout}m")
-        raise ToolTimeout(f"amass timed out after {config.scan_timeout}m")
     finally:
         if config_tmp:
             os.unlink(config_tmp)
 
-    if result.returncode != 0:
-        logger.warning(f"[amass:{session.id}] Exited with code {result.returncode}")
-        if result.stderr:
-            logger.warning(f"[amass:{session.id}] stderr: {result.stderr[:500]}")
-
     records = []
     seen = set()
-    for line in result.stdout.strip().splitlines():
+    for line in stdout.strip().splitlines():
         if not line:
             continue
         try:
