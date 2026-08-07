@@ -75,6 +75,14 @@ def analyze(session, records: list[dict]) -> list[Finding]:
         seen.add(subdomain_name)
 
         service = _service_of(record)
+        if service == "unknown":
+            logger.info(
+                "[takeover_check:%s] Skipping %s — subzy returned no fingerprint",
+                session.id,
+                subdomain_name,
+            )
+            continue
+
         subdomain_fk = subdomain_index.get(subdomain_name)
 
         findings.append(Finding(
