@@ -12,4 +12,5 @@ class SshCheckerConfig(AppConfig):
         "phase_group": "Network Exposure",
         "requires": ["naabu", "service_detection"],
         "produces_findings": True,
+        "active": True,
     }
