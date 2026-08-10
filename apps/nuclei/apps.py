@@ -13,4 +13,5 @@ class NucleiConfig(AppConfig):
         "phase_group": "Web Exposure",
         "requires": ["httpx"],
         "produces_findings": True,
+        "active": True,
     }

@@ -129,9 +129,27 @@ def run_workflow(workflow_run_id: int, only_tools: list | None = None):
             if t not in tools:
                 tools.append(t)
 
+    from django.conf import settings
+    from .registry import get_tool_active
+    if not getattr(settings, "ACTIVE_SCANNING_ENABLED", True):
+        active_map = get_tool_active()
+        skipped = [t for t in tools if active_map.get(t, False)]
+        if skipped:
+            logger.info(
+                "[workflow:%s] ACTIVE_SCANNING_ENABLED=False — skipping: %s",
+                run.id,
+                ", ".join(skipped),
+            )
+        tools = [t for t in tools if not active_map.get(t, False)]
+
     # service_detection always runs after naabu (core infrastructure).
     # Skip for subscans (assets already classified from parent).
-    if "service_detection" not in tools and only_tools is None:
+    # Skip when active scanning is disabled (naabu itself is excluded).
+    if (
+        "service_detection" not in tools
+        and only_tools is None
+        and getattr(settings, "ACTIVE_SCANNING_ENABLED", True)
+    ):
         insert_at = 0
         for i, t in enumerate(tools):
             if t == "naabu":

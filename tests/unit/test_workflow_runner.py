@@ -560,3 +560,98 @@ class TestPhaseParallelExecution:
         assert WorkflowStepResult.objects.get(run=run, tool="tls_checker").status == "completed"
         # Phase-10 tool was skipped
         assert WorkflowStepResult.objects.get(run=run, tool="nuclei").status == "skipped"
+
+
+# ---------------------------------------------------------------------------
+# ACTIVE_SCANNING_ENABLED gate
+# ---------------------------------------------------------------------------
+
+class TestActiveScanningDisabled:
+    """When ACTIVE_SCANNING_ENABLED=False, active tools are skipped."""
+
+    def _make_run(self, db, session, tool_names):
+        wf = Workflow.objects.create(name="Active Gate Test")
+        for i, tool in enumerate(tool_names, start=1):
+            WorkflowStep.objects.create(workflow=wf, tool=tool, order=i, enabled=True)
+        return WorkflowRun.objects.create(workflow=wf, session=session)
+
+    def test_active_tools_skipped_when_disabled(self, db, session):
+        """naabu (active=True) is excluded; subfinder (active=False) still runs."""
+        run = self._make_run(db, session, ["subfinder", "naabu"])
+        tools_used = []
+
+        def track_runner(tool_name):
+            tools_used.append(tool_name)
+            return MagicMock(return_value=None)
+
+        with patch("apps.core.workflows.runner._get_runner", side_effect=track_runner):
+            with patch("django.conf.settings.ACTIVE_SCANNING_ENABLED", False):
+                run_workflow(run.id)
+
+        assert "subfinder" in tools_used
+        assert "naabu" not in tools_used
+
+    def test_passive_tools_run_when_active_scanning_disabled(self, db, session):
+        """Passive tools (subfinder, dnsx, httpx, web_checker) still execute."""
+        run = self._make_run(db, session, ["subfinder", "dnsx", "httpx", "web_checker"])
+        tools_used = []
+
+        def track_runner(tool_name):
+            tools_used.append(tool_name)
+            return MagicMock(return_value=None)
+
+        with patch("apps.core.workflows.runner._get_runner", side_effect=track_runner):
+            with patch("django.conf.settings.ACTIVE_SCANNING_ENABLED", False):
+                run_workflow(run.id)
+
+        for tool in ["subfinder", "dnsx", "httpx", "web_checker"]:
+            assert tool in tools_used
+
+    def test_service_detection_not_injected_when_active_scanning_disabled(self, db, session):
+        """service_detection injection is skipped when active scanning is off."""
+        run = self._make_run(db, session, ["subfinder", "dnsx"])
+        tools_used = []
+
+        def track_runner(tool_name):
+            tools_used.append(tool_name)
+            return MagicMock(return_value=None)
+
+        with patch("apps.core.workflows.runner._get_runner", side_effect=track_runner):
+            with patch("django.conf.settings.ACTIVE_SCANNING_ENABLED", False):
+                run_workflow(run.id)
+
+        assert "service_detection" not in tools_used
+
+    def test_all_active_tools_excluded(self, db, session):
+        """All 9 active tools are blocked; run completes with only passive tools."""
+        active_tools = [
+            "amass", "naabu", "service_detection", "nmap",
+            "tls_checker", "ssh_checker", "nuclei_network", "katana", "nuclei",
+        ]
+        passive_tools = ["subfinder", "dnsx", "httpx"]
+        run = self._make_run(db, session, passive_tools + active_tools)
+        tools_used = []
+
+        def track_runner(tool_name):
+            tools_used.append(tool_name)
+            return MagicMock(return_value=None)
+
+        with patch("apps.core.workflows.runner._get_runner", side_effect=track_runner):
+            with patch("django.conf.settings.ACTIVE_SCANNING_ENABLED", False):
+                run_workflow(run.id)
+
+        for t in active_tools:
+            assert t not in tools_used, f"{t} should not have run"
+        for t in passive_tools:
+            assert t in tools_used, f"{t} should have run"
+
+    def test_run_completes_successfully_with_only_passive_tools(self, db, session):
+        """Run reaches 'completed' status even when all active tools are filtered out."""
+        run = self._make_run(db, session, ["subfinder", "naabu"])
+
+        with _patch_get_runner({"subfinder": _mock_runner([])}):
+            with patch("django.conf.settings.ACTIVE_SCANNING_ENABLED", False):
+                run_workflow(run.id)
+
+        run.refresh_from_db()
+        assert run.status == "completed"

@@ -46,6 +46,7 @@ def _discover_tools():
             "requires": meta.get("requires", []),
             "produces_findings": meta.get("produces_findings", False),
             "core": meta.get("core", False),
+            "active": meta.get("active", False),
         }
         logger.debug(f"[registry] Registered tool: {tool_name}")
 
@@ -86,6 +87,11 @@ def get_tool_requires() -> dict[str, list[str]]:
 def get_tool_produces_findings() -> dict[str, bool]:
     """Dynamic map: tool_name → whether the tool writes to the Finding table."""
     return {name: info["produces_findings"] for name, info in get_registry().items()}
+
+
+def get_tool_active() -> dict[str, bool]:
+    """Dynamic map: tool_name → True if the tool performs active network scanning."""
+    return {name: info["active"] for name, info in get_registry().items()}
 
 
 def get_tool_phase_groups() -> dict[str, str]:
