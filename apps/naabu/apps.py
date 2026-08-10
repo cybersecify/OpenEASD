@@ -13,4 +13,5 @@ class NaabuConfig(AppConfig):
         "phase_group": "Port Discovery",
         "requires": ["dnsx"],
         "produces_findings": False,
+        "active": True,
     }

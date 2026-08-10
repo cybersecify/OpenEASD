@@ -118,10 +118,10 @@ git describe --tags --abbrev=0
 ### Frontend (React SPA — new primary UI)
 - **React 19 + Vite 8** — `frontend/` directory, builds to `frontend/dist/`
 - **shadcn/ui** — component library on top of Tailwind CSS 3 + Radix UI; CSS variables in `src/index.css`; components in `src/components/ui/`
-- Vanilla popstate-based router in `App.jsx` (no react-router)
-- JWT `apiFetch` in `src/api/client.js` — sends `Authorization: Bearer <token>` header; 401 clears tokens and redirects to `/login`
-- `auth.js` — isolated localStorage helpers (`getToken`, `setTokens`, `clear`, `isLoggedIn`)
-- `useFetch` / `usePolling` hooks for data fetching and live scan status (3s poll)
+- **react-router-dom** — `createBrowserRouter` route tree in `src/router.jsx`; auth-gated routes via a `ProtectedRoute` (`Outlet` + `<Navigate to="/login">`) that checks `auth.isLoggedIn()`. There is no `App.jsx`; `main.jsx` renders `<RouterProvider>`.
+- `src/api/client.js` — thin `apiGet(path)` / `apiPost(path, body)` wrappers over `axiosInstance.js`. The axios instance's request interceptor adds `Authorization: Bearer <token>`; the response interceptor, on 401, silently refreshes via `/api/token/refresh` (single shared `_refreshPromise` dedupes concurrent refreshes) and only clears tokens + redirects to `/login` if refresh fails.
+- `auth.js` — isolated localStorage helpers (`getToken`, `getRefresh`, `setTokens`, `clear`, `isLoggedIn`)
+- **@tanstack/react-query** — `useQuery({ queryKey: [path, ...deps], queryFn: () => apiGet(path) })` for all data fetching; `queryClient` in `src/lib/queryClient.js` (`staleTime: 0`, `retry: false`), `<QueryClientProvider>` in `main.jsx`. Live scan status polls via `refetchInterval: shouldPoll ? 3000 : false` (3s). No custom `useFetch`/`usePolling` hooks.
 - **Shared components:** `Badge` (cva severity/status variants), `Spinner`, `Pagination`, `ConfirmButton` (AlertDialog), `Notification` (re-exports sonner `toast`)
 - **shadcn UI primitives** (`src/components/ui/`): `Button`, `Card`, `Table`, `Badge`, `AlertDialog`, `Pagination`, `Sonner`
 - **Toast notifications:** `import { toast } from '../components/Notification.jsx'` → `toast.success()` / `toast.error()`; `<Toaster>` mounted in `main.jsx`
@@ -148,7 +148,8 @@ uv run manage.py qcluster
 ```
 
 ### Frontend rules
-- New interactive features → React pages in `frontend/src/pages/`
+- New interactive features → React pages in `frontend/src/pages/`, wired into the route tree in `src/router.jsx`
+- Fetch data with react-query `useQuery` + `apiGet`/`apiPost` (keyed by the API path); don't reintroduce ad-hoc `fetch`/`useFetch`. Navigate with react-router-dom's `useNavigate`, not a hand-rolled router.
 - New API data → add endpoint to the relevant `apps/core/<module>/api.py` router + wire in `apps/core/api/ninja.py`
 - Shared UI primitives → `frontend/src/components/`
 - Don't add CORS headers — always use same-origin (Vite proxy in dev, Django serves in prod)

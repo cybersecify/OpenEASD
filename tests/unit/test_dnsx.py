@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from apps.dnsx.analyzer import _is_public, analyze
+from apps.dnsx.analyzer import _is_cdn_ip, _is_public, analyze
 from apps.dnsx.scanner import run_dnsx
 
 
@@ -59,6 +59,40 @@ class TestIsPublic:
         assert _is_public("not-an-ip") is False
         assert _is_public("") is False
         assert _is_public("999.999.999.999") is False
+
+
+# ---------------------------------------------------------------------------
+# CDN IP filter
+# ---------------------------------------------------------------------------
+
+class TestIsCdnIp:
+    def test_cloudflare_ip_detected(self):
+        # 172.67.191.147 is in Cloudflare's 172.64.0.0/13 range
+        assert _is_cdn_ip("172.67.191.147") is True
+
+    def test_cloudflare_ip_104_range(self):
+        # 104.21.84.116 is in Cloudflare's 104.16.0.0/13 range
+        assert _is_cdn_ip("104.21.84.116") is True
+
+    def test_fastly_ip_detected(self):
+        # 151.101.0.1 is in Fastly's 151.101.0.0/16 range
+        assert _is_cdn_ip("151.101.0.1") is True
+
+    def test_cloudfront_ip_detected(self):
+        # 54.192.0.1 is in CloudFront's 54.192.0.0/16 range
+        assert _is_cdn_ip("54.192.0.1") is True
+
+    def test_regular_public_ip_not_cdn(self):
+        assert _is_cdn_ip("8.8.8.8") is False
+
+    def test_another_public_ip_not_cdn(self):
+        assert _is_cdn_ip("54.23.45.67") is False
+
+    def test_private_ip_not_cdn(self):
+        assert _is_cdn_ip("10.0.0.1") is False
+
+    def test_invalid_input(self):
+        assert _is_cdn_ip("not-an-ip") is False
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +160,28 @@ class TestDnsxAnalyzer:
         }]
         ips, _ = analyze(sess, records, index)
         assert len(ips) == 1
+
+    def test_analyze_filters_cdn_ips_from_ip_records(self):
+        # Cloudflare IP should not produce an IPAddress record
+        sess, index = self._make_session_with_subdomains(["cdn.example.com"])
+        records = [{"host": "cdn.example.com", "a": ["172.67.191.147"], "aaaa": []}]
+        ips, activated = analyze(sess, records, index)
+        assert ips == []
+        # But the subdomain IS reachable so it gets activated
+        assert len(activated) == 1
+
+    def test_analyze_keeps_origin_ip_when_mixed_with_cdn(self):
+        # If a subdomain has both a CDN IP and a real origin IP, keep the origin
+        sess, index = self._make_session_with_subdomains(["mixed.example.com"])
+        records = [{
+            "host": "mixed.example.com",
+            "a": ["172.67.191.147", "54.23.45.67"],
+            "aaaa": [],
+        }]
+        ips, activated = analyze(sess, records, index)
+        assert len(ips) == 1
+        assert ips[0].address == "54.23.45.67"
+        assert len(activated) == 1
 
     def test_analyze_skips_unknown_hosts(self):
         sess, index = self._make_session_with_subdomains(["known.example.com"])

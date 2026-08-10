@@ -183,6 +183,11 @@ SCHEDULER_ENABLED = config("SCHEDULER_ENABLED", default=True, cast=bool)
 # unauthorized domains even when this is True.
 SCHEDULED_SCANS_ENABLED = config("SCHEDULED_SCANS_ENABLED", default=True, cast=bool)
 
+# When False, active scanning tools (port scanners, vuln scanners, crawlers) are
+# skipped. Passive tools (subfinder, dnsx, httpx, web_checker, etc.) still run.
+# Set to False on the hosted tier to prevent scanning third-party infrastructure.
+ACTIVE_SCANNING_ENABLED = config("ACTIVE_SCANNING_ENABLED", default=True, cast=bool)
+
 # OpenEASD Configuration
 OPENEASD_CONFIG_DIR = BASE_DIR / "config"
 OPENEASD_DATA_DIR = BASE_DIR / "data"

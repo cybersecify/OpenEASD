@@ -7,17 +7,25 @@ import {
   AlertDialogTrigger,
 } from './ui/alert-dialog.jsx';
 
-export function ConfirmButton({ label = 'Delete', confirmLabel = 'Are you sure?', onConfirm, disabled }) {
+export function ConfirmButton({ 
+  label = 'Delete', 
+  confirmLabel = 'Are you sure?', 
+  description = 'This action cannot be undone.',
+  actionLabel = 'Confirm',
+  variant = 'danger',
+  onConfirm, 
+  disabled 
+}) {
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button variant="danger" size="sm" disabled={disabled}>{label}</Button>
+        <Button variant={variant} size="sm" disabled={disabled}>{label}</Button>
       </AlertDialogTrigger>
       <AlertDialogContent className="bg-card border-border text-foreground">
         <AlertDialogHeader>
           <AlertDialogTitle>{confirmLabel}</AlertDialogTitle>
           <AlertDialogDescription className="text-muted-foreground">
-            This action cannot be undone.
+            {description}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -26,7 +34,7 @@ export function ConfirmButton({ label = 'Delete', confirmLabel = 'Are you sure?'
             onClick={onConfirm}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            Confirm
+            {actionLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

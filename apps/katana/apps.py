@@ -13,4 +13,5 @@ class KatanaConfig(AppConfig):
         "phase_group": "Web Exposure",
         "requires": ["httpx"],
         "produces_findings": False,
+        "active": True,
     }
