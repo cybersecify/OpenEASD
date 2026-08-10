@@ -26,6 +26,7 @@ import defusedxml.ElementTree as ET
 from django.utils import timezone as django_tz
 
 from cryptography import x509
+from apps.core.utils.cdn import is_cdn_ip
 from cryptography.hazmat.primitives.asymmetric import ec, rsa, dsa
 from cryptography.hazmat.primitives.hashes import SHA1
 
@@ -512,6 +513,13 @@ def collect(session) -> list[dict]:
         ip = p.address
         port_num = p.port
         service = (p.service or "").lower()
+
+        if is_cdn_ip(ip):
+            logger.debug(
+                f"[tls_checker:{session.id}] Skipping CDN IP {ip}:{port_num} — "
+                f"TLS probes on shared edge infrastructure produce false positives"
+            )
+            continue
 
         # Resolve hostname: subdomain > IP fallback
         if p.ip_address and p.ip_address.subdomain:
