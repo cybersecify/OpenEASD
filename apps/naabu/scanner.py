@@ -3,6 +3,7 @@
 import logging
 
 from apps.core.assets.models import IPAddress, Port
+from apps.core.utils.cdn import is_cdn_ip
 from .collector import collect
 from .analyzer import analyze
 
@@ -16,6 +17,17 @@ def run_naabu(session) -> list:
     )
     if not targets:
         logger.info(f"[naabu:{session.id}] No public IPs to scan")
+        return []
+
+    cdn_skipped = [ip for ip in targets if is_cdn_ip(ip)]
+    targets = [ip for ip in targets if not is_cdn_ip(ip)]
+    if cdn_skipped:
+        logger.info(
+            f"[naabu:{session.id}] Skipping {len(cdn_skipped)} CDN IPs (shared edge): "
+            f"{', '.join(cdn_skipped[:5])}{'...' if len(cdn_skipped) > 5 else ''}"
+        )
+    if not targets:
+        logger.info(f"[naabu:{session.id}] All IPs are CDN — nothing to scan")
         return []
 
     records = collect(session, targets)
