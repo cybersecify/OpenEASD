@@ -32,6 +32,12 @@ _DEFAULT_PORTS = {"http": 80, "https": 443}
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
 
 
+def _in_scope(host: str, domain: str) -> bool:
+    host = host.lower()
+    domain = domain.lower()
+    return host == domain or host.endswith("." + domain)
+
+
 def _is_noise(url: str) -> bool:
     """Return True if the URL points at a non-interesting static asset."""
     path = urlparse(url).path.lower()
@@ -84,6 +90,9 @@ def analyze(session, raw_urls: list[str]) -> list[URL]:
         if scheme not in _ALLOWED_SCHEMES or not host:
             continue
 
+        if not _in_scope(host, session.domain):
+            continue
+
         seen.add(url_str)
 
         port_num = parsed.port or _DEFAULT_PORTS.get(scheme)
@@ -102,7 +111,7 @@ def analyze(session, raw_urls: list[str]) -> list[URL]:
         ))
 
     logger.info(
-        "[historical_urls:%s] %d raw URLs → %d after noise filter",
+        "[historical_urls:%s] %d raw URLs → %d after noise + scope filter",
         session.id, len(raw_urls), len(objs),
     )
     return objs
