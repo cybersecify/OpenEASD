@@ -302,7 +302,7 @@ class TestScanner:
         sess = self._session()
         Subdomain.objects.create(
             session=sess, domain="example.com",
-            subdomain="www.example.com", source="subfinder",
+            subdomain="www.example.com", source="subfinder", is_active=True,
         )
         captured = {}
 
@@ -320,7 +320,7 @@ class TestScanner:
         sess = self._session()
         Subdomain.objects.create(
             session=sess, domain="example.com",
-            subdomain="blog.example.com", source="subfinder",
+            subdomain="blog.example.com", source="subfinder", is_active=True,
         )
         captured = {}
 
@@ -340,7 +340,7 @@ class TestScanner:
         sess = self._session()
         Subdomain.objects.create(
             session=sess, domain="example.com",
-            subdomain="blog.example.com", source="subfinder",
+            subdomain="blog.example.com", source="subfinder", is_active=True,
         )
         fake_urls = ["https://blog.example.com/old-post", "https://blog.example.com/api/v1"]
 
@@ -355,7 +355,7 @@ class TestScanner:
         sess = self._session()
         Subdomain.objects.create(
             session=sess, domain="example.com",
-            subdomain="sub.example.com", source="subfinder",
+            subdomain="sub.example.com", source="subfinder", is_active=True,
         )
         with patch("apps.historical_urls.scanner.collect", return_value=[]):
             result = run_historical_urls(sess)
@@ -367,7 +367,7 @@ class TestScanner:
         # apex domain recorded as a subdomain row (subfinder/amass emit this)
         Subdomain.objects.create(
             session=sess, domain="example.com",
-            subdomain="example.com", source="subfinder",
+            subdomain="example.com", source="subfinder", is_active=True,
         )
         captured = {}
 
