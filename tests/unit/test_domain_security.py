@@ -84,22 +84,67 @@ class TestDNSChecks:
         titles = [f.title for f in findings]
         assert "No NS records found" in titles
 
-    def test_dnssec_not_enabled_creates_medium_finding(self, db):
-        from apps.domain_security.scanner import _check_dns
+    def test_dnssec_not_enabled_creates_high_finding(self, db):
+        from apps.domain_security.scanner import _check_dnssec
         session = self._make_session(db)
 
-        def mock_resolve(domain, record_type):
-            return ["mock"] if record_type in ("A", "NS", "MX") else []
+        with patch("apps.domain_security.scanner.dns") as mock_dns:
+            mock_dns.resolver.resolve.side_effect = Exception("no records")
+            findings = _check_dnssec(session, "example.com")
 
-        with patch("apps.domain_security.scanner._resolve", side_effect=mock_resolve):
-            with patch("apps.domain_security.scanner.dns") as mock_dns:
-                mock_dns.resolver.resolve.side_effect = Exception("no DNSKEY")
-                findings = _check_dns(session, "example.com")
+        assert len(findings) == 1
+        f = findings[0]
+        assert f.title == "DNSSEC not enabled"
+        assert f.severity == "high"
+        assert f.check_type == "dnssec"
 
-        titles = [f.title for f in findings]
-        assert "DNSSEC not enabled" in titles
-        dnssec = next(f for f in findings if f.title == "DNSSEC not enabled")
-        assert dnssec.severity == "medium"
+    def test_dnssec_broken_chain_dnskey_no_ds(self, db):
+        from apps.domain_security.scanner import _check_dnssec
+        session = self._make_session(db)
+
+        def mock_resolve(domain, rdtype):
+            if rdtype == "DNSKEY":
+                return [MagicMock()]
+            raise Exception("no DS")
+
+        with patch("apps.domain_security.scanner.dns") as mock_dns:
+            mock_dns.resolver.resolve.side_effect = mock_resolve
+            findings = _check_dnssec(session, "example.com")
+
+        assert len(findings) == 1
+        f = findings[0]
+        assert "chain of trust broken" in f.title
+        assert f.severity == "high"
+        assert f.extra == {"has_dnskey": True, "has_ds": False}
+
+    def test_dnssec_broken_ds_no_dnskey(self, db):
+        from apps.domain_security.scanner import _check_dnssec
+        session = self._make_session(db)
+
+        def mock_resolve(domain, rdtype):
+            if rdtype == "DS":
+                return [MagicMock()]
+            raise Exception("no DNSKEY")
+
+        with patch("apps.domain_security.scanner.dns") as mock_dns:
+            mock_dns.resolver.resolve.side_effect = mock_resolve
+            findings = _check_dnssec(session, "example.com")
+
+        assert len(findings) == 1
+        f = findings[0]
+        assert "DS published but DNSKEY missing" in f.title
+        assert f.severity == "high"
+        assert f.extra == {"has_dnskey": False, "has_ds": True}
+
+    def test_dnssec_fully_configured_no_finding(self, db):
+        from apps.domain_security.scanner import _check_dnssec
+        session = self._make_session(db)
+
+        with patch("apps.domain_security.scanner.dns") as mock_dns:
+            mock_dns.resolver.resolve.return_value = [MagicMock()]
+            findings = _check_dnssec(session, "example.com")
+
+        assert findings == []
 
 
 # ---------------------------------------------------------------------------
