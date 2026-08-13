@@ -279,7 +279,7 @@ def _probe_tls_details(ip: str, port: int, hostname: str | None = None) -> dict 
     """
     try:
         with socket.create_connection((ip, port), timeout=PROBE_TIMEOUT) as sock:
-            with _tls_context().wrap_socket(sock, server_hostname=ip) as ssock:
+            with _tls_context().wrap_socket(sock, server_hostname=hostname or ip) as ssock:
                 version = ssock.version() or ""
                 cipher_name, _, cipher_bits = ssock.cipher() or ("", "", 0)
                 der_bytes = ssock.getpeercert(binary_form=True)
