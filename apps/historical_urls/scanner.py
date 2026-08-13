@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 def run_historical_urls(session) -> list[URL]:
     """Collect and save historical URLs for the session's root domain and all subdomains."""
     subdomains = list(
-        Subdomain.objects.filter(session=session)
+        Subdomain.objects.filter(session=session, is_active=True)
         .values_list("subdomain", flat=True)
         .distinct()
     )
