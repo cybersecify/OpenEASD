@@ -1,18 +1,18 @@
-"""Set Infra Scan as the default workflow, demote Full Scan."""
+"""Set Full Scan as the default workflow, demote Infra Scan."""
 
 from django.db import migrations
 
 
-def set_infra_scan_default(apps, schema_editor):
+def set_full_scan_default(apps, schema_editor):
     Workflow = apps.get_model("workflow", "Workflow")
-    Workflow.objects.filter(name="Full Scan").update(is_default=False)
-    Workflow.objects.filter(name="Infra Scan").update(is_default=True)
+    Workflow.objects.filter(name="Infra Scan").update(is_default=False)
+    Workflow.objects.filter(name="Full Scan").update(is_default=True)
 
 
 def revert(apps, schema_editor):
     Workflow = apps.get_model("workflow", "Workflow")
-    Workflow.objects.filter(name="Infra Scan").update(is_default=False)
-    Workflow.objects.filter(name="Full Scan").update(is_default=True)
+    Workflow.objects.filter(name="Full Scan").update(is_default=False)
+    Workflow.objects.filter(name="Infra Scan").update(is_default=True)
 
 
 class Migration(migrations.Migration):
@@ -21,5 +21,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(set_infra_scan_default, revert),
+        migrations.RunPython(set_full_scan_default, revert),
     ]
