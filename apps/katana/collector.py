@@ -30,6 +30,7 @@ def collect(session, urls: list[str]) -> list[dict]:
         "-silent",
         "-depth", "3",
         "-timeout", "30",
+        "-field-scope", "rdn",
     ]
     logger.info(f"[katana:{session.id}] Crawling {len(urls)} seed URLs")
 
