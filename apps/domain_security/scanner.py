@@ -222,6 +222,88 @@ def _check_lame_delegation(session, domain, ns_records) -> list:
     return findings
 
 
+def _check_dnssec(session, domain) -> list:
+    """Full DNSSEC check: DNSKEY at domain + DS record at parent zone (chain of trust).
+
+    Three failure modes:
+    - Not configured: no DNSKEY, no DS → high
+    - Broken chain: DNSKEY present but DS not published at parent → high
+    - Signing removed: DS published but DNSKEY gone → high (causes resolution failures)
+    """
+    has_dnskey = False
+    has_ds = False
+
+    try:
+        resp = dns.resolver.resolve(domain, "DNSKEY")
+        has_dnskey = len(resp) > 0
+    except Exception:
+        pass
+
+    try:
+        resp = dns.resolver.resolve(domain, "DS")
+        has_ds = len(resp) > 0
+    except Exception:
+        pass
+
+    if not has_dnskey and not has_ds:
+        return [Finding(
+            session=session, source="domain_security", target=domain,
+            check_type="dnssec", severity="high",
+            title="DNSSEC not enabled",
+            description=(
+                f"{domain} has no DNSSEC configured. DNS responses can be forged — "
+                "an attacker can silently redirect users to malicious servers. "
+                "DNSSEC is mandatory for .bank.in domains under the RBI cybersecurity framework."
+            ),
+            remediation=(
+                "Enable DNSSEC at your domain registrar:\n"
+                "1. Enable DNSSEC signing in your DNS provider settings\n"
+                "2. Retrieve the DS record from your DNS provider\n"
+                "3. Publish the DS record at your registrar\n"
+                "The chain of trust must run: Root → TLD → your domain."
+            ),
+        )]
+
+    if has_dnskey and not has_ds:
+        return [Finding(
+            session=session, source="domain_security", target=domain,
+            check_type="dnssec", severity="high",
+            title="DNSSEC chain of trust broken — DS record not published",
+            description=(
+                f"{domain} has DNSKEY records but the DS record is not published at the "
+                "parent zone. The chain of trust is incomplete — DNSSEC validation fails "
+                "for validating resolvers, which may fall back to unvalidated responses."
+            ),
+            remediation=(
+                "Publish the DS record at your registrar to complete the chain of trust:\n"
+                "1. Retrieve the DS record from your DNS provider\n"
+                "2. Add it under DNSSEC settings at your registrar\n"
+                "Without the DS record, DNSSEC provides no protection."
+            ),
+            extra={"has_dnskey": True, "has_ds": False},
+        )]
+
+    if has_ds and not has_dnskey:
+        return [Finding(
+            session=session, source="domain_security", target=domain,
+            check_type="dnssec", severity="high",
+            title="DNSSEC misconfigured — DS published but DNSKEY missing",
+            description=(
+                f"{domain} has a DS record at the parent zone but no DNSKEY at the domain. "
+                "DNSSEC validation fails for all validating resolvers, making the domain "
+                "unreachable for users on DNSSEC-enforcing networks."
+            ),
+            remediation=(
+                "Either re-enable DNSSEC signing on your DNS provider so DNSKEY records "
+                "are published, or remove the DS record from your registrar if you intend "
+                "to disable DNSSEC. A DS record without a matching DNSKEY causes outages."
+            ),
+            extra={"has_dnskey": False, "has_ds": True},
+        )]
+
+    return []  # both present — DNSSEC correctly configured
+
+
 def _check_dns(session, domain) -> list:
     """Run all DNS checks and return list of DomainFinding objects (not yet saved)."""
     findings = []
@@ -261,20 +343,7 @@ def _check_dns(session, domain) -> list:
         ))
 
     # DNSSEC
-    try:
-        response = dns.resolver.resolve(domain, "DNSKEY")
-        has_dnssec = len(response) > 0
-    except Exception:
-        has_dnssec = False
-
-    if not has_dnssec:
-        findings.append(Finding(
-            session=session, source="domain_security", target=domain, check_type="dns",
-            severity="medium",
-            title="DNSSEC not enabled",
-            description=f"{domain} does not have DNSSEC configured.",
-            remediation="Enable DNSSEC at your domain registrar to prevent DNS spoofing.",
-        ))
+    findings += _check_dnssec(session, domain)
 
     # CAA records
     findings += _check_caa(session, domain)

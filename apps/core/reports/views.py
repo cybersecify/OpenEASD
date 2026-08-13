@@ -66,6 +66,7 @@ _CWE_BY_CHECK = {
     "dmarc": "CWE-358: Improperly Implemented Security Check for Standard",
     "spf": "CWE-358: Improperly Implemented Security Check for Standard",
     "dkim": "CWE-358: Improperly Implemented Security Check for Standard",
+    "dnssec": "CWE-346: Origin Validation Error",
 }
 
 
