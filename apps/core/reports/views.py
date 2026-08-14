@@ -361,6 +361,23 @@ def export_scan_pdf(request, session_uuid):
     )
     tool_count = len(active_tools)
 
+    # Workflow step diagnostics — only populated for partial scans
+    workflow_steps = []
+    if session.status == "partial":
+        from apps.core.workflows.models import WorkflowRun, WorkflowStepResult
+        run = WorkflowRun.objects.filter(session=session).first()
+        if run:
+            for step in WorkflowStepResult.objects.filter(run=run).order_by("order"):
+                dur = None
+                if step.started_at and step.finished_at:
+                    dur = int((step.finished_at - step.started_at).total_seconds())
+                workflow_steps.append({
+                    "tool": step.tool,
+                    "status": step.status,
+                    "duration": dur,
+                    "error": step.error or "",
+                })
+
     # Scan duration
     scan_duration = None
     if session.end_time and session.start_time:
@@ -390,6 +407,7 @@ def export_scan_pdf(request, session_uuid):
         "tool_count": tool_count,
         "vector_count": len(methodology),
         "scan_duration": scan_duration,
+        "workflow_steps": workflow_steps,
         "generated_at": timezone.now(),
         "logo_data_uri": _logo_data_uri("white"),          # dark cover
         "header_logo_data_uri": _logo_data_uri("brand"),   # light-page running header

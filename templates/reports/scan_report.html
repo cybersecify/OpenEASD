@@ -195,6 +195,39 @@
 </table>
 <p class="lead" style="font-style:italic;">Every finding is traceable to a specific tool, check type, and target in Detailed Findings. Automated version-to-CVE matching can over-report where a vendor backports fixes without changing the version banner; such matches should be validated against the actual package build.</p>
 
+{% if workflow_steps %}
+<div class="h2">Scan Step Diagnostics (Partial Scan)</div>
+<p class="lead" style="font-style:italic;">This scan completed with status <strong>Partial</strong> — one or more pipeline steps did not finish successfully. The table below shows the outcome of every step that was attempted.</p>
+<table class="grid">
+  <thead>
+    <tr>
+      <th style="width:5%;">#</th>
+      <th style="width:25%;">Tool</th>
+      <th style="width:12%;">Status</th>
+      <th style="width:12%;">Duration</th>
+      <th style="width:46%;">Error / Note</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for step in workflow_steps %}
+    <tr>
+      <td>{{ forloop.counter }}</td>
+      <td><strong>{{ step.tool }}</strong></td>
+      <td>
+        {% if step.status == "completed" %}Completed
+        {% elif step.status == "failed" %}FAILED
+        {% elif step.status == "skipped" %}Skipped
+        {% elif step.status == "running" %}Timed Out
+        {% else %}{{ step.status|title }}{% endif %}
+      </td>
+      <td>{% if step.duration %}{{ step.duration }}s{% else %}—{% endif %}</td>
+      <td style="font-size:0.85em;word-break:break-word;">{% if step.error %}{{ step.error|truncatechars:300 }}{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
 <!-- ==================== 3. FINDINGS SUMMARY ==================== -->
 <div class="page-break"></div>
 <div class="h1">3. Findings Summary</div>
