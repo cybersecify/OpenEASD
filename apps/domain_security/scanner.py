@@ -252,8 +252,7 @@ def _check_dnssec(session, domain) -> list:
             title="DNSSEC not enabled",
             description=(
                 f"{domain} has no DNSSEC configured. DNS responses can be forged — "
-                "an attacker can silently redirect users to malicious servers. "
-                "DNSSEC is mandatory for .bank.in domains under the RBI cybersecurity framework."
+                "an attacker can silently redirect users to malicious servers."
             ),
             remediation=(
                 "Enable DNSSEC at your domain registrar:\n"
