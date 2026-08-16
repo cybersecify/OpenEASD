@@ -13,6 +13,9 @@ class URL(models.Model):
     title = models.CharField(max_length=500, blank=True)
     web_server = models.CharField(max_length=200, blank=True)
     content_length = models.IntegerField(null=True, blank=True)
+    # WAF/edge reachability at probe time (httpx). Blank for non-httpx sources.
+    # reached | blocked | challenged | rate_limited — see apps/httpx/waf.py.
+    reachability = models.CharField(max_length=20, blank=True)
     source = models.CharField(max_length=50)
     discovered_at = models.DateTimeField(auto_now_add=True)
 
