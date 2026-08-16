@@ -95,7 +95,15 @@ we already parse — no new tool, no new requests.
 | `reached` | everything else (including a legitimate 404 — that's a real answer) |
 
 **Vendor guess:** map `web_server` / known title strings → `waf_vendor`
-(`"cloudflare"`, `"akamai"`, …, `"unknown"`, or `null` if no WAF signal).
+(`"cloudflare"`, `"akamai"`, …). This is a **fingerprint guess from response
+signatures**, never a claim about the target's configuration. When signatures are
+present but don't match a known vendor, `waf_vendor = "unidentified"` and the report
+says "WAF/edge, vendor unidentified". When there is no block/challenge signal at
+all, `waf_vendor = null` and no coverage note prints.
+
+**We report only what we observed** — that specific requests received block or
+challenge responses — never *which rules* fired or *what* is allowed/blocked. That
+config lives in the target's dashboard and we never assert it.
 
 **New optional fields on `URL`** (`apps/core/web_assets/models.py`), all nullable so
 existing rows are unaffected:
@@ -119,15 +127,18 @@ records: a Cloudflare 403, a "Just a moment" 200, a plain 404 (must classify as
 PDF report.
 
 **New fields on `ScanSession`** (all default-safe):
-- `waf_vendor = CharField(blank=True)` — dominant vendor across probed hosts, else `""`
-- `probes_total = IntegerField(default=0)`
-- `probes_reached = IntegerField(default=0)`
-- `probes_blocked = IntegerField(default=0)` (blocked + challenged + rate_limited)
-- `coverage_note` derived at render time, not stored.
+- `waf_vendor = CharField(blank=True)` — fingerprint guess, else `"unidentified"` /
+  `""` when no signal
+- `endpoints_probed = IntegerField(default=0)` — count of httpx-probed endpoints
+- `endpoints_blocked = IntegerField(default=0)` — probed endpoints that returned
+  block / challenge / rate_limited
 
-`reach_ratio = probes_reached / probes_total`. In Phase 1 these counts come from
-C1's per-URL `reachability`. In Phase 2 they are replaced by the proxy's exact
-request-level counts (C4) — the field contract doesn't change, only the source.
+**Phase 1 reports an endpoint count, not a traffic percentage.** httpx does ~one
+request per host, so all we can honestly state is *"N of M probed endpoints were
+blocked or challenged."* We do **not** print a "% of requests" figure in Phase 1,
+because the tool never counts nuclei's or katana's requests — that denominator
+does not exist until C4. The traffic-weighted percentage ("blocked N of M
+requests") is a **Phase 2** output, sourced from the proxy, and only then.
 
 **Surfacing:**
 - **API:** add the four fields + `reach_ratio` to the scan-detail schema
@@ -137,12 +148,20 @@ request-level counts (C4) — the field contract doesn't change, only the source
   a new **"Scan Coverage"** block directly under the Executive Summary, only rendered
   when a WAF was detected:
 
-  > **Scan Coverage — Target is WAF-protected (Cloudflare).**
-  > 48% of probes (65,750 of 137,000) were blocked or challenged at the edge and
-  > did not reach the application. Findings below reflect only what was reachable.
+  > **Scan Coverage — edge blocking observed.**
+  > 12 of 41 probed endpoints returned block or challenge responses (fingerprint
+  > suggests Cloudflare). Findings below reflect only reachable endpoints.
   > **Absence of findings on blocked surfaces is not evidence they are secure.**
   > To obtain full-coverage results, allowlist the scanner (`OpenEASD/1.0`, source
   > IP on file) in your WAF and re-run.
+
+  Wording rules for this block (locked with the claims owner, 2026-08-16):
+  - It states an **observation** (endpoints returned block/challenge responses),
+    never a claim about the target's WAF configuration or rules.
+  - Vendor is always hedged ("fingerprint suggests …"); degrades to
+    "(WAF/edge, vendor unidentified)" when signatures don't match a known vendor.
+  - **Phase 1 uses endpoint counts, never a "% of requests."** The traffic
+    percentage is a Phase 2 (C4) output only.
 
   This paragraph is the honest scope contract. It is the single most important
   user-visible output of this whole spec.
