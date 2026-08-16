@@ -32,6 +32,17 @@ class TestHttpxCollector:
         records = collect(sess, [])
         assert records == []
 
+    def test_sends_honest_user_agent(self):
+        sess = self._session()
+        fake = MagicMock()
+        fake.stdout = ""
+        with patch("apps.httpx.collector.subprocess.run", return_value=fake) as run:
+            collect(sess, ["www.example.com:443"])
+        cmd = run.call_args[0][0]
+        assert "-H" in cmd
+        ua = cmd[cmd.index("-H") + 1]
+        assert ua.startswith("User-Agent: OpenEASD/")
+
     def test_raises_on_binary_not_found(self):
         from apps.core.workflows.exceptions import ToolBinaryMissing
         sess = self._session()

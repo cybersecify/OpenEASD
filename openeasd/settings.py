@@ -263,6 +263,15 @@ TOOL_AMASS = config("TOOL_AMASS", default="amass")
 TOOL_ALTERX = config("TOOL_ALTERX", default="alterx")
 TOOL_CLOUD_ENUM = config("TOOL_CLOUD_ENUM", default="cloud_enum")
 
+# Honest scanner identity. Sent as the User-Agent on the tools that probe the
+# target's web surface (httpx, katana, nuclei) so a customer can deliberately
+# allowlist us. Some nuclei templates hard-set their own UA; those are not
+# overridden. See docs/specs/2026-08-16-waf-coverage-honest-scope.md (C3).
+OPENEASD_USER_AGENT = config(
+    "OPENEASD_USER_AGENT",
+    default="OpenEASD/1.0 (+https://cybersecify.com/openeasd)",
+)
+
 # Logging
 LOGGING = {
     "version": 1,
