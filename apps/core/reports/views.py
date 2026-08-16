@@ -85,6 +85,49 @@ def _risk_rating(vuln_counts):
         return "LOW"
     return "INFORMATIONAL"
 
+
+# Human labels for fingerprinted WAF/edge vendors.
+_WAF_VENDOR_LABEL = {
+    "cloudflare": "Cloudflare",
+    "akamai": "Akamai",
+    "sucuri": "Sucuri",
+    "imperva": "Imperva",
+    "aws": "AWS",
+    "f5": "F5",
+    "barracuda": "Barracuda",
+    "ddos-guard": "DDoS-Guard",
+}
+
+
+def _coverage_context(session):
+    """Scan Coverage block for the report (spec C2).
+
+    Returns None when no edge interference was observed (no block/challenge on any
+    probed endpoint), so the report renders the block only when it applies.
+    Reports the *observation* + a hedged vendor guess — never the WAF config, and
+    an endpoint count, never a request percentage (that is a Phase 2 output).
+    """
+    blocked = session.endpoints_blocked
+    if not blocked:
+        return None
+    vendor = session.waf_vendor
+    if vendor and vendor != "unidentified":
+        vendor_phrase = f"fingerprint suggests {_WAF_VENDOR_LABEL.get(vendor, vendor.title())}"
+    else:
+        vendor_phrase = "WAF/edge, vendor unidentified"
+    return {
+        "endpoints_probed": session.endpoints_probed,
+        "endpoints_blocked": blocked,
+        "vendor_phrase": vendor_phrase,
+        "note": (
+            f"{blocked} of {session.endpoints_probed} probed endpoints returned "
+            f"block or challenge responses ({vendor_phrase}). Findings reflect only "
+            f"reachable endpoints. Absence of findings on blocked surfaces is not "
+            f"evidence they are secure. To obtain full-coverage results, allowlist "
+            f"the scanner (OpenEASD/1.0, source IP on file) in your WAF and re-run."
+        ),
+    }
+
 # Cybersecify report logos, embedded as base64 data-URIs. "white" is used on the
 # dark (#0d1117) cover; "brand" (green) is used in the running header on white
 # body pages, where the white logo would be invisible.
@@ -376,6 +419,7 @@ def export_scan_pdf(request, session_uuid):
         "total_findings": len(issue_groups),   # headline = unique issue count
         "raw_total": raw_total,                # raw detections, shown only in the note
         "risk_rating": risk_rating,
+        "coverage": _coverage_context(session),
         "asset_counts": asset_counts,
         "methodology": methodology,
         "tool_count": tool_count,

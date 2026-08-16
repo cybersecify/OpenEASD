@@ -162,6 +162,13 @@
 </div>
 {% endwith %}
 
+{% if coverage %}
+<div class="risk no-break" style="border-color:#e8590c;">
+  <div class="l" style="color:#e8590c;">Scan Coverage — Edge Blocking Observed</div>
+  <p style="margin:6px 0 0;font-size:10px;line-height:1.5;">{{ coverage.note }}</p>
+</div>
+{% endif %}
+
 <div class="h2">Severity Distribution</div>
 <table class="tiles"><tr>
   <td><div class="n">{{ total_findings }}</div><div class="l">Total Findings</div></td>

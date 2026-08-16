@@ -262,6 +262,16 @@ System binary:
 
 Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_KATANA`, `TOOL_NMAP`, `TOOL_NUCLEI`, `TOOL_AMASS`, `TOOL_ALTERX`, `TOOL_CLOUD_ENUM` env vars.
 
+**Honest scanner identity:** httpx/katana/nuclei send `OPENEASD_USER_AGENT`
+(default `OpenEASD/1.0 (+https://cybersecify.com/openeasd)`) so a target can
+allowlist us deliberately. The httpx analyzer classifies each probe's
+`URL.reachability` (`reached`/`blocked`/`challenged`/`rate_limited`, via
+`apps/httpx/waf.py`); `_finalize_session` aggregates it into `ScanSession`
+coverage fields (`waf_vendor`, `endpoints_probed`, `endpoints_blocked`), surfaced
+as a "Scan Coverage" block in the PDF report. See
+`docs/specs/2026-08-16-waf-coverage-honest-scope.md` (Phase 1: C1–C3; the
+request-counting proxy C4 is deferred).
+
 ## Architecture
 
 ### Core infrastructure — `apps/core/` (14 sub-apps)
@@ -512,19 +522,21 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_domain_security.py` | 41 | DNS/email/RDAP — **slow, real network** |
 | `tests/unit/test_domains.py` | 13 | Domain CRUD |
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
-| `tests/unit/test_httpx.py` | 11 | JSON parser, Port lookup, Subdomain link |
+| `tests/unit/test_httpx.py` | 12 | JSON parser, Port lookup, Subdomain link, honest UA |
 | `tests/unit/test_k8s_manifests.py` | 57 | k8s manifest structure, envFrom order, probes, secret/configmap split |
-| `tests/unit/test_katana.py` | 18 | JSONL parser, Port/Subdomain FK links, scanner orchestrator |
+| `tests/unit/test_katana.py` | 19 | JSONL parser, Port/Subdomain FK links, scanner orchestrator, honest UA |
 | `tests/unit/test_management_commands.py` | 11 | `verify_tools` + other management commands |
 | `tests/unit/test_monitoring.py` | 17 | sync_domain_monitoring_jobs, per-domain monitoring, authorization gate |
 | `tests/unit/test_naabu.py` | 10 | JSON parser, FK to IPAddress |
 | `tests/unit/test_nmap.py` | 23 | Severity mapping, vulners XML parser, web/non-web exclusion, backport matching |
 | `tests/unit/test_notifications.py` | 25 | NotificationConfig, Slack/Teams alerts, alert-history API |
-| `tests/unit/test_nuclei.py` | 31 | CVE parsing, severity, dedup, URL linking, collector |
+| `tests/unit/test_nuclei.py` | 32 | CVE parsing, severity, dedup, URL linking, collector, honest UA |
 | `tests/unit/test_nuclei_network.py` | 28 | Network-template parsing, non-web targeting, collector |
 | `tests/unit/test_pipeline_phases.py` | 1 | Phase ordering sanity |
 | `tests/unit/test_qcluster_config.py` | 4 | Django-Q cluster config |
-| `tests/unit/test_reports.py` | 34 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment |
+| `tests/unit/test_reports.py` | 36 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block |
+| `tests/unit/test_waf_detection.py` | 16 | WAF/block/challenge classifier (spec C1) — vendor fingerprint, false-positive guards, analyzer wiring |
+| `tests/unit/test_coverage.py` | 6 | Scan coverage (spec C2) — endpoint counts, dominant vendor, report note wording |
 | `tests/unit/test_scans.py` | 30 | ScanSession, scheduling, scan_start views |
 | `tests/unit/test_scheduler.py` | 33 | reap_stuck_scans, token purge, daily_scan, authorization gate, `SCHEDULED_SCANS_ENABLED` switch |
 | `tests/unit/test_service_detection.py` | 64 | XML parsing, Port enrichment, is_web |
@@ -542,4 +554,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: 1020 tests** (979 fast + 41 slow domain_security)
+**Total: 1047 tests** (1006 fast + 41 slow domain_security)

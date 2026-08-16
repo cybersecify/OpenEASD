@@ -41,6 +41,15 @@ class ScanSession(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", db_index=True)
     total_findings = models.IntegerField(default=0)
 
+    # Scan coverage (spec C2). Populated at finalize from httpx URL.reachability.
+    # waf_vendor is a hedged fingerprint guess ("" = no interference observed,
+    # "unidentified" = interference seen but vendor not fingerprinted).
+    # Phase 1 counts probed *endpoints*, not requests; the request-weighted
+    # figure is a Phase 2 (proxy) output.
+    waf_vendor = models.CharField(max_length=30, blank=True)
+    endpoints_probed = models.IntegerField(default=0)
+    endpoints_blocked = models.IntegerField(default=0)
+
     class Meta:
         ordering = ["-start_time"]
 
