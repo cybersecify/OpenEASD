@@ -44,6 +44,7 @@ _SCOPE_BY_SOURCE = {
 }
 _SCOPE_BY_CHECK = {
     "rdap": "Domain", "dns": "DNS", "caa": "DNS", "dnssec": "DNS",
+    "open_relay": "Email / DNS",
 }
 
 # CWE mapping per check_type. Unmapped check types render "—".
@@ -68,6 +69,7 @@ _CWE_BY_CHECK = {
     "dkim": "CWE-358: Improperly Implemented Security Check for Standard",
     "dnssec": "CWE-346: Origin Validation Error",
     "dns": "CWE-693: Protection Mechanism Failure",
+    "open_relay": "CWE-284: Improper Access Control",
     "rdap": "CWE-284: Improper Access Control",
     "sshv1_supported": "CWE-327: Use of a Broken or Risky Cryptographic Algorithm",
     "weak_ssh_host_key": "CWE-326: Inadequate Encryption Strength",

@@ -601,7 +601,14 @@ class TestMTASTSChecks:
         from apps.core.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
 
-    def test_missing_mta_sts_creates_medium_finding(self, db):
+    def _mock_policy(self, mode):
+        """Return a mock requests.Response with the given MTA-STS policy mode."""
+        resp = MagicMock()
+        resp.text = f"version: STSv1\nmode: {mode}\nmx: mail.example.com\nmax_age: 86400"
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    def test_missing_mta_sts_dns_creates_high_finding(self, db):
         from apps.domain_security.scanner import _check_mta_sts
         session = self._make_session(db)
 
@@ -609,29 +616,143 @@ class TestMTASTSChecks:
             findings = _check_mta_sts(session, "example.com")
 
         assert len(findings) == 1
-        assert findings[0].severity == "medium"
+        assert findings[0].severity == "high"
         assert "MTA-STS not configured" in findings[0].title
 
-    def test_mta_sts_testing_mode_creates_low_finding(self, db):
+    def test_dns_record_present_but_policy_file_unreachable_creates_high_finding(self, db):
         from apps.domain_security.scanner import _check_mta_sts
         session = self._make_session(db)
 
-        with patch("apps.domain_security.scanner._get_txt_record",
-                   return_value=["v=STSv1; id=20240101; mode=testing"]):
+        with patch("apps.domain_security.scanner._get_txt_record", return_value=["v=STSv1; id=20240101"]), \
+             patch("apps.domain_security.scanner.requests.get", side_effect=Exception("connection refused")):
             findings = _check_mta_sts(session, "example.com")
 
         assert len(findings) == 1
-        assert findings[0].severity == "low"
+        assert findings[0].severity == "high"
+        assert "not reachable" in findings[0].title
 
-    def test_mta_sts_enforce_mode_no_finding(self, db):
+    def test_policy_mode_testing_creates_medium_finding(self, db):
         from apps.domain_security.scanner import _check_mta_sts
         session = self._make_session(db)
 
-        with patch("apps.domain_security.scanner._get_txt_record",
-                   return_value=["v=STSv1; id=20240101; mode=enforce"]):
+        with patch("apps.domain_security.scanner._get_txt_record", return_value=["v=STSv1; id=20240101"]), \
+             patch("apps.domain_security.scanner.requests.get", return_value=self._mock_policy("testing")):
+            findings = _check_mta_sts(session, "example.com")
+
+        assert len(findings) == 1
+        assert findings[0].severity == "medium"
+        assert "testing" in findings[0].title
+
+    def test_policy_mode_none_creates_medium_finding(self, db):
+        from apps.domain_security.scanner import _check_mta_sts
+        session = self._make_session(db)
+
+        with patch("apps.domain_security.scanner._get_txt_record", return_value=["v=STSv1; id=20240101"]), \
+             patch("apps.domain_security.scanner.requests.get", return_value=self._mock_policy("none")):
+            findings = _check_mta_sts(session, "example.com")
+
+        assert len(findings) == 1
+        assert findings[0].severity == "medium"
+
+    def test_policy_mode_enforce_no_finding(self, db):
+        from apps.domain_security.scanner import _check_mta_sts
+        session = self._make_session(db)
+
+        with patch("apps.domain_security.scanner._get_txt_record", return_value=["v=STSv1; id=20240101"]), \
+             patch("apps.domain_security.scanner.requests.get", return_value=self._mock_policy("enforce")):
             findings = _check_mta_sts(session, "example.com")
 
         assert len(findings) == 0
+
+
+# ---------------------------------------------------------------------------
+# Open relay checks
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestOpenRelayChecks:
+    def _make_session(self, db):
+        from apps.core.scans.models import ScanSession
+        return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
+
+    def _mock_mx(self, hostname="mail.example.com", preference=10):
+        mx = MagicMock()
+        mx.preference = preference
+        mx.exchange = MagicMock()
+        mx.exchange.__str__ = lambda self: hostname
+        return [mx]
+
+    def test_no_mx_records_returns_empty(self, db):
+        from apps.domain_security.scanner import _check_open_relay
+        session = self._make_session(db)
+
+        with patch("apps.domain_security.scanner._resolve", return_value=[]):
+            findings = _check_open_relay(session, "example.com")
+
+        assert findings == []
+
+    def test_open_relay_confirmed_creates_critical_finding(self, db):
+        from apps.domain_security.scanner import _check_open_relay
+        session = self._make_session(db)
+
+        smtp_mock = MagicMock()
+        smtp_mock.__enter__ = MagicMock(return_value=smtp_mock)
+        smtp_mock.__exit__ = MagicMock(return_value=False)
+        smtp_mock.ehlo.return_value = (250, b"ok")
+        smtp_mock.mail.return_value = (250, b"ok")
+        smtp_mock.rcpt.return_value = (250, b"ok")  # relay accepted
+
+        with patch("apps.domain_security.scanner._resolve", return_value=self._mock_mx()), \
+             patch("apps.domain_security.scanner.smtplib.SMTP", return_value=smtp_mock):
+            findings = _check_open_relay(session, "example.com")
+
+        assert len(findings) == 1
+        assert findings[0].severity == "critical"
+        assert findings[0].check_type == "open_relay"
+        assert "Open mail relay" in findings[0].title
+
+    def test_relay_rejected_returns_empty(self, db):
+        from apps.domain_security.scanner import _check_open_relay
+        session = self._make_session(db)
+
+        smtp_mock = MagicMock()
+        smtp_mock.__enter__ = MagicMock(return_value=smtp_mock)
+        smtp_mock.__exit__ = MagicMock(return_value=False)
+        smtp_mock.ehlo.return_value = (250, b"ok")
+        smtp_mock.mail.return_value = (250, b"ok")
+        smtp_mock.rcpt.return_value = (554, b"relay denied")  # rejected
+
+        with patch("apps.domain_security.scanner._resolve", return_value=self._mock_mx()), \
+             patch("apps.domain_security.scanner.smtplib.SMTP", return_value=smtp_mock):
+            findings = _check_open_relay(session, "example.com")
+
+        assert findings == []
+
+    def test_smtp_connection_refused_returns_empty(self, db):
+        from apps.domain_security.scanner import _check_open_relay
+        session = self._make_session(db)
+
+        with patch("apps.domain_security.scanner._resolve", return_value=self._mock_mx()), \
+             patch("apps.domain_security.scanner.smtplib.SMTP", side_effect=ConnectionRefusedError):
+            findings = _check_open_relay(session, "example.com")
+
+        assert findings == []
+
+    def test_mail_from_rejected_returns_empty(self, db):
+        from apps.domain_security.scanner import _check_open_relay
+        session = self._make_session(db)
+
+        smtp_mock = MagicMock()
+        smtp_mock.__enter__ = MagicMock(return_value=smtp_mock)
+        smtp_mock.__exit__ = MagicMock(return_value=False)
+        smtp_mock.ehlo.return_value = (250, b"ok")
+        smtp_mock.mail.return_value = (550, b"not allowed")  # MAIL FROM rejected
+
+        with patch("apps.domain_security.scanner._resolve", return_value=self._mock_mx()), \
+             patch("apps.domain_security.scanner.smtplib.SMTP", return_value=smtp_mock):
+            findings = _check_open_relay(session, "example.com")
+
+        assert findings == []
 
 
 # ---------------------------------------------------------------------------
