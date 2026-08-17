@@ -14,6 +14,7 @@ used independently; it is NOT imported here.
 
 import datetime
 import logging
+import smtplib
 import time
 import urllib.parse
 
@@ -401,48 +402,146 @@ def _check_dkim(session, domain) -> list:
 
 
 def _check_mta_sts(session, domain) -> list:
-    """Check MTA-STS — enforces TLS for inbound email delivery."""
+    """Check MTA-STS — enforces TLS for inbound email delivery.
+
+    Two-step check per RFC 8461:
+    1. DNS TXT record at _mta-sts.domain must exist (signals policy presence)
+    2. Policy file at https://mta-sts.domain/.well-known/mta-sts.txt must be
+       reachable and have mode: enforce (mode is in the file, NOT the DNS record)
+    """
     findings = []
     mta_sts_records = _get_txt_record(f"_mta-sts.{domain}")
-    mta_sts = next((r for r in mta_sts_records if r.startswith("v=STSv1")), None)
+    mta_sts_dns = next((r for r in mta_sts_records if r.startswith("v=STSv1")), None)
 
-    if not mta_sts:
+    if not mta_sts_dns:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
-            severity="medium",
+            severity="high",
             title="MTA-STS not configured",
             description=(
-                f"{domain} has no MTA-STS policy. Inbound email delivery is not protected "
-                "against TLS downgrade attacks — a MITM can force plaintext email delivery "
-                "even when your mail server supports TLS."
+                f"{domain} has no MTA-STS policy. Email delivery to your mail server is not "
+                "protected against TLS downgrade attacks — a network attacker between mail "
+                "servers can force plaintext delivery and intercept email in transit."
             ),
             remediation=(
-                f"1. Add TXT record at _mta-sts.{domain}: v=STSv1; id=<timestamp>\n"
-                f"2. Publish policy at https://mta-sts.{domain}/.well-known/mta-sts.txt\n"
-                "   Content: version: STSv1\\nmode: enforce\\nmx: mail.{domain}\\nmax_age: 86400"
+                f"1. Add DNS TXT record at _mta-sts.{domain}: v=STSv1; id=<timestamp>\n"
+                f"2. Host policy file at https://mta-sts.{domain}/.well-known/mta-sts.txt\n"
+                "   Content: version: STSv1\\nmode: enforce\\nmx: <your-mx-host>\\nmax_age: 86400"
             ),
         ))
-    else:
-        if "mode=testing" in mta_sts:
-            findings.append(Finding(
-            session=session, source="domain_security", target=domain, check_type="email",
-                severity="low",
-                title="MTA-STS is in testing mode",
-                description="MTA-STS mode=testing reports failures but does not enforce TLS.",
-                remediation="Change MTA-STS mode from testing to enforce once verified.",
-                extra={"mta_sts_record": mta_sts},
-            ))
-        elif "mode=none" in mta_sts:
-            findings.append(Finding(
-            session=session, source="domain_security", target=domain, check_type="email",
-                severity="medium",
-                title="MTA-STS is in none mode (disabled)",
-                description="MTA-STS mode=none disables enforcement.",
-                remediation="Change MTA-STS mode to enforce.",
-                extra={"mta_sts_record": mta_sts},
-            ))
+        return findings
 
+    # DNS record present — fetch and validate the policy file
+    policy_url = f"https://mta-sts.{domain}/.well-known/mta-sts.txt"
+    try:
+        resp = requests.get(policy_url, timeout=_HTTP_TIMEOUT)
+        resp.raise_for_status()
+        policy_text = resp.text
+    except Exception:
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
+            severity="high",
+            title="MTA-STS policy file not reachable",
+            description=(
+                f"{domain} has an MTA-STS DNS record but the policy file at {policy_url} "
+                "is not reachable. Sending mail servers cannot retrieve the policy and "
+                "will not enforce TLS — the DNS record alone provides no protection."
+            ),
+            remediation=(
+                f"Host the policy file at https://mta-sts.{domain}/.well-known/mta-sts.txt "
+                "with a valid TLS certificate. The file must be publicly accessible over HTTPS."
+            ),
+            extra={"policy_url": policy_url},
+        ))
+        return findings
+
+    # Parse mode field — this is what actually controls enforcement
+    mode = None
+    for line in policy_text.splitlines():
+        if line.strip().lower().startswith("mode:"):
+            mode = line.split(":", 1)[1].strip().lower()
+            break
+
+    if mode == "enforce":
+        return []  # correctly configured
+
+    title_map = {
+        "testing": "MTA-STS is in testing mode — TLS not enforced",
+        "none": "MTA-STS is disabled (mode: none)",
+    }
+    description_map = {
+        "testing": (
+            f"{domain} MTA-STS policy is set to mode: testing. Failures are reported "
+            "but TLS is not enforced — email can still be downgraded to plaintext."
+        ),
+        "none": (
+            f"{domain} MTA-STS policy is explicitly disabled (mode: none). "
+            "No TLS is enforced on inbound email delivery."
+        ),
+    }
+    findings.append(Finding(
+        session=session, source="domain_security", target=domain, check_type="email",
+        severity="medium",
+        title=title_map.get(mode, "MTA-STS policy mode is invalid or missing"),
+        description=description_map.get(mode, (
+            f"{domain} MTA-STS policy at {policy_url} has an unrecognised or missing "
+            f"mode field (found: {mode!r}). Sending servers will not enforce TLS."
+        )),
+        remediation="Update the MTA-STS policy file: set mode: enforce",
+        extra={"policy_url": policy_url, "mode": mode},
+    ))
     return findings
+
+
+def _check_open_relay(session, domain) -> list:
+    """Attempt unauthenticated SMTP relay through the domain's MX server.
+
+    Connects to port 25 and sends a relay probe using two external addresses.
+    A 250 response to the RCPT TO confirms the server relays for anyone.
+    """
+    mx_records = _resolve(domain, "MX")
+    if not mx_records:
+        return []
+
+    try:
+        mx_host = str(sorted(mx_records, key=lambda r: r.preference)[0].exchange).rstrip(".")
+    except Exception:
+        return []
+
+    try:
+        with smtplib.SMTP(mx_host, 25, timeout=10) as smtp:
+            smtp.ehlo("probe.openeasd.local")
+            code, _ = smtp.mail("probe@relay-test.openeasd.local")
+            if code != 250:
+                return []
+            code, _ = smtp.rcpt("probe@relay-check.openeasd.local")
+            if code == 250:
+                return [Finding(
+                    session=session, source="domain_security", target=mx_host,
+                    check_type="open_relay", severity="critical",
+                    title="Open mail relay detected",
+                    description=(
+                        f"The mail server {mx_host} (MX for {domain}) accepted a relay "
+                        "attempt from an external address to an external address. "
+                        "Anyone on the internet can send email through this server — "
+                        "enabling spam campaigns and phishing attacks that appear to "
+                        "originate from your infrastructure, and risking IP blacklisting."
+                    ),
+                    remediation=(
+                        "Immediately restrict SMTP relay on your mail server:\n"
+                        "1. Configure your MTA to only relay for authenticated users or trusted IPs\n"
+                        "2. Postfix: set mynetworks and smtpd_relay_restrictions = permit_mynetworks, "
+                        "permit_sasl_authenticated, reject\n"
+                        "3. Exchange: disable anonymous relay in receive connectors\n"
+                        "4. Verify: telnet <mx-host> 25 → EHLO → MAIL FROM external → "
+                        "RCPT TO external → must receive 5xx rejection"
+                    ),
+                    extra={"mx_host": mx_host, "domain": domain},
+                )]
+    except Exception:
+        pass
+
+    return []
 
 
 def _check_tls_rpt(session, domain) -> list:
@@ -501,6 +600,7 @@ def _check_email(session, domain) -> list:
     findings += _check_dmarc(session, domain)
     findings += _check_dkim(session, domain)
     findings += _check_mta_sts(session, domain)
+    findings += _check_open_relay(session, domain)
     findings += _check_tls_rpt(session, domain)
     findings += _check_bimi(session, domain)
     return findings
