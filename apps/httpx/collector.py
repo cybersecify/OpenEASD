@@ -49,6 +49,8 @@ def collect(session, host_ports: list[str]) -> list[dict]:
         "-content-length",
         "-no-color",
         "-timeout", "10",
+        # Honest scanner identity so a target can allowlist us deliberately.
+        "-H", f"User-Agent: {getattr(settings, 'OPENEASD_USER_AGENT', 'OpenEASD/1.0')}",
     ]
     logger.info(f"[httpx:{session.id}] Probing {len(host_ports)} host:port pairs")
 

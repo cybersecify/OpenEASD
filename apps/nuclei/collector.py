@@ -135,6 +135,9 @@ def collect(session) -> list[dict]:
         "-retries", "1",
         "-rate-limit", str(RATE_LIMIT),
         "-c", str(CONCURRENCY),
+        # Honest scanner identity so a target can allowlist us deliberately.
+        # Note: templates that hard-set their own User-Agent are not overridden.
+        "-H", f"User-Agent: {getattr(settings, 'OPENEASD_USER_AGENT', 'OpenEASD/1.0')}",
     ]
     logger.info(f"[nuclei:{session.id}] Scanning {len(targets)} web targets")
 

@@ -265,6 +265,37 @@ class TestReportCtaPdfContext:
         assert "https://example.com/help" in captured["html"]
 
 
+@pytest.mark.django_db
+class TestScanCoverageBlock:
+    """The report renders a Scan Coverage block only when edge blocking was seen."""
+
+    def _capture(self, authed_client, session):
+        captured = {}
+
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert res.status_code == 200
+        return captured["html"]
+
+    def test_absent_when_no_blocking(self, authed_client, session, findings):
+        html = self._capture(authed_client, session)
+        assert "Scan Coverage" not in html
+
+    def test_present_when_blocked(self, authed_client, session, findings):
+        session.endpoints_probed = 41
+        session.endpoints_blocked = 12
+        session.waf_vendor = "cloudflare"
+        session.save(update_fields=["endpoints_probed", "endpoints_blocked", "waf_vendor"])
+        html = self._capture(authed_client, session)
+        assert "Scan Coverage" in html
+        assert "12 of 41 probed endpoints" in html
+        assert "fingerprint suggests Cloudflare" in html
+
+
 class TestPdfSeverityCounts:
     """Regression: the severity summary must count EVERY finding, not collapse
     to one per severity. The findings queryset is ordered by

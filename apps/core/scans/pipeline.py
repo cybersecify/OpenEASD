@@ -86,15 +86,49 @@ def _count_all_findings(session) -> int:
 # Post-scan finalisation
 # ---------------------------------------------------------------------------
 
+def _compute_coverage(session):
+    """Aggregate httpx probe reachability into per-session coverage counts (C2).
+
+    Sets endpoints_probed / endpoints_blocked and a dominant waf_vendor guess.
+    Only httpx-sourced URLs carry a reachability value; other sources are ignored.
+    """
+    from collections import Counter
+    from apps.core.web_assets.models import URL
+    from apps.httpx.waf import INTERFERED, fingerprint_vendor
+
+    probes = list(
+        URL.objects.filter(session=session, source="httpx")
+        .exclude(reachability="")
+        .values_list("reachability", "title", "web_server")
+    )
+    session.endpoints_probed = len(probes)
+    session.endpoints_blocked = sum(1 for r, _, _ in probes if r in INTERFERED)
+
+    # Dominant vendor among interfered probes; "" when nothing was blocked.
+    vendors = Counter(
+        fingerprint_vendor(title, ws) or "unidentified"
+        for r, title, ws in probes
+        if r in INTERFERED
+    )
+    session.waf_vendor = vendors.most_common(1)[0][0] if vendors else ""
+
+
 def _finalize_session(session):
     """Post-scan: count findings, mark completed, detect deltas, build insights, dispatch alerts."""
     session_id = session.id
     total = _count_all_findings(session)
     session.total_findings = total
+    _compute_coverage(session)
     session.status = "completed"
     session.end_time = django_tz.now()
-    session.save(update_fields=["total_findings", "status", "end_time"])
-    logger.info(f"[scan:{session_id}] Completed — {total} findings")
+    session.save(update_fields=[
+        "total_findings", "status", "end_time",
+        "waf_vendor", "endpoints_probed", "endpoints_blocked",
+    ])
+    logger.info(
+        f"[scan:{session_id}] Completed — {total} findings, "
+        f"{session.endpoints_blocked}/{session.endpoints_probed} endpoints blocked"
+    )
 
     # Subscans run only a subset of tools against copied parent assets. Delta
     # detection, insights, and alerts all assume a full scan's finding set — a

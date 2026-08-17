@@ -30,6 +30,8 @@ def collect(session, urls: list[str]) -> list[dict]:
         "-silent",
         "-depth", "3",
         "-timeout", "30",
+        # Honest scanner identity so a target can allowlist us deliberately.
+        "-H", f"User-Agent: {getattr(settings, 'OPENEASD_USER_AGENT', 'OpenEASD/1.0')}",
     ]
     logger.info(f"[katana:{session.id}] Crawling {len(urls)} seed URLs")
 

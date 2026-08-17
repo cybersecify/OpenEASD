@@ -37,6 +37,15 @@ class TestKatanaCollector:
         records = collect(sess, [])
         assert records == []
 
+    def test_sends_honest_user_agent(self):
+        sess = self._session()
+        with patch("apps.katana.collector.subprocess.run", return_value=self._fake_run([])) as run:
+            collect(sess, ["https://example.com"])
+        cmd = run.call_args[0][0]
+        assert "-H" in cmd
+        ua = cmd[cmd.index("-H") + 1]
+        assert ua.startswith("User-Agent: OpenEASD/")
+
     def test_raises_on_binary_not_found(self):
         from apps.core.workflows.exceptions import ToolBinaryMissing
         sess = self._session()

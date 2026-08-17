@@ -132,6 +132,11 @@ def _serialize_session(session) -> dict:
         "end_time": session.end_time.isoformat() if session.end_time else None,
         "status": session.status,
         "total_findings": session.total_findings,
+        "coverage": {
+            "waf_vendor": session.waf_vendor,
+            "endpoints_probed": session.endpoints_probed,
+            "endpoints_blocked": session.endpoints_blocked,
+        },
     }
 
 
