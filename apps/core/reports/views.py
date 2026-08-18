@@ -274,10 +274,13 @@ def _group_findings_by_issue(findings):
                 if c and c not in cves:
                     cves.append(c)
         grp["cves"] = cves
-        # Affected endpoints as a pill grid (3 per row) — xhtml2pdf renders
-        # bordered table cells reliably but not inline-block spans.
+        # Affected endpoints as a pill grid (3 per row). Capped at 50 per group
+        # to prevent OOM when a single finding fires on thousands of URLs.
         endpoints = [(f.url.url if f.url else f.target) for f in grp["instances"]]
-        grp["endpoint_rows"] = [endpoints[i:i + 3] for i in range(0, len(endpoints), 3)]
+        cap = 50
+        shown = endpoints[:cap]
+        grp["endpoint_rows"] = [shown[i:i + 3] for i in range(0, len(shown), 3)]
+        grp["endpoint_overflow"] = max(0, len(endpoints) - cap)
     return result
 
 
