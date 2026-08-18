@@ -254,6 +254,7 @@
       <table class="ep-grid">
         {% for row in g.endpoint_rows %}<tr>{% for ep in row %}<td class="ep-cell">{{ ep }}</td>{% endfor %}</tr>{% endfor %}
       </table>
+      {% if g.endpoint_overflow %}<p style="font-size:0.8em;color:#666;margin:4px 0 0;">… and {{ g.endpoint_overflow }} more endpoint{{ g.endpoint_overflow|pluralize }} (see CSV export for full list)</p>{% endif %}
     </td></tr>
   </table>
 
