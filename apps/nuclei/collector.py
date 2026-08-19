@@ -117,6 +117,15 @@ def collect(session) -> list[dict]:
     # Deduplicate
     targets = sorted(set(urls))
 
+    # Cap targets to avoid nuclei timing out on very large domains (e.g. 270k URLs).
+    _URL_CAP = 5000
+    if len(targets) > _URL_CAP:
+        logger.warning(
+            f"[nuclei:{session.id}] Capping {len(targets)} targets to {_URL_CAP} "
+            f"to stay within the {TIMEOUT}s time budget"
+        )
+        targets = targets[:_URL_CAP]
+
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("\n".join(targets))
         tmp = f.name
