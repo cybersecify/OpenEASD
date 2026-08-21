@@ -180,6 +180,21 @@ class TestAmassAnalyzer:
         objs = analyze(sess, records)
         assert len(objs) == 1
 
+    def test_drops_out_of_scope_hosts(self):
+        """Scope boundary: only the target domain + its subdomains are kept;
+        suffix-bypass tricks are rejected."""
+        from apps.core.scans.models import ScanSession
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        records = [
+            {"host": "api.example.com"},        # in scope
+            {"host": "example.com"},            # in scope (apex)
+            {"host": "notexample.com"},         # out — suffix bypass
+            {"host": "example.com.evil.com"},   # out — prefix trick
+            {"host": "other.org"},              # out
+        ]
+        hosts = {o.subdomain for o in analyze(sess, records)}
+        assert hosts == {"api.example.com", "example.com"}
+
     def test_normalizes_to_lowercase(self):
         from apps.core.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
