@@ -93,6 +93,7 @@ INSTALLED_APPS = [
     "apps.nuclei",
     "apps.nuclei_network",
     "apps.web_checker",
+    "apps.js_secrets",
     "apps.cve_intel",
 ]
 
@@ -263,6 +264,7 @@ TOOL_NUCLEI = config("TOOL_NUCLEI", default="nuclei")
 TOOL_AMASS = config("TOOL_AMASS", default="amass")
 TOOL_ALTERX = config("TOOL_ALTERX", default="alterx")
 TOOL_CLOUD_ENUM = config("TOOL_CLOUD_ENUM", default="cloud_enum")
+TOOL_GITLEAKS = config("TOOL_GITLEAKS", default="gitleaks")
 
 # Honest scanner identity. Sent as the User-Agent on the tools that probe the
 # target's web surface (httpx, katana, nuclei) so a customer can deliberately
