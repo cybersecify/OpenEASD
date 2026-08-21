@@ -45,6 +45,7 @@ ARG NUCLEI_VERSION=3.2.9
 ARG AMASS_VERSION=4.2.0
 ARG ALTERX_VERSION=0.0.4
 ARG KATANA_VERSION=1.6.1
+ARG GITLEAKS_VERSION=8.30.1
 
 RUN curl -fsSL "https://github.com/projectdiscovery/subfinder/releases/download/v${SUBFINDER_VERSION}/subfinder_${SUBFINDER_VERSION}_linux_${TARGETARCH}.zip" \
     -o subfinder.zip && unzip subfinder.zip subfinder && rm subfinder.zip
@@ -70,7 +71,12 @@ RUN curl -fsSL "https://github.com/projectdiscovery/katana/releases/download/v${
 RUN curl -fsSL "https://github.com/owasp-amass/amass/releases/download/v${AMASS_VERSION}/amass_Linux_${TARGETARCH}.zip" \
     -o amass.zip && unzip amass.zip && mv amass_Linux_${TARGETARCH}/amass . && rm -rf amass.zip amass_Linux_${TARGETARCH}
 
-RUN chmod +x subfinder dnsx naabu httpx nuclei amass alterx katana
+# gitleaks — MIT, static Go binary. Release assets use x64/arm64 (not amd64).
+RUN GLARCH="$([ "$TARGETARCH" = "amd64" ] && echo x64 || echo arm64)" \
+    && curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_${GLARCH}.tar.gz" \
+    -o gitleaks.tar.gz && tar -xzf gitleaks.tar.gz gitleaks && rm gitleaks.tar.gz
+
+RUN chmod +x subfinder dnsx naabu httpx nuclei amass alterx katana gitleaks
 
 # ---------------------------------------------------------------------------
 # Stage 2b: build subzy from source (no prebuilt binaries available upstream).

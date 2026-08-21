@@ -256,11 +256,12 @@ ProjectDiscovery tools installed via `pdtm` at `~/.pdtm/go/bin/`:
 
 OWASP/other tools:
 - `amass` — active subdomain enumeration (install separately: `go install -v github.com/owasp-amass/amass/v4/...@master`)
+- `gitleaks` — hardcoded-secret detection over fetched JS assets (MIT, static Go binary from `github.com/gitleaks/gitleaks` releases; baked into the Docker image)
 
 System binary:
 - `nmap` (Homebrew at `/opt/homebrew/bin/nmap`)
 
-Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_KATANA`, `TOOL_NMAP`, `TOOL_NUCLEI`, `TOOL_AMASS`, `TOOL_ALTERX`, `TOOL_CLOUD_ENUM` env vars.
+Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_KATANA`, `TOOL_NMAP`, `TOOL_NUCLEI`, `TOOL_AMASS`, `TOOL_ALTERX`, `TOOL_CLOUD_ENUM`, `TOOL_GITLEAKS` env vars.
 
 **Honest scanner identity:** httpx/katana/nuclei send `OPENEASD_USER_AGENT`
 (default `OpenEASD/1.0 (+https://cybersecify.com/openeasd)`) so a target can
@@ -354,7 +355,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (20 registered tools)
+### Tool apps (21 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
@@ -377,6 +378,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/katana/` | 10 | Web Exposure | No | Web crawling, endpoint discovery |
 | `apps/nuclei/` | 11 | Web Exposure | Yes | Web vuln scan (community templates) |
 | `apps/web_checker/` | 11 | Web Exposure | Yes | Security headers, cookies, CORS |
+| `apps/js_secrets/` | 11 | Web Exposure | Yes | Hardcoded-secret detection — fetches discovered `.js` assets and runs gitleaks over them; secret is redacted before storage |
 | `apps/cve_intel/` | 12 | Prioritization | No | Enriches CVE findings in place with EPSS scores + CISA KEV flags (no new findings) |
 
 ### Tool app structure
@@ -392,8 +394,11 @@ apps/<tool>/
 ## Scan pipeline
 
 All scans run through the **dynamic workflow system**. The default "Full Scan"
-workflow executes all 19 tools in phase order. Custom workflows can include
-any subset of tools.
+workflow executes the full tool set in phase order. Custom workflows can include
+any subset of tools. (A newly registered tool is available to any workflow, but
+only joins the default Full Scan when a data migration appends it — see
+`workflows/migrations/0021_*`; `asn_discovery` and `js_secrets` are registered
+but not yet in the default set.)
 
 ```
 Phase 1  domain_security    → Finding (DNS/email/RDAP)
@@ -415,6 +420,7 @@ Phase 9  historical_urls    → URL (gau + waybackurls — archived endpoints)
 Phase 10 katana             → URL (web crawling, endpoint discovery)
 Phase 11 nuclei             → Finding (web vulns via templates on URLs)
 Phase 11 web_checker        → Finding (headers, cookies, CORS on URLs)
+Phase 11 js_secrets         → Finding (gitleaks over fetched .js assets — secret redacted)
 ```
 
 ### Scan flow
@@ -526,6 +532,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_domains.py` | 13 | Domain CRUD |
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
 | `tests/unit/test_httpx.py` | 16 | JSON parser, Port lookup, Subdomain link, honest UA, tech-detect flag + technology storage/dedup |
+| `tests/unit/test_js_secrets.py` | 26 | `.js` URL filter + cap, fetch-error handling, gitleaks JSON parser, analyzer Findings + dedup + secret redaction (full secret never stored), scanner, binary-missing/timeout |
 | `tests/unit/test_k8s_manifests.py` | 57 | k8s manifest structure, envFrom order, probes, secret/configmap split |
 | `tests/unit/test_katana.py` | 19 | JSONL parser, Port/Subdomain FK links, scanner orchestrator, honest UA |
 | `tests/unit/test_management_commands.py` | 11 | `verify_tools` + other management commands |
@@ -558,4 +565,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: 1118 tests** (1067 fast + 51 slow domain_security)
+**Total: 1144 tests** (1093 fast + 51 slow domain_security)
