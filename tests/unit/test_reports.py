@@ -354,6 +354,68 @@ class TestPdfSeverityCounts:
         assert "3 raw scanner detections into 1 unique issue" in html
 
 
+class TestTopRisksAndIntel:
+    """The 'Fix First' block ranks by priority (KEV dominates) and the report
+    surfaces EPSS/KEV threat intel collected by cve_intel."""
+
+    def _mk(self, session, **kw):
+        from apps.core.findings.models import Finding
+        base = dict(
+            session=session, source="tls_checker", check_type="unencrypted_service",
+            severity="critical", target="1.1.1.1:5432", description="d", remediation="r",
+            status="open", title="Unencrypted POSTGRESQL", extra={},
+        )
+        base.update(kw)
+        return Finding.objects.create(**base)
+
+    def _groups(self, session):
+        from apps.core.reports.views import _group_findings_by_issue
+        from apps.core.findings.models import Finding
+        return _group_findings_by_issue(Finding.objects.filter(session=session))
+
+    def test_epss_kev_rollup_onto_group(self, db, session):
+        self._mk(session, source="nmap", check_type="cve", title="OpenSSL CVE",
+                 extra={"cisa_kev": True, "epss_percentile": 0.97})
+        grp = self._groups(session)[0]
+        assert grp["cisa_kev"] is True
+        assert grp["epss_percentile"] == 0.97
+
+    def test_kev_outranks_non_kev_critical(self, db, session):
+        from apps.core.reports.views import _top_risks
+        self._mk(session, title="Plain critical", extra={})
+        self._mk(session, source="nmap", check_type="cve", severity="medium",
+                 title="Exploited medium", target="2.2.2.2:80",
+                 extra={"cisa_kev": True, "epss_percentile": 0.99})
+        top = _top_risks(self._groups(session))
+        assert top[0]["title"] == "Exploited medium"  # KEV dominates severity
+        assert top[0]["impact"]  # plain-language line attached
+
+    def test_top_risks_excludes_low_medium_noise(self, db, session):
+        from apps.core.reports.views import _top_risks
+        self._mk(session, title="Crit", extra={})
+        self._mk(session, severity="low", check_type="missing_referrer_policy",
+                 title="Low thing", target="x", extra={})
+        titles = [g["title"] for g in _top_risks(self._groups(session))]
+        assert "Crit" in titles
+        assert "Low thing" not in titles  # low/medium without KEV are not "fix first"
+
+    def test_report_renders_fix_first_and_kev_badge(self, authed_client, session):
+        self._mk(session, source="nmap", check_type="cve", title="Exploited CVE",
+                 extra={"cisa_kev": True, "epss_percentile": 0.98})
+        captured = {}
+
+        def cap(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.reports.views._render_pdf", side_effect=cap):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert res.status_code == 200
+        assert "Priority Actions" in captured["html"]
+        assert "KEV" in captured["html"]
+
+
+@pytest.mark.django_db
 class TestFindingGrouping:
     """Repeated issues (identical write-up across targets) collapse into one
     block with a table of affected targets, instead of one full card each."""
