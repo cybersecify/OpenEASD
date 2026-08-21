@@ -1,0 +1,90 @@
+name: Security Dependency Bump
+
+# Keeps the lockfile ahead of the vulnerability feed. pip-audit is a hard gate
+# in ci.yml, and fresh CVEs land between the Monday dependabot runs — so an
+# unrelated PR keeps getting ambushed by "pip-audit found a new CVE". This job
+# runs pip-audit on a schedule, bumps only the packages that have an advisory,
+# and opens a PR with the updated lock. The gate stays; the surprise goes.
+on:
+  schedule:
+    - cron: '0 6 * * 2,5' # Tuesday & Friday 06:00 UTC (between the Monday dependabot runs)
+  workflow_dispatch: # manual trigger
+
+# Least-privilege (matches ci.yml / refresh-backports.yml posture)
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  security-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh && echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Bump packages with active advisories
+        id: bump
+        run: |
+          python - <<'PY'
+          import json, os, subprocess
+
+          # Same ignore as ci.yml (disputed PyJWT CVE, no fix available).
+          IGNORE = ["PYSEC-2025-183"]
+          audit = subprocess.run(
+              ["uv", "run", "pip-audit", *[a for v in IGNORE for a in ("--ignore-vuln", v)],
+               "--format", "json"],
+              capture_output=True, text=True,
+          )
+          data = json.loads(audit.stdout or "{}")
+          # Vulnerable packages, excluding the local project (not on PyPI).
+          pkgs = sorted({
+              d["name"] for d in data.get("dependencies", [])
+              if d.get("vulns") and d["name"] != "openeasd"
+          })
+          print("Vulnerable packages:", pkgs or "none")
+
+          for pkg in pkgs:
+              print(f"Upgrading {pkg}…")
+              subprocess.run(["uv", "lock", "--upgrade-package", pkg], check=False)
+
+          # Did the lock actually change?
+          changed = subprocess.run(
+              ["git", "diff", "--quiet", "--", "uv.lock"]
+          ).returncode != 0
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write(f"changed={'true' if changed else 'false'}\n")
+              fh.write(f"pkgs={' '.join(pkgs)}\n")
+          PY
+
+      - name: Verify audit is clean after bump
+        if: steps.bump.outputs.changed == 'true'
+        run: uv run pip-audit --ignore-vuln PYSEC-2025-183
+
+      - name: Open pull request
+        if: steps.bump.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@11fa467881691ac900904a2eea702c5ea848ad13  # v6.0.5
+        with:
+          commit-message: "chore(deps): security bump ${{ steps.bump.outputs.pkgs }}"
+          title: "chore(deps): scheduled security bump"
+          body: |
+            Automated lockfile bump for packages with an active advisory, so the
+            pip-audit gate in CI stops ambushing unrelated PRs.
+
+            Bumped: `${{ steps.bump.outputs.pkgs }}`
+
+            pip-audit was re-run after the bump and passed. CI will re-verify.
+            Triggered by `.github/workflows/security-bump.yml`.
+          branch: automated-security-bump
+          base: main
+          labels: "dependencies, security"
