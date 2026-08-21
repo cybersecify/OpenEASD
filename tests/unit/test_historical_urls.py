@@ -252,6 +252,30 @@ class TestAnalyze:
         assert len(objs) == 1
         assert objs[0].scheme == "https"
 
+    def test_drops_out_of_scope_urls(self):
+        sess = self._session()
+        urls = [
+            "https://example.com/page",
+            "https://cid.karnataka.gov.in/cyber-crime",
+            "https://linkedin.com/company/example",
+            "https://aws.amazon.com/console",
+            "https://sub.example.com/api",
+        ]
+        objs = analyze(sess, urls)
+        hosts = {o.host for o in objs}
+        assert hosts == {"example.com", "sub.example.com"}
+        assert "cid.karnataka.gov.in" not in hosts
+        assert "linkedin.com" not in hosts
+        assert "aws.amazon.com" not in hosts
+
+    def test_keeps_subdomains_of_target(self):
+        sess = self._session()
+        objs = analyze(sess, [
+            "https://app.example.com/login",
+            "https://api.example.com/v1/data",
+        ])
+        assert len(objs) == 2
+
 
 # ---------------------------------------------------------------------------
 # Scanner
@@ -278,7 +302,7 @@ class TestScanner:
         sess = self._session()
         Subdomain.objects.create(
             session=sess, domain="example.com",
-            subdomain="www.example.com", source="subfinder",
+            subdomain="www.example.com", source="subfinder", is_active=True,
         )
         captured = {}
 
@@ -296,7 +320,7 @@ class TestScanner:
         sess = self._session()
         Subdomain.objects.create(
             session=sess, domain="example.com",
-            subdomain="blog.example.com", source="subfinder",
+            subdomain="blog.example.com", source="subfinder", is_active=True,
         )
         captured = {}
 
@@ -316,7 +340,7 @@ class TestScanner:
         sess = self._session()
         Subdomain.objects.create(
             session=sess, domain="example.com",
-            subdomain="blog.example.com", source="subfinder",
+            subdomain="blog.example.com", source="subfinder", is_active=True,
         )
         fake_urls = ["https://blog.example.com/old-post", "https://blog.example.com/api/v1"]
 
@@ -331,7 +355,7 @@ class TestScanner:
         sess = self._session()
         Subdomain.objects.create(
             session=sess, domain="example.com",
-            subdomain="sub.example.com", source="subfinder",
+            subdomain="sub.example.com", source="subfinder", is_active=True,
         )
         with patch("apps.historical_urls.scanner.collect", return_value=[]):
             result = run_historical_urls(sess)
@@ -343,7 +367,7 @@ class TestScanner:
         # apex domain recorded as a subdomain row (subfinder/amass emit this)
         Subdomain.objects.create(
             session=sess, domain="example.com",
-            subdomain="example.com", source="subfinder",
+            subdomain="example.com", source="subfinder", is_active=True,
         )
         captured = {}
 

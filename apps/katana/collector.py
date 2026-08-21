@@ -32,6 +32,9 @@ def collect(session, urls: list[str]) -> list[dict]:
         "-timeout", "30",
         # Honest scanner identity so a target can allowlist us deliberately.
         "-H", f"User-Agent: {getattr(settings, 'OPENEASD_USER_AGENT', 'OpenEASD/1.0')}",
+        # Keep the crawl within the registered domain — don't wander off-scope
+        # into third-party hosts linked from the target.
+        "-field-scope", "rdn",
     ]
     logger.info(f"[katana:{session.id}] Crawling {len(urls)} seed URLs")
 
