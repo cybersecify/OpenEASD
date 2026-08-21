@@ -368,6 +368,20 @@ class TestFindingGrouping:
         base.update(kw)
         return Finding.objects.create(**base)
 
+    def test_endpoints_capped_at_50_with_overflow(self, db, session):
+        """A finding firing on thousands of targets caps shown endpoints at 50
+        (OOM guard) and records the overflow count for the 'N more' note."""
+        from apps.core.reports.views import _group_findings_by_issue
+        from apps.core.findings.models import Finding
+        for i in range(120):
+            self._mk(session, target=f"10.0.0.{i}:443",
+                     title=f"Unencrypted HTTPS on 10.0.0.{i}:443")
+        findings = Finding.objects.filter(session=session)
+        grp = _group_findings_by_issue(findings)[0]
+        shown = sum(len(row) for row in grp["endpoint_rows"])
+        assert shown == 50
+        assert grp["endpoint_overflow"] == 70
+
     def test_identical_writeups_collapse_and_strip_target(self, db, session):
         from apps.core.reports.views import _group_findings_by_issue
         from apps.core.findings.models import Finding
