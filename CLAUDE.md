@@ -515,7 +515,7 @@ GET  /api/notifications/alerts/           — alert history
 |---|---|---|
 | `tests/unit/test_alerts.py` | 7 | Slack/Teams dispatcher |
 | `tests/unit/test_alterx.py` | 17 | collector (binary missing, timeout, happy path, stdin), analyzer, scanner |
-| `tests/unit/test_amass.py` | 19 | Active subdomain enum collector, analyzer, scanner |
+| `tests/unit/test_amass.py` | 20 | Active subdomain enum collector, analyzer, scanner |
 | `tests/unit/test_asn_discovery.py` | 22 | ASN/CIDR discovery — org derivation, ASN/CIDR parsing, collector (binary missing, timeout, two-step happy path), analyzer (info Finding per ASN, safe-scope remediation), scanner |
 | `tests/unit/test_assets.py` | 12 | Asset model constraints, FK chains, cascade delete |
 | `tests/unit/test_cloud_assets.py` | 20 | cloud_assets collector, analyzer, keyword derivation, scanner |
@@ -558,4 +558,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: 1117 tests** (1066 fast + 51 slow domain_security)
+**Total: 1118 tests** (1067 fast + 51 slow domain_security)
