@@ -519,7 +519,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_cve_intel.py` | 24 | EPSS/KEV enrichment, CVE extraction (both finding shapes), feed-failure fallback |
 | `tests/unit/test_dnsx.py` | 21 | Public IP filter, analyzer, scanner |
 | `tests/unit/test_domain_authorization.py` | 9 | DomainAuthorization model + scan-entry gating |
-| `tests/unit/test_domain_security.py` | 41 | DNS/email/RDAP — **slow, real network** |
+| `tests/unit/test_domain_security.py` | 51 | DNS/email/RDAP — **slow, real network** |
 | `tests/unit/test_domains.py` | 13 | Domain CRUD |
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
 | `tests/unit/test_httpx.py` | 12 | JSON parser, Port lookup, Subdomain link, honest UA |
@@ -555,4 +555,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: 1078 tests** (1037 fast + 41 slow domain_security)
+**Total: 1088 tests** (1037 fast + 51 slow domain_security)
