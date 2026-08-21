@@ -77,6 +77,7 @@ INSTALLED_APPS = [
     "apps.domain_security",
     "apps.subfinder",
     "apps.amass",
+    "apps.asn_discovery",
     "apps.alterx",
     "apps.dnsx",
     "apps.takeover_check",

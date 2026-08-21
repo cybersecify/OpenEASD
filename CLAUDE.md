@@ -354,13 +354,14 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (19 registered tools)
+### Tool apps (20 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
 | `apps/domain_security/` | 1 | Domain Intelligence | Yes | DNS, email, RDAP checks |
 | `apps/subfinder/` | 2 | Surface Enumeration | No | Passive subdomain enumeration |
 | `apps/amass/` | 2 | Surface Enumeration | No | Active subdomain enumeration |
+| `apps/asn_discovery/` | 2 | Surface Enumeration | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
 | `apps/alterx/` | 2 | Surface Enumeration | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
 | `apps/dnsx/` | 3 | Surface Enumeration | No | DNS resolution, public IP filtering |
 | `apps/takeover_check/` | 4 | Surface Enumeration | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
@@ -398,6 +399,7 @@ any subset of tools.
 Phase 1  domain_security    → Finding (DNS/email/RDAP)
 Phase 2  subfinder          → Subdomain (passive enumeration)
 Phase 2  amass              → Subdomain (active enumeration)
+Phase 2  asn_discovery      → Finding (owned ASN/CIDR ranges via amass intel — informational)
 Phase 2  alterx             → Subdomain (permutation candidates from existing subdomains)
 Phase 3  dnsx               → IPAddress (public-only filter)
 Phase 4  takeover_check     → Finding (subzy — dangling DNS → unclaimed cloud)
@@ -514,6 +516,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_alerts.py` | 7 | Slack/Teams dispatcher |
 | `tests/unit/test_alterx.py` | 17 | collector (binary missing, timeout, happy path, stdin), analyzer, scanner |
 | `tests/unit/test_amass.py` | 19 | Active subdomain enum collector, analyzer, scanner |
+| `tests/unit/test_asn_discovery.py` | 22 | ASN/CIDR discovery — org derivation, ASN/CIDR parsing, collector (binary missing, timeout, two-step happy path), analyzer (info Finding per ASN, safe-scope remediation), scanner |
 | `tests/unit/test_assets.py` | 12 | Asset model constraints, FK chains, cascade delete |
 | `tests/unit/test_cloud_assets.py` | 20 | cloud_assets collector, analyzer, keyword derivation, scanner |
 | `tests/unit/test_cve_intel.py` | 24 | EPSS/KEV enrichment, CVE extraction (both finding shapes), feed-failure fallback |
@@ -555,4 +558,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: 1088 tests** (1037 fast + 51 slow domain_security)
+**Total: 1110 tests** (1059 fast + 51 slow domain_security)
