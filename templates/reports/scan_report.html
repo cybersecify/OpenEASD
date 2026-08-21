@@ -85,6 +85,7 @@
     /* ── Badges (rounded, filled) ─────────────────────────── */
     .badge { display: inline-block; padding: 3px 9px; font-size: 8px; font-weight: bold; color: #fff; text-transform: uppercase; border-radius: 10px; white-space: nowrap; }
     .pill-open { display: inline-block; background-color: #e8590c; color: #fff; font-size: 8px; font-weight: bold; padding: 3px 11px; text-transform: uppercase; border-radius: 10px; white-space: nowrap; }
+    .techtag { display: inline-block; background-color: #eef1f5; color: #1f2933; font-size: 9px; padding: 3px 9px; margin: 0 5px 5px 0; border: 0.5px solid #d0d7de; border-radius: 10px; white-space: nowrap; }
 
     /* ── Detailed findings ────────────────────────────────── */
     .sev-banner { color: #fff; font-weight: bold; font-size: 12px; padding: 8px 14px; margin: 20px 0 12px; border-radius: 6px; }
@@ -210,6 +211,12 @@
   <td><div class="n accent">{{ asset_counts.ports }}</div><div class="l">Open Ports</div></td>
   <td><div class="n accent">{{ asset_counts.urls }}</div><div class="l">Web URLs</div></td>
 </tr></table>
+
+{% if technologies %}
+<div class="h2">Technology Stack</div>
+<p class="lead">Technologies fingerprinted on reachable web assets ({{ technologies|length }} distinct). Informational only — no version, end-of-life, or vulnerability inference is implied.</p>
+<div>{% for tech in technologies %}<span class="techtag">{{ tech }}</span>{% endfor %}</div>
+{% endif %}
 
 <!-- ==================== 2. SCOPE & METHODOLOGY ================= -->
 <div class="page-break"></div>

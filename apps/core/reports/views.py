@@ -109,6 +109,25 @@ _WAF_VENDOR_LABEL = {
 }
 
 
+def _collect_technologies(session):
+    """Distinct technologies fingerprinted across a session's web assets.
+
+    Aggregates the per-URL ``technologies`` lists (httpx -tech-detect),
+    de-duplicates case-insensitively (first spelling wins), and returns them
+    sorted case-insensitively. Informational only — no version/EOL/CVE
+    inference. Returns [] when nothing was fingerprinted.
+    """
+    seen = {}
+    for row in URL.objects.filter(session=session).values_list("technologies", flat=True):
+        for tech in (row or []):
+            if not isinstance(tech, str):
+                continue
+            tech = tech.strip()
+            if tech:
+                seen.setdefault(tech.lower(), tech)
+    return sorted(seen.values(), key=str.lower)
+
+
 def _coverage_context(session):
     """Scan Coverage block for the report (spec C2).
 
@@ -438,6 +457,11 @@ def export_scan_pdf(request, session_uuid):
         "urls": URL.objects.filter(session=session).count(),
     }
 
+    # Technology stack — the distinct technologies fingerprinted across all web
+    # assets (httpx -tech-detect). Informational only: no version/EOL/CVE
+    # inference. Sorted case-insensitively, deduped.
+    technologies = _collect_technologies(session)
+
     # Scope & methodology — tools that ran in this scan's workflow, grouped by
     # phase group, with findings each group raised.
     from apps.core.workflows.registry import get_registry
@@ -496,6 +520,7 @@ def export_scan_pdf(request, session_uuid):
         "top_risks": _top_risks(issue_groups),
         "coverage": _coverage_context(session),
         "asset_counts": asset_counts,
+        "technologies": technologies,
         "methodology": methodology,
         "tool_count": tool_count,
         "vector_count": len(methodology),

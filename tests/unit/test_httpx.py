@@ -43,6 +43,15 @@ class TestHttpxCollector:
         ua = cmd[cmd.index("-H") + 1]
         assert ua.startswith("User-Agent: OpenEASD/")
 
+    def test_sends_tech_detect_flag(self):
+        sess = self._session()
+        fake = MagicMock()
+        fake.stdout = ""
+        with patch("apps.httpx.collector.subprocess.run", return_value=fake) as run:
+            collect(sess, ["www.example.com:443"])
+        cmd = run.call_args[0][0]
+        assert "-tech-detect" in cmd
+
     def test_raises_on_binary_not_found(self):
         from apps.core.workflows.exceptions import ToolBinaryMissing
         sess = self._session()
@@ -112,6 +121,41 @@ class TestHttpxAnalyzer:
         assert f.web_server == "nginx/1.22"
         assert f.content_length == 1234
         assert f.scheme == "https"
+
+    def test_stores_technologies_from_tech_field(self):
+        sess, _, _, _ = self._setup_session_with_assets()
+        records = [{
+            "url": "https://www.example.com:443",
+            "host": "www.example.com",
+            "host_ip": "1.2.3.4",
+            "port": "443",
+            "tech": ["Nginx", "PHP", "WordPress"],
+        }]
+        objs = analyze(sess, records)
+        assert objs[0].technologies == ["Nginx", "PHP", "WordPress"]
+
+    def test_technologies_default_empty_when_absent(self):
+        sess, _, _, _ = self._setup_session_with_assets()
+        records = [{
+            "url": "https://www.example.com:443",
+            "host": "www.example.com",
+            "host_ip": "1.2.3.4",
+            "port": "443",
+        }]
+        objs = analyze(sess, records)
+        assert objs[0].technologies == []
+
+    def test_technologies_deduped_and_cleaned(self):
+        sess, _, _, _ = self._setup_session_with_assets()
+        records = [{
+            "url": "https://www.example.com:443",
+            "host": "www.example.com",
+            "host_ip": "1.2.3.4",
+            "port": "443",
+            "tech": ["Nginx", "Nginx", "  PHP  ", "", 123],
+        }]
+        objs = analyze(sess, records)
+        assert objs[0].technologies == ["Nginx", "PHP"]
 
     def test_dedupes_same_url(self):
         sess, _, _, _ = self._setup_session_with_assets()
