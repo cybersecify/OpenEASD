@@ -111,7 +111,9 @@ def _cdn_networks() -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]
         try:
             nets.append(ipaddress.ip_network(cidr, strict=False))
         except ValueError:
-            pass
+            # Skip a malformed entry in the hardcoded list rather than break
+            # every scan — a bad CIDR here is a typo, not runtime input.
+            continue
     return tuple(nets)
 
 

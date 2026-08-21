@@ -1010,7 +1010,7 @@ class TestTlsCheckerCdnExclusion:
         sess = self._make_session_with_cdn_ip()
         with patch("apps.tls_checker.collector._probe_tls") as mock_probe:
             with patch("apps.tls_checker.collector._probe_tls_details") as mock_details:
-                results = collect(sess)
+                collect(sess)
         mock_probe.assert_not_called()
         mock_details.assert_not_called()
 
