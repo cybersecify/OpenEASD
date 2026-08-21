@@ -372,7 +372,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/tls_checker/` | 7 | Network Exposure | Yes | TLS/cert analysis + cipher suite enumeration via `nmap --script ssl-enum-ciphers` (all ports) |
 | `apps/ssh_checker/` | 7 | Network Exposure | Yes | SSH config analysis |
 | `apps/nuclei_network/` | 7 | Network Exposure | Yes | Network protocol vuln scan (319 templates, non-web) |
-| `apps/httpx/` | 8 | Web Exposure | No | Web probing, URL discovery |
+| `apps/httpx/` | 8 | Web Exposure | No | Web probing, URL discovery, technology fingerprinting (`-tech-detect` → `URL.technologies`) |
 | `apps/historical_urls/` | 9 | Web Exposure | No | Historical URL discovery via gau + waybackurls (Wayback Machine, OTX, Common Crawl) |
 | `apps/katana/` | 10 | Web Exposure | No | Web crawling, endpoint discovery |
 | `apps/nuclei/` | 11 | Web Exposure | Yes | Web vuln scan (community templates) |
@@ -525,7 +525,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_domain_security.py` | 51 | DNS/email/RDAP — **slow, real network** |
 | `tests/unit/test_domains.py` | 13 | Domain CRUD |
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
-| `tests/unit/test_httpx.py` | 12 | JSON parser, Port lookup, Subdomain link, honest UA |
+| `tests/unit/test_httpx.py` | 16 | JSON parser, Port lookup, Subdomain link, honest UA, tech-detect flag + technology storage/dedup |
 | `tests/unit/test_k8s_manifests.py` | 57 | k8s manifest structure, envFrom order, probes, secret/configmap split |
 | `tests/unit/test_katana.py` | 19 | JSONL parser, Port/Subdomain FK links, scanner orchestrator, honest UA |
 | `tests/unit/test_management_commands.py` | 11 | `verify_tools` + other management commands |
@@ -537,7 +537,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_nuclei_network.py` | 28 | Network-template parsing, non-web targeting, collector |
 | `tests/unit/test_pipeline_phases.py` | 1 | Phase ordering sanity |
 | `tests/unit/test_qcluster_config.py` | 4 | Django-Q cluster config |
-| `tests/unit/test_reports.py` | 41 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block |
+| `tests/unit/test_reports.py` | 44 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block, technology stack block |
 | `tests/unit/test_waf_detection.py` | 16 | WAF/block/challenge classifier (spec C1) — vendor fingerprint, false-positive guards, analyzer wiring |
 | `tests/unit/test_coverage.py` | 6 | Scan coverage (spec C2) — endpoint counts, dominant vendor, report note wording |
 | `tests/unit/test_scans.py` | 30 | ScanSession, scheduling, scan_start views |
@@ -558,4 +558,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: 1110 tests** (1059 fast + 51 slow domain_security)
+**Total: 1117 tests** (1066 fast + 51 slow domain_security)

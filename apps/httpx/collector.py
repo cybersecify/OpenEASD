@@ -27,6 +27,7 @@ def collect(session, host_ports: list[str]) -> list[dict]:
             "title": "Example",
             "webserver": "nginx",
             "content_length": 1234,
+            "tech": ["Nginx", "PHP", "WordPress"],
         }
     """
     if not host_ports:
@@ -47,6 +48,9 @@ def collect(session, host_ports: list[str]) -> list[dict]:
         "-title",
         "-web-server",
         "-content-length",
+        # Wappalyzer-style technology fingerprinting — emits a "tech" array
+        # (list of technology strings) per result. No extra binary required.
+        "-tech-detect",
         "-no-color",
         "-timeout", "10",
         # Honest scanner identity so a target can allowlist us deliberately.

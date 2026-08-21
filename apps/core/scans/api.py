@@ -210,6 +210,7 @@ def _serialize_url(url) -> dict:
         "title": url.title,
         "web_server": url.web_server,
         "content_length": url.content_length,
+        "technologies": url.technologies or [],
         "source": url.source,
         "discovered_at": url.discovered_at.isoformat(),
     }

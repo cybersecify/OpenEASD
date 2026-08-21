@@ -266,6 +266,53 @@ class TestReportCtaPdfContext:
 
 
 @pytest.mark.django_db
+class TestTechnologyStackBlock:
+    """The report renders a Technology Stack block only when web assets were
+    fingerprinted (httpx -tech-detect). Distinct techs are aggregated across
+    all URLs, deduped, and sorted."""
+
+    def _capture(self, authed_client, session):
+        captured = {}
+
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert res.status_code == 200
+        return captured["html"]
+
+    def _url(self, session, url, technologies):
+        from apps.core.web_assets.models import URL
+        return URL.objects.create(
+            session=session, url=url, host="report.example.com",
+            source="httpx", technologies=technologies,
+        )
+
+    def test_absent_when_no_technologies(self, authed_client, session, findings):
+        # URLs with no fingerprints must not render the block.
+        self._url(session, "https://report.example.com/", [])
+        html = self._capture(authed_client, session)
+        assert "Technology Stack" not in html
+
+    def test_absent_when_no_urls(self, authed_client, session, findings):
+        html = self._capture(authed_client, session)
+        assert "Technology Stack" not in html
+
+    def test_present_and_aggregated_when_technologies(self, authed_client, session, findings):
+        self._url(session, "https://report.example.com/", ["Nginx", "PHP"])
+        self._url(session, "https://www.report.example.com/", ["WordPress", "nginx"])
+        html = self._capture(authed_client, session)
+        assert "Technology Stack" in html
+        assert "Nginx" in html
+        assert "PHP" in html
+        assert "WordPress" in html
+        # Deduped case-insensitively → 3 distinct (Nginx, PHP, WordPress).
+        assert "3 distinct" in html
+
+
+@pytest.mark.django_db
 class TestScanCoverageBlock:
     """The report renders a Scan Coverage block only when edge blocking was seen."""
 
