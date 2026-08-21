@@ -49,7 +49,7 @@ def _fetch(url: str, user_agent: str) -> str | None:
         resp = requests.get(
             url,
             timeout=FETCH_TIMEOUT,
-            verify=False,
+            verify=False,  # nosec B501 — intentional: scanning target hosts that may have self-signed certs
             headers={"User-Agent": user_agent},
             allow_redirects=True,
         )
@@ -143,6 +143,8 @@ def collect(session, urls: list[str]) -> list[dict]:
             try:
                 os.unlink(report_path)
             except OSError:
+                # Best-effort cleanup of the temp report file; nothing to do if
+                # it was already removed or never created.
                 pass
 
     # Tag each record with the URL its File came from.
