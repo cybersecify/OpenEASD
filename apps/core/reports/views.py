@@ -307,6 +307,13 @@ def _group_findings_by_issue(findings):
                 if c and c not in cves:
                     cves.append(c)
         grp["cves"] = cves
+        # Threat intel rollup from cve_intel (extra: cisa_kev / epss_score /
+        # epss_percentile). KEV = at least one CVE is on CISA's actively-exploited
+        # list; EPSS percentile is the highest across the group's CVEs.
+        dict_extras = [f.extra for f in grp["instances"] if isinstance(f.extra, dict)]
+        grp["cisa_kev"] = any(e.get("cisa_kev") for e in dict_extras)
+        pctls = [e.get("epss_percentile") for e in dict_extras if e.get("epss_percentile") is not None]
+        grp["epss_percentile"] = max(pctls) if pctls else None
         # Affected endpoints as a pill grid (3 per row). Capped at 50 per group
         # to prevent OOM when a single finding fires on thousands of URLs.
         endpoints = [(f.url.url if f.url else f.target) for f in grp["instances"]]
@@ -315,6 +322,52 @@ def _group_findings_by_issue(findings):
         grp["endpoint_rows"] = [shown[i:i + 3] for i in range(0, len(shown), 3)]
         grp["endpoint_overflow"] = max(0, len(endpoints) - cap)
     return result
+
+
+# Plain-language business risk for the headline "Fix First" block — spoken to a
+# decision-maker, not an engineer. Keyed by check_type; severity fallback below.
+_BUSINESS_IMPACT = {
+    "unencrypted_service": "Data to this service crosses the internet in plaintext — anyone on the network path can read it.",
+    "subdomain_takeover": "An attacker can claim this dangling subdomain and serve content under your name — phishing, malware, or session-cookie theft.",
+    "missing_csp": "A single injected script would run in your users' browsers (cross-site scripting).",
+    "cve": "A publicly known vulnerability with a documented exploit is reachable from the internet.",
+    "dnssec": "DNS answers for your domain can be forged, silently redirecting users to attacker servers.",
+    "dmarc": "Anyone can send email that appears to come from your domain — brand and phishing risk.",
+    "mta_sts": "Email to your mail servers can be forced down to plaintext and intercepted in transit.",
+    "rdap": "Your domain registration lapses soon — expiry means outage and a hijack window.",
+}
+_BUSINESS_IMPACT_BY_SEV = {
+    "critical": "Directly exploitable from the internet and high-impact — treat as urgent.",
+    "high": "A serious weakness an external attacker can leverage.",
+}
+_SEV_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
+
+
+def _priority_score(grp) -> float:
+    """Rank findings for the 'Fix First' block: severity first, then measured
+    CVSS, with a dominant boost for actively-exploited (CISA KEV) issues and a
+    nudge for high EPSS (exploit-probability)."""
+    score = _SEV_RANK.get(grp["severity"], 0) * 100
+    score += (grp.get("cvss") or 0) * 5
+    if grp.get("cisa_kev"):
+        score += 500  # actively exploited in the wild dominates the ranking
+    if grp.get("epss_percentile"):
+        score += grp["epss_percentile"] * 50
+    return score
+
+
+def _top_risks(groups, limit=5):
+    """The decision-maker's shortlist: critical/high (or actively-exploited)
+    issues, ranked by priority, each with a plain-language impact line."""
+    candidates = [
+        g for g in groups
+        if g["severity"] in ("critical", "high") or g.get("cisa_kev")
+    ]
+    ranked = sorted(candidates, key=_priority_score, reverse=True)[:limit]
+    for g in ranked:
+        g["impact"] = _BUSINESS_IMPACT.get(g["check_type"]) or \
+            _BUSINESS_IMPACT_BY_SEV.get(g["severity"], "")
+    return ranked
 
 
 def _render_pdf(html: str) -> bytes:
@@ -430,6 +483,7 @@ def export_scan_pdf(request, session_uuid):
         "total_findings": len(issue_groups),   # headline = unique issue count
         "raw_total": raw_total,                # raw detections, shown only in the note
         "risk_rating": risk_rating,
+        "top_risks": _top_risks(issue_groups),
         "coverage": _coverage_context(session),
         "asset_counts": asset_counts,
         "methodology": methodology,

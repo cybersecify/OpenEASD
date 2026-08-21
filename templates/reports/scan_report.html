@@ -169,6 +169,30 @@
 </div>
 {% endif %}
 
+{% if top_risks %}
+<div class="h2">Priority Actions — Fix These First</div>
+<p class="lead">The highest-impact issues, ranked. Actively-exploited (CISA KEV) and internet-facing critical issues come first. The full list is in Section 3.</p>
+<table class="grid">
+  <thead><tr>
+    <th style="width:5%;">#</th><th style="width:36%;">Issue</th>
+    <th style="width:47%;">Why it matters</th><th style="width:12%;">Severity</th>
+  </tr></thead>
+  <tbody>
+    {% for r in top_risks %}
+    <tr>
+      <td><strong>{{ forloop.counter }}</strong></td>
+      <td>
+        <strong>{{ r.title }}</strong>{% if r.cisa_kev %} <span class="badge" style="background:#c92a2a;">Actively Exploited</span>{% endif %}
+        <div style="font-size:8px;color:#888;margin-top:2px;">{{ r.scope }} · {{ r.instances|length }} host{{ r.instances|length|pluralize }}</div>
+      </td>
+      <td style="font-size:9px;line-height:1.4;">{{ r.impact }}</td>
+      <td><span class="badge bg-{{ r.severity }}">{{ r.severity|upper }}</span>{% if r.cvss %} <span style="font-size:8px;color:#888;">{{ r.cvss }}</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
 <div class="h2">Severity Distribution</div>
 <table class="tiles"><tr>
   <td><div class="n">{{ total_findings }}</div><div class="l">Total Findings</div></td>
@@ -216,7 +240,7 @@
     {% for g in issue_groups %}
     <tr>
       <td style="white-space:nowrap; word-break:normal;">{{ g.fid }}</td>
-      <td><strong>{{ g.title }}</strong></td>
+      <td><strong>{{ g.title }}</strong>{% if g.cisa_kev %} <span class="badge" style="background:#c92a2a;">KEV</span>{% endif %}</td>
       <td>{{ g.scope }}</td>
       <td><span class="badge bg-{{ g.severity }}">{{ g.severity|upper }}</span></td>
       <td>{% if g.cvss %}{{ g.cvss }}{% else %}—{% endif %}</td>
@@ -250,6 +274,7 @@
     <tr><th>Category</th><td>{% if g.cwe %}{{ g.cwe }}{% else %}—{% endif %}</td></tr>
     <tr><th>Source / Check</th><td><span style="font-family:'Courier New',monospace;">{{ g.source }} · {{ g.check_type }}</span></td></tr>
     {% if g.cves %}<tr><th>CVEs</th><td><span style="font-family:'Courier New',monospace;">{{ g.cves|join:", " }}</span></td></tr>{% endif %}
+    {% if g.cisa_kev or g.epss_percentile %}<tr><th>Exploitation</th><td>{% if g.cisa_kev %}<span class="badge" style="background:#c92a2a;">CISA KEV — Actively Exploited</span> {% endif %}{% if g.epss_percentile %}EPSS {{ g.epss_percentile|floatformat:2 }} percentile{% endif %}</td></tr>{% endif %}
     <tr><th>Affected Endpoints</th><td style="padding:4px 6px;">
       <table class="ep-grid">
         {% for row in g.endpoint_rows %}<tr>{% for ep in row %}<td class="ep-cell">{{ ep }}</td>{% endfor %}</tr>{% endfor %}
