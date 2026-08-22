@@ -74,6 +74,79 @@ def _detect_deltas(session):
         ScanDelta.objects.bulk_create(deltas)
 
 
+def _check_coverage_regression(session):
+    """Emit a loud, in-report warning when this scan's coverage collapsed vs the
+    previous one — the tell for the scanner's IP being blocked/rate-limited.
+
+    Catches what a human otherwise only notices by manually comparing two
+    reports: findings or live web endpoints dropping sharply, or most probes
+    coming back unreachable. Written as a Finding so it shows in the report and
+    flows through the normal alert path.
+    """
+    from apps.core.web_assets.models import URL
+    from apps.core.findings.models import Finding
+
+    def _httpx_urls(s):
+        return URL.objects.filter(session=s, source="httpx").count()
+
+    reasons = []
+
+    # 1. Most probes unreachable this run (silent drops / WAF) — needs no baseline.
+    probed = session.endpoints_probed or 0
+    blocked = session.endpoints_blocked or 0
+    if probed >= 5 and blocked / probed >= 0.8:
+        reasons.append(
+            f"{blocked} of {probed} web endpoints probed were unreachable "
+            f"({round(100 * blocked / probed)}%)"
+            + (f", consistent with {session.waf_vendor}" if session.waf_vendor else "")
+        )
+
+    # 2. Sharp drop vs the previous completed/partial full scan for this domain.
+    previous = (
+        ScanSession.objects.filter(
+            domain=session.domain, status__in=["completed", "partial"]
+        )
+        .exclude(id=session.id)
+        .exclude(scan_type="subscan")
+        .order_by("-start_time")
+        .first()
+    )
+    if previous:
+        pf, cf = previous.total_findings or 0, session.total_findings or 0
+        if pf >= 5 and cf <= 0.5 * pf:
+            reasons.append(f"findings fell from {pf} to {cf} vs the previous scan")
+        pu, cu = _httpx_urls(previous), _httpx_urls(session)
+        if pu >= 3 and cu <= 0.5 * pu:
+            reasons.append(f"live web endpoints fell from {pu} to {cu} vs the previous scan")
+
+    if not reasons:
+        return
+
+    Finding.objects.create(
+        session=session,
+        source="scan_coverage",
+        check_type="coverage_regression",
+        severity="medium",
+        title="Scan coverage dropped sharply — results may be incomplete",
+        description=(
+            "This scan surfaced far less than expected, which usually means the "
+            "scanner could not reach the target rather than that the target is "
+            "clean. Observed: " + "; ".join(reasons) + "."
+        ),
+        remediation=(
+            "Treat these results as a lower bound, not a clean bill of health. "
+            "The target may be blocking or rate-limiting this scanner's IP (WAF), "
+            "or its hosting/DNS changed. Re-run from a different vantage point or "
+            "an allowlisted IP, run a passive scan (public sources, no direct "
+            "probing) to compare, and confirm the host is actually reachable."
+        ),
+        target=session.domain,
+    )
+    logger.warning(
+        f"[scan:{session.id}] Coverage regression flagged: {'; '.join(reasons)}"
+    )
+
+
 def _count_all_findings(session) -> int:
     try:
         from apps.core.findings.models import Finding
@@ -96,19 +169,28 @@ def _compute_coverage(session):
     from apps.core.web_assets.models import URL
     from apps.httpx.waf import INTERFERED, fingerprint_vendor
 
-    probes = list(
+    # `endpoints_probed` is the number of targets httpx was ASKED to probe (set by
+    # the httpx scanner). Hosts that responded become URL rows; hosts that were
+    # silently dropped leave nothing. So "blocked/unreachable" = everything we
+    # probed that did NOT come back as a cleanly reachable URL. This makes a
+    # silent block (0 URLs from N probes) visible instead of reading as "clean".
+    live = list(
         URL.objects.filter(session=session, source="httpx")
-        .exclude(reachability="")
         .values_list("reachability", "title", "web_server")
     )
-    session.endpoints_probed = len(probes)
-    session.endpoints_blocked = sum(1 for r, _, _ in probes if r in INTERFERED)
+    interfered = [(r, t, w) for r, t, w in live if r in INTERFERED]
+    reached_ok = sum(1 for r, _, _ in live if r not in INTERFERED)  # "" counts as reached
+    # The httpx scanner persisted the probe count; re-read it (this may be a
+    # different in-memory instance) rather than trust the in-memory field.
+    session.refresh_from_db(fields=["endpoints_probed"])
+    probed = session.endpoints_probed or len(live)
+    session.endpoints_probed = probed
+    session.endpoints_blocked = max(0, probed - reached_ok)
 
-    # Dominant vendor among interfered probes; "" when nothing was blocked.
+    # Dominant vendor among interfered probes; "" when nothing identifiable blocked.
     vendors = Counter(
         fingerprint_vendor(title, ws) or "unidentified"
-        for r, title, ws in probes
-        if r in INTERFERED
+        for _, title, ws in interfered
     )
     session.waf_vendor = vendors.most_common(1)[0][0] if vendors else ""
 
@@ -119,7 +201,13 @@ def _finalize_session(session):
     total = _count_all_findings(session)
     session.total_findings = total
     _compute_coverage(session)
-    session.status = "completed"
+    # Reflect the workflow run's outcome instead of always claiming "completed":
+    # if any tool failed or timed out, the run is "partial" and the scan must say
+    # so, or the top-line status hides a half-finished scan (a tool that didn't
+    # run produces zero findings, which reads as "clean").
+    from apps.core.workflows.models import WorkflowRun
+    run = WorkflowRun.objects.filter(session=session).order_by("-id").first()
+    session.status = "partial" if run and run.status in ("partial", "failed") else "completed"
     session.end_time = django_tz.now()
     session.save(update_fields=[
         "total_findings", "status", "end_time",
@@ -139,6 +227,10 @@ def _finalize_session(session):
         return
 
     _detect_deltas(session)
+
+    # After deltas (so this meta-warning isn't itself a "new finding" delta) and
+    # before insights (so it's included in the report's finding set).
+    _check_coverage_regression(session)
 
     from apps.core.insights.builder import build_insights
     build_insights(session)

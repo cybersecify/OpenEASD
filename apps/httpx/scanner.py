@@ -42,6 +42,14 @@ def run_httpx(session) -> list[URL]:
         seen.add(target)
         targets.append(target)
 
+    # Record how many endpoints we actually asked httpx to probe. This is the
+    # denominator for coverage: if we probed 100 and 0 came back, the target is
+    # dropping us — a silent block that leaves no URL to classify, so it is
+    # otherwise invisible. Persisted here (before analyze) so it survives even if
+    # every probe is dropped.
+    session.endpoints_probed = len(targets)
+    session.save(update_fields=["endpoints_probed"])
+
     records = collect(session, targets)
     objs = analyze(session, records)
 

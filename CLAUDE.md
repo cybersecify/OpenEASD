@@ -650,6 +650,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/unit/test_update_check.py` | 22 | Update-available check — version parse/compare, cached GitHub fetch, fail-graceful on timeout/HTTP-error/bad-payload, endpoint shape |
 | `tests/unit/test_proc_env.py` | 4 | `go_memory_env()` — GOMEMLIMIT/GOGC set in low profile, unchanged otherwise, preserves existing env |
+| `tests/unit/test_coverage_regression.py` | 10 | Silent-block coverage counting (probed-vs-reached), coverage-regression finding (high block ratio / findings drop / stable = no flag), partial scan status when a tool fails |
 | `tests/test_api_endpoints.py` | 98 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
 
-**Total: 1236 tests** (1185 fast + 51 slow domain_security)
+**Total: 1246 tests** (1195 fast + 51 slow domain_security)
