@@ -7,6 +7,40 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **Passive vs active scan modes** (#251). A "Passive Scan" workflow uses only
+  public-source tools and needs no `DomainAuthorization`; any active tool keeps
+  the gate. **Why:** lets you scan an inbound inquiry from public data alone
+  without authorization, while active probing stays gated. `domain_security` is
+  classified active (it does AXFR/SMTP/mta-sts probes, not just DNS lookups).
+- **ASN/IP-range discovery** tool via `amass intel` (#245) — finds org-owned
+  CIDRs with no DNS record. Reports ranges only; does not auto-expand scanning.
+- **gitleaks JS-secret scanning** (#248) — hardcoded keys in crawled JavaScript
+  that nuclei's path-based templates miss. Secrets are redacted, never stored.
+- **Technology fingerprinting** via httpx `-tech-detect` (#247).
+- **DNSSEC chain-of-trust, MTA-STS, and open-relay checks** in domain_security
+  (#244). Open-relay probe is safe — it never sends message data.
+- **Report: "Fix First" priority block + EPSS/KEV** (#243) and **headline risk,
+  plain-language business impact, and honest snapshot framing** (#250). **Why:**
+  make the report read like a prioritised analyst review, not a flat dump.
+- **WAF/edge coverage reporting + honest `OpenEASD/1.0` user agent**. **Why:** an
+  empty result should mean "clean", never "silently blocked", and a target can
+  deliberately allowlist the scanner.
+- **Scheduled security-bump workflow** (#239) — keeps the lockfile ahead of the
+  CVE feed so pip-audit stops failing unrelated PRs.
+
+### Changed
+- **Full Scan is the default workflow again** (#236), applied to existing DBs.
+- **D-004 (Brand Protection product boundary) retired** (#246) — Brand Protection
+  is no longer a separate product; capabilities are judged on free + in-scope + value.
+
+### Fixed
+- False positives: CDN edge IPs excluded from port/TLS scans (#237); out-of-scope
+  URLs and cross-domain crawl dropped (#241, #249); TLS SNI uses hostname not IP
+  (#241); takeover skipped on unknown service, alterx skipped on wildcard DNS (#242).
+- PDF endpoint OOM cap at 50/finding — fixes a gunicorn OOM on very large scans (#238).
+- Removed hardcoded `.bank.in`/RBI text from the DNSSEC finding — now framework-neutral (#249).
+
 ## [v0.10.0] — 2026-08-03
 
 ### Added

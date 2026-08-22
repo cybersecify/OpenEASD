@@ -14,7 +14,7 @@
 
 Use it as a **red teamer** to map external surface fast on targets you're authorised to test. Use it as a **defender** to see what's leaking out of your own infrastructure: subdomains, exposed ports, dangling CNAMEs, missing TLS, known CVEs, without paying $500-5000/mo for a commercial EASM platform.
 
-OpenEASD wraps the open-source recon tools security teams already use: `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `cloud_enum`, `naabu`, `nmap`, `httpx`, `gau`, `waybackurls`, `katana`, `nuclei`, behind a single web UI with scheduling, alerts, and findings tracking. Nineteen tools across DNS, email, TLS, SSH, ports, CVEs, subdomain takeover, historical URLs, cloud assets, web hygiene, and CVE prioritisation (EPSS + CISA KEV). Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
+OpenEASD wraps the open-source recon tools security teams already use: `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `cloud_enum`, `naabu`, `nmap`, `httpx`, `gau`, `waybackurls`, `katana`, `nuclei`, `gitleaks`, behind a single web UI with scheduling, alerts, and findings tracking. Twenty-one tools across DNS/DNSSEC, email (SPF/DMARC/DKIM/MTA-STS/open-relay), TLS, SSH, ports, CVEs, subdomain takeover, ASN/IP-range discovery, historical URLs, cloud assets, exposed secrets in JavaScript, technology fingerprinting, web hygiene, and CVE prioritisation (EPSS + CISA KEV). Run a **passive scan** (public-source only, no authorization needed) or an **active scan** (probes the target, authorization required). Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
 
 Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok S Kamat](https://www.linkedin.com/in/ashokskamat/) of [Cybersecify](https://cybersecify.com), the same tool we run in engagements and on our own infrastructure.
 
@@ -49,6 +49,7 @@ its maintainer's official source. No repackaging, no mirroring:
 | `gau` | [github.com/lc/gau](https://github.com/lc/gau) (Go modules) |
 | `waybackurls` | [github.com/tomnomnom/waybackurls](https://github.com/tomnomnom/waybackurls) (Go modules) |
 | `cloud_enum` | [github.com/initstring/cloud_enum](https://github.com/initstring/cloud_enum) |
+| `gitleaks` | [github.com/gitleaks/gitleaks](https://github.com/gitleaks/gitleaks) (MIT, signed releases) |
 | `nmap` | `apt-get install nmap` (Ubuntu 24.04 official) |
 
 Verbatim install commands are in the [Dockerfile](Dockerfile); every
@@ -160,17 +161,20 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ```
 ── Domain Intelligence ──────────────────────────────────────────────────────
-Phase 1  Domain Security   - DNS, email (SPF/DMARC/DKIM), RDAP checks
+Phase 1  Domain Security   - DNS, DNSSEC chain-of-trust, email
+                             (SPF/DMARC/DKIM/MTA-STS/open-relay), RDAP checks
 
 ── Surface Enumeration ─────────────────────────────────────────────────────
 Phase 2  Subfinder         - Passive subdomain enumeration
 Phase 2  Amass             - Active subdomain enumeration
 Phase 2  Alterx            - Subdomain permutation from discovered subdomains
+Phase 2  ASN Discovery     - Owned ASN/CIDR ranges via amass intel (reports only)
 Phase 3  DNSx              - DNS resolution, public IP filtering
 Phase 4  Takeover Check    - Subdomain takeover detection via subzy
+Phase 4  Cloud Assets      - Public S3/Azure/GCP bucket enumeration (cloud_enum)
 
 ── Port Discovery ───────────────────────────────────────────────────────────
-Phase 5  Naabu             - TCP port scanning (top 100)
+Phase 5  Naabu             - TCP port scanning (top 100; CDN edge IPs excluded)
 Phase 6  Service Detection - Classify ports as web/non-web via nmap -sV (auto)
 
 ── Network Exposure ─────────────────────────────────────────────────────────
@@ -180,12 +184,20 @@ Phase 7  SSH Checker       - SSH configuration audit
 Phase 7  Nuclei Network    - Network protocol vuln templates (non-web ports)
 
 ── Web Exposure ─────────────────────────────────────────────────────────────
-Phase 8  httpx             - Web probing, URL discovery
+Phase 8  httpx             - Web probing, URL discovery, technology fingerprinting
 Phase 9  Historical URLs   - Archived URL discovery via gau + waybackurls
 Phase 10 Katana            - Deep URL crawl on top of httpx
 Phase 11 Nuclei            - Web vulnerability scanning (community templates)
 Phase 11 Web Checker       - Security headers, cookies, CORS analysis
+Phase 11 JS Secrets        - Hardcoded secrets in JavaScript via gitleaks
+
+── Prioritization ───────────────────────────────────────────────────────────
+Phase 12 CVE Intel         - Enrich CVE findings with EPSS + CISA KEV
 ```
+
+Every scan probe also carries an honest `OpenEASD/1.0` user agent (so a target
+can allowlist it), and the report flags WAF/edge blocking so an empty result
+means "clean", never "silently blocked".
 
 ## Architecture
 
