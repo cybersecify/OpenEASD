@@ -93,6 +93,16 @@ def version(request):
     }
 
 
+# Update-available check — authenticated. Compares the running build to the
+# latest public GitHub release so a logged-in operator learns when their
+# deployment is behind. The app never self-updates; this is a heads-up + link.
+# Cached (6h) and fully fail-graceful — GitHub being down never breaks the page.
+@api.get("/version/latest/", auth=JWTAuth())
+def version_latest(request):
+    from apps.core.api.update_check import check_for_update
+    return check_for_update()
+
+
 # ---------------------------------------------------------------------------
 # Current user endpoint
 # ---------------------------------------------------------------------------

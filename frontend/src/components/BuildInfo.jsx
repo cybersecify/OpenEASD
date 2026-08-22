@@ -9,11 +9,22 @@ import { apiGet } from '../api/client.js';
  * runs report "dev"/"unknown" defaults, which are omitted so the line never
  * reads "unknown · unknown".
  */
-export default function BuildInfo({ className = '' }) {
+export default function BuildInfo({ className = '', checkUpdates = false }) {
   const { data } = useQuery({
     queryKey: ['/version/'],
     queryFn: () => apiGet('/version/'),
     staleTime: Infinity,
+  });
+
+  // Only logged-in surfaces pass checkUpdates: the endpoint is authenticated and
+  // hits GitHub (cached server-side). Fail-graceful — on any error we just don't
+  // show the indicator, so the footer never breaks.
+  const { data: latest } = useQuery({
+    queryKey: ['/version/latest/'],
+    queryFn: () => apiGet('/version/latest/'),
+    enabled: checkUpdates,
+    staleTime: 6 * 60 * 60 * 1000,
+    retry: false,
   });
 
   if (!data) return null;
@@ -42,6 +53,18 @@ export default function BuildInfo({ className = '' }) {
         <span aria-hidden="true">·</span>
         <a href={featureUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-dim">Request a feature</a>
       </div>
+      {checkUpdates && latest?.update_available && (
+        <div>
+          <a
+            href={latest.release_url || 'https://github.com/cybersecify/OpenEASD/releases/latest'}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-brand hover:underline font-medium"
+          >
+            ↑ Update available: v{latest.latest_version}
+          </a>
+        </div>
+      )}
     </div>
   );
 }

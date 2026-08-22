@@ -97,7 +97,7 @@ git describe --tags --abbrev=0
 - **Publish triggers:** every push to `main` (`:latest` tag) and `v*` tags (`:vX.Y` tag)
 - Runner: `ubuntu-24.04`, Python 3.12, `uv sync --group dev` for deps, `libcairo2-dev gcc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0` system deps required (WeasyPrint PDF rendering)
 - `pip-audit --ignore-vuln PYSEC-2025-183` — disputed PyJWT weak-key-length CVE, no fix available
-- **Build provenance:** the `publish` job computes `OPENEASD_VERSION` (git tag for `v*`, else `pyproject.toml` version), `OPENEASD_GIT_SHA` (`github.sha`), and `OPENEASD_BUILD_DATE` (ISO UTC) and passes them as `build-args` to buildx. The Dockerfile bakes them into `ENV` (placed late so they never bust the cache of the heavy layers). Settings read them via `config()` with `dev`/`unknown` defaults for local runs. Surfaced at `GET /health/` + `GET /api/version/`, and shown as a muted footer on the login + change-password pages (`frontend/src/components/BuildInfo.jsx`).
+- **Build provenance:** the `publish` job computes `OPENEASD_VERSION` (git tag for `v*`, else `pyproject.toml` version), `OPENEASD_GIT_SHA` (`github.sha`), and `OPENEASD_BUILD_DATE` (ISO UTC) and passes them as `build-args` to buildx. The Dockerfile bakes them into `ENV` (placed late so they never bust the cache of the heavy layers). Settings read them via `config()` with `dev`/`unknown` defaults for local runs. Surfaced at `GET /health/` + `GET /api/version/`, and shown as a muted footer on the login + change-password pages AND in the authenticated app sidebar (`frontend/src/components/BuildInfo.jsx`). The sidebar footer also does an "update available" check via `GET /api/version/latest/` (authenticated; compares the running build to the latest GitHub release, cached 6h, fail-graceful — logic in `apps/core/api/update_check.py`). The app never self-updates; it only surfaces a heads-up + release link.
 
 ## Commands
 - Always use `uv run python` instead of `python` or `python3`
@@ -554,6 +554,7 @@ POST /api/token/blacklist                 — blacklist refresh token (logout)
 POST /api/token/refresh                   — exchange refresh → new access token
 POST /api/token/verify                    — verify token validity
 GET  /api/version/                        — build provenance {version, git_sha, git_sha_short, build_date} (unauthenticated)
+GET  /api/version/latest/                 — update check {current_version, latest_version, update_available, release_url} (authenticated; cached 6h, fail-graceful)
 GET  /api/user/                           — current user info + must_change_password flag
 POST /api/user/change-password/           — change password; clears must_change_password flag
 GET  /api/dashboard/                      — KPIs, domain status, urgent findings
@@ -647,6 +648,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_workflow_runner.py` | 33 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism |
 | `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow with the complete 18-tool set (migration 0021), idempotent gap-fill |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
-| `tests/test_api_endpoints.py` | 93 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` |
+| `tests/unit/test_update_check.py` | 22 | Update-available check — version parse/compare, cached GitHub fetch, fail-graceful on timeout/HTTP-error/bad-payload, endpoint shape |
+| `tests/test_api_endpoints.py` | 96 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` + update-check `/api/version/latest/` |
 
-**Total: 1205 tests** (1154 fast + 51 slow domain_security)
+**Total: 1230 tests** (1179 fast + 51 slow domain_security)
