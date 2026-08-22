@@ -456,6 +456,32 @@ class TestPhaseParallelExecution:
             "Run is not 'completed' — tools likely ran serially (barrier never satisfied)"
         )
 
+    def test_low_memory_runs_phase_sequentially(self, transactional_db, settings):
+        """Under LOW_MEMORY a multi-tool phase runs one tool at a time — all tools
+        still execute and the run completes (bounds peak memory on small hosts)."""
+        settings.LOW_MEMORY = True
+        from apps.core.scans.models import ScanSession
+        session = ScanSession.objects.create(
+            domain="lowmem.example.com", scan_type="full", status="running"
+        )
+        wf = Workflow.objects.create(name="LowMem Phase 7")
+        WorkflowStep.objects.create(workflow=wf, tool="nmap",        order=1, enabled=True)
+        WorkflowStep.objects.create(workflow=wf, tool="tls_checker", order=2, enabled=True)
+        run = WorkflowRun.objects.create(workflow=wf, session=session)
+
+        def seq_runner(tool_name):
+            def runner(sess):
+                return []
+            return runner
+
+        with patch("apps.core.workflows.runner._get_runner", side_effect=seq_runner):
+            run_workflow(run.id)
+
+        run.refresh_from_db()
+        assert run.status == "completed"
+        ran = set(WorkflowStepResult.objects.filter(run=run).values_list("tool", flat=True))
+        assert {"nmap", "tls_checker"} <= ran
+
     def test_phase_boundary_respected(self, transactional_db):
         """All phase-7 tools must finish before any phase-10 tool starts.
 

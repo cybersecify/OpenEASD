@@ -304,6 +304,12 @@ OPENEASD_USER_AGENT = config(
     default="OpenEASD/1.0 (+https://cybersecify.com/openeasd)",
 )
 
+# Low-memory mode for small hosts (≈1 GB RAM). When true, same-phase tools run
+# sequentially instead of concurrently (bounds peak memory) and nuclei uses a
+# lower concurrency/rate-limit. Prevents the kernel OOM-killing nuclei/amass on
+# a 1 GB droplet, at the cost of a slower scan. See the deploy docs.
+LOW_MEMORY = config("OPENEASD_LOW_MEMORY", default=False, cast=bool)
+
 # Hudson Rock (Cavalier) OSINT API base — free, keyless infostealer-exposure
 # intelligence. OSS use permitted by Hudson Rock co-founder Alon Gal. Overridable
 # for testing / self-hosting.

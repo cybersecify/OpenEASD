@@ -114,6 +114,7 @@ def run_workflow(workflow_run_id: int, only_tools: list | None = None):
     only_tools: if provided, restrict execution to these tool keys (subscan use-case).
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    from django.conf import settings
 
     run = WorkflowRun.objects.select_related("workflow", "session").get(id=workflow_run_id)
     session = run.session
@@ -166,9 +167,13 @@ def run_workflow(workflow_run_id: int, only_tools: list | None = None):
 
             logger.info(f"[workflow:{run.id}] Starting phase group: {group}")
 
-            if len(group) == 1:
-                _run_single_step(run, session, group[0], order)
-                order += 1
+            if len(group) == 1 or getattr(settings, "LOW_MEMORY", False):
+                # Sequential: one tool at a time. For a single-tool group this is
+                # the normal path; under LOW_MEMORY it also serialises multi-tool
+                # phases so peak memory stays at one tool (no OOM on ~1 GB hosts).
+                for i, tool in enumerate(group):
+                    _run_single_step(run, session, tool, order + i)
+                order += len(group)
             else:
                 step_orders = {tool: order + i for i, tool in enumerate(group)}
                 with ThreadPoolExecutor(max_workers=len(group)) as executor:

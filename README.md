@@ -121,6 +121,23 @@ docker build -t openeasd .
 
 For vulnerability reporting, see [SECURITY.md](SECURITY.md).
 
+## System requirements
+
+The scan tools (nuclei and amass especially) are memory-hungry. On a host with
+too little RAM the kernel will OOM-kill them mid-scan, so scans finish partial or
+empty.
+
+| | RAM | vCPU | Disk |
+|---|---|---|---|
+| **Minimum** | 2 GB | 1 | 5 GB |
+| **Recommended** | 4 GB | 2 | 10 GB |
+| **1 GB host** | set `OPENEASD_LOW_MEMORY=true` | 1 | 5 GB |
+
+On a **1 GB** box (e.g. the smallest cloud droplet), set `-e OPENEASD_LOW_MEMORY=true`:
+tools then run one-at-a-time per phase and nuclei uses lower concurrency, so it
+completes without OOM — slower, but it finishes. Adding a few GB of swap helps
+too. For faster or concurrent scans, use the recommended spec.
+
 ## Quick start
 
 ```bash
