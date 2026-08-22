@@ -14,7 +14,7 @@
 
 Use it as a **red teamer** to map external surface fast on targets you're authorised to test. Use it as a **defender** to see what's leaking out of your own infrastructure: subdomains, exposed ports, dangling CNAMEs, missing TLS, known CVEs, without paying $500-5000/mo for a commercial EASM platform.
 
-OpenEASD wraps the open-source recon tools security teams already use: `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `cloud_enum`, `naabu`, `nmap`, `httpx`, `gau`, `waybackurls`, `katana`, `nuclei`, `gitleaks`, behind a single web UI with scheduling, alerts, and findings tracking. Twenty-one tools across DNS/DNSSEC, email (SPF/DMARC/DKIM/MTA-STS/open-relay), TLS, SSH, ports, CVEs, subdomain takeover, ASN/IP-range discovery, historical URLs, cloud assets, exposed secrets in JavaScript, technology fingerprinting, web hygiene, and CVE prioritisation (EPSS + CISA KEV). Run a **passive scan** (public-source only, no authorization needed) or an **active scan** (probes the target, authorization required). Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
+OpenEASD wraps the open-source recon tools security teams already use: `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `cloud_enum`, `naabu`, `nmap`, `httpx`, `gau`, `waybackurls`, `katana`, `nuclei`, `gitleaks`, behind a single web UI with scheduling, alerts, and findings tracking. Twenty-two tools across DNS/DNSSEC, email (SPF/DMARC/DKIM/MTA-STS/open-relay), TLS, SSH, ports, CVEs, subdomain takeover, ASN/IP-range discovery, historical URLs, cloud assets, exposed secrets in JavaScript, infostealer-log exposure (via Hudson Rock's keyless Cavalier API), technology fingerprinting, web hygiene, and CVE prioritisation (EPSS + CISA KEV). Run a **passive scan** (public-source only, no authorization needed) or an **active scan** (probes the target, authorization required). Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
 
 Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok S Kamat](https://www.linkedin.com/in/ashokskamat/) of [Cybersecify](https://cybersecify.com), the same tool we run in engagements and on our own infrastructure.
 
@@ -140,7 +140,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ## Features
 
-- **Automated pipeline**: 21-tool scan workflow from domain to findings
+- **Automated pipeline**: 22-tool scan workflow from domain to findings
 - **Network attack surface scanning**: CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
 - **CVE prioritisation**: EPSS exploit-probability scores + CISA KEV (known-exploited-in-the-wild) flags enrich CVE findings in place, so you triage by real-world risk rather than severity alone
 - **Dynamic workflows**: Create custom scan configurations, enable/disable tools per workflow
@@ -163,6 +163,8 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 ── Domain Intelligence ──────────────────────────────────────────────────────
 Phase 1  Domain Security   - DNS, DNSSEC chain-of-trust, email
                              (SPF/DMARC/DKIM/MTA-STS/open-relay), RDAP checks
+Phase 1  Hudson Rock        - Infostealer-log exposure via Hudson Rock's keyless
+                             Cavalier API (aggregate counts only, no plaintext)
 
 ── Surface Enumeration ─────────────────────────────────────────────────────
 Phase 2  Subfinder         - Passive subdomain enumeration
@@ -220,6 +222,7 @@ apps/core/              - Infrastructure (never changes)
 
 apps/                   - Tool apps (add/remove freely)
   domain_security/      - DNS, email, RDAP checks
+  hudson_rock/          - Infostealer-log exposure (Hudson Rock Cavalier API)
   subfinder/            - Passive subdomain enumeration
   amass/                - Active subdomain enumeration
   alterx/               - Subdomain permutation (from discovered subdomains)

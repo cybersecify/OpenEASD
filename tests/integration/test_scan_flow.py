@@ -153,6 +153,7 @@ def _patch_all_tool_collectors():
     stack.enter_context(patch("apps.ssh_checker.scanner.collect", return_value=[]))
     stack.enter_context(patch("apps.nuclei.scanner.collect", return_value=[]))
     stack.enter_context(patch("apps.web_checker.scanner.collect", return_value=[]))
+    stack.enter_context(patch("apps.hudson_rock.scanner.collect", return_value={"counts": {}, "urls": None}))
     return stack
 
 
@@ -160,7 +161,7 @@ def _patch_all_tool_collectors():
 class TestFullScanPipeline:
     """Tests run_scan orchestration → domain_security → insights."""
 
-    def test_run_scan_completes_session(self, db):
+    def test_run_scan_completes_session(self, transactional_db):
         from apps.core.scans.models import ScanSession
         from apps.core.scans.pipeline import run_scan
 
@@ -199,7 +200,7 @@ class TestFullScanPipeline:
         assert session.status == "completed"
         assert session.end_time is not None
 
-    def test_run_scan_builds_insights(self, db):
+    def test_run_scan_builds_insights(self, transactional_db):
         from apps.core.scans.models import ScanSession
         from apps.core.scans.pipeline import run_scan
         from apps.core.insights.models import ScanSummary
@@ -235,7 +236,7 @@ class TestFullScanPipeline:
         summary = ScanSummary.objects.get(session=session)
         assert summary.total_findings > 0
 
-    def test_run_scan_detects_deltas_on_second_scan(self, db):
+    def test_run_scan_detects_deltas_on_second_scan(self, transactional_db):
         from apps.core.scans.models import ScanSession, ScanDelta
         from apps.core.scans.pipeline import run_scan
 

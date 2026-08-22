@@ -382,11 +382,12 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (21 registered tools)
+### Tool apps (22 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
 | `apps/domain_security/` | 1 | Domain Intelligence | Yes | DNS, email, RDAP checks |
+| `apps/hudson_rock/` | 1 | Domain Intelligence | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
 | `apps/subfinder/` | 2 | Surface Enumeration | No | Passive subdomain enumeration |
 | `apps/amass/` | 2 | Surface Enumeration | No | Active subdomain enumeration |
 | `apps/asn_discovery/` | 2 | Surface Enumeration | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
@@ -429,6 +430,7 @@ but not yet in the default set.)
 
 ```
 Phase 1  domain_security    → Finding (DNS/email/RDAP)
+Phase 1  hudson_rock         → Finding (infostealer exposure via Hudson Rock — passive)
 Phase 2  subfinder          → Subdomain (passive enumeration)
 Phase 2  amass              → Subdomain (active enumeration)
 Phase 2  asn_discovery      → Finding (owned ASN/CIDR ranges via amass intel — informational)
@@ -460,7 +462,7 @@ the registry via `get_tool_active()` and `is_passive_tool_set(tools)`.
   archives, cloud-provider bucket APIs, CVE/EPSS/KEV feeds. Sends **no packets to
   the target's own systems**. Needs **no `DomainAuthorization`**.
   Passive tools: `subfinder`, `alterx`, `dnsx`, `historical_urls`,
-  `cloud_assets`, `cve_intel`, `asn_discovery`.
+  `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`.
 - **Active** (`active=True`): probes the target directly (port scans, HTTP/TLS/SSH
   connections, crawling, vuln templates, AXFR/SMTP/mta-sts probes). **Requires
   `DomainAuthorization`.**
@@ -602,6 +604,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_domains.py` | 13 | Domain CRUD |
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
 | `tests/unit/test_httpx.py` | 16 | JSON parser, Port lookup, Subdomain link, honest UA, tech-detect flag + technology storage/dedup |
+| `tests/unit/test_hudson_rock.py` | 17 | collector (both endpoints keyless + honest UA, fail-graceful on timeout/500/429/bad-JSON, 429 retry), analyzer (severity, counts/families/URLs/attribution, no-finding-when-zero, **no plaintext/email persisted**, URL cap), scanner |
 | `tests/unit/test_js_secrets.py` | 26 | `.js` URL filter + cap, fetch-error handling, gitleaks JSON parser, analyzer Findings + dedup + secret redaction (full secret never stored), scanner, binary-missing/timeout |
 | `tests/unit/test_k8s_manifests.py` | 57 | k8s manifest structure, envFrom order, probes, secret/configmap split |
 | `tests/unit/test_katana.py` | 19 | JSONL parser, Port/Subdomain FK links, scanner orchestrator, honest UA |
@@ -636,4 +639,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 93 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` |
 
-**Total: 1179 tests** (1128 fast + 51 slow domain_security)
+**Total: 1196 tests** (1145 fast + 51 slow domain_security)
