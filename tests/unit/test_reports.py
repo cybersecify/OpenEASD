@@ -401,6 +401,42 @@ class TestPdfSeverityCounts:
         assert "3 raw scanner detections into 1 unique issue" in html
 
 
+@pytest.mark.django_db
+class TestPartialScanDiagnostics:
+    """A 'partial' scan shows a step-diagnostics table explaining which pipeline
+    steps failed; a completed scan shows nothing."""
+
+    def _render(self, authed_client, session):
+        captured = {}
+
+        def cap(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.reports.views._render_pdf", side_effect=cap):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert res.status_code == 200
+        return captured["html"]
+
+    def test_diagnostics_shown_for_partial_scan(self, authed_client, session):
+        from apps.core.workflows.models import Workflow, WorkflowRun, WorkflowStepResult
+        session.status = "partial"
+        session.save(update_fields=["status"])
+        wf = Workflow.objects.create(name="WF", is_default=False)
+        run = WorkflowRun.objects.create(session=session, workflow=wf, status="partial")
+        WorkflowStepResult.objects.create(run=run, tool="nuclei", status="failed",
+                                          order=1, error="timed out after 1800s")
+        WorkflowStepResult.objects.create(run=run, tool="httpx", status="completed", order=2)
+        html = self._render(authed_client, session)
+        assert "Scan Step Diagnostics" in html
+        assert "nuclei" in html
+        assert "timed out after 1800s" in html
+
+    def test_no_diagnostics_for_completed_scan(self, authed_client, session):
+        html = self._render(authed_client, session)  # session fixture is 'completed'
+        assert "Scan Step Diagnostics" not in html
+
+
 class TestTopRisksAndIntel:
     """The 'Fix First' block ranks by priority (KEV dominates) and the report
     surfaces EPSS/KEV threat intel collected by cve_intel."""
