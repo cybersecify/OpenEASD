@@ -8,6 +8,25 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Fixed
+- **Silent scan degradation is now surfaced, not hidden.** Three linked fixes so a
+  scan that was blocked/incomplete stops reading as a clean, complete scan (found
+  after the droplet's results quietly dropped from ~50 findings to ~18 when the
+  target began dropping its probes, only noticed by manually comparing reports):
+  - **Scan status reflects the workflow outcome.** `_finalize_session` no longer
+    hard-codes `completed`; if any tool failed or timed out (run is `partial`),
+    the scan is marked **`partial`**. Previously a half-finished scan (e.g. nuclei
+    timing out) still showed `completed`.
+  - **Silent blocks are counted.** httpx records how many endpoints it was asked
+    to probe (`endpoints_probed`); coverage now treats every probed endpoint that
+    did not come back cleanly as blocked/unreachable — so "probed 100, 0 came
+    back" (a silent IP drop that leaves no URL to classify) is visible instead of
+    looking like a clean site. **Why:** the prior logic only classified URLs httpx
+    *returned*, so a total block (zero URLs) read as `probed=0, blocked=0`.
+  - **Coverage-regression warning.** A scan that surfaces far less than the
+    previous one for the same domain (findings or live web endpoints halved, or
+    ≥80% of probes unreachable) now emits an in-report `scan_coverage` finding
+    telling the operator the results are a lower bound and the scanner may be
+    blocked — instead of them having to diff two reports by eye.
 - **Provenance endpoints (`/api/version/`, `/health/`) now send `Cache-Control:
   no-store`.** **Why:** Cloudflare (and any CDN) was caching the unauthenticated
   `/api/version/`, so the in-app build line showed a stale version/sha for hours

@@ -197,7 +197,7 @@ class TestFullScanPipeline:
             run_scan(session.id)
 
         session.refresh_from_db()
-        assert session.status == "completed"
+        assert session.status in ("completed", "partial")
         assert session.end_time is not None
 
     def test_run_scan_builds_insights(self, transactional_db):
@@ -290,8 +290,8 @@ class TestFullScanPipeline:
 
         s1.refresh_from_db()
         s2.refresh_from_db()
-        assert s1.status == "completed"
-        assert s2.status == "completed"
+        assert s1.status in ("completed", "partial")
+        assert s2.status in ("completed", "partial")
         # Delta exists for s2 (compared against s1)
         # Same findings → no "new" deltas
         new_deltas = ScanDelta.objects.filter(session=s2, change_type="new")
@@ -449,7 +449,7 @@ class TestFullPipelineMocked:
             run_scan(session.id)
 
         session.refresh_from_db()
-        assert session.status == "completed"
+        assert session.status in ("completed", "partial")
 
         # Verify the asset graph is intact.
         # Subdomain pool: 1 seed (the apex `pipeline.test`, inserted at pipeline
