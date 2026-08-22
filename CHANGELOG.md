@@ -8,6 +8,16 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Added
+- **Infostealer-exposure tool (Hudson Rock)** — a new passive Domain-Intelligence
+  tool that surfaces a domain's infostealer-log exposure via Hudson Rock's free,
+  keyless Cavalier API (aggregate counts, stealer families, last-seen dates, and
+  system-level affected login URLs). **Why:** stolen-credential exposure from
+  info-stealer malware is a leading breach vector that no port/web scan can see;
+  it is public-source (passive) intel that complements the active surface scan.
+  OSS use permitted by Hudson Rock co-founder Alon Gal. Privacy: only aggregate
+  counts are stored — the tool never persists or displays plaintext credentials
+  or individual email addresses, and it is fail-graceful so it can never fail a
+  scan. Added to the Full Scan and Passive Scan workflows (tool count 21 → 22).
 - **Passive vs active scan modes** (#251). A "Passive Scan" workflow uses only
   public-source tools and needs no `DomainAuthorization`; any active tool keeps
   the gate. **Why:** lets you scan an inbound inquiry from public data alone

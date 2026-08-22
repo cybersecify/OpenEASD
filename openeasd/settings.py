@@ -103,6 +103,7 @@ INSTALLED_APPS = [
     "ninja_jwt",
     "ninja_jwt.token_blacklist",
     "apps.domain_security",
+    "apps.hudson_rock",
     "apps.subfinder",
     "apps.amass",
     "apps.asn_discovery",
@@ -301,6 +302,14 @@ TOOL_GITLEAKS = config("TOOL_GITLEAKS", default="gitleaks")
 OPENEASD_USER_AGENT = config(
     "OPENEASD_USER_AGENT",
     default="OpenEASD/1.0 (+https://cybersecify.com/openeasd)",
+)
+
+# Hudson Rock (Cavalier) OSINT API base — free, keyless infostealer-exposure
+# intelligence. OSS use permitted by Hudson Rock co-founder Alon Gal. Overridable
+# for testing / self-hosting.
+HUDSON_ROCK_BASE_URL = config(
+    "HUDSON_ROCK_BASE_URL",
+    default="https://cavalier.hudsonrock.com/api/json/v2/osint-tools",
 )
 
 # Build provenance — baked into the image at build time (see Dockerfile ARG/ENV
