@@ -1,5 +1,6 @@
 """Central Django Ninja API instance for OpenEASD."""
 
+from django.conf import settings
 from django.http import JsonResponse
 from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError, ValidationError
@@ -73,6 +74,23 @@ def validation_error_handler(request, exc):
 api.add_router("/token", obtain_pair_router)
 api.add_router("/token", verify_router)
 api.add_router("/token", blacklist_router)
+
+
+# ---------------------------------------------------------------------------
+# Build provenance — unauthenticated. Lets a deployer confirm exactly what
+# version/commit/date the running image was built from. Baked into the image
+# at build time (Dockerfile ARG/ENV + CI build-args). Defaults render cleanly
+# for local runs ("dev"/"unknown").
+# ---------------------------------------------------------------------------
+@api.get("/version/", auth=None)
+def version(request):
+    sha = settings.OPENEASD_GIT_SHA
+    return {
+        "version": settings.OPENEASD_VERSION,
+        "git_sha": sha,
+        "git_sha_short": sha[:8],
+        "build_date": settings.OPENEASD_BUILD_DATE,
+    }
 
 
 # ---------------------------------------------------------------------------

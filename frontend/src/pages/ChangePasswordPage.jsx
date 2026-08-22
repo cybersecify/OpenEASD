@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Button } from '../components/ui/button.jsx';
 import { apiPost } from '../api/client.js';
 import { useNavigate } from 'react-router-dom';
+import BuildInfo from '../components/BuildInfo.jsx';
 
 export default function ChangePasswordPage() {
   const navigate = useNavigate();
@@ -59,6 +60,7 @@ export default function ChangePasswordPage() {
             {loading ? 'Saving…' : 'Set New Password'}
           </Button>
         </form>
+        <BuildInfo className="mt-6" />
       </div>
     </div>
   );
