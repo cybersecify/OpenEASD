@@ -1,7 +1,7 @@
 """Central Django Ninja API instance for OpenEASD."""
 
 from django.conf import settings
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError, ValidationError
 from ninja_jwt.routers.obtain import obtain_pair_router   # POST /pair, POST /refresh
@@ -83,8 +83,10 @@ api.add_router("/token", blacklist_router)
 # for local runs ("dev"/"unknown").
 # ---------------------------------------------------------------------------
 @api.get("/version/", auth=None)
-def version(request):
+def version(request, response: HttpResponse):
     sha = settings.OPENEASD_GIT_SHA
+    # no-store so a CDN never serves a stale build line after a redeploy.
+    response["Cache-Control"] = "no-store"
     return {
         "version": settings.OPENEASD_VERSION,
         "git_sha": sha,

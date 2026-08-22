@@ -855,6 +855,15 @@ class TestBuildProvenance:
         res = client.get("/health/")
         assert res.json()["git_sha"] == "01234567"
 
+    def test_version_no_store_header(self, client):
+        # Must not be CDN-cached, or the app reports a stale build after redeploy.
+        res = client.get("/api/version/")
+        assert res.headers.get("Cache-Control") == "no-store"
+
+    def test_health_no_store_header(self, client):
+        res = client.get("/health/")
+        assert res.headers.get("Cache-Control") == "no-store"
+
     def test_version_latest_requires_auth(self, client):
         assert client.get("/api/version/latest/").status_code == 401
 

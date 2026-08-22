@@ -11,12 +11,16 @@ from apps.core.api.ninja import api
 
 
 def health(request):
-    return JsonResponse({
+    resp = JsonResponse({
         "status": "ok",
         "version": settings.OPENEASD_VERSION,
         "git_sha": settings.OPENEASD_GIT_SHA[:8],
         "build_date": settings.OPENEASD_BUILD_DATE,
     })
+    # Never let a CDN/proxy cache provenance — a cached response makes the app
+    # report a stale build after a redeploy (Cloudflare cached /api/version/).
+    resp["Cache-Control"] = "no-store"
+    return resp
 
 
 urlpatterns = [

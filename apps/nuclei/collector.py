@@ -44,7 +44,7 @@ CONCURRENCY = 25      # fallback -c; the resource profile overrides it
 _DRAIN_GRACE = 30  # seconds to let a SIGKILL'd process die before we give up
 
 
-def _run(cmd: list[str], timeout: int) -> subprocess.CompletedProcess:
+def _run(cmd: list[str], timeout: int, env: dict | None = None) -> subprocess.CompletedProcess:
     """Run an external tool with a timeout that cannot be defeated by child processes.
 
     Why not subprocess.run / communicate(): communicate() reads stdout/stderr until
@@ -73,6 +73,7 @@ def _run(cmd: list[str], timeout: int) -> subprocess.CompletedProcess:
                 stderr=err_f,
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
+                env=env,
             )
             try:
                 proc.wait(timeout=timeout)
@@ -145,7 +146,10 @@ def collect(session) -> list[dict]:
     logger.info(f"[nuclei:{session.id}] Scanning {len(targets)} web targets")
 
     try:
-        result = _run(cmd, TIMEOUT)
+        # Cap nuclei's Go heap on low-memory hosts so its template load can't
+        # swap the box into a freeze (env is unchanged on balanced/high).
+        from apps.core.workflows.proc_env import go_memory_env
+        result = _run(cmd, TIMEOUT, env=go_memory_env())
     except FileNotFoundError:
         logger.error(f"[nuclei:{session.id}] Binary not found: {binary}")
         raise ToolBinaryMissing(f"nuclei binary not found: {binary}")

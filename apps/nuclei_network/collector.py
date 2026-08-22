@@ -107,7 +107,10 @@ def collect(session) -> list[dict]:
     ]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT, stdin=subprocess.DEVNULL)
+        # Cap nuclei's Go heap on low-memory hosts (unchanged on balanced/high).
+        from apps.core.workflows.proc_env import go_memory_env
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT,
+                                stdin=subprocess.DEVNULL, env=go_memory_env())
     except FileNotFoundError:
         logger.error(f"[nuclei_network:{session.id}] Binary not found: {binary}")
         raise ToolBinaryMissing(f"nuclei binary not found: {binary}")
