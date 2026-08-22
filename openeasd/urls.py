@@ -11,7 +11,12 @@ from apps.core.api.ninja import api
 
 
 def health(request):
-    return JsonResponse({"status": "ok"})
+    return JsonResponse({
+        "status": "ok",
+        "version": settings.OPENEASD_VERSION,
+        "git_sha": settings.OPENEASD_GIT_SHA[:8],
+        "build_date": settings.OPENEASD_BUILD_DATE,
+    })
 
 
 urlpatterns = [

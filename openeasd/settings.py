@@ -303,6 +303,14 @@ OPENEASD_USER_AGENT = config(
     default="OpenEASD/1.0 (+https://cybersecify.com/openeasd)",
 )
 
+# Build provenance — baked into the image at build time (see Dockerfile ARG/ENV
+# + the CI publish job's build-args). Lets a deployer verify exactly what
+# version/commit/date the running image was built from, via GET /health/ and
+# GET /api/version/. Defaults render cleanly for local (non-image) runs.
+OPENEASD_VERSION = config("OPENEASD_VERSION", default="dev")
+OPENEASD_GIT_SHA = config("OPENEASD_GIT_SHA", default="unknown")
+OPENEASD_BUILD_DATE = config("OPENEASD_BUILD_DATE", default="unknown")
+
 # Logging
 LOGGING = {
     "version": 1,

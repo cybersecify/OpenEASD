@@ -97,6 +97,7 @@ git describe --tags --abbrev=0
 - **Publish triggers:** every push to `main` (`:latest` tag) and `v*` tags (`:vX.Y` tag)
 - Runner: `ubuntu-24.04`, Python 3.12, `uv sync --group dev` for deps, `libcairo2-dev gcc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0` system deps required (WeasyPrint PDF rendering)
 - `pip-audit --ignore-vuln PYSEC-2025-183` — disputed PyJWT weak-key-length CVE, no fix available
+- **Build provenance:** the `publish` job computes `OPENEASD_VERSION` (git tag for `v*`, else `pyproject.toml` version), `OPENEASD_GIT_SHA` (`github.sha`), and `OPENEASD_BUILD_DATE` (ISO UTC) and passes them as `build-args` to buildx. The Dockerfile bakes them into `ENV` (placed late so they never bust the cache of the heavy layers). Settings read them via `config()` with `dev`/`unknown` defaults for local runs. Surfaced at `GET /health/` + `GET /api/version/`, and shown as a muted footer on the login + change-password pages (`frontend/src/components/BuildInfo.jsx`).
 
 ## Commands
 - Always use `uv run python` instead of `python` or `python3`
@@ -210,7 +211,7 @@ k8s/
 **Key constraints:**
 - `replicas: 1` required — SQLite RWO PVC allows single-node access only
 - Only `worker` container gets `NET_RAW`; `web` does not need it
-- `GET /health/` — unauthenticated endpoint used by K8s readiness/liveness probes
+- `GET /health/` — unauthenticated endpoint used by K8s readiness/liveness probes; JSON body is `{status, version, git_sha (short 8), build_date}` (build provenance)
 - **Real `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` live in `openeasd-secret`, never in
   the committed configmap.** `configmap.yaml` carries only placeholders; the real
   hostname is set in the secret, which is applied out-of-band and is intentionally
@@ -540,6 +541,7 @@ POST /api/token/pair                      — JWT login → {access, refresh}
 POST /api/token/blacklist                 — blacklist refresh token (logout)
 POST /api/token/refresh                   — exchange refresh → new access token
 POST /api/token/verify                    — verify token validity
+GET  /api/version/                        — build provenance {version, git_sha, git_sha_short, build_date} (unauthenticated)
 GET  /api/user/                           — current user info + must_change_password flag
 POST /api/user/change-password/           — change password; clears must_change_password flag
 GET  /api/dashboard/                      — KPIs, domain status, urgent findings
@@ -632,6 +634,6 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_workflow_runner.py` | 32 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism |
 | `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow with the complete 18-tool set (migration 0021), idempotent gap-fill |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
-| `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
+| `tests/test_api_endpoints.py` | 93 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` |
 
-**Total: 1175 tests** (1124 fast + 51 slow domain_security)
+**Total: 1179 tests** (1128 fast + 51 slow domain_security)

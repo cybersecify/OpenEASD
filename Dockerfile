@@ -188,6 +188,16 @@ RUN chmod +x docker-entrypoint.sh
 # Pre-collect static files so the image is ready without a volume
 RUN SECRET_KEY=build-time-placeholder python manage.py collectstatic --noinput
 
+# Build provenance — placed late so it never busts the cache of the heavy
+# layers above (these three change on every build). Baked into the running
+# container's env; surfaced via GET /health/ and GET /api/version/. CI supplies
+# real values through build-args (see .github/workflows/ci.yml); local builds
+# fall back to the "dev"/"unknown" defaults, which the UI renders cleanly.
+ARG OPENEASD_VERSION=dev
+ARG OPENEASD_GIT_SHA=unknown
+ARG OPENEASD_BUILD_DATE=unknown
+ENV OPENEASD_VERSION=$OPENEASD_VERSION OPENEASD_GIT_SHA=$OPENEASD_GIT_SHA OPENEASD_BUILD_DATE=$OPENEASD_BUILD_DATE
+
 VOLUME ["/app/data", "/app/logs"]
 EXPOSE 8000
 

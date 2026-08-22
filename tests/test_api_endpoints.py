@@ -92,7 +92,7 @@ class TestHealthEndpoint:
         assert res.status_code == 200
 
     def test_returns_ok_status(self, client):
-        assert client.get("/health/").json() == {"status": "ok"}
+        assert client.get("/health/").json()["status"] == "ok"
 
     def test_no_auth_required(self, client):
         # Must be accessible without a token — used by K8s liveness/readiness probes
@@ -817,3 +817,40 @@ def scan_summary(db, scan):
         total_findings=1, new_exposures=1, removed_exposures=0,
         tool_breakdown={},
     )
+
+
+# ---------------------------------------------------------------------------
+# Build provenance — /health/ + /api/version/ (both unauthenticated)
+# ---------------------------------------------------------------------------
+
+class TestBuildProvenance:
+    def test_health_includes_provenance(self, client):
+        res = client.get("/health/")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "ok"
+        # Settings defaults resolve locally (no image build args set).
+        assert data["version"] == "dev"
+        assert data["git_sha"] == "unknown"
+        assert data["build_date"] == "unknown"
+
+    def test_version_endpoint_no_auth(self, client):
+        res = client.get("/api/version/")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["version"] == "dev"
+        assert data["git_sha"] == "unknown"
+        assert data["git_sha_short"] == "unknown"
+        assert data["build_date"] == "unknown"
+
+    def test_version_short_sha_truncates(self, client, settings):
+        settings.OPENEASD_GIT_SHA = "0123456789abcdef0123456789abcdef01234567"
+        res = client.get("/api/version/")
+        data = res.json()
+        assert data["git_sha"] == "0123456789abcdef0123456789abcdef01234567"
+        assert data["git_sha_short"] == "01234567"
+
+    def test_health_short_sha_truncates(self, client, settings):
+        settings.OPENEASD_GIT_SHA = "0123456789abcdef0123456789abcdef01234567"
+        res = client.get("/health/")
+        assert res.json()["git_sha"] == "01234567"
