@@ -25,10 +25,23 @@ export default function BuildInfo({ className = '' }) {
   if (data.build_date && data.build_date !== 'unknown') {
     parts.push(String(data.build_date).split('T')[0]);
   }
+  const buildLine = parts.join(' · ');
+
+  // Pre-fill new-issue reports with the running build so we never have to ask
+  // "what version are you on?". GitHub Issues is the OSS-native report channel.
+  const ISSUES = 'https://github.com/cybersecify/OpenEASD/issues/new';
+  const env = encodeURIComponent(`\n\n---\nBuild (auto-filled): ${buildLine}`);
+  const bugUrl = `${ISSUES}?labels=bug&title=${encodeURIComponent('[Bug] ')}&body=${env}`;
+  const featureUrl = `${ISSUES}?labels=enhancement&title=${encodeURIComponent('[Feature] ')}&body=${env}`;
 
   return (
-    <div className={`text-[11px] text-dim/70 text-center select-none ${className}`}>
-      {parts.join(' · ')}
+    <div className={`text-[11px] text-dim/70 text-center select-none space-y-0.5 ${className}`}>
+      <div>{buildLine}</div>
+      <div className="space-x-2">
+        <a href={bugUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-dim">Report an issue</a>
+        <span aria-hidden="true">·</span>
+        <a href={featureUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-dim">Request a feature</a>
+      </div>
     </div>
   );
 }
