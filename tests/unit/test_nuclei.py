@@ -290,7 +290,7 @@ class TestNucleiCollector:
         sess = self._make_session()
         captured = {}
 
-        def fake_run(cmd, timeout):
+        def fake_run(cmd, timeout, env=None):
             captured["cmd"] = cmd
             captured["timeout"] = timeout
             return MagicMock(stdout="", returncode=0, stderr="")
@@ -316,7 +316,7 @@ class TestNucleiCollector:
         sess = self._make_session()
         captured = {}
 
-        def fake_run(cmd, timeout):
+        def fake_run(cmd, timeout, env=None):
             captured["cmd"] = cmd
             return MagicMock(stdout="", returncode=0, stderr="")
 

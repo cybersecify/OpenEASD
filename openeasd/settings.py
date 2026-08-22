@@ -353,6 +353,15 @@ _PROFILE_TUNING = {
 NUCLEI_CONCURRENCY = _PROFILE_TUNING[PROFILE]["nuclei_c"]
 NUCLEI_RATE_LIMIT = _PROFILE_TUNING[PROFILE]["nuclei_rate"]
 
+# Soft memory ceiling for the nuclei/nuclei_network Go processes. nuclei loads
+# its whole template set into RAM (the real footprint — independent of the polite
+# rate cap), which on a 1 GB box swaps hard and can freeze the whole host,
+# including the web UI, for minutes. GOMEMLIMIT makes the Go runtime GC
+# aggressively as it nears the ceiling, holding RSS down (costs some CPU, keeps
+# full template coverage). Only applied in the low profile; empty = leave Go's
+# default (unbounded) alone. GOGC lowered alongside to trade CPU for memory.
+NUCLEI_GOMEMLIMIT = config("NUCLEI_GOMEMLIMIT", default=("600MiB" if LOW_MEMORY else ""))
+
 # Hudson Rock (Cavalier) OSINT API base — free, keyless infostealer-exposure
 # intelligence. OSS use permitted by Hudson Rock co-founder Alon Gal. Overridable
 # for testing / self-hosting.

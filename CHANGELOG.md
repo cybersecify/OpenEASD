@@ -7,6 +7,21 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Fixed
+- **Provenance endpoints (`/api/version/`, `/health/`) now send `Cache-Control:
+  no-store`.** **Why:** Cloudflare (and any CDN) was caching the unauthenticated
+  `/api/version/`, so the in-app build line showed a stale version/sha for hours
+  after a redeploy. No-store keeps the displayed build honest on every deploy.
+
+### Changed
+- **nuclei / nuclei_network now honour a Go soft memory limit in the `low`
+  profile** (`NUCLEI_GOMEMLIMIT`, default `600MiB`; `GOGC=50`). **Why:** nuclei
+  loads its whole template set into RAM (the real footprint — independent of the
+  polite request-rate cap), which on a 1 GB host swaps hard and can freeze the
+  whole box, including the web UI, for minutes. `GOMEMLIMIT` makes the Go runtime
+  GC aggressively near the ceiling, holding RSS down while keeping full template
+  coverage. Unset (unbounded, prior behaviour) on the balanced/high profiles.
+
 ### Added
 - **In-app version footer + "update available" check for logged-in users.** The
   build provenance line (`OpenEASD vX.Y.Z · <sha> · <date>`) and the
