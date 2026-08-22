@@ -5,6 +5,7 @@ OpenEASD - Automated External Attack Surface Detection
 Company: Cybersecify | Author: Rathnakara G N
 """
 
+import os
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -304,11 +305,53 @@ OPENEASD_USER_AGENT = config(
     default="OpenEASD/1.0 (+https://cybersecify.com/openeasd)",
 )
 
-# Low-memory mode for small hosts (≈1 GB RAM). When true, same-phase tools run
-# sequentially instead of concurrently (bounds peak memory) and nuclei uses a
-# lower concurrency/rate-limit. Prevents the kernel OOM-killing nuclei/amass on
-# a 1 GB droplet, at the cost of a slower scan. See the deploy docs.
-LOW_MEMORY = config("OPENEASD_LOW_MEMORY", default=False, cast=bool)
+# Resource profile — adapts scan behaviour to the host's specs.
+#   low      : same-phase tools run sequentially, nuclei throttled, amass skips
+#              brute — survives ~1 GB without OOM (slower).
+#   balanced : phase-parallel, nuclei -c 25 (the previous default).
+#   high     : phase-parallel + higher LOCAL concurrency and deeper enumeration
+#              for big boxes. Per-target request rate stays polite on purpose —
+#              a bigger box is no licence to hammer the target (and higher rates
+#              just trip WAFs, which the coverage report then flags).
+# OPENEASD_PROFILE = auto (default) | low | balanced | high. "auto" picks from
+# host RAM. OPENEASD_LOW_MEMORY=true is kept as a back-compat alias for low.
+def _detect_ram_gb():
+    """Best-effort total RAM in GB (Linux/macOS via sysconf); None if unknown."""
+    try:
+        return (os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")) / (1024 ** 3)
+    except (ValueError, OSError, AttributeError):
+        return None
+
+
+def _resolve_profile() -> str:
+    if config("OPENEASD_LOW_MEMORY", default=False, cast=bool):
+        return "low"  # explicit legacy flag wins
+    p = config("OPENEASD_PROFILE", default="auto").lower()
+    if p in ("low", "balanced", "high"):
+        return p
+    ram = _detect_ram_gb()  # auto
+    if ram is None:
+        return "balanced"
+    if ram < 2:
+        return "low"
+    if ram >= 8:
+        return "high"
+    return "balanced"
+
+
+PROFILE = _resolve_profile()
+LOW_MEMORY = PROFILE == "low"  # runner serialises + amass skips brute when true
+
+# Per-profile tuning. nuclei_rate (per-target request rate) is deliberately
+# capped — it scales politely, NOT with your CPU, to stay under WAF/abuse
+# thresholds. nuclei_c raises local template parallelism.
+_PROFILE_TUNING = {
+    "low":      {"nuclei_c": 10, "nuclei_rate": 40},
+    "balanced": {"nuclei_c": 25, "nuclei_rate": 100},
+    "high":     {"nuclei_c": 40, "nuclei_rate": 150},
+}
+NUCLEI_CONCURRENCY = _PROFILE_TUNING[PROFILE]["nuclei_c"]
+NUCLEI_RATE_LIMIT = _PROFILE_TUNING[PROFILE]["nuclei_rate"]
 
 # Hudson Rock (Cavalier) OSINT API base — free, keyless infostealer-exposure
 # intelligence. OSS use permitted by Hudson Rock co-founder Alon Gal. Overridable

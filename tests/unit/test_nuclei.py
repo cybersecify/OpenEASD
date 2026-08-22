@@ -239,8 +239,10 @@ class TestNucleiCollector:
         ua = cmd[cmd.index("-H") + 1]
         assert ua.startswith("User-Agent: OpenEASD/")
 
-    def test_low_memory_reduces_concurrency(self, settings):
-        settings.LOW_MEMORY = True
+    def test_uses_profile_resolved_concurrency(self, settings):
+        # nuclei reads the profile-resolved values from settings (low = 10/40).
+        settings.NUCLEI_CONCURRENCY = 10
+        settings.NUCLEI_RATE_LIMIT = 40
         sess = self._make_session()
         mock_result = MagicMock()
         mock_result.stdout = ""
@@ -249,8 +251,8 @@ class TestNucleiCollector:
         with patch("apps.nuclei.collector._run", return_value=mock_result) as mock_run:
             collect(sess)
         cmd = mock_run.call_args[0][0]
-        assert cmd[cmd.index("-c") + 1] == "10"          # LOW_MEM_CONCURRENCY
-        assert cmd[cmd.index("-rate-limit") + 1] == "40"  # LOW_MEM_RATE_LIMIT
+        assert cmd[cmd.index("-c") + 1] == "10"
+        assert cmd[cmd.index("-rate-limit") + 1] == "40"
 
     def test_binary_not_found_raises(self):
         """A missing binary must surface as ToolBinaryMissing, not a silent [] —
@@ -300,8 +302,9 @@ class TestNucleiCollector:
         for flag in ("-rate-limit", "-c", "-timeout", "-retries"):
             assert flag in cmd, f"missing {flag}"
         assert captured["timeout"] == 7200
-        # gentler rate limit for politeness (see collector RATE_LIMIT)
-        assert "100" in cmd
+        # per-target rate must stay polite regardless of resource profile
+        rate = int(cmd[cmd.index("-rate-limit") + 1])
+        assert rate <= 150, f"per-target rate {rate} too aggressive"
 
     def test_cmd_disables_runtime_template_update(self):
         """nuclei must never download/update templates at scan time.
