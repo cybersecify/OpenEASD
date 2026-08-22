@@ -129,9 +129,14 @@ def run_workflow(workflow_run_id: int, only_tools: list | None = None):
             if t not in tools:
                 tools.append(t)
 
-    # service_detection always runs after naabu (core infrastructure).
-    # Skip for subscans (assets already classified from parent).
-    if "service_detection" not in tools and only_tools is None:
+    # service_detection runs after naabu (core infrastructure) to classify the
+    # ports naabu found. It is auto-injected ONLY when naabu is in the run:
+    #   - no naabu → no new ports to enrich, so the nmap -sV probe would be a
+    #     pointless (and, crucially, ACTIVE) hit on the target.
+    #   - a passive-only workflow has no naabu, so this guarantees a passive scan
+    #     never triggers service_detection's active probe.
+    # Skipped for subscans (assets already classified from the parent scan).
+    if "service_detection" not in tools and "naabu" in tools and only_tools is None:
         insert_at = 0
         for i, t in enumerate(tools):
             if t == "naabu":

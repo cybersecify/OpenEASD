@@ -13,4 +13,5 @@ class DomainSecurityConfig(AppConfig):
         "phase_group": "Domain Intelligence",
         "requires": [],
         "produces_findings": True,
+        "active": True,
     }

@@ -137,8 +137,13 @@ class TestRunWorkflowSuccess:
 # ---------------------------------------------------------------------------
 
 class TestServiceDetectionInjection:
-    def test_service_detection_injected_when_missing(self, db, run, workflow):
-        # workflow has subfinder + dnsx but NO service_detection
+    def test_service_detection_injected_when_missing(self, db, session):
+        # workflow has naabu (which produces ports) but NO service_detection —
+        # it must be auto-injected to classify those ports.
+        wf = Workflow.objects.create(name="Naabu No SD Workflow")
+        WorkflowStep.objects.create(workflow=wf, tool="subfinder", order=1, enabled=True)
+        WorkflowStep.objects.create(workflow=wf, tool="naabu",     order=2, enabled=True)
+        run = WorkflowRun.objects.create(workflow=wf, session=session)
         tools_used = []
 
         def track_runner(tool_name):
@@ -149,6 +154,22 @@ class TestServiceDetectionInjection:
             run_workflow(run.id)
 
         assert "service_detection" in tools_used
+
+    def test_service_detection_not_injected_without_naabu(self, db, run, workflow):
+        # workflow has subfinder + dnsx but NO naabu → no ports to classify, so
+        # service_detection (an ACTIVE nmap -sV probe) must NOT be injected.
+        # This is the passive-boundary guarantee: a naabu-less workflow never
+        # triggers an active probe.
+        tools_used = []
+
+        def track_runner(tool_name):
+            tools_used.append(tool_name)
+            return MagicMock(return_value=None)
+
+        with patch("apps.core.workflows.runner._get_runner", side_effect=track_runner):
+            run_workflow(run.id)
+
+        assert "service_detection" not in tools_used
 
     def test_service_detection_inserted_after_naabu(self, db, session):
         wf = Workflow.objects.create(name="Naabu Workflow")

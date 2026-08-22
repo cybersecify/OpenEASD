@@ -13,4 +13,5 @@ class HttpxConfig(AppConfig):
         "phase_group": "Web Exposure",
         "requires": ["naabu"],
         "produces_findings": False,
+        "active": True,
     }
