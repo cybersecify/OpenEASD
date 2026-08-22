@@ -36,8 +36,16 @@ def collect(session) -> list[dict]:
     # stdout by default. The parser below handles both plain text and JSONL.
     cmd = [binary, "enum", "-d", domain, "-silent"]
 
-    if config.wordlist_file:
+    low_memory = getattr(settings, "LOW_MEMORY", False)
+
+    # Brute-force wordlist expansion is amass's biggest memory driver — it's what
+    # OOM-kills it on a ~1 GB host. In low-memory mode skip -brute (and cap DNS
+    # query concurrency) so amass still enumerates from passive sources + normal
+    # resolution and actually completes, instead of thrashing to death.
+    if config.wordlist_file and not low_memory:
         cmd += ["-brute", "-w", config.wordlist_file.path]
+    if low_memory:
+        cmd += ["-max-dns-queries", "1000"]
 
     cmd += ["-timeout", str(config.scan_timeout)]
 
@@ -57,7 +65,7 @@ def collect(session) -> list[dict]:
             f"[amass:{session.id}] Using providers: {', '.join(provider_names)}"
         )
 
-    brute = f" +brute({config.wordlist_file.name})" if config.wordlist_file else ""
+    brute = f" +brute({config.wordlist_file.name})" if (config.wordlist_file and not low_memory) else (" (low-memory: no brute)" if low_memory else "")
     logger.info(
         f"[amass:{session.id}] Scanning {domain} "
         f"(mode=active{brute}, timeout={config.scan_timeout}m)"

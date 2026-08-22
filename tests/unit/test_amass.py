@@ -155,6 +155,26 @@ class TestAmassCollector:
         cmd = mock_popen.call_args[0][0]
         assert "-config" not in cmd
 
+    def test_low_memory_skips_brute_and_caps_dns(self, settings):
+        """Low-memory: amass still enumerates but drops the memory-heavy -brute
+        wordlist expansion and caps DNS query concurrency, so it completes on a
+        ~1 GB host instead of thrashing."""
+        settings.LOW_MEMORY = True
+        sess = _session()
+        cfg = MagicMock()
+        cfg.enabled = True
+        cfg.scan_timeout = 30
+        cfg.wordlist_file.name = "wl.txt"   # a wordlist IS configured…
+        cfg.build_datasource_config.return_value = []
+        proc = _mock_proc()
+        with patch("apps.amass.models.AmassConfig.get", return_value=cfg), \
+             patch("apps.amass.collector.subprocess.Popen", return_value=proc) as mock_popen:
+            collect(sess)
+        cmd = mock_popen.call_args[0][0]
+        assert "-brute" not in cmd            # …but brute is skipped in low-memory
+        assert "-max-dns-queries" in cmd      # DNS concurrency capped
+        assert "enum" in cmd                   # still enumerating (tool works)
+
 
 # ---------------------------------------------------------------------------
 # Analyzer
