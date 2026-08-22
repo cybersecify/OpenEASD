@@ -175,6 +175,12 @@ docker run -d \
 ```
 - `--cap-add NET_RAW` — required for nmap raw socket scanning
 - `--restart unless-stopped` — survives server reboots
+- **RAM: 2 GB min / 4 GB recommended.** nuclei + amass are memory-hungry and the
+  kernel will OOM-kill them on an under-provisioned host (silent partial scans).
+  On a **1 GB** box add `-e OPENEASD_LOW_MEMORY=true` — same-phase tools then run
+  sequentially and nuclei uses lower concurrency, so scans complete (slower) on
+  1 GB without OOM. Adding a few GB of swap also helps. Fine for low-volume use
+  (a handful of scans/month with a long completion window).
 - Volumes: `openeasd-data` (SQLite DB) and `openeasd-logs` persist across container replacements
 - Static files served by WhiteNoise (no nginx needed)
 - **Serve it over HTTPS.** Do NOT expose the app on bare HTTP — login sends
@@ -613,7 +619,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_naabu.py` | 10 | JSON parser, FK to IPAddress |
 | `tests/unit/test_nmap.py` | 23 | Severity mapping, vulners XML parser, web/non-web exclusion, backport matching |
 | `tests/unit/test_notifications.py` | 25 | NotificationConfig, Slack/Teams alerts, alert-history API |
-| `tests/unit/test_nuclei.py` | 32 | CVE parsing, severity, dedup, URL linking, collector, honest UA |
+| `tests/unit/test_nuclei.py` | 33 | CVE parsing, severity, dedup, URL linking, collector, honest UA |
 | `tests/unit/test_nuclei_network.py` | 28 | Network-template parsing, non-web targeting, collector |
 | `tests/unit/test_pipeline_phases.py` | 1 | Phase ordering sanity |
 | `tests/unit/test_qcluster_config.py` | 4 | Django-Q cluster config |
@@ -634,9 +640,9 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_insights_builder.py` | 4 | FindingTypeSummary prune only when aggregation_complete |
 | `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
 | `tests/unit/test_passive_scan.py` | 21 | registry `active` classification, `is_passive_tool_set`, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
-| `tests/unit/test_workflow_runner.py` | 32 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism |
+| `tests/unit/test_workflow_runner.py` | 33 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism |
 | `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow with the complete 18-tool set (migration 0021), idempotent gap-fill |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 93 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` |
 
-**Total: 1196 tests** (1145 fast + 51 slow domain_security)
+**Total: 1198 tests** (1147 fast + 51 slow domain_security)

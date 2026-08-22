@@ -36,6 +36,10 @@ REQUEST_TIMEOUT = 5   # seconds per HTTP request (nuclei -timeout)
 # large-target worst case (~330k requests) well within the 2h cap.
 RATE_LIMIT = 100      # max requests/sec across all hosts (nuclei -rate-limit)
 CONCURRENCY = 25      # parallel templates (nuclei -c)
+# Low-memory host (settings.LOW_MEMORY): fewer parallel templates keeps nuclei's
+# peak memory well under a 1 GB ceiling, at the cost of a slower run.
+LOW_MEM_RATE_LIMIT = 40
+LOW_MEM_CONCURRENCY = 10
 
 
 _DRAIN_GRACE = 30  # seconds to let a SIGKILL'd process die before we give up
@@ -133,8 +137,8 @@ def collect(session) -> list[dict]:
         "-disable-update-check",
         "-timeout", str(REQUEST_TIMEOUT),
         "-retries", "1",
-        "-rate-limit", str(RATE_LIMIT),
-        "-c", str(CONCURRENCY),
+        "-rate-limit", str(LOW_MEM_RATE_LIMIT if getattr(settings, "LOW_MEMORY", False) else RATE_LIMIT),
+        "-c", str(LOW_MEM_CONCURRENCY if getattr(settings, "LOW_MEMORY", False) else CONCURRENCY),
         # Honest scanner identity so a target can allowlist us deliberately.
         # Note: templates that hard-set their own User-Agent are not overridden.
         "-H", f"User-Agent: {getattr(settings, 'OPENEASD_USER_AGENT', 'OpenEASD/1.0')}",

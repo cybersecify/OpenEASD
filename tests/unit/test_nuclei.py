@@ -239,6 +239,19 @@ class TestNucleiCollector:
         ua = cmd[cmd.index("-H") + 1]
         assert ua.startswith("User-Agent: OpenEASD/")
 
+    def test_low_memory_reduces_concurrency(self, settings):
+        settings.LOW_MEMORY = True
+        sess = self._make_session()
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mock_result.returncode = 0
+        mock_result.stderr = ""
+        with patch("apps.nuclei.collector._run", return_value=mock_result) as mock_run:
+            collect(sess)
+        cmd = mock_run.call_args[0][0]
+        assert cmd[cmd.index("-c") + 1] == "10"          # LOW_MEM_CONCURRENCY
+        assert cmd[cmd.index("-rate-limit") + 1] == "40"  # LOW_MEM_RATE_LIMIT
+
     def test_binary_not_found_raises(self):
         """A missing binary must surface as ToolBinaryMissing, not a silent [] —
         otherwise the runner marks the step 'completed' and the failure hides."""
