@@ -329,7 +329,25 @@ Per-module routers (each file exports a `router = Router(auth=JWTAuth())`):
 
 ### Tool auto-registration
 
-Tools self-register via `AppConfig.tool_meta`. **No core files need editing when adding a new tool** (except `settings.INSTALLED_APPS`).
+Tools self-register via `AppConfig.tool_meta`. No core *code* needs editing to
+register a tool — but registration alone does **not** put it in a scan.
+
+**Definition of done for adding (or removing) a tool** — all of these, or the
+registry, the scan, the report, and the public docs drift out of sync (this is
+how asn_discovery/js_secrets shipped registered-but-not-scanned, reading 21 in
+the registry and 19 in every actual scan):
+
+1. Add the app to `settings.INSTALLED_APPS`.
+2. **Add it to the default Full Scan workflow** via a data migration (unless it
+   is deliberately default-off — then document why). Enforced by
+   `tests/unit/test_default_workflow.py::test_full_scan_covers_every_registered_tool`,
+   which fails CI if a registered non-core tool is missing from Full Scan.
+3. Set the `"active"` flag correctly (passive = no target contact → no auth).
+4. Update `README.md` — the tool count, the tool list, and the pipeline diagram.
+5. Update `CHANGELOG.md` (What + Why) and the tool tables in this file.
+6. **Flag the website session** — cybersecify.com's tool count, feature cards,
+   and the sample report must match. Keeping GitHub + website in sync on any
+   tool/feature change is a standing requirement, not an afterthought.
 
 ```python
 # Example: apps/my_tool/apps.py
@@ -604,8 +622,8 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
 | `tests/unit/test_passive_scan.py` | 21 | registry `active` classification, `is_passive_tool_set`, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
 | `tests/unit/test_workflow_runner.py` | 32 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism |
-| `tests/unit/test_default_workflow.py` | 4 | Full Scan is the default workflow with the complete 18-tool set (migration 0021), idempotent gap-fill |
+| `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow with the complete 18-tool set (migration 0021), idempotent gap-fill |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: 1170 tests** (1119 fast + 51 slow domain_security)
+**Total: 1171 tests** (1120 fast + 51 slow domain_security)

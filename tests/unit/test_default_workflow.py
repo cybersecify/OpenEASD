@@ -21,6 +21,25 @@ def test_default_is_full_scan():
 
 
 @pytest.mark.django_db
+def test_full_scan_covers_every_registered_tool():
+    """QA invariant: every non-core registered tool must be in the default Full
+    Scan. A tool that's registered but never runs in the default scan is dead
+    weight (the exact 21-vs-19 drift that shipped asn_discovery/js_secrets
+    without wiring them into Full Scan). This fails CI if a new tool is added to
+    the registry but not to the Full Scan workflow migration."""
+    from apps.core.workflows.registry import get_registry
+    from apps.core.workflows.models import Workflow
+    non_core = {n for n, i in get_registry().items() if not i.get("core")}
+    full_scan = set(Workflow.objects.get(name="Full Scan").steps.values_list("tool", flat=True))
+    missing = non_core - full_scan
+    assert not missing, (
+        f"Registered tools missing from the default Full Scan: {missing}. "
+        f"Add them via a workflow migration, or the scan/report/README will "
+        f"under-count. (core tools like service_detection are auto-injected.)"
+    )
+
+
+@pytest.mark.django_db
 def test_exactly_one_default():
     from apps.core.workflows.models import Workflow
     assert Workflow.objects.filter(is_default=True).count() == 1
