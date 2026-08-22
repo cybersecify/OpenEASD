@@ -176,6 +176,14 @@ docker run -d \
 - `--restart unless-stopped` — survives server reboots
 - Volumes: `openeasd-data` (SQLite DB) and `openeasd-logs` persist across container replacements
 - Static files served by WhiteNoise (no nginx needed)
+- **Serve it over HTTPS.** Do NOT expose the app on bare HTTP — login sends
+  credentials and JWTs in cleartext. Put a TLS-terminating reverse proxy in
+  front (Caddy/nginx + Let's Encrypt on a real domain, or Cloudflare) — a bare
+  IP like `http://<ip>/` cannot get a normal cert and must not be used with real
+  credentials. The app already sends `SECURE_PROXY_SSL_HEADER`; once TLS is in
+  front, enable enforcement via env: `SECURE_SSL_REDIRECT=true` and
+  `SECURE_HSTS_SECONDS=31536000`. `SESSION_COOKIE_SECURE`/`CSRF_COOKIE_SECURE`
+  are already on by default when `DEBUG=False`.
 
 ### Kubernetes
 Manifests in `k8s/`. Deploy with `kubectl apply -k k8s/`.
@@ -617,7 +625,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_tls_checker.py` | 87 | Cert parsing, ciphers, protocols, HSTS, collector, scanner, cipher enumeration |
 | `tests/unit/test_tools_healthcheck.py` | 14 | Tool binary preflight / health checks |
 | `tests/unit/test_user_profile.py` | 7 | UserProfile `must_change_password` flag |
-| `tests/unit/test_settings_security.py` | 4 | SECRET_KEY strength guard (DEBUG=False + insecure default) |
+| `tests/unit/test_settings_security.py` | 8 | SECRET_KEY strength guard (DEBUG=False + insecure default) |
 | `tests/unit/test_insights_builder.py` | 4 | FindingTypeSummary prune only when aggregation_complete |
 | `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
 | `tests/unit/test_passive_scan.py` | 21 | registry `active` classification, `is_passive_tool_set`, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
@@ -626,4 +634,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: 1171 tests** (1120 fast + 51 slow domain_security)
+**Total: 1175 tests** (1124 fast + 51 slow domain_security)
