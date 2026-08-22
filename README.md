@@ -133,10 +133,21 @@ empty.
 | **Recommended** | 4 GB | 2 | 10 GB |
 | **1 GB host** | set `OPENEASD_LOW_MEMORY=true` | 1 | 5 GB |
 
-On a **1 GB** box (e.g. the smallest cloud droplet), set `-e OPENEASD_LOW_MEMORY=true`:
-tools then run one-at-a-time per phase and nuclei uses lower concurrency, so it
-completes without OOM — slower, but it finishes. Adding a few GB of swap helps
-too. For faster or concurrent scans, use the recommended spec.
+OpenEASD **adapts to the host automatically** via `OPENEASD_PROFILE` (default
+`auto`, detected from RAM):
+
+| Profile | When | Behaviour |
+|---|---|---|
+| `low` | < 2 GB (or `OPENEASD_LOW_MEMORY=true`) | tools run sequentially, nuclei throttled, amass skips brute — completes on ~1 GB without OOM |
+| `balanced` | 2–8 GB | phase-parallel, nuclei `-c 25` |
+| `high` | ≥ 8 GB | phase-parallel + higher local concurrency and deeper enumeration |
+
+Set `-e OPENEASD_PROFILE=low|balanced|high` to override auto-detection. On a 1 GB
+box, auto-detect picks `low` (or set it explicitly); a few GB of swap also helps.
+
+**On politeness:** a bigger box scales *local* parallelism, not how hard the
+target is hit — the per-target request rate stays capped across all profiles, so
+`high` doesn't flood targets or trip their WAFs (which the report flags anyway).
 
 ## Quick start
 

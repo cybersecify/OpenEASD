@@ -1,9 +1,41 @@
 """Unit tests for the SECRET_KEY production guard in openeasd/settings.py."""
 
+from unittest.mock import patch
+
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
-from openeasd.settings import _validate_secret_key, _security_settings
+from openeasd.settings import (
+    _validate_secret_key, _security_settings, _resolve_profile, _PROFILE_TUNING,
+)
+
+
+class TestResourceProfile:
+    def test_profile_tuning_values(self):
+        assert _PROFILE_TUNING["low"]["nuclei_c"] == 10
+        assert _PROFILE_TUNING["balanced"]["nuclei_c"] == 25
+        assert _PROFILE_TUNING["high"]["nuclei_c"] == 40
+
+    def test_high_rate_stays_polite(self):
+        # Per-target request rate must scale politely, NOT with local specs —
+        # cranking it just trips WAFs. Keep 'high' within a sane ceiling.
+        assert _PROFILE_TUNING["high"]["nuclei_rate"] <= 150
+
+    def test_auto_detects_low_on_small_ram(self):
+        with patch("openeasd.settings._detect_ram_gb", return_value=1.0):
+            assert _resolve_profile() == "low"
+
+    def test_auto_detects_high_on_big_ram(self):
+        with patch("openeasd.settings._detect_ram_gb", return_value=16.0):
+            assert _resolve_profile() == "high"
+
+    def test_auto_detects_balanced_on_mid_ram(self):
+        with patch("openeasd.settings._detect_ram_gb", return_value=4.0):
+            assert _resolve_profile() == "balanced"
+
+    def test_unknown_ram_defaults_balanced(self):
+        with patch("openeasd.settings._detect_ram_gb", return_value=None):
+            assert _resolve_profile() == "balanced"
 
 
 class TestSecurityHardening:
