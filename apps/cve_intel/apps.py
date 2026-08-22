@@ -14,4 +14,5 @@ class CveIntelConfig(AppConfig):
         "phase_group": "Prioritization",
         "requires": [],            # no external binary — pure data enrichment
         "produces_findings": False,  # enriches existing Findings, creates none
+        "active": False,
     }

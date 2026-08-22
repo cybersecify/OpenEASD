@@ -13,4 +13,5 @@ class DnsxConfig(AppConfig):
         "phase_group": "Surface Enumeration",
         "requires": ["subfinder"],
         "produces_findings": False,
+        "active": False,
     }

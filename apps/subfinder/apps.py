@@ -13,4 +13,5 @@ class SubfinderConfig(AppConfig):
         "phase_group": "Surface Enumeration",
         "requires": [],
         "produces_findings": False,
+        "active": False,
     }

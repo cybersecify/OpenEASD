@@ -242,7 +242,7 @@ Don't enable the `ingress` addon if the host already runs Caddy on :80/:443 — 
 ### Scheduler
 - Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (uses `TIME_ZONE` in settings, default 02:00)
 - Configured via env vars: `SCAN_DAILY_HOUR`, `SCAN_DAILY_MINUTE`
-- **Auto-scan consent gate:** `daily_scan` and per-domain monitoring only scan domains with a `DomainAuthorization` record (`is_active=True, authorization__isnull=False`); `run_monitoring_scan` re-checks at run time. The scheduler cannot bypass the authorization gate the manual API/UI already enforce.
+- **Auto-scan consent gate:** `daily_scan` and per-domain monitoring only scan domains with a `DomainAuthorization` record (`is_active=True, authorization__isnull=False`); `run_monitoring_scan` re-checks at run time. The scheduler cannot bypass the authorization gate the manual API/UI already enforce. (Scheduled scans always run the default active Full Scan workflow, so the gate always applies to them — the passive-scan exemption below is manual/`now`-only.)
 - **`SCHEDULED_SCANS_ENABLED`** (env, default `True`) is the master switch for unattended scanning. When `False`, `setup_core_schedules()` registers only the hygiene jobs (watchdog + token purge) and removes any existing `daily_scan`/`monitor_*` schedules on startup — this is how a deployment is made durably manual-only (set in `k8s/configmap.yaml`). Manual/API scans are unaffected.
 - Schedule history visible in Django admin under "Django Q" → "Scheduled tasks"
 - Scheduler code lives in `apps/core/scheduler/scheduler.py`
@@ -423,6 +423,48 @@ Phase 11 web_checker        → Finding (headers, cookies, CORS on URLs)
 Phase 11 js_secrets         → Finding (gitleaks over fetched .js assets — secret redacted)
 ```
 
+### Passive vs active scan modes (the authorization boundary)
+
+Every tool carries an `"active": True/False` flag in its `tool_meta`, exposed by
+the registry via `get_tool_active()` and `is_passive_tool_set(tools)`.
+
+- **Passive** (`active=False`): uses ONLY public / third-party data — CT logs and
+  other subdomain feeds, DNS resolution via public resolvers, WHOIS/RDAP, web
+  archives, cloud-provider bucket APIs, CVE/EPSS/KEV feeds. Sends **no packets to
+  the target's own systems**. Needs **no `DomainAuthorization`**.
+  Passive tools: `subfinder`, `alterx`, `dnsx`, `historical_urls`,
+  `cloud_assets`, `cve_intel`, `asn_discovery`.
+- **Active** (`active=True`): probes the target directly (port scans, HTTP/TLS/SSH
+  connections, crawling, vuln templates, AXFR/SMTP/mta-sts probes). **Requires
+  `DomainAuthorization`.**
+  Active tools: `domain_security`, `amass`, `takeover_check`, `naabu`,
+  `service_detection`, `nmap`, `tls_checker`, `ssh_checker`, `nuclei_network`,
+  `httpx`, `katana`, `nuclei`, `web_checker`.
+
+**Default is active.** `tool_meta` omitting `"active"` is treated as active — a
+missing flag can never let a scanner probe an unauthorized target.
+
+**`domain_security` is active, not passive**, despite being mostly DNS lookups: it
+also performs AXFR zone transfers, SMTP open-relay probes, and mta-sts policy
+fetches directly against the target. A tool with ANY code path that touches the
+target is active.
+
+**Authorization rule (`apps/core/scans/api.py`):** a `schedule_type="now"` scan
+whose resolved workflow contains **only passive tools** bypasses the
+`DomainAuthorization` gate. Any active tool, a bare `now` scan (default = active
+Full Scan), or any scheduled (`once`/`recurring`) scan keeps the gate. The
+`subscan` endpoint applies the same rule: an active-tool subscan requires
+authorization for the parent scan's domain.
+
+**"Passive Scan" workflow** (migration `0022_create_passive_scan_workflow.py`):
+predefined, non-default, contains only passive tools — a no-auth recon mode.
+`tests/unit/test_passive_scan.py` asserts every step is passive, so adding an
+active tool there fails CI.
+
+**Runner safety fix:** `service_detection` (active nmap -sV) is auto-injected only
+when `naabu` is in the run. A passive/naabu-less workflow therefore never triggers
+an active probe.
+
 ### Scan flow
 ```
 create_scan_session(domain)          # auto-assigns default workflow
@@ -560,9 +602,10 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_settings_security.py` | 4 | SECRET_KEY strength guard (DEBUG=False + insecure default) |
 | `tests/unit/test_insights_builder.py` | 4 | FindingTypeSummary prune only when aggregation_complete |
 | `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
-| `tests/unit/test_workflow_runner.py` | 31 | run_workflow, service_detection injection, step failure, cancellation, phase parallelism |
+| `tests/unit/test_passive_scan.py` | 21 | registry `active` classification, `is_passive_tool_set`, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
+| `tests/unit/test_workflow_runner.py` | 32 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism |
 | `tests/unit/test_default_workflow.py` | 4 | Full Scan is the default workflow with the complete 18-tool set (migration 0021), idempotent gap-fill |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: 1146 tests** (1095 fast + 51 slow domain_security)
+**Total: 1168 tests** (1117 fast + 51 slow domain_security)

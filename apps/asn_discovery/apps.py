@@ -13,4 +13,5 @@ class AsnDiscoveryConfig(AppConfig):
         "phase_group": "Surface Enumeration",
         "requires": [],
         "produces_findings": True,
+        "active": False,
     }
