@@ -8,6 +8,8 @@ _EXPECTED_FULL_SCAN = {
     "takeover_check", "cloud_assets", "naabu", "nmap", "tls_checker",
     "ssh_checker", "nuclei_network", "httpx", "historical_urls", "katana",
     "nuclei", "web_checker", "cve_intel",
+    # added in 0023 so registry (21) == Full Scan == report tool count
+    "asn_discovery", "js_secrets",
 }
 
 
@@ -53,6 +55,8 @@ def test_forward_is_idempotent_and_fills_gaps():
     _0021.set_full_scan_default(django_apps, None)
 
     tools = set(wf.steps.values_list("tool", flat=True))
-    assert _EXPECTED_FULL_SCAN <= tools
+    # 0021 restores its own canonical 18; asn_discovery/js_secrets are added by
+    # the separate migration 0023, so exclude them from this migration's check.
+    assert (_EXPECTED_FULL_SCAN - {"asn_discovery", "js_secrets"}) <= tools
     # no duplicates introduced
     assert wf.steps.count() == len(set(wf.steps.values_list("tool", flat=True)))
