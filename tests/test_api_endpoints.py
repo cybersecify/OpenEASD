@@ -854,3 +854,27 @@ class TestBuildProvenance:
         settings.OPENEASD_GIT_SHA = "0123456789abcdef0123456789abcdef01234567"
         res = client.get("/health/")
         assert res.json()["git_sha"] == "01234567"
+
+    def test_version_latest_requires_auth(self, client):
+        assert client.get("/api/version/latest/").status_code == 401
+
+    def test_version_latest_shape(self, auth_client, settings):
+        from unittest.mock import patch
+        settings.OPENEASD_VERSION = "0.10.0"
+        with patch("apps.core.api.update_check.get_latest_release",
+                   return_value={"version": "9.9.9", "url": "https://gh/rel"}):
+            res = auth_client.get("/api/version/latest/")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["latest_version"] == "9.9.9"
+        assert data["update_available"] is True  # 9.9.9 > running 0.10.0
+        assert set(data) == {
+            "current_version", "latest_version", "update_available", "release_url",
+        }
+
+    def test_version_latest_graceful_when_github_down(self, auth_client):
+        from unittest.mock import patch
+        with patch("apps.core.api.update_check.get_latest_release", return_value=None):
+            res = auth_client.get("/api/version/latest/")
+        assert res.status_code == 200
+        assert res.json()["update_available"] is False

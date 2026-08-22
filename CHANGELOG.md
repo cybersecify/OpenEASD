@@ -8,6 +8,17 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Added
+- **In-app version footer + "update available" check for logged-in users.** The
+  build provenance line (`OpenEASD vX.Y.Z · <sha> · <date>`) and the
+  Report-an-issue / Request-a-feature links now render in the sidebar of every
+  authenticated page, not only on the login screen. A new authenticated endpoint
+  `GET /api/version/latest/` compares the running build against the latest public
+  GitHub release (cached 6h, fully fail-graceful) and the footer shows an "↑
+  Update available: vX.Y.Z" link when the deployment is behind. **Why:** an
+  operator using the app never saw which version they were running or how to
+  report a problem — both were hidden pre-login — and had no signal that a newer
+  release existed. The app still never self-updates; this is a heads-up + link,
+  so upgrades stay an explicit redeploy.
 - **Infostealer-exposure tool (Hudson Rock)** — a new passive Domain-Intelligence
   tool that surfaces a domain's infostealer-log exposure via Hudson Rock's free,
   keyless Cavalier API (aggregate counts, stealer families, last-seen dates, and
