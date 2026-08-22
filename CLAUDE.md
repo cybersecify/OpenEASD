@@ -608,4 +608,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
 
-**Total: PLACEHOLDER tests** (PLACEHOLDER fast + 51 slow domain_security)
+**Total: 1168 tests** (1117 fast + 51 slow domain_security)

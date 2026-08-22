@@ -13,4 +13,5 @@ class JsSecretsConfig(AppConfig):
         "phase_group": "Web Exposure",
         "requires": ["gitleaks"],
         "produces_findings": True,
+        "active": True,  # fetches JS from the target — active
     }
