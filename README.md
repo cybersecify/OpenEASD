@@ -140,7 +140,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ## Features
 
-- **Automated pipeline**: 19-tool scan workflow from domain to findings
+- **Automated pipeline**: 21-tool scan workflow from domain to findings
 - **Network attack surface scanning**: CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
 - **CVE prioritisation**: EPSS exploit-probability scores + CISA KEV (known-exploited-in-the-wild) flags enrich CVE findings in place, so you triage by real-world risk rather than severity alone
 - **Dynamic workflows**: Create custom scan configurations, enable/disable tools per workflow
