@@ -3,7 +3,31 @@
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
-from openeasd.settings import _validate_secret_key
+from openeasd.settings import _validate_secret_key, _security_settings
+
+
+class TestSecurityHardening:
+    def test_proxy_ssl_header_always_set(self):
+        # Set in both modes so the app works behind a TLS-terminating proxy.
+        assert _security_settings(debug=True)["SECURE_PROXY_SSL_HEADER"] == (
+            "HTTP_X_FORWARDED_PROTO", "https")
+        assert "SECURE_PROXY_SSL_HEADER" in _security_settings(debug=False)
+
+    def test_secure_cookies_default_on_in_production(self):
+        s = _security_settings(debug=False)
+        assert s["SESSION_COOKIE_SECURE"] is True
+        assert s["CSRF_COOKIE_SECURE"] is True
+        assert s["SECURE_CONTENT_TYPE_NOSNIFF"] is True
+
+    def test_ssl_redirect_and_hsts_default_off(self):
+        # Off by default so they don't break a deploy that has no TLS yet.
+        s = _security_settings(debug=False)
+        assert s["SECURE_SSL_REDIRECT"] is False
+        assert s["SECURE_HSTS_SECONDS"] == 0
+
+    def test_debug_mode_applies_no_cookie_hardening(self):
+        s = _security_settings(debug=True)
+        assert "SESSION_COOKIE_SECURE" not in s  # local dev over http stays usable
 
 
 class TestSecretKeyGuard:

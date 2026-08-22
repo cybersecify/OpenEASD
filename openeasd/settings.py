@@ -44,6 +44,34 @@ if "pytest" not in sys.modules:
 
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
 
+# --- Production HTTPS / security hardening (DEBUG=False only) ---
+def _security_settings(debug: bool) -> dict:
+    """Production security flags. Pure + testable (see test_settings_security).
+
+    - SECURE_PROXY_SSL_HEADER is always set: behind a TLS-terminating proxy
+      (Caddy/nginx/Cloudflare) it lets Django see the original HTTPS scheme; with
+      no proxy it is simply never matched, so it is harmless.
+    - The rest apply only outside DEBUG. Cookies are secure-by-default (an
+      HTTP-only deploy should fix TLS, not weaken this). SSL redirect + HSTS
+      default OFF because enabling them before TLS is terminated breaks the site
+      (redirect loop / HSTS pin) — turn them on via env once TLS is in front.
+    """
+    flags = {"SECURE_PROXY_SSL_HEADER": ("HTTP_X_FORWARDED_PROTO", "https")}
+    if not debug:
+        flags.update(
+            SESSION_COOKIE_SECURE=config("SESSION_COOKIE_SECURE", default=True, cast=bool),
+            CSRF_COOKIE_SECURE=config("CSRF_COOKIE_SECURE", default=True, cast=bool),
+            SECURE_CONTENT_TYPE_NOSNIFF=True,
+            SECURE_SSL_REDIRECT=config("SECURE_SSL_REDIRECT", default=False, cast=bool),
+            SECURE_HSTS_SECONDS=config("SECURE_HSTS_SECONDS", default=0, cast=int),
+            SECURE_HSTS_INCLUDE_SUBDOMAINS=config("SECURE_HSTS_INCLUDE_SUBDOMAINS", default=True, cast=bool),
+            SECURE_HSTS_PRELOAD=config("SECURE_HSTS_PRELOAD", default=False, cast=bool),
+        )
+    return flags
+
+
+globals().update(_security_settings(DEBUG))
+
 # Allow Vite dev server to make CSRF-protected POST requests in development
 CSRF_TRUSTED_ORIGINS = config(
     "CSRF_TRUSTED_ORIGINS",
