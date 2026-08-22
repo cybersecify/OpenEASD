@@ -446,6 +446,29 @@ class TestTopRisksAndIntel:
         assert "Crit" in titles
         assert "Low thing" not in titles  # low/medium without KEV are not "fix first"
 
+    def test_business_impact_on_high_crit_only(self, db, session):
+        self._mk(session, title="Crit")  # unencrypted_service critical
+        self._mk(session, severity="low", check_type="missing_referrer_policy",
+                 title="Low thing", target="x")
+        by_sev = {g["severity"]: g for g in self._groups(session)}
+        assert by_sev["critical"]["business_impact"]        # populated
+        assert by_sev["low"]["business_impact"] == ""       # not on low
+
+    def test_report_renders_headline_and_snapshot(self, authed_client, session):
+        self._mk(session, title="Unencrypted POSTGRESQL")
+        captured = {}
+
+        def cap(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.reports.views._render_pdf", side_effect=cap):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert res.status_code == 200
+        assert "Most urgent:" in captured["html"]                 # headline risk
+        assert "point-in-time snapshot" in captured["html"]        # snapshot framing
+        assert "Business Impact" in captured["html"]               # buyer-language on card
+
     def test_report_renders_fix_first_and_kev_badge(self, authed_client, session):
         self._mk(session, source="nmap", check_type="cve", title="Exploited CVE",
                  extra={"cisa_kev": True, "epss_percentile": 0.98})

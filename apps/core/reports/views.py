@@ -343,6 +343,11 @@ def _group_findings_by_issue(findings):
         grp["cisa_kev"] = any(e.get("cisa_kev") for e in dict_extras)
         pctls = [e.get("epss_percentile") for e in dict_extras if e.get("epss_percentile") is not None]
         grp["epss_percentile"] = max(pctls) if pctls else None
+        # Plain-language business impact, shown on critical/high finding cards so
+        # a decision-maker (not just an engineer) understands what's at stake.
+        grp["business_impact"] = (
+            _BUSINESS_IMPACT.get(grp["check_type"]) or _BUSINESS_IMPACT_BY_SEV.get(grp["severity"], "")
+        ) if grp["severity"] in ("critical", "high") else ""
         # Affected endpoints as a pill grid (3 per row). Capped at 50 per group
         # to prevent OOM when a single finding fires on thousands of URLs.
         endpoints = [(f.url.url if f.url else f.target) for f in grp["instances"]]
@@ -394,7 +399,9 @@ def _top_risks(groups, limit=5):
     ]
     ranked = sorted(candidates, key=_priority_score, reverse=True)[:limit]
     for g in ranked:
-        g["impact"] = _BUSINESS_IMPACT.get(g["check_type"]) or \
+        # Reuse the per-group business_impact; fall back for KEV-only mediums.
+        g["impact"] = g.get("business_impact") or \
+            _BUSINESS_IMPACT.get(g["check_type"]) or \
             _BUSINESS_IMPACT_BY_SEV.get(g["severity"], "")
     return ranked
 
@@ -434,6 +441,7 @@ def export_scan_pdf(request, session_uuid):
     # Findings collapsed into issue groups (identical write-up → one block with
     # a table of affected targets) for both the overview and the detail section.
     issue_groups = _group_findings_by_issue(findings)
+    top_risks = _top_risks(issue_groups)
     groups_by_severity = [
         (sev, [g for g in issue_groups if g["severity"] == sev])
         for sev in _SEVERITY_ORDER
@@ -517,7 +525,8 @@ def export_scan_pdf(request, session_uuid):
         "total_findings": len(issue_groups),   # headline = unique issue count
         "raw_total": raw_total,                # raw detections, shown only in the note
         "risk_rating": risk_rating,
-        "top_risks": _top_risks(issue_groups),
+        "top_risks": top_risks,
+        "headline_risk": top_risks[0] if top_risks else None,
         "coverage": _coverage_context(session),
         "asset_counts": asset_counts,
         "technologies": technologies,

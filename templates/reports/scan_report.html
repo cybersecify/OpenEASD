@@ -160,8 +160,11 @@
 <div class="risk no-break" style="border-color:#e8590c;">
   <div class="l" style="color:#e8590c;">Overall Risk Rating</div>
   <div class="v" style="color:#e8590c;">{{ risk_rating }}</div>
+  {% if headline_risk %}<p style="margin:8px 0 0;font-size:10px;line-height:1.5;color:#333;"><strong>Most urgent:</strong> {{ headline_risk.title }}{% if headline_risk.cisa_kev %} (actively exploited){% endif %} — {{ headline_risk.impact }}</p>{% endif %}
 </div>
 {% endwith %}
+
+<p class="lead" style="font-style:italic;font-size:9px;color:#666;">This is a point-in-time snapshot of the externally observable attack surface, taken from the public internet. It does not include authenticated, internal, or manual testing, and an attack surface changes over time — treat it as a baseline, not a certificate.</p>
 
 {% if coverage %}
 <div class="risk no-break" style="border-color:#e8590c;">
@@ -289,6 +292,11 @@
       {% if g.endpoint_overflow %}<p style="font-size:0.8em;color:#666;margin:4px 0 0;">… and {{ g.endpoint_overflow }} more endpoint{{ g.endpoint_overflow|pluralize }} (see CSV export for full list)</p>{% endif %}
     </td></tr>
   </table>
+
+  {% if g.business_impact %}
+  <div class="sect-lbl">Business Impact</div>
+  <div class="prose">{{ g.business_impact }}</div>
+  {% endif %}
 
   <div class="sect-lbl">Description</div>
   <div class="prose">{{ g.description }}</div>
