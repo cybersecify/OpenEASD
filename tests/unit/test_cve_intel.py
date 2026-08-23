@@ -207,6 +207,42 @@ class TestRunCveIntel:
         assert "cisa_kev" not in f.extra
 
     @pytest.mark.django_db
+    def test_end_to_end_only_requests_get_mocked(self):
+        """Full path with realistic KEV + EPSS bodies through the REAL fetch_*
+        functions — only requests.get is mocked. Asserts the finding is enriched
+        with the KEV flag + EPSS score end-to-end."""
+        from django.core.cache import cache
+        from apps.cve_intel.scanner import run_cve_intel
+
+        cache.delete(collector.KEV_CACHE_KEY)  # don't inherit a cached catalog
+
+        session = self._session()
+        f = self._finding(session, cve="CVE-2021-44228")  # log4shell, a real KEV
+
+        kev_body = {"vulnerabilities": [
+            {"cveID": "CVE-2021-44228", "dateAdded": "2021-12-10", "dueDate": "2021-12-24"},
+        ]}
+        epss_body = {"data": [
+            {"cve": "CVE-2021-44228", "epss": "0.97565", "percentile": "0.99999"},
+        ]}
+
+        def fake_get(url, params=None, timeout=None):
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            resp.json.return_value = kev_body if "cisa.gov" in url else epss_body
+            return resp
+
+        with patch.object(collector.requests, "get", side_effect=fake_get):
+            updated = run_cve_intel(session)
+
+        assert len(updated) == 1
+        f.refresh_from_db()
+        assert f.extra["cisa_kev"] is True
+        assert f.extra["epss_score"] == 0.97565
+        assert f.extra["kev_cves"][0]["cve"] == "CVE-2021-44228"
+        cache.delete(collector.KEV_CACHE_KEY)  # leave cache clean for other tests
+
+    @pytest.mark.django_db
     def test_nuclei_cve_ids_list_enriched(self):
         from apps.cve_intel.scanner import run_cve_intel
         session = self._session()

@@ -247,3 +247,44 @@ class TestScanner:
         with patch("apps.hudson_rock.scanner.collect", side_effect=RuntimeError("boom")):
             saved = run_hudson_rock(s)  # must not raise
         assert saved == []
+
+
+# ---------------------------------------------------------------------------
+# End-to-end contract — realistic Cavalier body through real collect → analyze
+# (only requests.get is mocked)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestCollectAnalyzeContract:
+    def _session(self):
+        from apps.core.scans.models import ScanSession
+        return ScanSession.objects.create(domain="example.com", scan_type="full")
+
+    def test_realistic_body_produces_saved_finding(self):
+        """Feed a realistic two-endpoint Cavalier response through the real
+        collect() and analyze() (via run_hudson_rock) — only requests.get is
+        mocked — and assert a single aggregate infostealer Finding is persisted
+        with the expected counts, families and attribution."""
+        from apps.hudson_rock.scanner import run_hudson_rock
+        from apps.core.findings.models import Finding
+
+        def fake_get(url, params=None, headers=None, timeout=None):
+            if "search-by-domain" in url:
+                return _resp(json_data=_COUNTS)
+            return _resp(json_data=_URLS)
+
+        s = self._session()
+        with patch.object(collector.requests, "get", side_effect=fake_get):
+            saved = run_hudson_rock(s)
+
+        assert len(saved) == 1
+        f = Finding.objects.get(session=s, source="hudson_rock")
+        assert f.check_type == "infostealer_exposure"
+        assert f.severity == "high"          # 3 employees exposed
+        assert f.extra["employees"] == 3
+        assert f.extra["users"] == 12
+        assert "RedLine" in f.extra["stealer_families"]
+        assert "https://login.example.com" in f.extra["affected_urls"]
+        assert "Hudson Rock (Cavalier)" in f.description
+        # privacy invariant still holds end-to-end: no raw creds anywhere
+        assert "password" not in str(f.extra).lower()

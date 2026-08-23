@@ -91,6 +91,11 @@ class TestExtractTitle:
     def test_no_title(self):
         assert _extract_title("<html><body>Hello</body></html>") == ""
 
+    def test_unclosed_title_tag(self):
+        # A truncated body snippet may cut off before </title>. The regex must
+        # not match a half-open tag (and must never raise).
+        assert _extract_title("<html><head><title>My Page without a close") == ""
+
 
 # ---------------------------------------------------------------------------
 # Analyzer — DB required
@@ -149,6 +154,22 @@ class TestWebCheckerHeaders:
         results = [_make_result(port_fk=port_fk, error="Connection refused")]
         findings = analyze(sess, results)
         assert len(findings) == 0
+
+    def test_partial_result_dict_missing_optional_keys(self):
+        # A result dict carrying only the required keys (url/url_fk/port_fk/error)
+        # and no headers/cookies/title must still analyze cleanly via the .get
+        # defaults, producing the missing-header findings rather than a KeyError.
+        sess, port_fk = self._make_port()
+        partial = {
+            "url": "https://example.com",
+            "url_fk": None,
+            "port_fk": port_fk,
+            "error": None,
+        }
+        findings = analyze(sess, [partial])
+        check_types = {f.check_type for f in findings}
+        assert "missing_csp" in check_types
+        assert "missing_hsts" in check_types
 
 
 @pytest.mark.django_db
