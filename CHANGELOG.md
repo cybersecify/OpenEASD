@@ -7,6 +7,20 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **nuclei template severity scoping — the fix for its freeze/timeout/noise.**
+  nuclei compiles its entire ~13,500-template set into RAM at startup regardless
+  of target count, which (1) swaps a small host into a multi-minute freeze and
+  (2) makes the run hit its wall-clock cap. `info` templates are ~38% of the set
+  and `low` ~4%, and `info` is mostly recon noise already covered by httpx
+  tech-detect + web_checker. So the scan now runs `-severity` scoped per resource
+  profile: `low` → `critical,high,medium`; `balanced`/`high` → `+low`; `info`
+  dropped everywhere. Overridable via `NUCLEI_SEVERITY`. Cuts template-load
+  memory **and** request volume, raising signal. Combined with the existing
+  low-profile `GOMEMLIMIT` cap, this is what lets nuclei complete on a 1 GB box.
+  **Learning captured in** `docs/SCAN_OPERATIONAL_LEARNINGS.md` with regression
+  tests, per the standing "operational issues become tests" rule.
+
 ### Fixed
 - **Live defects found by a full test-suite audit (silent-failure class).** A
   7-agent audit of the ~45-file suite found real bugs the 1200+ tests missed

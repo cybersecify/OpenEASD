@@ -16,6 +16,19 @@ class TestResourceProfile:
         assert _PROFILE_TUNING["balanced"]["nuclei_c"] == 25
         assert _PROFILE_TUNING["high"]["nuclei_c"] == 40
 
+    def test_nuclei_severity_drops_info_everywhere(self):
+        # info (~38% of templates) is dropped in every profile — it's the freeze
+        # + timeout driver and is noise for a prioritised attack-surface report.
+        for prof in ("low", "balanced", "high"):
+            sev = _PROFILE_TUNING[prof]["nuclei_sev"].split(",")
+            assert "info" not in sev
+            assert "critical" in sev and "high" in sev and "medium" in sev
+
+    def test_low_profile_tightest_severity(self):
+        # low drops `low` too (memory); bigger boxes keep it.
+        assert "low" not in _PROFILE_TUNING["low"]["nuclei_sev"].split(",")
+        assert "low" in _PROFILE_TUNING["balanced"]["nuclei_sev"].split(",")
+
     def test_high_rate_stays_polite(self):
         # Per-target request rate must scale politely, NOT with local specs —
         # cranking it just trips WAFs. Keep 'high' within a sane ceiling.

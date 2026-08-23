@@ -345,13 +345,26 @@ LOW_MEMORY = PROFILE == "low"  # runner serialises + amass skips brute when true
 # Per-profile tuning. nuclei_rate (per-target request rate) is deliberately
 # capped — it scales politely, NOT with your CPU, to stay under WAF/abuse
 # thresholds. nuclei_c raises local template parallelism.
+#
+# nuclei_sev scopes which template severities run. This is the single biggest
+# lever for nuclei's two real problems: (1) FREEZE — nuclei compiles its whole
+# template set (~13.5k) into RAM at startup regardless of target count; ~38% of
+# templates are `info` and ~4% `low`, and dropping them cuts the load memory that
+# swaps a 1 GB box. (2) TIMEOUT — fewer templates means fewer requests per target,
+# so the run finishes inside the wall-clock cap. `info` findings are also mostly
+# recon noise for a prioritised attack-surface report and are already covered by
+# httpx tech-detect + web_checker, so dropping them raises signal, not lowers it.
+# low profile is tightest (critical/high/medium); bigger boxes also run `low`.
 _PROFILE_TUNING = {
-    "low":      {"nuclei_c": 10, "nuclei_rate": 40},
-    "balanced": {"nuclei_c": 25, "nuclei_rate": 100},
-    "high":     {"nuclei_c": 40, "nuclei_rate": 150},
+    "low":      {"nuclei_c": 10, "nuclei_rate": 40,  "nuclei_sev": "critical,high,medium"},
+    "balanced": {"nuclei_c": 25, "nuclei_rate": 100, "nuclei_sev": "critical,high,medium,low"},
+    "high":     {"nuclei_c": 40, "nuclei_rate": 150, "nuclei_sev": "critical,high,medium,low"},
 }
 NUCLEI_CONCURRENCY = _PROFILE_TUNING[PROFILE]["nuclei_c"]
 NUCLEI_RATE_LIMIT = _PROFILE_TUNING[PROFILE]["nuclei_rate"]
+# Overridable: set NUCLEI_SEVERITY=critical,high,medium,low,info to widen coverage
+# (at the cost of memory/speed) on a box that can afford it.
+NUCLEI_SEVERITY = config("NUCLEI_SEVERITY", default=_PROFILE_TUNING[PROFILE]["nuclei_sev"])
 
 # Soft memory ceiling for the nuclei/nuclei_network Go processes. nuclei loads
 # its whole template set into RAM (the real footprint — independent of the polite

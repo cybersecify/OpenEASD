@@ -184,7 +184,10 @@ docker run -d \
   capped across all profiles (politeness — a big box is no licence to hammer the
   target; higher rates just trip WAFs, which the coverage report flags). Add
   swap on 1GB hosts. Resolver + tuning in settings.py (`_resolve_profile`,
-  `_PROFILE_TUNING`).
+  `_PROFILE_TUNING`). nuclei is also severity-scoped per profile (`NUCLEI_SEVERITY`;
+  low=critical/high/medium, else +low; `info` dropped everywhere) — the fix for
+  its freeze/timeout since it compiles all ~13.5k templates into RAM. See
+  `docs/SCAN_OPERATIONAL_LEARNINGS.md`.
 - Volumes: `openeasd-data` (SQLite DB) and `openeasd-logs` persist across container replacements
 - Static files served by WhiteNoise (no nginx needed)
 - **Serve it over HTTPS.** Do NOT expose the app on bare HTTP — login sends
@@ -654,4 +657,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_coverage_regression.py` | 10 | Silent-block coverage counting (probed-vs-reached), coverage-regression finding (high block ratio / findings drop / stable = no flag), partial scan status when a tool fails |
 | `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
 
-**Total: 1336 tests** (1284 fast + 52 slow domain_security)
+**Total: 1341 tests** (1289 fast + 52 slow domain_security)
