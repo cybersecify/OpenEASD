@@ -622,7 +622,8 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_management_commands.py` | 11 | `verify_tools` + other management commands |
 | `tests/unit/test_monitoring.py` | 17 | sync_domain_monitoring_jobs, per-domain monitoring, authorization gate |
 | `tests/unit/test_naabu.py` | 10 | JSON parser, FK to IPAddress |
-| `tests/unit/test_nmap.py` | 23 | Severity mapping, vulners XML parser, web/non-web exclusion, backport matching |
+| `tests/unit/test_nmap.py` | 26 |
+| `tests/unit/test_nmap_backports.py` | 16 | Backport-aware CVE demotion engine — Debian/Ubuntu version compare, check_backport, `protocol 2.0` false-positive guard | Severity mapping, vulners XML parser, web/non-web exclusion, backport matching |
 | `tests/unit/test_notifications.py` | 25 | NotificationConfig, Slack/Teams alerts, alert-history API |
 | `tests/unit/test_nuclei.py` | 33 | CVE parsing, severity, dedup, URL linking, collector, honest UA |
 | `tests/unit/test_nuclei_network.py` | 28 | Network-template parsing, non-web targeting, collector |
@@ -653,4 +654,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_coverage_regression.py` | 10 | Silent-block coverage counting (probed-vs-reached), coverage-regression finding (high block ratio / findings drop / stable = no flag), partial scan status when a tool fails |
 | `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
 
-**Total: 1265 tests** (1213 fast + 52 slow domain_security)
+**Total: 1336 tests** (1284 fast + 52 slow domain_security)
