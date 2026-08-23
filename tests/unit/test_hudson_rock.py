@@ -154,7 +154,7 @@ class TestAnalyze:
         assert "3 employee" in f.title and "12 user" in f.title
         assert "RedLine" in desc  # top stealer family
         assert "2026-01-20" in desc  # most recent compromise
-        assert "login.example.com" in desc  # affected URL
+        assert desc.find("login.example.com") != -1  # affected URL present
         assert "Hudson Rock (Cavalier)" in desc  # attribution
         assert "MFA" in f.remediation
         # extra structured data, no plaintext
