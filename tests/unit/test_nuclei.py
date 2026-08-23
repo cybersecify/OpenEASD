@@ -333,6 +333,55 @@ class TestNucleiCollector:
         rate = int(cmd[cmd.index("-rate-limit") + 1])
         assert rate <= 150, f"per-target rate {rate} too aggressive"
 
+    def test_cmd_scopes_severity_and_drops_info(self, settings):
+        # Freeze/timeout learning: nuclei must NOT load the full ~13.5k template
+        # set (info is ~38%). Assert -severity is passed and excludes "info".
+        settings.NUCLEI_SEVERITY = "critical,high,medium"
+        sess = self._make_session()
+        captured = {}
+
+        def fake_run(cmd, timeout, env=None):
+            captured["cmd"] = cmd
+            return MagicMock(stdout="", returncode=0, stderr="")
+
+        with patch("apps.nuclei.collector._run", side_effect=fake_run):
+            collect(sess)
+
+        cmd = captured["cmd"]
+        assert "-severity" in cmd
+        sev = cmd[cmd.index("-severity") + 1]
+        assert "info" not in sev.split(",")
+        assert "critical" in sev and "high" in sev
+
+    def test_severity_is_settings_driven(self, settings):
+        settings.NUCLEI_SEVERITY = "critical,high"
+        sess = self._make_session()
+        captured = {}
+
+        def fake_run(cmd, timeout, env=None):
+            captured["cmd"] = cmd
+            return MagicMock(stdout="", returncode=0, stderr="")
+
+        with patch("apps.nuclei.collector._run", side_effect=fake_run):
+            collect(sess)
+        cmd = captured["cmd"]
+        assert cmd[cmd.index("-severity") + 1] == "critical,high"
+
+    def test_go_memory_limit_applied_to_subprocess(self, settings):
+        # Freeze learning: the Go heap cap must actually reach the nuclei process.
+        settings.NUCLEI_GOMEMLIMIT = "600MiB"
+        sess = self._make_session()
+        captured = {}
+
+        def fake_run(cmd, timeout, env=None):
+            captured["env"] = env
+            return MagicMock(stdout="", returncode=0, stderr="")
+
+        with patch("apps.nuclei.collector._run", side_effect=fake_run):
+            collect(sess)
+        assert captured["env"] is not None
+        assert captured["env"].get("GOMEMLIMIT") == "600MiB"
+
     def test_cmd_disables_runtime_template_update(self):
         """nuclei must never download/update templates at scan time.
 

@@ -139,6 +139,11 @@ def collect(session) -> list[dict]:
         "-retries", "1",
         "-rate-limit", str(getattr(settings, "NUCLEI_RATE_LIMIT", RATE_LIMIT)),
         "-c", str(getattr(settings, "NUCLEI_CONCURRENCY", CONCURRENCY)),
+        # Scope templates by severity: compiling all ~13.5k templates into RAM is
+        # what freezes a small box AND makes the run time out. Dropping `info`
+        # (~38% of templates, mostly recon noise already covered by httpx/web
+        # checks) cuts both. Resolved per resource profile; overridable via env.
+        "-severity", getattr(settings, "NUCLEI_SEVERITY", "critical,high,medium"),
         # Honest scanner identity so a target can allowlist us deliberately.
         # Note: templates that hard-set their own User-Agent are not overridden.
         "-H", f"User-Agent: {getattr(settings, 'OPENEASD_USER_AGENT', 'OpenEASD/1.0')}",
