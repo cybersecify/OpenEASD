@@ -363,3 +363,50 @@ class TestNmapScanner:
         called_with = mock_collect.call_args[0][1]
         assert "1.2.3.4" in called_with
         assert called_with["1.2.3.4"] == [22]
+
+
+# ---------------------------------------------------------------------------
+# Collector failure modes (timeout / binary-missing) — added by test audit
+# ---------------------------------------------------------------------------
+
+import types as _types
+from unittest.mock import patch as _patch, MagicMock as _MagicMock
+import subprocess as _subprocess
+
+
+class TestNmapCollectorFailureModes:
+    def _sess(self):
+        return _types.SimpleNamespace(id=1)
+
+    def _ok(self, stdout="<nmaprun/>"):
+        m = _MagicMock()
+        m.returncode = 0
+        m.stdout = stdout
+        m.stderr = ""
+        return m
+
+    def test_all_ips_timeout_raises(self):
+        # Every target IP timing out means the CVE scan produced nothing due to
+        # timeouts — must raise so the scan reports 'partial', not falsely 'clean'.
+        from apps.nmap.collector import collect
+        from apps.core.workflows.exceptions import ToolTimeout
+        with _patch("apps.nmap.collector.subprocess.run",
+                    side_effect=_subprocess.TimeoutExpired("nmap", 360)):
+            with __import__("pytest").raises(ToolTimeout):
+                collect(self._sess(), {"1.2.3.4": [80], "5.6.7.8": [443]})
+
+    def test_partial_timeout_returns_survivors(self):
+        # One IP timing out is degraded, not failure — the reachable IP's result
+        # is still returned and no exception is raised.
+        from apps.nmap.collector import collect
+        with _patch("apps.nmap.collector.subprocess.run",
+                    side_effect=[_subprocess.TimeoutExpired("nmap", 360), self._ok("<nmaprun>ok</nmaprun>")]):
+            out = collect(self._sess(), {"1.1.1.1": [80], "2.2.2.2": [443]})
+        assert list(out.keys()) == ["2.2.2.2"]
+
+    def test_binary_missing_raises(self):
+        from apps.nmap.collector import collect
+        from apps.core.workflows.exceptions import ToolBinaryMissing
+        with _patch("apps.nmap.collector.subprocess.run", side_effect=FileNotFoundError()):
+            with __import__("pytest").raises(ToolBinaryMissing):
+                collect(self._sess(), {"1.2.3.4": [80]})

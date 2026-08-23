@@ -24,45 +24,45 @@ class TestCollect:
     def test_empty_input_returns_empty(self):
         assert collect([]) == []
 
-    @patch("apps.alterx.collector.shutil.which", return_value=None)
-    def test_binary_not_found_returns_empty(self, _which):
-        assert collect(["api.example.com"]) == []
-
-    @patch("apps.alterx.collector.shutil.which", return_value="/usr/bin/alterx")
     @patch("apps.alterx.collector.subprocess.run")
-    def test_nonzero_exit_returns_empty(self, mock_run, _which):
+    def test_binary_not_found_raises(self, mock_run):
+        # A missing binary must surface (ToolBinaryMissing -> scan marked partial),
+        # not silently return [] — a silent skip hid a missing tool from the operator.
+        from apps.core.workflows.exceptions import ToolBinaryMissing
+        mock_run.side_effect = FileNotFoundError()
+        with pytest.raises(ToolBinaryMissing):
+            collect(["api.example.com"])
+
+    @patch("apps.alterx.collector.subprocess.run")
+    def test_nonzero_exit_returns_empty(self, mock_run):
         mock_run.return_value = self._mock_run(returncode=1)
         assert collect(["api.example.com"]) == []
 
-    @patch("apps.alterx.collector.shutil.which", return_value="/usr/bin/alterx")
     @patch("apps.alterx.collector.subprocess.run")
-    def test_timeout_raises(self, mock_run, _which):
+    def test_timeout_raises(self, mock_run):
         from apps.core.workflows.exceptions import ToolTimeout
         mock_run.side_effect = subprocess.TimeoutExpired("alterx", 300)
         with pytest.raises(ToolTimeout):
             collect(["api.example.com"])
 
-    @patch("apps.alterx.collector.shutil.which", return_value="/usr/bin/alterx")
     @patch("apps.alterx.collector.subprocess.run")
-    def test_returns_permutations_from_stdout(self, mock_run, _which):
+    def test_returns_permutations_from_stdout(self, mock_run):
         mock_run.return_value = self._mock_run(
             "api-dev.example.com\napi2.example.com\napi-staging.example.com\n"
         )
         result = collect(["api.example.com"])
         assert result == ["api-dev.example.com", "api2.example.com", "api-staging.example.com"]
 
-    @patch("apps.alterx.collector.shutil.which", return_value="/usr/bin/alterx")
     @patch("apps.alterx.collector.subprocess.run")
-    def test_skips_blank_lines(self, mock_run, _which):
+    def test_skips_blank_lines(self, mock_run):
         mock_run.return_value = self._mock_run(
             "api-dev.example.com\n\n\napi2.example.com\n"
         )
         result = collect(["api.example.com"])
         assert len(result) == 2
 
-    @patch("apps.alterx.collector.shutil.which", return_value="/usr/bin/alterx")
     @patch("apps.alterx.collector.subprocess.run")
-    def test_pipes_subdomains_as_stdin(self, mock_run, _which):
+    def test_pipes_subdomains_as_stdin(self, mock_run):
         mock_run.return_value = self._mock_run("")
         collect(["api.example.com", "dev.example.com"])
         call_kwargs = mock_run.call_args[1]

@@ -754,7 +754,14 @@ def _check_rdap(session, domain) -> list:
         return findings
 
     statuses = [s.lower() for s in data.get("status", [])]
-    events = {e["eventAction"]: e["eventDate"] for e in data.get("events", []) if "eventDate" in e}
+    # Guard eventAction too, not just eventDate: real registrar RDAP payloads
+    # sometimes omit eventAction, and an unguarded e["eventAction"] KeyError would
+    # abort the ENTIRE RDAP check (expiry/lock/registrar), silently losing findings.
+    events = {
+        e["eventAction"]: e["eventDate"]
+        for e in data.get("events", [])
+        if e.get("eventAction") and e.get("eventDate")
+    }
 
     # Domain expiry
     expiry_str = events.get("expiration")

@@ -355,6 +355,26 @@ class TestRDAPChecks:
         assert len(expiry_findings) == 1
         assert expiry_findings[0].severity == "critical"
 
+    def test_rdap_event_missing_eventaction_does_not_crash(self, db):
+        # Real registrar RDAP payloads sometimes include events without an
+        # eventAction key. An unguarded e["eventAction"] would KeyError and abort
+        # the ENTIRE RDAP check. Assert it survives and still reads the valid event.
+        from apps.domain_security.scanner import _check_rdap
+        import datetime
+        session = self._make_session(db)
+        expiry = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=3)
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "status": ["client transfer prohibited"],
+            "events": [
+                {"eventDate": "2020-01-01T00:00:00Z"},          # no eventAction — must not crash
+                {"eventAction": "expiration", "eventDate": expiry.isoformat()},
+            ],
+        }
+        with patch("apps.domain_security.scanner.requests.get", return_value=mock_resp):
+            findings = _check_rdap(session, "example.com")  # must not raise
+        assert any("expires" in f.title.lower() for f in findings)
+
     def test_domain_expiry_within_30_days_is_high(self, db):
         from apps.domain_security.scanner import _check_rdap
         session = self._make_session(db)

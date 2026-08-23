@@ -8,6 +8,29 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Fixed
+- **Live defects found by a full test-suite audit (silent-failure class).** A
+  7-agent audit of the ~45-file suite found real bugs the 1200+ tests missed
+  because they were shallow on failure modes (and, in two cases, actively
+  codified the bug):
+  - **amass swallowed its own timeout** and returned partial results with no
+    error, so a hung amass made the whole scan read `completed` with a truncated
+    surface. Now raises `ToolTimeout` (→ scan `partial`). The test that asserted
+    the swallow was rewritten to assert the raise.
+  - **takeover_check silently dropped `vulnerable:True` records** whose service
+    it couldn't fingerprint — so any drift in subzy's output fields would make
+    every real subdomain takeover vanish. Now reports them with an "unidentified
+    service" label. The test that blessed the drop was inverted.
+  - **nmap returned a falsely-clean CVE result when every target IP timed out**
+    (per-IP timeouts are still skipped as degraded, but an all-IP timeout now
+    raises `ToolTimeout`).
+  - **The coverage note claimed endpoints "returned block or challenge
+    responses" even for silent drops** that returned nothing; wording now
+    distinguishes a real WAF block-page from a no-response/non-HTTP endpoint.
+  - **domain_security aborted the entire RDAP check** (`KeyError`) on a real
+    registrar event missing `eventAction`; now guarded.
+  - **alterx** no longer silently returns nothing when its binary is missing —
+    it raises `ToolBinaryMissing` like every other tool (dead unreachable branch
+    removed).
 - **Silent scan degradation is now surfaced, not hidden.** Three linked fixes so a
   scan that was blocked/incomplete stops reading as a clean, complete scan (found
   after the droplet's results quietly dropped from ~50 findings to ~18 when the

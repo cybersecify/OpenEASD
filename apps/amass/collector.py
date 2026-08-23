@@ -9,7 +9,7 @@ import tempfile
 import yaml
 from django.conf import settings
 
-from apps.core.workflows.exceptions import ToolBinaryMissing
+from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +84,17 @@ def collect(session) -> list[dict]:
             stdout, stderr = proc.communicate(timeout=config.scan_timeout * 60 + 30)
         except subprocess.TimeoutExpired:
             proc.kill()
-            stdout, stderr = proc.communicate()
+            proc.communicate()
+            # This fires 30s PAST amass's own scan_timeout — i.e. amass ignored
+            # its internal budget and hung, not a clean time-boxed finish. Raise
+            # so the step is marked failed and the scan reports "partial" instead
+            # of silently presenting a truncated surface as a complete scan.
             logger.warning(
-                f"[amass:{session.id}] Hit timeout after {config.scan_timeout}m "
-                f"— returning partial results"
+                f"[amass:{session.id}] Hung past {config.scan_timeout}m budget "
+                f"— marking step failed (scan will report partial)"
+            )
+            raise ToolTimeout(
+                f"amass hung past its {config.scan_timeout}m scan_timeout"
             )
         else:
             if proc.returncode != 0:
