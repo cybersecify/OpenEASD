@@ -78,3 +78,50 @@ class TestSecretKeyGuard:
     def test_allows_real_key_in_production(self):
         # No raise — a properly-set key passes even with DEBUG off.
         _validate_secret_key("a1b2c3d4e5f6-a-real-strong-secret", debug=False)
+
+
+class TestSecretKeyGuardWiring:
+    """The helper is unit-tested above, but nothing proved the guard is actually
+    WIRED into settings import. Deleting the call would boot production with the
+    insecure default key (which also signs JWTs). Prove boot aborts, in a real
+    subprocess (the in-process guard is skipped under pytest by design)."""
+
+    def test_settings_import_aborts_on_insecure_key_in_production(self):
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[2]
+        env = {
+            **os.environ,
+            "SECRET_KEY": "django-insecure-change-me-in-production",
+            "DEBUG": "False",
+        }
+        # Ensure nothing pre-marks pytest in the child so the guard runs.
+        env.pop("PYTEST_CURRENT_TEST", None)
+        result = subprocess.run(
+            [sys.executable, "-c", "import openeasd.settings"],
+            cwd=str(repo_root), env=env, capture_output=True, text=True,
+        )
+        assert result.returncode != 0, "settings booted with an insecure key + DEBUG=False"
+        assert "ImproperlyConfigured" in result.stderr or "SECRET_KEY" in result.stderr
+
+    def test_settings_import_succeeds_with_strong_key(self):
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[2]
+        env = {
+            **os.environ,
+            "SECRET_KEY": "x" * 50,  # strong enough to pass the guard
+            "DEBUG": "False",
+        }
+        env.pop("PYTEST_CURRENT_TEST", None)
+        result = subprocess.run(
+            [sys.executable, "-c", "import openeasd.settings"],
+            cwd=str(repo_root), env=env, capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr

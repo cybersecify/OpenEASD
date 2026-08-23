@@ -114,6 +114,31 @@ class TestExportFindingsCsv:
         res = c.get(f"/reports/{session.uuid}/csv/")
         assert res.status_code in (302, 301)
 
+    def test_valid_bearer_token_grants_access(self, session, findings, user):
+        from ninja_jwt.tokens import AccessToken
+        c = Client()
+        token = str(AccessToken.for_user(user))
+        res = c.get(f"/reports/{session.uuid}/csv/",
+                    HTTP_AUTHORIZATION=f"Bearer {token}")
+        assert res.status_code == 200
+
+    def test_garbage_token_rejected(self, session, findings):
+        c = Client()
+        res = c.get(f"/reports/{session.uuid}/csv/?token=not.a.jwt")
+        assert res.status_code in (302, 301)  # redirect to /login, not 200
+
+    def test_deactivated_user_token_rejected(self, session, findings, user):
+        # A valid-looking token for a since-deactivated user must be refused
+        # (the view resolves User.objects.get(id=..., is_active=True)).
+        from ninja_jwt.tokens import AccessToken
+        token = str(AccessToken.for_user(user))
+        user.is_active = False
+        user.save()
+        c = Client()
+        res = c.get(f"/reports/{session.uuid}/csv/",
+                    HTTP_AUTHORIZATION=f"Bearer {token}")
+        assert res.status_code in (302, 301)
+
     def test_not_found_returns_404(self, authed_client):
         res = authed_client.get("/reports/00000000-0000-0000-0000-000000000000/csv/")
         assert res.status_code == 404

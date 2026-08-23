@@ -253,6 +253,31 @@ class TestMustChangePasswordGate:
         res = auth_client.get("/api/domains/")
         assert res.status_code == 403
 
+    def test_flagged_user_blocked_from_write_endpoint(self, auth_client, user):
+        # The gate was only ever tested on GET /api/domains/. Prove it also blocks
+        # a WRITE (a GET-only enforcement would be a real hole for admin/admin).
+        self._flag(user)
+        res = post_json(auth_client, "/api/scans/start/", {
+            "domain": "example.com", "schedule_type": "now",
+        })
+        assert res.status_code == 403
+
+    def test_flagged_user_blocked_on_second_router(self, auth_client, user):
+        # A different router, to prove the gate isn't accidentally domains-only.
+        self._flag(user)
+        res = auth_client.get("/api/workflows/")
+        assert res.status_code == 403
+
+    def test_is_exempt_only_matches_user_paths(self):
+        # Guard the exemption suffix logic directly: only /user/ and
+        # /user/change-password/ are exempt; a look-alike path is not.
+        from types import SimpleNamespace
+        from apps.core.api.auth import _is_exempt
+        assert _is_exempt(SimpleNamespace(path="/api/user/")) is True
+        assert _is_exempt(SimpleNamespace(path="/api/user/change-password/")) is True
+        assert _is_exempt(SimpleNamespace(path="/api/domains/")) is False
+        assert _is_exempt(SimpleNamespace(path="/api/scans/start/")) is False
+
     def test_flagged_user_can_read_own_user(self, auth_client, user):
         self._flag(user)
         res = auth_client.get("/api/user/")
@@ -887,3 +912,25 @@ class TestBuildProvenance:
             res = auth_client.get("/api/version/latest/")
         assert res.status_code == 200
         assert res.json()["update_available"] is False
+
+
+# ---------------------------------------------------------------------------
+# Unauthenticated-rejection tests for endpoints the audit found had no 401 test
+# ---------------------------------------------------------------------------
+
+class TestMissingAuthRejections:
+    """Router-level auth is inherited, but these three protected endpoints had no
+    explicit 401 test — so a future per-endpoint auth=None or a new router would
+    slip through silently. Subscan especially is a second active-scan entry point."""
+
+    def test_subscan_requires_auth(self, client):
+        res = post_json(client, "/api/scans/00000000-0000-0000-0000-000000000000/subscan/", {})
+        assert res.status_code == 401
+
+    def test_domain_monitoring_requires_auth(self, client):
+        res = post_json(client, "/api/domains/1/monitoring/", {})
+        assert res.status_code == 401
+
+    def test_workflow_rename_requires_auth(self, client):
+        res = post_json(client, "/api/workflows/1/rename/", {})
+        assert res.status_code == 401
