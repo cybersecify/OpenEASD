@@ -152,3 +152,23 @@ class TestAssetCascadeDelete:
 
         sub.delete()
         assert IPAddress.objects.filter(session=sess).count() == 0
+
+    def test_subdomain_delete_cascades_full_chain(self):
+        """Deleting a Subdomain must cascade the WHOLE chain beneath it:
+        Subdomain → IPAddress → Port → URL. A leftover Port or URL would orphan
+        (its parent gone) and skew per-session asset counts in reports."""
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import Subdomain, IPAddress, Port
+        from apps.core.web_assets.models import URL
+
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        sub = Subdomain.objects.create(session=sess, domain="example.com", subdomain="api.example.com", source="subfinder")
+        ip = IPAddress.objects.create(session=sess, subdomain=sub, address="1.2.3.4", version=4, source="dnsx")
+        port = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4", port=443, protocol="tcp", state="open", source="naabu")
+        URL.objects.create(session=sess, port=port, subdomain=sub, url="https://api.example.com", host="api.example.com", port_number=443, source="httpx")
+
+        sub.delete()
+
+        assert IPAddress.objects.filter(session=sess).count() == 0
+        assert Port.objects.filter(session=sess).count() == 0
+        assert URL.objects.filter(session=sess).count() == 0

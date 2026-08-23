@@ -171,6 +171,28 @@ class TestServiceDetectionInjection:
 
         assert "service_detection" not in tools_used
 
+    def test_service_detection_not_injected_for_subscan_only_tools(self, db, session):
+        # A subscan passes only_tools. Even with naabu present, service_detection
+        # must NOT be auto-injected: the parent scan already classified these ports,
+        # and injecting the active nmap -sV probe would cross the passive/
+        # authorization boundary for a targeted re-run (runner.py guards on
+        # `only_tools is None`).
+        wf = Workflow.objects.create(name="Subscan Naabu Only")
+        WorkflowStep.objects.create(workflow=wf, tool="naabu", order=1, enabled=True)
+        run = WorkflowRun.objects.create(workflow=wf, session=session)
+
+        tools_used = []
+
+        def track_runner(tool_name):
+            tools_used.append(tool_name)
+            return MagicMock(return_value=None)
+
+        with patch("apps.core.workflows.runner._get_runner", side_effect=track_runner):
+            run_workflow(run.id, only_tools=["naabu"])
+
+        assert "naabu" in tools_used
+        assert "service_detection" not in tools_used
+
     def test_service_detection_inserted_after_naabu(self, db, session):
         wf = Workflow.objects.create(name="Naabu Workflow")
         WorkflowStep.objects.create(workflow=wf, tool="subfinder",  order=1, enabled=True)
@@ -457,10 +479,23 @@ class TestPhaseParallelExecution:
         )
 
     def test_low_memory_runs_phase_sequentially(self, transactional_db, settings):
-        """Under LOW_MEMORY a multi-tool phase runs one tool at a time — all tools
-        still execute and the run completes (bounds peak memory on small hosts)."""
+        """Under LOW_MEMORY a multi-tool phase must run STRICTLY one tool at a time.
+
+        Proving "the run completed and both tools ran" is not enough — the parallel
+        path would also satisfy that. Each runner bumps a shared 'currently running'
+        counter and records the peak, with a brief sleep so a parallel run would
+        overlap. Serial execution means the observed peak concurrency is exactly 1
+        (mirrors the Barrier(2) parallelism proof for the non-low-memory case).
+        """
         settings.LOW_MEMORY = True
+        import threading
+        import time
         from apps.core.scans.models import ScanSession
+
+        lock = threading.Lock()
+        concurrent = [0]
+        peak = [0]
+
         session = ScanSession.objects.create(
             domain="lowmem.example.com", scan_type="full", status="running"
         )
@@ -471,6 +506,12 @@ class TestPhaseParallelExecution:
 
         def seq_runner(tool_name):
             def runner(sess):
+                with lock:
+                    concurrent[0] += 1
+                    peak[0] = max(peak[0], concurrent[0])
+                time.sleep(0.05)  # window for a parallel run to overlap
+                with lock:
+                    concurrent[0] -= 1
                 return []
             return runner
 
@@ -481,6 +522,9 @@ class TestPhaseParallelExecution:
         assert run.status == "completed"
         ran = set(WorkflowStepResult.objects.filter(run=run).values_list("tool", flat=True))
         assert {"nmap", "tls_checker"} <= ran
+        assert peak[0] == 1, (
+            f"LOW_MEMORY must serialise the phase; observed peak concurrency {peak[0]}"
+        )
 
     def test_phase_boundary_respected(self, transactional_db):
         """All phase-7 tools must finish before any phase-10 tool starts.
