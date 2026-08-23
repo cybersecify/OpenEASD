@@ -1,10 +1,11 @@
 """Unit tests for apps/dnsx — public IP filter, analyzer, scanner orchestration."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from apps.dnsx.analyzer import _is_cdn_ip, _is_public, analyze
+from apps.dnsx.collector import collect
 from apps.dnsx.scanner import run_dnsx
 
 
@@ -93,6 +94,92 @@ class TestIsCdnIp:
 
     def test_invalid_input(self):
         assert _is_cdn_ip("not-an-ip") is False
+
+
+# ---------------------------------------------------------------------------
+# Collector — mocked subprocess
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestDnsxCollector:
+    def _session(self):
+        from apps.core.scans.models import ScanSession
+        return ScanSession.objects.create(domain="example.com", scan_type="full")
+
+    def _fake(self, stdout, returncode=0):
+        m = MagicMock()
+        m.stdout = stdout
+        m.returncode = returncode
+        m.stderr = ""
+        return m
+
+    def test_returns_empty_for_no_subdomains(self):
+        sess = self._session()
+        # No subprocess should run when there is nothing to resolve.
+        with patch("apps.dnsx.collector.subprocess.run") as run:
+            assert collect(sess, []) == []
+        assert not run.called
+
+    def test_parses_json_lines(self):
+        sess = self._session()
+        stdout = (
+            '{"host":"api.example.com","a":["54.23.45.67"],"aaaa":[]}\n'
+            '{"host":"www.example.com","a":["93.184.216.34"],"aaaa":["2606:4700::1"]}\n'
+        )
+        with patch("apps.dnsx.collector.subprocess.run", return_value=self._fake(stdout)):
+            records = collect(sess, ["api.example.com", "www.example.com"])
+        assert len(records) == 2
+        assert records[0] == {"host": "api.example.com", "a": ["54.23.45.67"], "aaaa": []}
+
+    def test_skips_malformed_json_line(self):
+        sess = self._session()
+        stdout = (
+            "this is not json\n"
+            '{"host":"api.example.com","a":["54.23.45.67"],"aaaa":[]}\n'
+        )
+        with patch("apps.dnsx.collector.subprocess.run", return_value=self._fake(stdout)):
+            records = collect(sess, ["api.example.com"])
+        assert len(records) == 1
+        assert records[0]["host"] == "api.example.com"
+
+    def test_empty_stdout_returns_empty(self):
+        sess = self._session()
+        with patch("apps.dnsx.collector.subprocess.run", return_value=self._fake("")):
+            records = collect(sess, ["api.example.com"])
+        assert records == []
+
+    def test_nxdomain_null_a_field_normalised_to_empty_list(self):
+        # dnsx emits null for the "a"/"aaaa" arrays when a host does not resolve.
+        # The collector must coerce null → [] so the analyzer never sees None.
+        sess = self._session()
+        stdout = '{"host":"dead.example.com","a":null,"aaaa":null}\n'
+        with patch("apps.dnsx.collector.subprocess.run", return_value=self._fake(stdout)):
+            records = collect(sess, ["dead.example.com"])
+        assert records == [{"host": "dead.example.com", "a": [], "aaaa": []}]
+
+    def test_record_without_host_skipped(self):
+        sess = self._session()
+        stdout = '{"a":["54.23.45.67"]}\n{"host":"ok.example.com","a":[]}\n'
+        with patch("apps.dnsx.collector.subprocess.run", return_value=self._fake(stdout)):
+            records = collect(sess, ["ok.example.com"])
+        assert len(records) == 1
+        assert records[0]["host"] == "ok.example.com"
+
+    def test_binary_missing_raises(self):
+        from apps.core.workflows.exceptions import ToolBinaryMissing
+        sess = self._session()
+        with patch("apps.dnsx.collector.subprocess.run", side_effect=FileNotFoundError):
+            with pytest.raises(ToolBinaryMissing):
+                collect(sess, ["api.example.com"])
+
+    def test_timeout_raises(self):
+        import subprocess as sp
+        from apps.core.workflows.exceptions import ToolTimeout
+        sess = self._session()
+        with patch("apps.dnsx.collector.subprocess.run",
+                   side_effect=sp.TimeoutExpired(cmd="dnsx", timeout=300)):
+            with pytest.raises(ToolTimeout):
+                collect(sess, ["api.example.com"])
 
 
 # ---------------------------------------------------------------------------

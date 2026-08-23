@@ -155,6 +155,31 @@ class TestKatanaAnalyzer:
         objs = analyze(sess, records)
         assert objs == []
 
+    def test_skips_record_with_no_request_key(self):
+        # A JSONL line with no "request" key at all must be skipped, not crash.
+        sess, _, _ = _make_session_with_assets()
+        objs = analyze(sess, [{}, {"response": {"status_code": 200}}])
+        assert objs == []
+
+    def test_non_dict_request_does_not_crash(self):
+        # Regression: a record whose "request" is a string or list (malformed
+        # katana output) used to raise AttributeError on .get(). It must be
+        # skipped cleanly, and valid records in the same batch still processed.
+        sess, _, _ = _make_session_with_assets()
+        records = [
+            {"request": "not-a-dict"},
+            {"request": ["also", "not", "a", "dict"]},
+            {"request": {"endpoint": "https://www.example.com/ok"}},
+        ]
+        objs = analyze(sess, records)
+        assert [o.url for o in objs] == ["https://www.example.com/ok"]
+
+    def test_null_endpoint_does_not_crash(self):
+        # request present but endpoint is JSON null → treated as missing.
+        sess, _, _ = _make_session_with_assets()
+        objs = analyze(sess, [{"request": {"endpoint": None}}])
+        assert objs == []
+
     def test_no_port_fk_for_unknown_host(self):
         sess, _, _ = _make_session_with_assets()
         records = [{"request": {"endpoint": "https://unknown.example.com/page"}}]

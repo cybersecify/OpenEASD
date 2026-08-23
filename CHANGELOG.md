@@ -31,6 +31,11 @@ commits to recover the reasoning.
   - **alterx** no longer silently returns nothing when its binary is missing —
     it raises `ToolBinaryMissing` like every other tool (dead unreachable branch
     removed).
+  - **nuclei / nuclei_network crashed on `info: null`** — `data.get("info", {})`
+    returns `None` when the key is present with a null value, then `.get()` on it
+    raised `AttributeError` and lost the finding. Now `data.get("info") or {}`.
+  - **katana crashed on a non-dict `request` or null `endpoint`** in crawl output.
+    Both are now guarded. (All three surfaced by new adversarial parser tests.)
 - **Silent scan degradation is now surfaced, not hidden.** Three linked fixes so a
   scan that was blocked/incomplete stops reading as a clean, complete scan (found
   after the droplet's results quietly dropped from ~50 findings to ~18 when the

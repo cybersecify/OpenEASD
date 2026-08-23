@@ -75,6 +75,46 @@ class TestCreateScanSession:
         assert result is not None
 
 
+class TestCreateScanSessionConcurrency:
+    """The duplicate-scan guard must hold when two callers race for the same
+    domain. SQLite gives no row-level lock (select_for_update is a no-op), so the
+    guarantee rests on the if-active check + the DatabaseError fallback read.
+    Uses transactional_db + a Barrier so both threads enter create_scan_session
+    at (near) the same instant."""
+
+    def test_two_threads_create_only_one_session(self, transactional_db):
+        import threading
+        from django.db import close_old_connections, connection
+        from apps.core.scans.pipeline import create_scan_session
+        from apps.core.scans.models import ScanSession
+
+        barrier = threading.Barrier(2, timeout=10)
+        results = {}
+        lock = threading.Lock()
+
+        def worker(name):
+            close_old_connections()
+            try:
+                barrier.wait()  # both threads call create at ~the same time
+                session = create_scan_session("x.com")
+                with lock:
+                    results[name] = session
+            finally:
+                connection.close()
+
+        threads = [threading.Thread(target=worker, args=(f"t{i}",)) for i in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=15)
+
+        non_none = [s for s in results.values() if s is not None]
+        assert len(non_none) == 1, (
+            f"Expected exactly one thread to create a session, got {len(non_none)}"
+        )
+        assert ScanSession.objects.filter(domain="x.com").count() == 1
+
+
 @pytest.mark.django_db
 class TestParseSchedule:
     """Tests _parse_schedule() domain extraction, especially for domains with underscores."""

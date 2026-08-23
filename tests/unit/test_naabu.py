@@ -49,6 +49,48 @@ class TestNaabuCollector:
             with pytest.raises(ToolBinaryMissing):
                 collect(sess, ["1.2.3.4"])
 
+    def test_raises_on_timeout(self):
+        import subprocess
+        from apps.core.workflows.exceptions import ToolTimeout
+        sess = self._session()
+        with patch("apps.naabu.collector.subprocess.run",
+                   side_effect=subprocess.TimeoutExpired("naabu", 900)):
+            with pytest.raises(ToolTimeout):
+                collect(sess, ["1.2.3.4"])
+
+    def test_skips_malformed_json_line(self):
+        sess = self._session()
+        fake = MagicMock()
+        fake.stdout = (
+            "not-json-noise\n"
+            '{"ip":"1.2.3.4","port":80,"protocol":"tcp"}\n'
+        )
+        with patch("apps.naabu.collector.subprocess.run", return_value=fake):
+            records = collect(sess, ["1.2.3.4"])
+        assert len(records) == 1
+        assert records[0]["port"] == 80
+
+    def test_empty_stdout_returns_empty(self):
+        sess = self._session()
+        fake = MagicMock()
+        fake.stdout = ""
+        with patch("apps.naabu.collector.subprocess.run", return_value=fake):
+            records = collect(sess, ["1.2.3.4"])
+        assert records == []
+
+    def test_record_with_neither_ip_nor_host_skipped(self):
+        sess = self._session()
+        fake = MagicMock()
+        fake.stdout = (
+            '{"port":80,"protocol":"tcp"}\n'                       # no ip/host → skip
+            '{"ip":"1.2.3.4","port":443,"protocol":"tcp"}\n'      # kept
+        )
+        with patch("apps.naabu.collector.subprocess.run", return_value=fake):
+            records = collect(sess, ["1.2.3.4"])
+        assert len(records) == 1
+        assert records[0]["host"] == "1.2.3.4"
+        assert records[0]["port"] == 443
+
 
 @pytest.mark.django_db
 class TestNaabuAnalyzer:

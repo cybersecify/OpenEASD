@@ -134,6 +134,27 @@ class TestAnalyze:
         findings = analyze(sess, [url, url])
         assert len(findings) == 1
 
+    def test_regional_s3_virtual_host_line(self):
+        # cloud_enum commonly emits region-qualified virtual-host URLs.
+        sess = self._session()
+        findings = analyze(sess, ["https://example-logs.s3.us-west-2.amazonaws.com"])
+        assert len(findings) == 1
+        assert findings[0].extra["provider"] == "aws"
+        assert findings[0].extra["bucket_name"] == "example-logs"
+
+    def test_non_matching_line_skipped_without_crash(self):
+        # A line that isn't a recognised bucket URL (log noise, a redirect target,
+        # a non-cloud host) must be skipped silently — real buckets still reported.
+        sess = self._session()
+        findings = analyze(sess, [
+            "https://www.example.com/index.html",   # not a bucket → skip
+            "[+] checking permutations",             # log noise → skip
+            "",                                       # blank → skip
+            "https://s3.amazonaws.com/example-data",  # real bucket → kept
+        ])
+        assert len(findings) == 1
+        assert findings[0].extra["bucket_name"] == "example-data"
+
 
 # ---------------------------------------------------------------------------
 # Scanner

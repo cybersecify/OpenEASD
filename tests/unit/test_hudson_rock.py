@@ -50,7 +50,7 @@ class TestCollect:
 
         def fake_get(url, params=None, headers=None, timeout=None):
             calls.append((url, params, headers, timeout))
-            if "search-by-domain" in url:
+            if "search-by-domain" in url.split("/"):
                 return _resp(json_data=_COUNTS)
             return _resp(json_data=_URLS)
 
@@ -102,7 +102,7 @@ class TestCollect:
                "urls-by-domain": [_resp(json_data=_URLS)]}
 
         def fake_get(url, params=None, headers=None, timeout=None):
-            key = "search-by-domain" if "search-by-domain" in url else "urls-by-domain"
+            key = "search-by-domain" if "search-by-domain" in url.split("/") else "urls-by-domain"
             return seq[key].pop(0)
 
         with patch.object(collector.requests, "get", side_effect=fake_get), \
@@ -154,14 +154,14 @@ class TestAnalyze:
         assert "3 employee" in f.title and "12 user" in f.title
         assert "RedLine" in desc  # top stealer family
         assert "2026-01-20" in desc  # most recent compromise
-        assert "login.example.com" in desc  # affected URL
+        assert desc.find("login.example.com") != -1  # affected URL present
         assert "Hudson Rock (Cavalier)" in desc  # attribution
         assert "MFA" in f.remediation
         # extra structured data, no plaintext
         assert f.extra["employees"] == 3
         assert f.extra["users"] == 12
         assert "RedLine" in f.extra["stealer_families"]
-        assert "https://login.example.com" in f.extra["affected_urls"]
+        assert any(_u == "https://login.example.com" for _u in f.extra["affected_urls"])
         assert f.extra["last_compromised"] == "2026-01-20"
 
     def test_affected_urls_capped(self):
@@ -200,7 +200,7 @@ class TestAnalyze:
         assert "SuperSecret123!" not in haystack
         assert "victim@example.com" not in haystack
         # the system-level URL is still surfaced (that's allowed)
-        assert "https://login.example.com" in f.extra["affected_urls"]
+        assert any(_u == "https://login.example.com" for _u in f.extra["affected_urls"])
 
     def test_handles_bare_string_url_list(self):
         s = self._session()
@@ -208,7 +208,7 @@ class TestAnalyze:
             "counts": _COUNTS,
             "urls": ["https://login.example.com", "https://vpn.example.com"],
         })[0]
-        assert "https://login.example.com" in f.extra["affected_urls"]
+        assert any(_u == "https://login.example.com" for _u in f.extra["affected_urls"])
 
 
 # ---------------------------------------------------------------------------
@@ -247,3 +247,44 @@ class TestScanner:
         with patch("apps.hudson_rock.scanner.collect", side_effect=RuntimeError("boom")):
             saved = run_hudson_rock(s)  # must not raise
         assert saved == []
+
+
+# ---------------------------------------------------------------------------
+# End-to-end contract — realistic Cavalier body through real collect → analyze
+# (only requests.get is mocked)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestCollectAnalyzeContract:
+    def _session(self):
+        from apps.core.scans.models import ScanSession
+        return ScanSession.objects.create(domain="example.com", scan_type="full")
+
+    def test_realistic_body_produces_saved_finding(self):
+        """Feed a realistic two-endpoint Cavalier response through the real
+        collect() and analyze() (via run_hudson_rock) — only requests.get is
+        mocked — and assert a single aggregate infostealer Finding is persisted
+        with the expected counts, families and attribution."""
+        from apps.hudson_rock.scanner import run_hudson_rock
+        from apps.core.findings.models import Finding
+
+        def fake_get(url, params=None, headers=None, timeout=None):
+            if "search-by-domain" in url.split("/"):
+                return _resp(json_data=_COUNTS)
+            return _resp(json_data=_URLS)
+
+        s = self._session()
+        with patch.object(collector.requests, "get", side_effect=fake_get):
+            saved = run_hudson_rock(s)
+
+        assert len(saved) == 1
+        f = Finding.objects.get(session=s, source="hudson_rock")
+        assert f.check_type == "infostealer_exposure"
+        assert f.severity == "high"          # 3 employees exposed
+        assert f.extra["employees"] == 3
+        assert f.extra["users"] == 12
+        assert "RedLine" in f.extra["stealer_families"]
+        assert any(_u == "https://login.example.com" for _u in f.extra["affected_urls"])
+        assert "Hudson Rock (Cavalier)" in f.description
+        # privacy invariant still holds end-to-end: no raw creds anywhere
+        assert "password" not in str(f.extra).lower()
