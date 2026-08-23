@@ -72,3 +72,11 @@ class TestCoverageNote:
         s = self._session(endpoints_probed=10, endpoints_blocked=3, waf_vendor="unidentified")
         ctx = _coverage_context(s)
         assert "vendor unidentified" in ctx["note"]
+
+    def test_silent_drop_wording_does_not_claim_block_responses(self):
+        # No vendor => nothing responded; the note must NOT claim endpoints
+        # "returned block or challenge responses" (they returned nothing).
+        s = self._session(endpoints_probed=10, endpoints_blocked=10, waf_vendor="")
+        ctx = _coverage_context(s)
+        assert "did not return an HTTP response" in ctx["note"]
+        assert "returned block or challenge responses" not in ctx["note"]

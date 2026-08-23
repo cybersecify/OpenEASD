@@ -140,20 +140,37 @@ def _coverage_context(session):
     if not blocked:
         return None
     vendor = session.waf_vendor
+    probed = session.endpoints_probed
     if vendor and vendor != "unidentified":
         vendor_phrase = f"fingerprint suggests {_WAF_VENDOR_LABEL.get(vendor, vendor.title())}"
     else:
         vendor_phrase = "WAF/edge, vendor unidentified"
+
+    # Two distinct shapes both land in `endpoints_blocked`:
+    #  - vendor set  -> endpoints RESPONDED with a block/challenge page (real WAF)
+    #  - vendor ""   -> endpoints returned NOTHING (silent drop). Do not claim they
+    #    "returned block/challenge responses" — they didn't respond at all, and the
+    #    count can also include probed ports that simply aren't HTTP services.
+    if vendor:
+        observation = (
+            f"{blocked} of {probed} probed endpoints returned block or challenge "
+            f"responses ({vendor_phrase})"
+        )
+    else:
+        observation = (
+            f"{blocked} of {probed} probed endpoints did not return an HTTP response "
+            f"— probes appear to have been dropped/blocked at the network edge (or "
+            f"the port is not an HTTP service)"
+        )
     return {
-        "endpoints_probed": session.endpoints_probed,
+        "endpoints_probed": probed,
         "endpoints_blocked": blocked,
         "vendor_phrase": vendor_phrase,
         "note": (
-            f"{blocked} of {session.endpoints_probed} probed endpoints returned "
-            f"block or challenge responses ({vendor_phrase}). Findings reflect only "
-            f"reachable endpoints. Absence of findings on blocked surfaces is not "
-            f"evidence they are secure. To obtain full-coverage results, allowlist "
-            f"the scanner (OpenEASD/1.0, source IP on file) in your WAF and re-run."
+            f"{observation}. Findings reflect only reachable endpoints. Absence of "
+            f"findings on unreachable surfaces is not evidence they are secure. To "
+            f"obtain full-coverage results, allowlist the scanner (OpenEASD/1.0, "
+            f"source IP on file) at your edge/WAF and re-run."
         ),
     }
 

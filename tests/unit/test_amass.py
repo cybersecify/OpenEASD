@@ -100,20 +100,22 @@ class TestAmassCollector:
             with pytest.raises(ToolBinaryMissing):
                 collect(sess)
 
-    def test_timeout_returns_partial_results_not_exception(self):
-        """Timeout is graceful — returns whatever amass found, no exception raised."""
+    def test_timeout_raises_tooltimeout(self):
+        """Hanging 30s past amass's own scan_timeout is an abnormal hang, not a
+        clean time-boxed finish — it must raise ToolTimeout so the scan is marked
+        'partial', not silently present a truncated surface as complete."""
+        from apps.core.workflows.exceptions import ToolTimeout
         sess = _session()
         _config()
         proc = MagicMock()
-        # First communicate() call raises TimeoutExpired; second (after kill) returns partial output
         proc.communicate.side_effect = [
             subprocess.TimeoutExpired("amass", 30),
-            ("api.example.com\n", ""),
+            ("api.example.com\n", ""),  # partial output after kill
         ]
         with patch("apps.amass.collector.subprocess.Popen", return_value=proc):
-            records = collect(sess)
+            with pytest.raises(ToolTimeout):
+                collect(sess)
         proc.kill.assert_called_once()
-        assert records[0]["host"] == "api.example.com"
 
     def test_tolerates_nonzero_returncode(self):
         sess = _session()

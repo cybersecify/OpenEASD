@@ -137,12 +137,17 @@ class TestAnalyze:
         assert findings[0].subdomain is None
         assert findings[0].target == "blog.example.com"
 
-    def test_skips_record_with_unknown_service(self):
+    def test_vulnerable_record_without_fingerprint_still_reported(self):
+        # A vulnerable record with no recognizable service must NOT be silently
+        # dropped — subzy field drift would otherwise make every real takeover
+        # vanish. It is reported with an "unidentified service" label instead.
         sess = self._session()
-        # subzy returned no fingerprint — "unknown" service must not become a finding
         records = [{"subdomain": "blog.example.com", "vulnerable": True}]
         findings = analyze(sess, records)
-        assert findings == []
+        assert len(findings) == 1
+        assert findings[0].target == "blog.example.com"
+        assert findings[0].severity == "high"
+        assert "unidentified" in findings[0].title.lower()
 
     def test_dedupes_by_subdomain_name(self):
         sess = self._session()
