@@ -50,7 +50,7 @@ class TestCollect:
 
         def fake_get(url, params=None, headers=None, timeout=None):
             calls.append((url, params, headers, timeout))
-            if "search-by-domain" in url:
+            if "search-by-domain" in url.split("/"):
                 return _resp(json_data=_COUNTS)
             return _resp(json_data=_URLS)
 
@@ -102,7 +102,7 @@ class TestCollect:
                "urls-by-domain": [_resp(json_data=_URLS)]}
 
         def fake_get(url, params=None, headers=None, timeout=None):
-            key = "search-by-domain" if "search-by-domain" in url else "urls-by-domain"
+            key = "search-by-domain" if "search-by-domain" in url.split("/") else "urls-by-domain"
             return seq[key].pop(0)
 
         with patch.object(collector.requests, "get", side_effect=fake_get), \
@@ -161,7 +161,7 @@ class TestAnalyze:
         assert f.extra["employees"] == 3
         assert f.extra["users"] == 12
         assert "RedLine" in f.extra["stealer_families"]
-        assert "https://login.example.com" in f.extra["affected_urls"]
+        assert any(_u == "https://login.example.com" for _u in f.extra["affected_urls"])
         assert f.extra["last_compromised"] == "2026-01-20"
 
     def test_affected_urls_capped(self):
@@ -200,7 +200,7 @@ class TestAnalyze:
         assert "SuperSecret123!" not in haystack
         assert "victim@example.com" not in haystack
         # the system-level URL is still surfaced (that's allowed)
-        assert "https://login.example.com" in f.extra["affected_urls"]
+        assert any(_u == "https://login.example.com" for _u in f.extra["affected_urls"])
 
     def test_handles_bare_string_url_list(self):
         s = self._session()
@@ -208,7 +208,7 @@ class TestAnalyze:
             "counts": _COUNTS,
             "urls": ["https://login.example.com", "https://vpn.example.com"],
         })[0]
-        assert "https://login.example.com" in f.extra["affected_urls"]
+        assert any(_u == "https://login.example.com" for _u in f.extra["affected_urls"])
 
 
 # ---------------------------------------------------------------------------
@@ -269,7 +269,7 @@ class TestCollectAnalyzeContract:
         from apps.core.findings.models import Finding
 
         def fake_get(url, params=None, headers=None, timeout=None):
-            if "search-by-domain" in url:
+            if "search-by-domain" in url.split("/"):
                 return _resp(json_data=_COUNTS)
             return _resp(json_data=_URLS)
 
@@ -284,7 +284,7 @@ class TestCollectAnalyzeContract:
         assert f.extra["employees"] == 3
         assert f.extra["users"] == 12
         assert "RedLine" in f.extra["stealer_families"]
-        assert "https://login.example.com" in f.extra["affected_urls"]
+        assert any(_u == "https://login.example.com" for _u in f.extra["affected_urls"])
         assert "Hudson Rock (Cavalier)" in f.description
         # privacy invariant still holds end-to-end: no raw creds anywhere
         assert "password" not in str(f.extra).lower()
