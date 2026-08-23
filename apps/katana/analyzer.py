@@ -46,7 +46,10 @@ def analyze(session, records: list[dict]) -> list[URL]:
     seen = set()
 
     for r in records:
-        endpoint = (r.get("request") or {}).get("endpoint", "").strip()
+        request = r.get("request")
+        if not isinstance(request, dict):
+            request = {}
+        endpoint = (request.get("endpoint") or "").strip()
         if not endpoint or endpoint in seen:
             continue
         seen.add(endpoint)

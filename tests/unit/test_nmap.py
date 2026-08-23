@@ -202,13 +202,44 @@ class TestNmapAnalyzer:
         assert f.service == "ssh"
         assert "OpenSSH" in f.version
 
+    # XML where the SAME CVE appears twice on the same port (vulners can list a
+    # CVE under multiple CPE tables). The (ip, port, cve) `seen` guard must
+    # collapse these into a single Finding.
+    DUP_CVE_XML = """<?xml version="1.0"?>
+<nmaprun>
+<host>
+<address addr="1.2.3.4" addrtype="ipv4"/>
+<ports><port protocol="tcp" portid="22">
+<state state="open"/>
+<service name="ssh" product="OpenSSH" version="7.2p2"/>
+<script id="vulners">
+<table key="cpe:/a:openbsd:openssh:7.2p2">
+<table>
+<elem key="id">CVE-2018-15473</elem>
+<elem key="cvss">5.0</elem>
+<elem key="type">cve</elem>
+</table>
+</table>
+<table key="cpe:/a:openssh:openssh:7.2p2">
+<table>
+<elem key="id">CVE-2018-15473</elem>
+<elem key="cvss">5.0</elem>
+<elem key="type">cve</elem>
+</table>
+</table>
+</script>
+</port></ports>
+</host>
+</nmaprun>
+"""
+
     def test_analyze_dedupes_same_cve_on_same_port(self):
         sess = self._make_session()
-        # Pass the same XML twice for the same IP — only one set should be created
-        findings = analyze(sess, {"1.2.3.4": self.SAMPLE_XML})
-        cves_first_run = [f.cve for f in findings]
-        # Re-run analyze on same data — should still only see each CVE once
-        assert sorted(cves_first_run) == sorted(set(cves_first_run))
+        # The same CVE is present twice in the XML; the seen guard must fire so
+        # only ONE Finding survives for CVE-2018-15473.
+        findings = analyze(sess, {"1.2.3.4": self.DUP_CVE_XML})
+        assert len(findings) == 1
+        assert findings[0].cve == "CVE-2018-15473"
 
     def test_analyze_handles_malformed_xml(self):
         sess = self._make_session()

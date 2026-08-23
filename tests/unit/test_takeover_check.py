@@ -198,6 +198,15 @@ class TestCollectorEdgeCases:
 
     @patch("apps.takeover_check.collector.shutil.which", return_value="/usr/local/bin/subzy")
     @patch("apps.takeover_check.collector.subprocess.run")
+    def test_timeout_raises(self, mock_run, _which):
+        import subprocess
+        from apps.core.workflows.exceptions import ToolTimeout
+        mock_run.side_effect = subprocess.TimeoutExpired("subzy", 1800)
+        with pytest.raises(ToolTimeout):
+            collect(["foo.example.com"])
+
+    @patch("apps.takeover_check.collector.shutil.which", return_value="/usr/local/bin/subzy")
+    @patch("apps.takeover_check.collector.subprocess.run")
     def test_returns_records_when_subzy_writes_json_array(self, mock_run, _which, tmp_path):
         # Simulate subzy: when invoked, write JSON to the --output file path,
         # then exit 0. The collector creates the temp paths itself; the side_effect

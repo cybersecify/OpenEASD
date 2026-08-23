@@ -53,7 +53,7 @@ def analyze(session, records: list[dict]) -> list[Finding]:
             continue
         seen.add(dedup_key)
 
-        info = data.get("info", {})
+        info = data.get("info") or {}
         classification = info.get("classification") or {}
         raw_severity = (info.get("severity") or "info").lower()
         severity = _SEVERITY_MAP.get(raw_severity, "info")

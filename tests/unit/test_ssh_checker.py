@@ -119,6 +119,48 @@ class TestProbeSSH:
         assert result is not None
         assert result["supports_sshv1"] is True
 
+    def _probe_with_banner(self, banner_bytes):
+        """Run _probe_ssh with a mocked socket/transport, feeding a given banner."""
+        mock_sock = MagicMock()
+        mock_sock.recv.return_value = banner_bytes
+
+        mock_key = MagicMock()
+        mock_key.get_name.return_value = "ssh-ed25519"
+        mock_key.get_bits.return_value = 256
+
+        mock_transport = MagicMock(spec=paramiko.Transport)
+        mock_transport.get_remote_server_key.return_value = mock_key
+        mock_transport.remote_version = "SSH-2.0-OpenSSH_8.9p1"
+        mock_transport.kex_engine = None
+        mock_transport.local_cipher = ""
+        mock_transport.local_mac = ""
+        mock_transport.auth_none.side_effect = paramiko.BadAuthenticationType(
+            "Bad auth type", ["publickey"]
+        )
+
+        with patch("apps.ssh_checker.collector.socket.create_connection", return_value=mock_sock):
+            with patch("apps.ssh_checker.collector.paramiko.Transport", return_value=mock_transport):
+                with patch("apps.ssh_checker.collector._get_security_options_all"):
+                    return _probe_ssh("1.2.3.4", 22)
+
+    def test_ssh_1_99_banner_is_not_flagged_v1(self):
+        # SSH-1.99 is the transitional identifier meaning "v2 with v1 fallback
+        # available" — it must NOT be flagged as SSHv1 support.
+        result = self._probe_with_banner(b"SSH-1.99-OpenSSH_8.9p1\r\n")
+        assert result is not None
+        assert result["supports_sshv1"] is False
+
+    def test_empty_banner_not_flagged_v1(self):
+        result = self._probe_with_banner(b"")
+        assert result is not None
+        assert result["supports_sshv1"] is False
+
+    def test_garbage_banner_not_flagged_v1(self):
+        # Non-SSH bytes on the port must not trip the SSHv1 detector or crash.
+        result = self._probe_with_banner(b"\x00\x01\x02garbage-not-ssh\r\n")
+        assert result is not None
+        assert result["supports_sshv1"] is False
+
     def test_returns_none_on_connection_refused(self):
         with patch("apps.ssh_checker.collector.socket.create_connection",
                    side_effect=ConnectionRefusedError):

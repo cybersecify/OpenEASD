@@ -59,6 +59,27 @@ class TestHttpxCollector:
             with pytest.raises(ToolBinaryMissing):
                 collect(sess, ["www.example.com:80"])
 
+    def test_raises_on_timeout(self):
+        import subprocess
+        from apps.core.workflows.exceptions import ToolTimeout
+        sess = self._session()
+        with patch("apps.httpx.collector.subprocess.run",
+                   side_effect=subprocess.TimeoutExpired("httpx", 600)):
+            with pytest.raises(ToolTimeout):
+                collect(sess, ["www.example.com:443"])
+
+    def test_skips_malformed_json_line(self):
+        sess = self._session()
+        fake = MagicMock()
+        fake.stdout = (
+            "garbage-not-json\n"
+            '{"url":"https://www.example.com:443","host":"www.example.com","port":"443","status_code":200}\n'
+        )
+        with patch("apps.httpx.collector.subprocess.run", return_value=fake):
+            records = collect(sess, ["www.example.com:443"])
+        assert len(records) == 1
+        assert records[0]["url"] == "https://www.example.com:443"
+
 
 @pytest.mark.django_db
 class TestHttpxAnalyzer:
@@ -180,6 +201,21 @@ class TestHttpxAnalyzer:
         assert len(objs) == 1
         assert objs[0].port is None
         assert objs[0].subdomain is None
+
+    def test_non_numeric_port_yields_none_port_number_and_no_fk(self):
+        # httpx should always emit a numeric port, but a malformed "port" value
+        # must degrade to port_number=None (and no Port FK) rather than crash.
+        sess, sub, ip, port = self._setup_session_with_assets()
+        records = [{
+            "url": "https://www.example.com",
+            "host": "www.example.com",
+            "host_ip": "1.2.3.4",
+            "port": "notaport",
+        }]
+        objs = analyze(sess, records)
+        assert len(objs) == 1
+        assert objs[0].port_number is None
+        assert objs[0].port is None
 
     def test_truncates_long_title(self):
         sess, _, _, _ = self._setup_session_with_assets()

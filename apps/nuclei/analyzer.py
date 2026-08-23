@@ -54,7 +54,7 @@ def _parse_cve_ids(classification: dict) -> list[str]:
 
 def _build_finding(session, data: dict, url_fk=None) -> Finding:
     """Build a single Finding from a nuclei JSON record."""
-    info = data.get("info", {})
+    info = data.get("info") or {}
     classification = info.get("classification") or {}
     raw_severity = (info.get("severity") or "info").lower()
     severity = _SEVERITY_MAP.get(raw_severity, "info")

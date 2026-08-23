@@ -178,6 +178,33 @@ class TestNucleiAnalyzer:
         findings = analyze(sess, records)
         assert len(findings[0].title) <= 250
 
+    def test_unknown_severity_falls_back_to_info(self):
+        sess = self._make_session()
+        findings = analyze(sess, [_nuclei_record(severity="totally-bogus")])
+        assert findings[0].severity == "info"
+
+    def test_empty_severity_falls_back_to_info(self):
+        sess = self._make_session()
+        findings = analyze(sess, [_nuclei_record(severity="")])
+        assert findings[0].severity == "info"
+
+    def test_info_null_does_not_crash(self):
+        # Regression: a record whose whole "info" object is JSON null used to
+        # crash analyze() with AttributeError on None.get(...). It must instead
+        # build a valid info-severity finding.
+        sess = self._make_session()
+        record = {
+            "template-id": "some-template",
+            "info": None,
+            "host": "https://example.com",
+            "matched-at": "https://example.com/x",
+        }
+        findings = analyze(sess, [record])
+        assert len(findings) == 1
+        assert findings[0].severity == "info"
+        assert findings[0].check_type == "web"
+        assert findings[0].title == "some-template"
+
 
 # ---------------------------------------------------------------------------
 # Collector — mocked subprocess
