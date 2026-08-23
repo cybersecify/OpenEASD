@@ -79,6 +79,77 @@ class TestCoverageRegression:
 
 
 @pytest.mark.django_db
+class TestCoverageRegressionReport:
+    """End-to-end: the coverage-regression Finding must surface in the rendered
+    report AND must never be flagged as a 'new finding' delta (it is created after
+    delta detection by design)."""
+
+    def _render_html(self, session):
+        from unittest.mock import patch
+        from django.contrib.auth.models import User
+        from django.test import Client
+
+        user = User.objects.create_user("covrepuser", password="x")
+        client = Client()
+        client.force_login(user)
+
+        captured = {}
+
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
+            res = client.get(f"/reports/{session.uuid}/pdf/")
+        assert res.status_code == 200
+        return captured["html"]
+
+    def test_regression_finding_renders_and_is_not_a_new_delta(self):
+        from django.utils import timezone
+        from apps.core.scans.models import ScanSession, ScanDelta
+        from apps.core.findings.models import Finding
+        from apps.core.workflows.models import Workflow, WorkflowRun
+        from apps.core.scans.pipeline import _finalize_session
+
+        # A prior completed scan makes delta detection meaningful (real baseline).
+        ScanSession.objects.create(
+            domain="example.com", scan_type="full", status="completed",
+            end_time=timezone.now(),
+        )
+        cur = _session(status="running", endpoints_probed=10, endpoints_blocked=10)
+        # A normal finding unique to `cur` guarantees at least one genuine "new"
+        # delta, so the "coverage_regression is not a new delta" check below isn't
+        # vacuously true.
+        Finding.objects.create(
+            session=cur, source="web_checker", target="example.com",
+            check_type="missing_header", severity="medium",
+            title="Missing security header", description="desc", remediation="fix",
+        )
+        wf = Workflow.objects.create(name="wf")
+        WorkflowRun.objects.create(workflow=wf, session=cur, status="completed")
+
+        _finalize_session(cur)
+
+        # 1. The synthetic coverage-regression finding was created.
+        reg = Finding.objects.get(session=cur, check_type="coverage_regression")
+        assert reg.title == "Scan coverage dropped sharply — results may be incomplete"
+
+        # 2. Its title renders in the report HTML.
+        cur.refresh_from_db()
+        html = self._render_html(cur)
+        assert "Scan coverage dropped sharply" in html
+
+        # 3. Deltas ran (the normal finding is a 'new' delta) but the synthetic
+        #    coverage-regression finding is NOT a 'new' delta — _check_coverage_
+        #    regression runs after _detect_deltas by design.
+        new_deltas = ScanDelta.objects.filter(session=cur, change_type="new")
+        assert new_deltas.count() >= 1
+        assert not new_deltas.filter(
+            item_identifier__startswith="scan_coverage:coverage_regression"
+        ).exists()
+
+
+@pytest.mark.django_db
 class TestPartialStatus:
     def _run(self, session, status):
         from apps.core.workflows.models import Workflow, WorkflowRun
