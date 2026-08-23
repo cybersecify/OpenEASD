@@ -7,6 +7,14 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **Configurable support channel for the in-app "Report an issue" / "Request a
+  feature" links** (`SUPPORT_EMAIL` env). When set, the footer buttons become
+  `mailto:` links to that address with the running build pre-filled in the body
+  (a branded deployment routes users to its own support inbox); when empty (OSS
+  default) they fall back to filing a GitHub issue. Surfaced via
+  `GET /api/version/` (`support_email`).
+
 ### Changed
 - **nuclei template severity scoping — the fix for its freeze/timeout/noise.**
   nuclei compiles its entire ~13,500-template set into RAM at startup regardless

@@ -92,6 +92,9 @@ def version(request, response: HttpResponse):
         "git_sha": sha,
         "git_sha_short": sha[:8],
         "build_date": settings.OPENEASD_BUILD_DATE,
+        # Empty on OSS default → SPA uses GitHub issue links; set on a branded
+        # deployment → SPA routes "Report an issue"/"Request a feature" to mailto.
+        "support_email": getattr(settings, "SUPPORT_EMAIL", ""),
     }
 
 

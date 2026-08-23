@@ -556,7 +556,7 @@ POST /api/token/pair                      — JWT login → {access, refresh}
 POST /api/token/blacklist                 — blacklist refresh token (logout)
 POST /api/token/refresh                   — exchange refresh → new access token
 POST /api/token/verify                    — verify token validity
-GET  /api/version/                        — build provenance {version, git_sha, git_sha_short, build_date} (unauthenticated)
+GET  /api/version/                        — build provenance {version, git_sha, git_sha_short, build_date, support_email} (unauthenticated; no-store)
 GET  /api/version/latest/                 — update check {current_version, latest_version, update_available, release_url} (authenticated; cached 6h, fail-graceful)
 GET  /api/user/                           — current user info + must_change_password flag
 POST /api/user/change-password/           — change password; clears must_change_password flag
