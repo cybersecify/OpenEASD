@@ -46,6 +46,27 @@ CONCURRENCY = 25      # fallback -c; the resource profile overrides it
 # protection instead of a plain subprocess.run that can hang the worker.
 
 
+def _select_targets(session) -> list[str]:
+    """Deduped URL list for nuclei: live-probed (httpx) URLs first, then archived/
+    crawled ones, capped at NUCLEI_MAX_TARGETS. The cap is logged, never silent —
+    a large surface at the polite rate would otherwise blow past the wall-clock.
+    """
+    from apps.core.web_assets.models import URL
+
+    live = list(URL.objects.filter(session=session, source="httpx").values_list("url", flat=True))
+    rest = list(URL.objects.filter(session=session).exclude(source="httpx").values_list("url", flat=True))
+    targets = list(dict.fromkeys(live + rest))  # dedupe, live-probed first
+
+    cap = getattr(settings, "NUCLEI_MAX_TARGETS", 400)
+    if len(targets) > cap:
+        logger.warning(
+            f"[nuclei:{session.id}] Capping {len(targets)} URLs to {cap} "
+            f"(live-probed first); {len(targets) - cap} not scanned this run"
+        )
+        targets = targets[:cap]
+    return targets
+
+
 def collect(session) -> list[dict]:
     """
     Run nuclei against all web URLs from the httpx phase.
@@ -55,17 +76,12 @@ def collect(session) -> list[dict]:
 
     Returns list of raw nuclei JSON records (one per finding).
     """
-    from apps.core.web_assets.models import URL
-
     binary = getattr(settings, "TOOL_NUCLEI", "nuclei")
 
-    urls = list(URL.objects.filter(session=session).values_list("url", flat=True))
-    if not urls:
+    targets = _select_targets(session)
+    if not targets:
         logger.info(f"[nuclei:{session.id}] No URLs to scan")
         return []
-
-    # Deduplicate
-    targets = sorted(set(urls))
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("\n".join(targets))
