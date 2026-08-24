@@ -29,6 +29,12 @@ class TestResourceProfile:
         assert "low" not in _PROFILE_TUNING["low"]["nuclei_sev"].split(",")
         assert "low" in _PROFILE_TUNING["balanced"]["nuclei_sev"].split(",")
 
+    def test_bulk_size_scales_down_on_low_profile(self):
+        # -bulk-size is the real peak-memory lever: smallest on the 1 GB box.
+        assert _PROFILE_TUNING["low"]["nuclei_bs"] < _PROFILE_TUNING["balanced"]["nuclei_bs"]
+        assert _PROFILE_TUNING["balanced"]["nuclei_bs"] <= _PROFILE_TUNING["high"]["nuclei_bs"]
+        assert _PROFILE_TUNING["low"]["nuclei_bs"] <= 5
+
     def test_high_rate_stays_polite(self):
         # Per-target request rate must scale politely, NOT with local specs —
         # cranking it just trips WAFs. Keep 'high' within a sane ceiling.

@@ -10,13 +10,13 @@ Nuclei scans for web vulnerabilities using community templates:
 import json
 import logging
 import os
-import signal
 import subprocess
 import tempfile
 
 from django.conf import settings
 
 from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+from apps.core.workflows.proc import run_capped
 
 logger = logging.getLogger(__name__)
 
@@ -41,63 +41,9 @@ CONCURRENCY = 25      # fallback -c; the resource profile overrides it
 # stays polite even on 'high' — a big box is no licence to hammer the target.
 
 
-_DRAIN_GRACE = 30  # seconds to let a SIGKILL'd process die before we give up
-
-
-def _run(cmd: list[str], timeout: int, env: dict | None = None) -> subprocess.CompletedProcess:
-    """Run an external tool with a timeout that cannot be defeated by child processes.
-
-    Why not subprocess.run / communicate(): communicate() reads stdout/stderr until
-    pipe EOF, which only happens once EVERY writer closes the pipe. nuclei spawns
-    helpers (interactsh poller, resolvers, headless) that can escape the process
-    group and inherit the stdout pipe, so even after we SIGKILL the group the pipe
-    never reaches EOF and communicate() blocks forever — the timeout fires but the
-    call never returns, wedging the worker thread until the session watchdog reaps it.
-
-    The fix: redirect stdout/stderr to temp FILES (no pipe), and wait() on the
-    process itself. wait() returns the moment the direct child exits — it does not
-    care about inherited file descriptors — so a SIGKILL always unblocks us. An
-    escaped grandchild can leak but can no longer hang the scan.
-
-    Mirrors subprocess.run's contract: returns CompletedProcess, raises
-    FileNotFoundError if the binary is missing, re-raises TimeoutExpired after the
-    group is killed.
-    """
-    out_fd, out_path = tempfile.mkstemp(suffix=".nuclei.out")
-    err_fd, err_path = tempfile.mkstemp(suffix=".nuclei.err")
-    try:
-        with os.fdopen(out_fd, "wb") as out_f, os.fdopen(err_fd, "wb") as err_f:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=out_f,
-                stderr=err_f,
-                stdin=subprocess.DEVNULL,
-                start_new_session=True,
-                env=env,
-            )
-            try:
-                proc.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except (ProcessLookupError, PermissionError):
-                    proc.kill()
-                try:
-                    proc.wait(timeout=_DRAIN_GRACE)
-                except subprocess.TimeoutExpired:
-                    pass
-                raise
-        with open(out_path, "r", errors="replace") as f:
-            stdout = f.read()
-        with open(err_path, "r", errors="replace") as f:
-            stderr = f.read()
-        return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
-    finally:
-        for p in (out_path, err_path):
-            try:
-                os.unlink(p)
-            except OSError:
-                pass
+# The hardened, child-escape-proof runner lives in apps.core.workflows.proc
+# (run_capped) so nuclei_network — the same binary — gets the same anti-wedge
+# protection instead of a plain subprocess.run that can hang the worker.
 
 
 def collect(session) -> list[dict]:
@@ -139,11 +85,25 @@ def collect(session) -> list[dict]:
         "-retries", "1",
         "-rate-limit", str(getattr(settings, "NUCLEI_RATE_LIMIT", RATE_LIMIT)),
         "-c", str(getattr(settings, "NUCLEI_CONCURRENCY", CONCURRENCY)),
-        # Scope templates by severity: compiling all ~13.5k templates into RAM is
-        # what freezes a small box AND makes the run time out. Dropping `info`
-        # (~38% of templates, mostly recon noise already covered by httpx/web
-        # checks) cuts both. Resolved per resource profile; overridable via env.
+        # -bulk-size is the REAL peak-memory bound (runtime ≈ c × bulk × per-host
+        # buffer). nuclei parses ALL ~13.5k templates up front regardless (~500 MB
+        # fixed), so -severity does NOT shrink that startup parse — it cuts the
+        # EXECUTED set (fewer requests → no TIMEOUT). What keeps the box from
+        # FREEZING is GOMEMLIMIT + a small bulk-size, not -severity.
+        "-bulk-size", str(getattr(settings, "NUCLEI_BULK_SIZE", 15)),
+        # Scope executed templates by severity (drops ~38% info noise already
+        # covered by httpx tech-detect + web_checker). Fixes timeout, not freeze.
         "-severity", getattr(settings, "NUCLEI_SEVERITY", "critical,high,medium"),
+        # This run only probes web URLs, so only http templates apply. dns/tcp/ssl
+        # are covered by nuclei_network + tls_checker — skipping them here trims the
+        # executed set with zero coverage loss.
+        "-type", "http",
+        # Abandon a host after this many errors instead of retrying every template
+        # against a dead/filtered host (cuts wall-clock on blocked targets).
+        "-max-host-error", "10",
+        # Explicit safety: never run request-heavy fuzzing / DoS / intrusive
+        # templates (also excluded by nuclei's default .nuclei-ignore).
+        "-exclude-tags", "dos,fuzzing,intrusive",
         # Honest scanner identity so a target can allowlist us deliberately.
         # Note: templates that hard-set their own User-Agent are not overridden.
         "-H", f"User-Agent: {getattr(settings, 'OPENEASD_USER_AGENT', 'OpenEASD/1.0')}",
@@ -151,10 +111,9 @@ def collect(session) -> list[dict]:
     logger.info(f"[nuclei:{session.id}] Scanning {len(targets)} web targets")
 
     try:
-        # Cap nuclei's Go heap on low-memory hosts so its template load can't
-        # swap the box into a freeze (env is unchanged on balanced/high).
+        # Cap nuclei's Go heap on low-memory hosts (env unchanged on balanced/high).
         from apps.core.workflows.proc_env import go_memory_env
-        result = _run(cmd, TIMEOUT, env=go_memory_env())
+        result = run_capped(cmd, TIMEOUT, env=go_memory_env())
     except FileNotFoundError:
         logger.error(f"[nuclei:{session.id}] Binary not found: {binary}")
         raise ToolBinaryMissing(f"nuclei binary not found: {binary}")
@@ -164,7 +123,10 @@ def collect(session) -> list[dict]:
     finally:
         os.unlink(tmp)
 
-    if result.returncode != 0 and result.stderr:
+    # Surface stderr regardless of exit code: nuclei routinely exits 0 while
+    # logging "could not load N templates" / interactsh failures to stderr, which
+    # is silent under-coverage if only checked on nonzero rc.
+    if result.stderr and result.stderr.strip():
         logger.warning(f"[nuclei:{session.id}] stderr: {result.stderr[:500]}")
 
     records = []

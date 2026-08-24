@@ -7,6 +7,22 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **nuclei hardening (follow-up to the severity scoping).** Three parallel agents
+  investigated nuclei's freeze/timeout/value; key finding: `-severity` does NOT
+  cut the ~500 MB startup template parse (nuclei parses all templates then
+  filters) — it only fixes the TIMEOUT. So the FREEZE is now bounded by
+  `GOMEMLIMIT` **+ `-bulk-size`** scaled per profile (low=5) — the real
+  peak-memory lever, previously left at the default 25. Also: `-type http` on the
+  web run (skips dns/tcp/ssl already covered by nuclei_network/tls_checker),
+  `-max-host-error` (abandon dead hosts), `-exclude-tags dos,fuzzing,intrusive`,
+  and stderr surfaced regardless of exit code. **Fixed:** `nuclei_network` used a
+  plain `subprocess.run` with no process-group kill — the exact worker-wedging
+  hang the web collector was rewritten to avoid; both now share `run_capped`
+  (`apps/core/workflows/proc.py`). Added a **weekly CI cron** so baked
+  nuclei-templates refresh on cadence. Learnings + the corrected freeze
+  attribution recorded in `docs/SCAN_OPERATIONAL_LEARNINGS.md`.
+
 ### Added
 - **Configurable support channel for the in-app "Report an issue" / "Request a
   feature" links** (`SUPPORT_EMAIL` env). When set, the footer buttons become
