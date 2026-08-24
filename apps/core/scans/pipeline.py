@@ -101,10 +101,15 @@ def _check_coverage_regression(session):
             + (f", consistent with {session.waf_vendor}" if session.waf_vendor else "")
         )
 
-    # 2. Sharp drop vs the previous completed/partial full scan for this domain.
+    # 2. Sharp drop vs the previous scan of the SAME workflow for this domain.
+    # Must be same-workflow: a Passive Scan runs far fewer tools than a Full Scan,
+    # so diffing a passive run against a prior active baseline always looks like a
+    # collapse and fires a spurious "results incomplete" finding (found live on a
+    # cybersecify.com passive run). Same class as excluding subscans from deltas.
     previous = (
         ScanSession.objects.filter(
-            domain=session.domain, status__in=["completed", "partial"]
+            domain=session.domain, status__in=["completed", "partial"],
+            workflow_id=session.workflow_id,
         )
         .exclude(id=session.id)
         .exclude(scan_type="subscan")

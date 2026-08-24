@@ -7,6 +7,20 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Fixed
+- **Two issues the live cybersecify.com validation run exposed.** (1) A **passive
+  scan spuriously emitted a `scan_coverage` "results incomplete" finding** because
+  the coverage-regression check diffed it against a prior *active* (Full Scan)
+  baseline — a passive scan runs far fewer tools, so it always looked like a
+  collapse. The check now only compares scans of the **same workflow**. (2)
+  **nuclei hit its 2h wall on a large surface** (a Full Scan fed it 368 URLs);
+  its target list is now **capped per profile** (`NUCLEI_MAX_TARGETS`; low=100),
+  live-probed (httpx) URLs first, cap logged (never silent).
+- **CI runs on every PR** (dropped the `pull_request` `paths-ignore`): now that CI
+  is a required status check, a docs-only PR would otherwise never trigger it and
+  be unmergeable. The `push` `paths-ignore` still skips the image republish on
+  docs-only merges.
+
 ### Changed
 - **nuclei hardening (follow-up to the severity scoping).** Three parallel agents
   investigated nuclei's freeze/timeout/value; key finding: `-severity` does NOT

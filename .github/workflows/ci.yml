@@ -8,10 +8,11 @@ on:
       - "**.md"
       - "docs/**"
   pull_request:
+    # No paths-ignore: CI is now a REQUIRED status check, so a PR touching only
+    # ignored paths (**.md, docs/**) would never run it → the required check never
+    # reports → the PR is unmergeable. Run CI on every PR; the `push` paths-ignore
+    # above still skips the image republish on docs-only merges to main.
     branches: ["main"]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
   # Weekly rebuild so the baked nuclei-templates refresh on cadence — the image
   # sets -disable-update-check (no runtime template fetch), so without this the
   # templates freeze at build time and rot (miss new CVEs). schedule runs on the

@@ -363,13 +363,19 @@ LOW_MEMORY = PROFILE == "low"  # runner serialises + amass skips brute when true
 # bound that actually prevents the FREEZE is GOMEMLIMIT + a small bulk_size.
 # Default bulk_size is 25; we scale it down hard on the low profile.
 _PROFILE_TUNING = {
-    "low":      {"nuclei_c": 10, "nuclei_rate": 40,  "nuclei_sev": "critical,high,medium",     "nuclei_bs": 5},
-    "balanced": {"nuclei_c": 25, "nuclei_rate": 100, "nuclei_sev": "critical,high,medium,low", "nuclei_bs": 15},
-    "high":     {"nuclei_c": 40, "nuclei_rate": 150, "nuclei_sev": "critical,high,medium,low", "nuclei_bs": 25},
+    "low":      {"nuclei_c": 10, "nuclei_rate": 40,  "nuclei_sev": "critical,high,medium",     "nuclei_bs": 5,  "nuclei_max": 100},
+    "balanced": {"nuclei_c": 25, "nuclei_rate": 100, "nuclei_sev": "critical,high,medium,low", "nuclei_bs": 15, "nuclei_max": 400},
+    "high":     {"nuclei_c": 40, "nuclei_rate": 150, "nuclei_sev": "critical,high,medium,low", "nuclei_bs": 25, "nuclei_max": 1000},
 }
 NUCLEI_CONCURRENCY = _PROFILE_TUNING[PROFILE]["nuclei_c"]
 NUCLEI_RATE_LIMIT = _PROFILE_TUNING[PROFILE]["nuclei_rate"]
 NUCLEI_BULK_SIZE = _PROFILE_TUNING[PROFILE]["nuclei_bs"]
+# Cap on the number of URLs nuclei probes in one run. At the polite low-profile
+# rate (40 rps) a large surface (a cybersecify.com Full Scan fed nuclei 368 URLs)
+# blows past the 2h wall and times out. Bound it per profile; the cap is logged
+# (never a silent truncation), and live-probed (httpx) URLs are prioritised over
+# archived/crawled ones. Overridable via env for a box that can afford more.
+NUCLEI_MAX_TARGETS = config("NUCLEI_MAX_TARGETS", default=_PROFILE_TUNING[PROFILE]["nuclei_max"], cast=int)
 # Overridable: set NUCLEI_SEVERITY=critical,high,medium,low,info to widen coverage
 # (at the cost of memory/speed) on a box that can afford it.
 NUCLEI_SEVERITY = config("NUCLEI_SEVERITY", default=_PROFILE_TUNING[PROFILE]["nuclei_sev"])
