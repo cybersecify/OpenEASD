@@ -191,7 +191,7 @@ def mock_session():
     return s
 
 
-@patch("apps.nuclei_network.collector.subprocess.run")
+@patch("apps.nuclei_network.collector.run_capped")
 @patch("apps.nuclei_network.collector.Port")
 def test_collect_builds_correct_command(MockPort, mock_run, mock_session):
     port = MagicMock()
@@ -219,7 +219,7 @@ def test_collect_builds_correct_command(MockPort, mock_run, mock_session):
     assert "info" not in sev_val
 
 
-@patch("apps.nuclei_network.collector.subprocess.run")
+@patch("apps.nuclei_network.collector.run_capped")
 @patch("apps.nuclei_network.collector.Port")
 def test_collect_no_ports_returns_empty(MockPort, mock_run, mock_session):
     MockPort.objects.filter.return_value = []
@@ -228,7 +228,7 @@ def test_collect_no_ports_returns_empty(MockPort, mock_run, mock_session):
     mock_run.assert_not_called()
 
 
-@patch("apps.nuclei_network.collector.subprocess.run")
+@patch("apps.nuclei_network.collector.run_capped")
 @patch("apps.nuclei_network.collector.Port")
 def test_collect_binary_missing_raises(MockPort, mock_run, mock_session):
     """A missing nuclei binary must surface as ToolBinaryMissing, not a silent []
@@ -241,7 +241,7 @@ def test_collect_binary_missing_raises(MockPort, mock_run, mock_session):
         collect(mock_session)
 
 
-@patch("apps.nuclei_network.collector.subprocess.run")
+@patch("apps.nuclei_network.collector.run_capped")
 @patch("apps.nuclei_network.collector.Port")
 def test_collect_timeout_raises(MockPort, mock_run, mock_session):
     """A wall-clock timeout must surface as ToolTimeout so the scan reports
@@ -255,7 +255,7 @@ def test_collect_timeout_raises(MockPort, mock_run, mock_session):
         collect(mock_session)
 
 
-@patch("apps.nuclei_network.collector.subprocess.run")
+@patch("apps.nuclei_network.collector.run_capped")
 @patch("apps.nuclei_network.collector.Port")
 def test_collect_skips_non_json_lines(MockPort, mock_run, mock_session):
     """Log noise / partial lines in stdout must be skipped, not crash the parse."""

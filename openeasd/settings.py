@@ -355,13 +355,21 @@ LOW_MEMORY = PROFILE == "low"  # runner serialises + amass skips brute when true
 # recon noise for a prioritised attack-surface report and are already covered by
 # httpx tech-detect + web_checker, so dropping them raises signal, not lowers it.
 # low profile is tightest (critical/high/medium); bigger boxes also run `low`.
+#
+# nuclei_bs (-bulk-size) is the REAL peak-memory lever. nuclei parses all ~13.5k
+# templates up front regardless (~500 MB fixed — so -severity does NOT shrink the
+# startup parse; it only cuts the executed set → fewer requests → no TIMEOUT).
+# Runtime peak ≈ c × bulk_size × per-host response buffer, so on a 1 GB box the
+# bound that actually prevents the FREEZE is GOMEMLIMIT + a small bulk_size.
+# Default bulk_size is 25; we scale it down hard on the low profile.
 _PROFILE_TUNING = {
-    "low":      {"nuclei_c": 10, "nuclei_rate": 40,  "nuclei_sev": "critical,high,medium"},
-    "balanced": {"nuclei_c": 25, "nuclei_rate": 100, "nuclei_sev": "critical,high,medium,low"},
-    "high":     {"nuclei_c": 40, "nuclei_rate": 150, "nuclei_sev": "critical,high,medium,low"},
+    "low":      {"nuclei_c": 10, "nuclei_rate": 40,  "nuclei_sev": "critical,high,medium",     "nuclei_bs": 5},
+    "balanced": {"nuclei_c": 25, "nuclei_rate": 100, "nuclei_sev": "critical,high,medium,low", "nuclei_bs": 15},
+    "high":     {"nuclei_c": 40, "nuclei_rate": 150, "nuclei_sev": "critical,high,medium,low", "nuclei_bs": 25},
 }
 NUCLEI_CONCURRENCY = _PROFILE_TUNING[PROFILE]["nuclei_c"]
 NUCLEI_RATE_LIMIT = _PROFILE_TUNING[PROFILE]["nuclei_rate"]
+NUCLEI_BULK_SIZE = _PROFILE_TUNING[PROFILE]["nuclei_bs"]
 # Overridable: set NUCLEI_SEVERITY=critical,high,medium,low,info to widen coverage
 # (at the cost of memory/speed) on a box that can afford it.
 NUCLEI_SEVERITY = config("NUCLEI_SEVERITY", default=_PROFILE_TUNING[PROFILE]["nuclei_sev"])

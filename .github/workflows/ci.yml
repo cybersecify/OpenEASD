@@ -12,6 +12,13 @@ on:
     paths-ignore:
       - "**.md"
       - "docs/**"
+  # Weekly rebuild so the baked nuclei-templates refresh on cadence — the image
+  # sets -disable-update-check (no runtime template fetch), so without this the
+  # templates freeze at build time and rot (miss new CVEs). schedule runs on the
+  # default branch, so the publish job pushes a fresh :latest. See
+  # docs/SCAN_OPERATIONAL_LEARNINGS.md.
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays 06:00 UTC
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

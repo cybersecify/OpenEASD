@@ -7,22 +7,34 @@ recur. Add to this list whenever a scan misbehaves.
 
 ## nuclei (the biggest source of pain)
 
-nuclei compiles its **entire template set (~13,500 templates) into RAM at
-startup**, before it touches a single target. This one fact causes three of the
-four symptoms:
+**Key correction (verified against ProjectDiscovery maintainers):** nuclei parses
+**all** ~13,500 templates into RAM up front (~500 MB, fixed) and *then* applies
+`-severity`/`-tags` filters. So severity scoping does **NOT** shrink the startup
+parse — it only cuts the *executed* set. The startup parse (~500 MB) on top of
+gunicorn + qcluster + Django is what tips a 1 GB box; runtime peak is
+`concurrency × bulk-size × per-host buffer`. The levers that actually prevent the
+**freeze** are `GOMEMLIMIT` + a small **`-bulk-size`**, not `-severity`.
 
 | Symptom | Root cause | Fix | Guard |
 |---|---|---|---|
-| **Freeze** (box + web UI unresponsive for minutes) | Template *loading* swaps a small (1 GB) host | `GOMEMLIMIT` soft heap cap on the Go process (low profile) **+** severity scoping to load fewer templates | `test_nuclei.py::test_go_memory_limit_applied_to_subprocess`; `test_proc_env.py` |
-| **Timeout** (2 h wall hit, run reported `partial`) | Template *execution*: targets × ~13.5k templates ÷ polite rate | Severity scoping (drop `info` ≈ 38%, `low` ≈ 4% on low profile) → far fewer requests | `test_nuclei.py::test_cmd_scopes_severity_and_drops_info` |
-| **Low value / noise** | `info` templates are mostly recon (tech-detect), already covered by httpx `-tech-detect` + web_checker; they bury real findings | Scope to `critical,high,medium(,low)` per profile; overridable via `NUCLEI_SEVERITY` | `test_settings_security.py::TestResourceProfile` |
-| **Empty output** | The target **dropped the scanner's probes** → httpx returned 0 live URLs → nuclei had nothing to scan | This is a coverage/blocking problem, not a nuclei problem — surfaced by the coverage-regression finding + `partial` status | `test_coverage_regression.py` |
+| **Freeze** (box + web UI unresponsive for minutes) | ~500 MB startup template parse + runtime `c × bulk-size × per-host buffer` on a 1 GB host | `GOMEMLIMIT` soft heap cap **+** small `-bulk-size` per profile (low=5) — NOT `-severity` | `test_nuclei.py::test_go_memory_limit_applied_to_subprocess`, `::test_cmd_includes_memory_and_scope_flags`; `test_settings_security.py::test_bulk_size_scales_down_on_low_profile` |
+| **Timeout** (2 h wall hit, run reported `partial`) | Template *execution*: targets × executed templates ÷ polite rate | Severity scoping (drop `info` ≈ 38%) + `-type http` (web run skips dns/tcp/ssl) + `-max-host-error` (abandon dead hosts) → far fewer requests | `test_nuclei.py::test_cmd_scopes_severity_and_drops_info`, `::test_cmd_includes_memory_and_scope_flags` |
+| **Low value / noise** | `info` tech-detect templates are already covered by httpx `-tech-detect` + web_checker; they bury real findings | Scope to `critical,high,medium(,low)` per profile (`NUCLEI_SEVERITY`). NOTE: this also drops the unique `exposures` bucket (.git/.env/backups/tokens) — a value gap; re-including it needs a memory-safe second pass (`-include-tags` does NOT override `-severity` on v3.2.9, verified) — deferred | `test_settings_security.py::TestResourceProfile` |
+| **Wedge / lost findings** | `nuclei_network` used plain `subprocess.run` (no process-group kill) → an escaped interactsh helper could hold the pipe and hang the worker | Both nuclei collectors now use the shared `run_capped` (temp-file redirect + `killpg`) | `test_nuclei.py::TestRunProcessGroupKill` |
+| **Empty output** | The target **dropped the scanner's probes** → httpx returned 0 live URLs → nuclei had nothing to scan | Coverage/blocking problem, not nuclei — surfaced by the coverage-regression finding + `partial` status | `test_coverage_regression.py` |
 
-**Template freshness caveat:** templates are baked into the image and
+**Template freshness:** templates are baked into the image and
 `-disable-update-check` is set (a mid-scan template download once wedged a scan
 for hours). Consequence: templates are frozen at image-build time and **rot** —
-an old image misses new CVEs. Rebuild the image on a cadence to refresh them;
-do **not** re-enable runtime template updates.
+an old image misses new CVEs. A **weekly CI cron** now rebuilds `:latest` so
+templates refresh on cadence (`.github/workflows/ci.yml`). Do **not** re-enable
+runtime template updates.
+
+**Deferred nuclei follow-ups:** (a) recover partial findings written before a
+wall-timeout (`run_capped` now carries them on the exception's `.output`; the
+scanner does not yet save them); (b) re-include the `exposures` template bucket
+via a memory-safe mechanism; (c) store `info.tags` / `classification.cwe-id` for
+richer report categorisation.
 
 **What nuclei needs to work properly:** (1) reachable targets (not blocked —
 run a Passive Scan or get the scanner IP allowlisted if coverage collapses),

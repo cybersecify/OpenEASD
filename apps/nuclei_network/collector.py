@@ -14,6 +14,7 @@ import tempfile
 from django.conf import settings
 from apps.core.assets.models import Port
 from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+from apps.core.workflows.proc import run_capped
 
 logger = logging.getLogger(__name__)
 
@@ -103,14 +104,17 @@ def collect(session) -> list[dict]:
         "-pt", "network,ssl",
         "-tags", ",".join(sorted(tags)),
         "-severity", "critical,high,medium,low",
+        # Same peak-memory bound as the web run (see apps/nuclei/collector.py).
+        "-bulk-size", str(getattr(settings, "NUCLEI_BULK_SIZE", 15)),
         "-jsonl", "-silent", "-no-color",
     ]
 
     try:
-        # Cap nuclei's Go heap on low-memory hosts (unchanged on balanced/high).
+        # run_capped (not subprocess.run) so an escaped interactsh/resolver helper
+        # can't hold the stdout pipe open and wedge the worker on timeout — the
+        # same anti-hang fix the web nuclei collector already had.
         from apps.core.workflows.proc_env import go_memory_env
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT,
-                                stdin=subprocess.DEVNULL, env=go_memory_env())
+        result = run_capped(cmd, TIMEOUT, env=go_memory_env())
     except FileNotFoundError:
         logger.error(f"[nuclei_network:{session.id}] Binary not found: {binary}")
         raise ToolBinaryMissing(f"nuclei binary not found: {binary}")
@@ -120,7 +124,9 @@ def collect(session) -> list[dict]:
     finally:
         os.unlink(tmp)
 
-    if result.returncode != 0 and result.stderr:
+    # Surface stderr regardless of exit code (nuclei exits 0 with template-load
+    # warnings) so silent under-coverage is visible.
+    if result.stderr and result.stderr.strip():
         logger.warning(f"[nuclei_network:{session.id}] stderr: {result.stderr[:500]}")
 
     records = []
