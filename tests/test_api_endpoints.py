@@ -880,6 +880,13 @@ class TestBuildProvenance:
         res = client.get("/health/")
         assert res.json()["git_sha"] == "01234567"
 
+    def test_version_support_email_empty_by_default(self, client):
+        assert client.get("/api/version/").json()["support_email"] == ""
+
+    def test_version_support_email_reflects_setting(self, client, settings):
+        settings.SUPPORT_EMAIL = "openeasd@cybersecify.com"
+        assert client.get("/api/version/").json()["support_email"] == "openeasd@cybersecify.com"
+
     def test_version_no_store_header(self, client):
         # Must not be CDN-cached, or the app reports a stale build after redeploy.
         res = client.get("/api/version/")

@@ -38,12 +38,22 @@ export default function BuildInfo({ className = '', checkUpdates = false }) {
   }
   const buildLine = parts.join(' · ');
 
-  // Pre-fill new-issue reports with the running build so we never have to ask
-  // "what version are you on?". GitHub Issues is the OSS-native report channel.
-  const ISSUES = 'https://github.com/cybersecify/OpenEASD/issues/new';
-  const env = encodeURIComponent(`\n\n---\nBuild (auto-filled): ${buildLine}`);
-  const bugUrl = `${ISSUES}?labels=bug&title=${encodeURIComponent('[Bug] ')}&body=${env}`;
-  const featureUrl = `${ISSUES}?labels=enhancement&title=${encodeURIComponent('[Feature] ')}&body=${env}`;
+  // Pre-fill reports with the running build so we never have to ask "what
+  // version are you on?". When a support email is configured (a branded
+  // deployment), route to mailto: that inbox; otherwise fall back to GitHub
+  // Issues (the OSS-native channel).
+  const body = `\n\n---\nBuild (auto-filled): ${buildLine}`;
+  let bugUrl, featureUrl;
+  if (data.support_email) {
+    const to = data.support_email;
+    bugUrl = `mailto:${to}?subject=${encodeURIComponent('[Bug] ')}&body=${encodeURIComponent(body)}`;
+    featureUrl = `mailto:${to}?subject=${encodeURIComponent('[Feature] ')}&body=${encodeURIComponent(body)}`;
+  } else {
+    const ISSUES = 'https://github.com/cybersecify/OpenEASD/issues/new';
+    const env = encodeURIComponent(body);
+    bugUrl = `${ISSUES}?labels=bug&title=${encodeURIComponent('[Bug] ')}&body=${env}`;
+    featureUrl = `${ISSUES}?labels=enhancement&title=${encodeURIComponent('[Feature] ')}&body=${env}`;
+  }
 
   return (
     <div className={`text-[11px] text-dim/70 text-center select-none space-y-0.5 ${className}`}>

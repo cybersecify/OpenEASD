@@ -391,6 +391,13 @@ OPENEASD_VERSION = config("OPENEASD_VERSION", default="dev")
 OPENEASD_GIT_SHA = config("OPENEASD_GIT_SHA", default="unknown")
 OPENEASD_BUILD_DATE = config("OPENEASD_BUILD_DATE", default="unknown")
 
+# Support/contact address for the in-app "Report an issue" / "Request a feature"
+# links. When set, those buttons become mailto: links to this address (a branded
+# deployment can route them to its own support inbox). When empty (the OSS
+# default), the buttons fall back to filing a GitHub issue with the build
+# auto-attached. Surfaced via GET /api/version/ so the SPA can render either.
+SUPPORT_EMAIL = config("SUPPORT_EMAIL", default="")
+
 # Logging
 LOGGING = {
     "version": 1,
