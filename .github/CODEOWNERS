@@ -1,42 +1,22 @@
-# CODEOWNERS — auto-requests review from the right maintainer per path.
-# Order matters: later rules override earlier ones.
-# Reference: https://docs.github.com/articles/about-code-owners
+# Code owners — GitHub auto-requests a review from the owner(s) of the files a
+# PR touches. This ROUTES review (advisory); it does not by itself block merge
+# unless "Require review from Code Owners" is enabled in branch protection.
+# It splits load along the team's areas instead of funneling everything to one
+# person. Branch protection separately requires 1 approval + passing CI.
 
-# Default reviewer for anything not matched below.
-*                                @rathnakaragn
+# Default: either co-founder can own anything.
+*                       @rathnakaragn @ashok-kamat
 
-# ---------------------------------------------------------------------------
-# Code surfaces (technical — Rathnakar)
-# ---------------------------------------------------------------------------
-/apps/                           @rathnakaragn
-/openeasd/                       @rathnakaragn
-/tests/                          @rathnakaragn
-/frontend/src/                   @rathnakaragn
+# Scanner tools, backend, workflow engine, settings, infra, CI — technical lane.
+/apps/                  @rathnakaragn
+/openeasd/              @rathnakaragn
+/tests/                 @rathnakaragn
+/.github/               @rathnakaragn
+/Dockerfile             @rathnakaragn
+/docker-entrypoint.sh   @rathnakaragn
+/k8s/                   @rathnakaragn
 
-# CI and tool configuration
-/.github/workflows/              @rathnakaragn
-/Dockerfile                      @rathnakaragn
-/docker-entrypoint.sh            @rathnakaragn
-/pyproject.toml                  @rathnakaragn
-/uv.lock                         @rathnakaragn
-/frontend/package.json           @rathnakaragn
-/frontend/package-lock.json      @rathnakaragn
-
-# ---------------------------------------------------------------------------
-# Strategy + community surfaces (shared — Rathnakar + Ashok)
-# ---------------------------------------------------------------------------
-/.github/ISSUE_TEMPLATE/         @rathnakaragn @ashok-kamat
-/.github/PULL_REQUEST_TEMPLATE.md @rathnakaragn @ashok-kamat
-/.github/CODEOWNERS              @rathnakaragn @ashok-kamat
-/.github/FUNDING.yml             @rathnakaragn @ashok-kamat
-/.github/dependabot.yml          @rathnakaragn
-/docs/                           @rathnakaragn @ashok-kamat
-/README.md                       @rathnakaragn @ashok-kamat
-/CHANGELOG.md                    @rathnakaragn @ashok-kamat
-/CONTRIBUTING.md                 @rathnakaragn @ashok-kamat
-/CLAUDE.md                       @rathnakaragn @ashok-kamat
-/PRD.md                          @rathnakaragn @ashok-kamat
-/LICENSE                         @rathnakaragn @ashok-kamat
-
-# Security (technical-leaning — Rathnakar primary, Ashok co-reviewer)
-/SECURITY.md                     @rathnakaragn @ashok-kamat
+# Docs, changelog, community/growth copy — Ashok's lane.
+/docs/                  @ashok-kamat
+/CHANGELOG.md           @ashok-kamat
+/README.md              @ashok-kamat
