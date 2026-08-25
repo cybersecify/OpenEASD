@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # even with nuclei_network (1h) also in the Full Scan. If a very large target
 # still exceeds it, the collector raises ToolTimeout so the scan reports
 # `partial` honestly rather than a misleading 0.
-TIMEOUT = 7200        # hard wall-clock cap for the whole nuclei run (2h)
+TIMEOUT = 21600       # fallback wall-clock cap (6h); settings.NUCLEI_TIMEOUT overrides
 REQUEST_TIMEOUT = 5   # seconds per HTTP request (nuclei -timeout)
 # Lowered 150 -> 100 to be gentler on targets. Observed hosts already self-
 # throttle to ~85-95 rps so this rarely binds, but it caps load on hosts that
@@ -57,8 +57,10 @@ def _select_targets(session) -> list[str]:
     rest = list(URL.objects.filter(session=session).exclude(source="httpx").values_list("url", flat=True))
     targets = list(dict.fromkeys(live + rest))  # dedupe, live-probed first
 
-    cap = getattr(settings, "NUCLEI_MAX_TARGETS", 400)
-    if len(targets) > cap:
+    # No cap by default (NUCLEI_MAX_TARGETS=0): scan the whole surface. Only
+    # truncate if a deployment explicitly opts in — and then log it, never silent.
+    cap = getattr(settings, "NUCLEI_MAX_TARGETS", 0)
+    if cap and len(targets) > cap:
         logger.warning(
             f"[nuclei:{session.id}] Capping {len(targets)} URLs to {cap} "
             f"(live-probed first); {len(targets) - cap} not scanned this run"
@@ -129,13 +131,14 @@ def collect(session) -> list[dict]:
     try:
         # Cap nuclei's Go heap on low-memory hosts (env unchanged on balanced/high).
         from apps.core.workflows.proc_env import go_memory_env
-        result = run_capped(cmd, TIMEOUT, env=go_memory_env())
+        timeout = getattr(settings, "NUCLEI_TIMEOUT", TIMEOUT)
+        result = run_capped(cmd, timeout, env=go_memory_env())
     except FileNotFoundError:
         logger.error(f"[nuclei:{session.id}] Binary not found: {binary}")
         raise ToolBinaryMissing(f"nuclei binary not found: {binary}")
     except subprocess.TimeoutExpired:
-        logger.error(f"[nuclei:{session.id}] Timed out after {TIMEOUT}s")
-        raise ToolTimeout(f"nuclei timed out after {TIMEOUT}s")
+        logger.error(f"[nuclei:{session.id}] Timed out after {timeout}s")
+        raise ToolTimeout(f"nuclei timed out after {timeout}s")
     finally:
         os.unlink(tmp)
 
