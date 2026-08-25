@@ -38,6 +38,20 @@ def run_dnsx(session) -> list:
             sub.resolved_at = now
         Subdomain.objects.bulk_update(activated, ["is_active", "resolved_at"])
 
+    # Prune dead alterx permutation candidates. alterx INVENTS subdomain names
+    # (dev-api.example.com, api-staging.example.com, …); a candidate that doesn't
+    # resolve isn't a real subdomain and must not inflate the surface count — a
+    # cybersecify.com run generated 1,858 alterx candidates of which only 1 was
+    # real, showing "1,862 subdomains" for a 5-subdomain surface. Names from the
+    # discovery tools (subfinder/amass) are kept even if unresolved: those are
+    # real observed names, not guesses.
+    pruned, _ = (
+        Subdomain.objects.filter(session=session, source="alterx", is_active=False)
+        .delete()
+    )
+    if pruned:
+        logger.info(f"[dnsx:{session.id}] Pruned {pruned} unresolved alterx candidates")
+
     logger.info(
         f"[dnsx:{session.id}] Resolved {len(activated)}/{len(subs)} subdomains "
         f"to {len(ip_objs)} public IPs"

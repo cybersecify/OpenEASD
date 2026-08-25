@@ -8,6 +8,13 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Fixed
+- **Subdomain count no longer inflated by dead alterx guesses.** alterx generates
+  permutation *candidates* (dev-api.…, api-staging.…); those that don't resolve
+  were stored and counted as real subdomains — a cybersecify.com run showed
+  "1,862 subdomains" for a **5-subdomain** surface (1,857 dead alterx candidates).
+  dnsx now prunes unresolved alterx candidates after resolution, so the count
+  reflects the real, live surface. Discovery-tool names (subfinder/amass) are kept
+  even when unresolved — those are real observed names, not guesses.
 - **Two issues the live cybersecify.com validation run exposed.** (1) A **passive
   scan spuriously emitted a `scan_coverage` "results incomplete" finding** because
   the coverage-regression check diffed it against a prior *active* (Full Scan)

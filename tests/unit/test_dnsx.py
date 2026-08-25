@@ -317,6 +317,36 @@ class TestDnsxScanner:
         assert sub.is_active is True
         assert sub.resolved_at is not None
 
+    def test_prunes_unresolved_alterx_candidates_only(self):
+        # alterx invents names; a candidate that doesn't resolve must be pruned so
+        # it can't inflate the subdomain count. Discovery-tool names (subfinder)
+        # are kept even when unresolved — those are real observed names.
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import Subdomain
+
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        Subdomain.objects.create(session=sess, domain="example.com",
+                                 subdomain="real.example.com", source="subfinder")     # resolves
+        Subdomain.objects.create(session=sess, domain="example.com",
+                                 subdomain="dead.example.com", source="subfinder")      # subfinder, no resolve -> KEEP
+        Subdomain.objects.create(session=sess, domain="example.com",
+                                 subdomain="live-guess.example.com", source="alterx")   # alterx, resolves -> KEEP
+        Subdomain.objects.create(session=sess, domain="example.com",
+                                 subdomain="dead-guess.example.com", source="alterx")   # alterx, no resolve -> PRUNE
+
+        with patch("apps.dnsx.scanner.collect", return_value=[
+            {"host": "real.example.com", "a": ["54.23.45.67"], "aaaa": []},
+            {"host": "live-guess.example.com", "a": ["54.23.45.68"], "aaaa": []},
+        ]):
+            run_dnsx(sess)
+
+        remaining = set(Subdomain.objects.filter(session=sess).values_list("subdomain", flat=True))
+        assert "dead-guess.example.com" not in remaining      # pruned
+        assert "real.example.com" in remaining                # resolved subfinder
+        assert "dead.example.com" in remaining                # unresolved subfinder kept
+        assert "live-guess.example.com" in remaining          # resolved alterx kept
+        assert Subdomain.objects.filter(session=sess).count() == 3
+
     def test_run_dnsx_does_not_activate_subdomain_with_only_private_ips(self):
         from apps.core.scans.models import ScanSession
         from apps.core.assets.models import Subdomain
