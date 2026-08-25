@@ -12,7 +12,7 @@ from decouple import config as _config  # noqa: E402
 # DB status of scans whose worker died without finalizing; it must not fire while
 # a healthy scan is still legitimately running, or it flips a live scan to
 # "partial" mid-run. Keep this at/above the worker hard-kill (240m).
-SCAN_TIMEOUT_MINUTES = _config("SCAN_TIMEOUT_MINUTES", default=240, cast=int)
+SCAN_TIMEOUT_MINUTES = _config("SCAN_TIMEOUT_MINUTES", default=1440, cast=int)  # 24h; >= Q_TASK_TIMEOUT
 
 # A scan stuck in "pending" never started running — its enqueued Django-Q task was
 # lost (e.g. the qcluster worker restarted between enqueue and pickup), so it sits

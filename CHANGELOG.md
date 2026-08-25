@@ -7,6 +7,23 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Tools now run to completion and deliver full output — no output caps.** The
+  product's value is complete results in one UI, so instead of *capping* tools to
+  fit the small box we give them the TIME to finish (the scan window is 48h and
+  the freeze is fixed, so the box stays responsive during a long run):
+  - **Removed the nuclei URL cap** (default `NUCLEI_MAX_TARGETS=0`) — nuclei scans
+    the whole discovered surface, not a truncated subset. (A deployment can still
+    opt into a cap; it's then logged, never silent.)
+  - **nuclei wall-clock 2h → 6h** (`NUCLEI_TIMEOUT`), **worker hard-kill 4h → 24h**
+    (`Q_TASK_TIMEOUT`), **stuck-scan watchdog 4h → 24h** — so a large scan finishes
+    instead of being killed mid-run.
+  - **amass delivers its partial subdomains on a time-limit** instead of
+    discarding them and failing the scan — a time-boxed enumeration run is a
+    normal, worthwhile result (like subfinder), and it's logged.
+  - **All profiles now include `low` severity** in nuclei (only `info` tech-detect
+    noise, already covered by httpx, is dropped) — more findings, not fewer.
+
 ### Fixed
 - **Subdomain count no longer inflated by dead alterx guesses.** alterx generates
   permutation *candidates* (dev-api.…, api-staging.…); those that don't resolve

@@ -328,7 +328,7 @@ class TestNucleiCollector:
         cmd = captured["cmd"]
         for flag in ("-rate-limit", "-c", "-timeout", "-retries"):
             assert flag in cmd, f"missing {flag}"
-        assert captured["timeout"] == 7200
+        assert captured["timeout"] == 21600  # NUCLEI_TIMEOUT default (6h)
         # per-target rate must stay polite regardless of resource profile
         rate = int(cmd[cmd.index("-rate-limit") + 1])
         assert rate <= 150, f"per-target rate {rate} too aggressive"
