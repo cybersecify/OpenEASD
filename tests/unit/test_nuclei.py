@@ -328,7 +328,7 @@ class TestNucleiCollector:
         cmd = captured["cmd"]
         for flag in ("-rate-limit", "-c", "-timeout", "-retries"):
             assert flag in cmd, f"missing {flag}"
-        assert captured["timeout"] == 7200
+        assert captured["timeout"] == 21600  # NUCLEI_TIMEOUT default (6h)
         # per-target rate must stay polite regardless of resource profile
         rate = int(cmd[cmd.index("-rate-limit") + 1])
         assert rate <= 150, f"per-target rate {rate} too aggressive"
@@ -533,3 +533,42 @@ class TestNucleiScanner:
         with patch("apps.nuclei.scanner.collect", return_value=[]):
             findings = run_nuclei(sess)
         assert findings == []
+
+
+# ---------------------------------------------------------------------------
+# Target selection: live-first prioritisation + cap (added after the
+# cybersecify.com run fed nuclei 368 URLs and it hit the 2h wall)
+# ---------------------------------------------------------------------------
+
+import pytest as _pytest
+
+
+@_pytest.mark.django_db
+class TestSelectTargets:
+    def _session(self):
+        from apps.core.scans.models import ScanSession
+        return ScanSession.objects.create(domain="example.com", scan_type="full")
+
+    def _url(self, session, host, source):
+        from apps.core.web_assets.models import URL
+        return URL.objects.create(
+            session=session, url=f"https://{host}", host=host,
+            scheme="https", source=source,
+        )
+
+    def test_live_httpx_urls_prioritised_over_archived(self):
+        from apps.nuclei.collector import _select_targets
+        s = self._session()
+        self._url(s, "archived.example.com", "historical_urls")
+        self._url(s, "live.example.com", "httpx")
+        targets = _select_targets(s)
+        assert targets[0] == "https://live.example.com"  # httpx first
+
+    def test_caps_target_list(self, settings):
+        from apps.nuclei.collector import _select_targets
+        settings.NUCLEI_MAX_TARGETS = 3
+        s = self._session()
+        for i in range(10):
+            self._url(s, f"h{i}.example.com", "httpx")
+        targets = _select_targets(s)
+        assert len(targets) == 3  # capped, never silently unbounded

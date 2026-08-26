@@ -77,6 +77,29 @@ class TestCoverageRegression:
         _check_coverage_regression(cur)
         assert not Finding.objects.filter(session=cur, check_type="coverage_regression").exists()
 
+    def test_different_workflow_not_compared(self):
+        # A Passive Scan (fewer tools) must NOT be diffed against a prior Full
+        # Scan baseline — that always looks like a collapse and fires a spurious
+        # "results incomplete" finding (seen live on a cybersecify.com passive run).
+        from apps.core.findings.models import Finding
+        from apps.core.workflows.models import Workflow
+        full = Workflow.objects.create(name="Full Scan X")
+        passive = Workflow.objects.create(name="Passive Scan X")
+        _session(status="completed", total_findings=50, workflow=full)
+        cur = _session(total_findings=0, workflow=passive, endpoints_probed=0)
+        _check_coverage_regression(cur)
+        assert not Finding.objects.filter(session=cur, check_type="coverage_regression").exists()
+
+    def test_same_workflow_still_flags(self):
+        # Same-workflow drop must still fire (the real signal isn't lost).
+        from apps.core.findings.models import Finding
+        from apps.core.workflows.models import Workflow
+        full = Workflow.objects.create(name="Full Scan Y")
+        _session(status="completed", total_findings=50, workflow=full)
+        cur = _session(total_findings=5, workflow=full)
+        _check_coverage_regression(cur)
+        assert Finding.objects.filter(session=cur, check_type="coverage_regression").exists()
+
 
 @pytest.mark.django_db
 class TestCoverageRegressionReport:

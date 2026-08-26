@@ -237,11 +237,14 @@ for _dir in [OPENEASD_DATA_DIR, OPENEASD_LOGS_DIR]:
 # The old defaults (timeout 3600 / retry 7200) killed every large scan: a full
 # scan runs past 1h, timeout kills it, then retry re-queues a zombie at exactly
 # 2h. max_attempts:1 is the real "no retries" switch the retry comment claimed.
-# Derived, not guessed: the worst-case sum of per-tool caps (same-phase tools run
-# in parallel) is ~3.4h — dominated by nuclei_network's 1h cap in phase 7. Set the
-# worker hard-kill above that ceiling so "every tool within its cap => scan always
-# completes" is a guarantee, not a hope. 4h leaves ~35m margin over the ceiling.
-Q_TASK_TIMEOUT = config("Q_TASK_TIMEOUT", default=14400, cast=int)   # 4h hard cap per scan task
+# The worker hard-kill caps the WHOLE scan, so it must exceed the sum of per-tool
+# caps (different-phase tools run sequentially). nuclei is now allowed up to 6h
+# (NUCLEI_TIMEOUT) so it can FINISH a large surface rather than be capped — worst
+# case nuclei(6h)+nuclei_network(1h)+amass(0.5h)+the rest ≈ 8h. Set a generous 24h
+# so a big uncapped scan completes within the 48h window instead of being killed.
+# The freeze fixes (GOMEMLIMIT + bulk-size) keep the box responsive during a long
+# run. (Was 4h, which killed nuclei mid-scan on any large surface.)
+Q_TASK_TIMEOUT = config("Q_TASK_TIMEOUT", default=86400, cast=int)   # 24h hard cap per scan task
 Q_TASK_RETRY = config("Q_TASK_RETRY", default=Q_TASK_TIMEOUT + 1200, cast=int)
 # Guard: retry <= timeout causes the broker to re-run a task while it's still
 # running. Force retry strictly above timeout regardless of env misconfiguration.
@@ -363,15 +366,26 @@ LOW_MEMORY = PROFILE == "low"  # runner serialises + amass skips brute when true
 # bound that actually prevents the FREEZE is GOMEMLIMIT + a small bulk_size.
 # Default bulk_size is 25; we scale it down hard on the low profile.
 _PROFILE_TUNING = {
-    "low":      {"nuclei_c": 10, "nuclei_rate": 40,  "nuclei_sev": "critical,high,medium",     "nuclei_bs": 5},
+    "low":      {"nuclei_c": 10, "nuclei_rate": 40,  "nuclei_sev": "critical,high,medium,low", "nuclei_bs": 5},
     "balanced": {"nuclei_c": 25, "nuclei_rate": 100, "nuclei_sev": "critical,high,medium,low", "nuclei_bs": 15},
     "high":     {"nuclei_c": 40, "nuclei_rate": 150, "nuclei_sev": "critical,high,medium,low", "nuclei_bs": 25},
 }
 NUCLEI_CONCURRENCY = _PROFILE_TUNING[PROFILE]["nuclei_c"]
 NUCLEI_RATE_LIMIT = _PROFILE_TUNING[PROFILE]["nuclei_rate"]
 NUCLEI_BULK_SIZE = _PROFILE_TUNING[PROFILE]["nuclei_bs"]
-# Overridable: set NUCLEI_SEVERITY=critical,high,medium,low,info to widen coverage
-# (at the cost of memory/speed) on a box that can afford it.
+# Optional cap on how many URLs nuclei probes. Default 0 = NO CAP — scan the whole
+# discovered surface and deliver complete results (the product's whole value). We
+# give nuclei the TIME to finish (NUCLEI_TIMEOUT below + the 24h scan watchdog)
+# rather than truncating its output. A deployment that WANTS to bound it can set
+# NUCLEI_MAX_TARGETS>0; when it does, live-probed (httpx) URLs are prioritised and
+# the truncation is logged (never silent).
+NUCLEI_MAX_TARGETS = config("NUCLEI_MAX_TARGETS", default=0, cast=int)
+# Wall-clock cap for the whole nuclei run. Generous by default (6h) so nuclei
+# actually FINISHES a large surface instead of being cut off mid-scan — completing
+# with full output matters more than finishing fast, and the scan window is 48h.
+NUCLEI_TIMEOUT = config("NUCLEI_TIMEOUT", default=21600, cast=int)
+# Overridable: drop to critical,high,medium to trade coverage for speed, or add
+# info to include tech-detect templates (noisy, redundant with httpx tech-detect).
 NUCLEI_SEVERITY = config("NUCLEI_SEVERITY", default=_PROFILE_TUNING[PROFILE]["nuclei_sev"])
 
 # Soft memory ceiling for the nuclei/nuclei_network Go processes. nuclei loads

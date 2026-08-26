@@ -8,6 +8,44 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Changed
+- **Tools now run to completion and deliver full output — no output caps.** The
+  product's value is complete results in one UI, so instead of *capping* tools to
+  fit the small box we give them the TIME to finish (the scan window is 48h and
+  the freeze is fixed, so the box stays responsive during a long run):
+  - **Removed the nuclei URL cap** (default `NUCLEI_MAX_TARGETS=0`) — nuclei scans
+    the whole discovered surface, not a truncated subset. (A deployment can still
+    opt into a cap; it's then logged, never silent.)
+  - **nuclei wall-clock 2h → 6h** (`NUCLEI_TIMEOUT`), **worker hard-kill 4h → 24h**
+    (`Q_TASK_TIMEOUT`), **stuck-scan watchdog 4h → 24h** — so a large scan finishes
+    instead of being killed mid-run.
+  - **amass delivers its partial subdomains on a time-limit** instead of
+    discarding them and failing the scan — a time-boxed enumeration run is a
+    normal, worthwhile result (like subfinder), and it's logged.
+  - **All profiles now include `low` severity** in nuclei (only `info` tech-detect
+    noise, already covered by httpx, is dropped) — more findings, not fewer.
+
+### Fixed
+- **Subdomain count no longer inflated by dead alterx guesses.** alterx generates
+  permutation *candidates* (dev-api.…, api-staging.…); those that don't resolve
+  were stored and counted as real subdomains — a cybersecify.com run showed
+  "1,862 subdomains" for a **5-subdomain** surface (1,857 dead alterx candidates).
+  dnsx now prunes unresolved alterx candidates after resolution, so the count
+  reflects the real, live surface. Discovery-tool names (subfinder/amass) are kept
+  even when unresolved — those are real observed names, not guesses.
+- **Two issues the live cybersecify.com validation run exposed.** (1) A **passive
+  scan spuriously emitted a `scan_coverage` "results incomplete" finding** because
+  the coverage-regression check diffed it against a prior *active* (Full Scan)
+  baseline — a passive scan runs far fewer tools, so it always looked like a
+  collapse. The check now only compares scans of the **same workflow**. (2)
+  **nuclei hit its 2h wall on a large surface** (a Full Scan fed it 368 URLs);
+  its target list is now **capped per profile** (`NUCLEI_MAX_TARGETS`; low=100),
+  live-probed (httpx) URLs first, cap logged (never silent).
+- **CI runs on every PR** (dropped the `pull_request` `paths-ignore`): now that CI
+  is a required status check, a docs-only PR would otherwise never trigger it and
+  be unmergeable. The `push` `paths-ignore` still skips the image republish on
+  docs-only merges.
+
+### Changed
 - **nuclei hardening (follow-up to the severity scoping).** Three parallel agents
   investigated nuclei's freeze/timeout/value; key finding: `-severity` does NOT
   cut the ~500 MB startup template parse (nuclei parses all templates then

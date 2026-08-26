@@ -657,4 +657,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_coverage_regression.py` | 10 | Silent-block coverage counting (probed-vs-reached), coverage-regression finding (high block ratio / findings drop / stable = no flag), partial scan status when a tool fails |
 | `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
 
-**Total: 1345 tests** (1293 fast + 52 slow domain_security)
+**Total: 1350 tests** (1298 fast + 52 slow domain_security)
