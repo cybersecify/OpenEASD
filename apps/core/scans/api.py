@@ -132,6 +132,11 @@ def _serialize_session(session) -> dict:
         "end_time": session.end_time.isoformat() if session.end_time else None,
         "status": session.status,
         "total_findings": session.total_findings,
+        "coverage": {
+            "waf_vendor": session.waf_vendor,
+            "endpoints_probed": session.endpoints_probed,
+            "endpoints_blocked": session.endpoints_blocked,
+        },
     }
 
 
@@ -205,6 +210,7 @@ def _serialize_url(url) -> dict:
         "title": url.title,
         "web_server": url.web_server,
         "content_length": url.content_length,
+        "technologies": url.technologies or [],
         "source": url.source,
         "discovered_at": url.discovered_at.isoformat(),
     }
@@ -230,6 +236,31 @@ def _get_vuln_counts(session) -> dict:
         if row["severity"] in counts:
             counts[row["severity"]] = row["total"]
     return counts
+
+
+def _is_passive_only_scan(schedule_type: str, workflow) -> bool:
+    """True only for an immediate scan whose workflow contains solely passive tools.
+
+    Passive tools use only public / third-party data and never touch the target,
+    so such a scan needs no DomainAuthorization. Everything else — any active
+    tool, or a scheduled (once/recurring) scan, which always runs the default
+    active Full Scan workflow — is treated as active and stays behind the gate.
+
+    Resolving to the DEFAULT workflow when none was chosen means a bare "now"
+    scan (default = Full Scan) correctly reads as active and keeps the gate.
+    """
+    if schedule_type != "now":
+        return False
+
+    from apps.core.workflows.registry import is_passive_tool_set
+
+    if workflow is None:
+        from apps.core.workflows.models import Workflow
+        workflow = Workflow.objects.filter(is_default=True).first()
+        if workflow is None:
+            return False  # defensive: no default → require auth
+
+    return is_passive_tool_set(workflow.enabled_tools())
 
 
 # ---------------------------------------------------------------------------
@@ -273,21 +304,28 @@ def start_scan(request, data: ScanStartRequest):
     if not _VALID_HOSTNAME.match(domain):
         raise HttpError(400, "Invalid domain name")
 
-    from apps.core.domains.models import DomainAuthorization
-    if not DomainAuthorization.objects.filter(domain__name=domain).exists():
-        raise HttpError(403, "Domain is not authorized for scanning")
+    # Resolve the workflow up front (immediate "now" scans only) so we can decide
+    # whether authorization is required BEFORE the gate. A passive-only workflow
+    # never sends packets to the target, so it needs no DomainAuthorization.
+    workflow = None
+    if data.schedule_type == "now" and data.workflow_id is not None:
+        from apps.core.workflows.models import Workflow
+        try:
+            workflow = Workflow.objects.get(pk=data.workflow_id)
+        except Workflow.DoesNotExist:
+            raise HttpError(404, "Workflow not found")
+
+    # Authorization gate — required unless this is an immediate passive-only scan.
+    # Scheduled scans (once/recurring) always run the default active Full Scan
+    # workflow and therefore always keep the gate.
+    if not _is_passive_only_scan(data.schedule_type, workflow):
+        from apps.core.domains.models import DomainAuthorization
+        if not DomainAuthorization.objects.filter(domain__name=domain).exists():
+            raise HttpError(403, "Domain is not authorized for scanning")
 
     if data.schedule_type == "now":
         from apps.core.scans.pipeline import create_scan_session
         from apps.core.scans.tasks import run_scan_task
-
-        workflow = None
-        if data.workflow_id is not None:
-            from apps.core.workflows.models import Workflow
-            try:
-                workflow = Workflow.objects.get(pk=data.workflow_id)
-            except Workflow.DoesNotExist:
-                raise HttpError(404, "Workflow not found")
 
         session = create_scan_session(domain, workflow=workflow)
         if session is None:
@@ -600,6 +638,17 @@ def start_subscan(request, session_uuid: uuid.UUID, data: SubScanRequest):
     invalid = [t for t in data.tools if t not in registered]
     if invalid:
         raise HttpError(400, f"Unknown tools: {invalid}")
+
+    # Authorization gate — a subscan is a scan. If any requested tool is active
+    # it probes the parent scan's domain and requires DomainAuthorization. This
+    # closes the loophole where a passive (unauthorized) parent scan could be
+    # used to launch active tools against a target that never granted consent.
+    from apps.core.workflows.registry import is_passive_tool_set
+    if not is_passive_tool_set(data.tools):
+        from apps.core.domains.models import DomainAuthorization
+        parent = get_object_or_404(ScanSession, uuid=str(session_uuid))
+        if not DomainAuthorization.objects.filter(domain__name=parent.domain).exists():
+            raise HttpError(403, "Domain is not authorized for scanning")
 
     session = create_subscan_session(str(session_uuid), tools=data.tools)
     if session is None:

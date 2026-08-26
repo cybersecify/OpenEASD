@@ -10,13 +10,13 @@ Nuclei scans for web vulnerabilities using community templates:
 import json
 import logging
 import os
-import signal
 import subprocess
 import tempfile
 
 from django.conf import settings
 
-from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+from apps.core.workflows.exceptions import ToolBinaryMissing
+from apps.core.workflows.proc import run_capped
 
 logger = logging.getLogger(__name__)
 
@@ -26,74 +26,48 @@ logger = logging.getLogger(__name__)
 # Time is not the constraint here — value and not
 # missing findings are — and this stays under the 4h worker/watchdog budget
 # even with nuclei_network (1h) also in the Full Scan. If a very large target
-# still exceeds it, the collector raises ToolTimeout so the scan reports
-# `partial` honestly rather than a misleading 0.
-TIMEOUT = 7200        # hard wall-clock cap for the whole nuclei run (2h)
+# still exceeds it, the collector DELIVERS the partial findings nuclei already
+# wrote (run_capped carries them on TimeoutExpired.output) rather than discarding
+# them — a time-boxed run is a worthwhile result, and its findings are saved.
+TIMEOUT = 21600       # fallback wall-clock cap (6h); settings.NUCLEI_TIMEOUT overrides
 REQUEST_TIMEOUT = 5   # seconds per HTTP request (nuclei -timeout)
 # Lowered 150 -> 100 to be gentler on targets. Observed hosts already self-
 # throttle to ~85-95 rps so this rarely binds, but it caps load on hosts that
 # could absorb more. 100 rps still completes the full template set on a
 # large-target worst case (~330k requests) well within the 2h cap.
-RATE_LIMIT = 100      # max requests/sec across all hosts (nuclei -rate-limit)
-CONCURRENCY = 25      # parallel templates (nuclei -c)
+RATE_LIMIT = 100      # fallback -rate-limit; the resource profile overrides it
+CONCURRENCY = 25      # fallback -c; the resource profile overrides it
+# Actual values come from settings.NUCLEI_CONCURRENCY / NUCLEI_RATE_LIMIT, which
+# the resource PROFILE resolves (low 10/40, balanced 25/100, high 40/150). Rate
+# stays polite even on 'high' — a big box is no licence to hammer the target.
 
 
-_DRAIN_GRACE = 30  # seconds to let a SIGKILL'd process die before we give up
+# The hardened, child-escape-proof runner lives in apps.core.workflows.proc
+# (run_capped) so nuclei_network — the same binary — gets the same anti-wedge
+# protection instead of a plain subprocess.run that can hang the worker.
 
 
-def _run(cmd: list[str], timeout: int) -> subprocess.CompletedProcess:
-    """Run an external tool with a timeout that cannot be defeated by child processes.
-
-    Why not subprocess.run / communicate(): communicate() reads stdout/stderr until
-    pipe EOF, which only happens once EVERY writer closes the pipe. nuclei spawns
-    helpers (interactsh poller, resolvers, headless) that can escape the process
-    group and inherit the stdout pipe, so even after we SIGKILL the group the pipe
-    never reaches EOF and communicate() blocks forever — the timeout fires but the
-    call never returns, wedging the worker thread until the session watchdog reaps it.
-
-    The fix: redirect stdout/stderr to temp FILES (no pipe), and wait() on the
-    process itself. wait() returns the moment the direct child exits — it does not
-    care about inherited file descriptors — so a SIGKILL always unblocks us. An
-    escaped grandchild can leak but can no longer hang the scan.
-
-    Mirrors subprocess.run's contract: returns CompletedProcess, raises
-    FileNotFoundError if the binary is missing, re-raises TimeoutExpired after the
-    group is killed.
+def _select_targets(session) -> list[str]:
+    """Deduped URL list for nuclei: live-probed (httpx) URLs first, then archived/
+    crawled ones, capped at NUCLEI_MAX_TARGETS. The cap is logged, never silent —
+    a large surface at the polite rate would otherwise blow past the wall-clock.
     """
-    out_fd, out_path = tempfile.mkstemp(suffix=".nuclei.out")
-    err_fd, err_path = tempfile.mkstemp(suffix=".nuclei.err")
-    try:
-        with os.fdopen(out_fd, "wb") as out_f, os.fdopen(err_fd, "wb") as err_f:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=out_f,
-                stderr=err_f,
-                stdin=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-            try:
-                proc.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except (ProcessLookupError, PermissionError):
-                    proc.kill()
-                try:
-                    proc.wait(timeout=_DRAIN_GRACE)
-                except subprocess.TimeoutExpired:
-                    pass
-                raise
-        with open(out_path, "r", errors="replace") as f:
-            stdout = f.read()
-        with open(err_path, "r", errors="replace") as f:
-            stderr = f.read()
-        return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
-    finally:
-        for p in (out_path, err_path):
-            try:
-                os.unlink(p)
-            except OSError:
-                pass
+    from apps.core.web_assets.models import URL
+
+    live = list(URL.objects.filter(session=session, source="httpx").values_list("url", flat=True))
+    rest = list(URL.objects.filter(session=session).exclude(source="httpx").values_list("url", flat=True))
+    targets = list(dict.fromkeys(live + rest))  # dedupe, live-probed first
+
+    # No cap by default (NUCLEI_MAX_TARGETS=0): scan the whole surface. Only
+    # truncate if a deployment explicitly opts in — and then log it, never silent.
+    cap = getattr(settings, "NUCLEI_MAX_TARGETS", 0)
+    if cap and len(targets) > cap:
+        logger.warning(
+            f"[nuclei:{session.id}] Capping {len(targets)} URLs to {cap} "
+            f"(live-probed first); {len(targets) - cap} not scanned this run"
+        )
+        targets = targets[:cap]
+    return targets
 
 
 def collect(session) -> list[dict]:
@@ -105,17 +79,12 @@ def collect(session) -> list[dict]:
 
     Returns list of raw nuclei JSON records (one per finding).
     """
-    from apps.core.web_assets.models import URL
-
     binary = getattr(settings, "TOOL_NUCLEI", "nuclei")
 
-    urls = list(URL.objects.filter(session=session).values_list("url", flat=True))
-    if not urls:
+    targets = _select_targets(session)
+    if not targets:
         logger.info(f"[nuclei:{session.id}] No URLs to scan")
         return []
-
-    # Deduplicate
-    targets = sorted(set(urls))
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("\n".join(targets))
@@ -133,27 +102,64 @@ def collect(session) -> list[dict]:
         "-disable-update-check",
         "-timeout", str(REQUEST_TIMEOUT),
         "-retries", "1",
-        "-rate-limit", str(RATE_LIMIT),
-        "-c", str(CONCURRENCY),
+        "-rate-limit", str(getattr(settings, "NUCLEI_RATE_LIMIT", RATE_LIMIT)),
+        "-c", str(getattr(settings, "NUCLEI_CONCURRENCY", CONCURRENCY)),
+        # -bulk-size is the REAL peak-memory bound (runtime ≈ c × bulk × per-host
+        # buffer). nuclei parses ALL ~13.5k templates up front regardless (~500 MB
+        # fixed), so -severity does NOT shrink that startup parse — it cuts the
+        # EXECUTED set (fewer requests → no TIMEOUT). What keeps the box from
+        # FREEZING is GOMEMLIMIT + a small bulk-size, not -severity.
+        "-bulk-size", str(getattr(settings, "NUCLEI_BULK_SIZE", 15)),
+        # Scope executed templates by severity (drops ~38% info noise already
+        # covered by httpx tech-detect + web_checker). Fixes timeout, not freeze.
+        "-severity", getattr(settings, "NUCLEI_SEVERITY", "critical,high,medium"),
+        # This run only probes web URLs, so only http templates apply. dns/tcp/ssl
+        # are covered by nuclei_network + tls_checker — skipping them here trims the
+        # executed set with zero coverage loss.
+        "-type", "http",
+        # Abandon a host after this many errors instead of retrying every template
+        # against a dead/filtered host (cuts wall-clock on blocked targets).
+        "-max-host-error", "10",
+        # Explicit safety: never run request-heavy fuzzing / DoS / intrusive
+        # templates (also excluded by nuclei's default .nuclei-ignore).
+        "-exclude-tags", "dos,fuzzing,intrusive",
+        # Honest scanner identity so a target can allowlist us deliberately.
+        # Note: templates that hard-set their own User-Agent are not overridden.
+        "-H", f"User-Agent: {getattr(settings, 'OPENEASD_USER_AGENT', 'OpenEASD/1.0')}",
     ]
     logger.info(f"[nuclei:{session.id}] Scanning {len(targets)} web targets")
 
+    stdout, stderr = "", ""
     try:
-        result = _run(cmd, TIMEOUT)
+        # Cap nuclei's Go heap on low-memory hosts (env unchanged on balanced/high).
+        from apps.core.workflows.proc_env import go_memory_env
+        timeout = getattr(settings, "NUCLEI_TIMEOUT", TIMEOUT)
+        result = run_capped(cmd, timeout, env=go_memory_env())
+        stdout, stderr = result.stdout, result.stderr
     except FileNotFoundError:
         logger.error(f"[nuclei:{session.id}] Binary not found: {binary}")
         raise ToolBinaryMissing(f"nuclei binary not found: {binary}")
-    except subprocess.TimeoutExpired:
-        logger.error(f"[nuclei:{session.id}] Timed out after {TIMEOUT}s")
-        raise ToolTimeout(f"nuclei timed out after {TIMEOUT}s")
+    except subprocess.TimeoutExpired as exc:
+        # A time-boxed nuclei run is still a worthwhile result on a large surface:
+        # deliver the findings it DID write before the wall (run_capped attaches
+        # the partial stdout to exc.output) instead of discarding them and
+        # reporting a misleading 0. Logged, so the truncation is visible.
+        stdout = exc.output or ""
+        logger.warning(
+            f"[nuclei:{session.id}] Time-limited at {timeout}s — delivering "
+            f"{len(stdout.splitlines())} partial output lines"
+        )
     finally:
         os.unlink(tmp)
 
-    if result.returncode != 0 and result.stderr:
-        logger.warning(f"[nuclei:{session.id}] stderr: {result.stderr[:500]}")
+    # Surface stderr regardless of exit code: nuclei routinely exits 0 while
+    # logging "could not load N templates" / interactsh failures to stderr, which
+    # is silent under-coverage if only checked on nonzero rc.
+    if stderr and stderr.strip():
+        logger.warning(f"[nuclei:{session.id}] stderr: {stderr[:500]}")
 
     records = []
-    for line in result.stdout.strip().splitlines():
+    for line in stdout.strip().splitlines():
         if not line:
             continue
         try:

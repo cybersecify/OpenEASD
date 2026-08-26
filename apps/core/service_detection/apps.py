@@ -12,5 +12,6 @@ class ServiceDetectionConfig(AppConfig):
         "phase_group": "Port Discovery",
         "requires": ["naabu"],
         "produces_findings": False,
+        "active": True,
         "core": True,  # always runs, hidden from workflow UI
     }

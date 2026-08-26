@@ -37,6 +37,15 @@ class TestKatanaCollector:
         records = collect(sess, [])
         assert records == []
 
+    def test_sends_honest_user_agent(self):
+        sess = self._session()
+        with patch("apps.katana.collector.subprocess.run", return_value=self._fake_run([])) as run:
+            collect(sess, ["https://example.com"])
+        cmd = run.call_args[0][0]
+        assert "-H" in cmd
+        ua = cmd[cmd.index("-H") + 1]
+        assert ua.startswith("User-Agent: OpenEASD/")
+
     def test_raises_on_binary_not_found(self):
         from apps.core.workflows.exceptions import ToolBinaryMissing
         sess = self._session()
@@ -146,6 +155,31 @@ class TestKatanaAnalyzer:
         objs = analyze(sess, records)
         assert objs == []
 
+    def test_skips_record_with_no_request_key(self):
+        # A JSONL line with no "request" key at all must be skipped, not crash.
+        sess, _, _ = _make_session_with_assets()
+        objs = analyze(sess, [{}, {"response": {"status_code": 200}}])
+        assert objs == []
+
+    def test_non_dict_request_does_not_crash(self):
+        # Regression: a record whose "request" is a string or list (malformed
+        # katana output) used to raise AttributeError on .get(). It must be
+        # skipped cleanly, and valid records in the same batch still processed.
+        sess, _, _ = _make_session_with_assets()
+        records = [
+            {"request": "not-a-dict"},
+            {"request": ["also", "not", "a", "dict"]},
+            {"request": {"endpoint": "https://www.example.com/ok"}},
+        ]
+        objs = analyze(sess, records)
+        assert [o.url for o in objs] == ["https://www.example.com/ok"]
+
+    def test_null_endpoint_does_not_crash(self):
+        # request present but endpoint is JSON null → treated as missing.
+        sess, _, _ = _make_session_with_assets()
+        objs = analyze(sess, [{"request": {"endpoint": None}}])
+        assert objs == []
+
     def test_no_port_fk_for_unknown_host(self):
         sess, _, _ = _make_session_with_assets()
         records = [{"request": {"endpoint": "https://unknown.example.com/page"}}]
@@ -179,6 +213,29 @@ class TestKatanaAnalyzer:
     def test_returns_empty_for_no_records(self):
         sess, _, _ = _make_session_with_assets()
         assert analyze(sess, []) == []
+
+    def test_drops_out_of_scope_urls(self):
+        sess, _, _ = _make_session_with_assets()
+        records = [
+            {"request": {"endpoint": "https://example.com/page"}},
+            {"request": {"endpoint": "https://cid.karnataka.gov.in/cyber-crime"}},
+            {"request": {"endpoint": "https://linkedin.com/company/example"}},
+            {"request": {"endpoint": "https://sub.example.com/api"}},
+        ]
+        objs = analyze(sess, records)
+        hosts = {o.host for o in objs}
+        assert hosts == {"example.com", "sub.example.com"}
+        assert "cid.karnataka.gov.in" not in hosts
+        assert "linkedin.com" not in hosts
+
+    def test_keeps_subdomains_of_target(self):
+        sess, _, _ = _make_session_with_assets()
+        records = [
+            {"request": {"endpoint": "https://app.example.com/login"}},
+            {"request": {"endpoint": "https://api.example.com/v1/data"}},
+        ]
+        objs = analyze(sess, records)
+        assert len(objs) == 2
 
 
 from apps.katana.scanner import run_katana

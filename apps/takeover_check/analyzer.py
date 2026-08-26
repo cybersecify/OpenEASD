@@ -75,6 +75,21 @@ def analyze(session, records: list[dict]) -> list[Finding]:
         seen.add(subdomain_name)
 
         service = _service_of(record)
+        # Do NOT drop a vulnerable record just because we couldn't name the
+        # service: subzy flagged it vulnerable, and silently skipping it would
+        # make every real takeover vanish if subzy's field names ever drift.
+        # Emit the finding with an "unidentified service" label and a note to
+        # verify manually.
+        unfingerprinted = service == "unknown"
+        service_label = "an unidentified service" if unfingerprinted else service
+        if unfingerprinted:
+            logger.warning(
+                "[takeover_check:%s] %s flagged vulnerable but subzy returned no "
+                "service fingerprint — reporting anyway (verify manually)",
+                session.id,
+                subdomain_name,
+            )
+
         subdomain_fk = subdomain_index.get(subdomain_name)
 
         findings.append(Finding(
@@ -82,17 +97,19 @@ def analyze(session, records: list[dict]) -> list[Finding]:
             source="takeover_check",
             check_type="subdomain_takeover",
             severity="high",
-            title=f"Subdomain takeover possible: {subdomain_name} ({service})",
+            title=f"Subdomain takeover possible: {subdomain_name} ({service_label})",
             description=(
-                f"{subdomain_name} appears to point at an unclaimed {service} "
+                f"{subdomain_name} appears to point at an unclaimed {service_label} "
                 f"resource. An attacker who registers that resource on the "
                 f"hosting service could serve arbitrary content under your "
                 f"subdomain — credential phishing, malware delivery, or SSO-cookie "
                 f"theft from same-eTLD context."
+                + (" subzy flagged this as vulnerable but did not identify the "
+                   "hosting service — verify manually." if unfingerprinted else "")
             ),
             remediation=(
                 "Either remove the dangling DNS record or reclaim the unused "
-                f"resource on {service}. Verify by manually visiting the subdomain — "
+                f"resource on {service_label}. Verify by manually visiting the subdomain — "
                 "a stale CNAME with an unclaimed third-party target is the "
                 "signature pattern."
             ),

@@ -13,4 +13,5 @@ class CloudAssetsConfig(AppConfig):
         "phase_group": "Surface Enumeration",
         "requires": ["subfinder"],
         "produces_findings": True,
+        "active": False,
     }

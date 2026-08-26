@@ -8,10 +8,18 @@ on:
       - "**.md"
       - "docs/**"
   pull_request:
+    # No paths-ignore: CI is now a REQUIRED status check, so a PR touching only
+    # ignored paths (**.md, docs/**) would never run it → the required check never
+    # reports → the PR is unmergeable. Run CI on every PR; the `push` paths-ignore
+    # above still skips the image republish on docs-only merges to main.
     branches: ["main"]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
+  # Weekly rebuild so the baked nuclei-templates refresh on cadence — the image
+  # sets -disable-update-check (no runtime template fetch), so without this the
+  # templates freeze at build time and rot (miss new CVEs). schedule runs on the
+  # default branch, so the publish job pushes a fresh :latest. See
+  # docs/SCAN_OPERATIONAL_LEARNINGS.md.
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays 06:00 UTC
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -122,6 +130,21 @@ jobs:
             type=ref,event=tag
             type=raw,value=latest,enable={{is_default_branch}}
 
+      - name: Compute build provenance
+        id: prov
+        run: |
+          # Version: git tag for v* builds (strip the leading v), else the
+          # pyproject.toml [project] version for main-branch :latest builds.
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            version="${GITHUB_REF#refs/tags/v}"
+          else
+            version="$(grep -m1 '^version = ' pyproject.toml | sed -E 's/version = "(.*)"/\1/')"
+          fi
+          {
+            echo "version=${version}"
+            echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push (amd64 + arm64)
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
@@ -130,6 +153,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            OPENEASD_VERSION=${{ steps.prov.outputs.version }}
+            OPENEASD_GIT_SHA=${{ github.sha }}
+            OPENEASD_BUILD_DATE=${{ steps.prov.outputs.build_date }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # Supply-chain transparency: SBOM + SLSA provenance baked into the

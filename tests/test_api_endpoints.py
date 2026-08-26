@@ -92,7 +92,7 @@ class TestHealthEndpoint:
         assert res.status_code == 200
 
     def test_returns_ok_status(self, client):
-        assert client.get("/health/").json() == {"status": "ok"}
+        assert client.get("/health/").json()["status"] == "ok"
 
     def test_no_auth_required(self, client):
         # Must be accessible without a token — used by K8s liveness/readiness probes
@@ -252,6 +252,31 @@ class TestMustChangePasswordGate:
         self._flag(user)
         res = auth_client.get("/api/domains/")
         assert res.status_code == 403
+
+    def test_flagged_user_blocked_from_write_endpoint(self, auth_client, user):
+        # The gate was only ever tested on GET /api/domains/. Prove it also blocks
+        # a WRITE (a GET-only enforcement would be a real hole for admin/admin).
+        self._flag(user)
+        res = post_json(auth_client, "/api/scans/start/", {
+            "domain": "example.com", "schedule_type": "now",
+        })
+        assert res.status_code == 403
+
+    def test_flagged_user_blocked_on_second_router(self, auth_client, user):
+        # A different router, to prove the gate isn't accidentally domains-only.
+        self._flag(user)
+        res = auth_client.get("/api/workflows/")
+        assert res.status_code == 403
+
+    def test_is_exempt_only_matches_user_paths(self):
+        # Guard the exemption suffix logic directly: only /user/ and
+        # /user/change-password/ are exempt; a look-alike path is not.
+        from types import SimpleNamespace
+        from apps.core.api.auth import _is_exempt
+        assert _is_exempt(SimpleNamespace(path="/api/user/")) is True
+        assert _is_exempt(SimpleNamespace(path="/api/user/change-password/")) is True
+        assert _is_exempt(SimpleNamespace(path="/api/domains/")) is False
+        assert _is_exempt(SimpleNamespace(path="/api/scans/start/")) is False
 
     def test_flagged_user_can_read_own_user(self, auth_client, user):
         self._flag(user)
@@ -711,7 +736,13 @@ class TestWorkflowCreate:
         assert res.status_code == 201
         data = res.json()
         assert data["name"] == "Test Workflow"
-        assert len(data["steps"]) == 1
+        # 1 user-selected tool + service_detection (always-on core step)
+        assert len(data["steps"]) == 2
+        tools = {s["tool"] for s in data["steps"]}
+        assert "subfinder" in tools
+        assert "service_detection" in tools
+        locked = [s for s in data["steps"] if s.get("locked")]
+        assert len(locked) == 1 and locked[0]["tool"] == "service_detection"
 
     def test_empty_name_returns_400(self, auth_client, db):
         res = post_json(auth_client, "/api/workflows/create/", {"name": ""})
@@ -811,3 +842,102 @@ def scan_summary(db, scan):
         total_findings=1, new_exposures=1, removed_exposures=0,
         tool_breakdown={},
     )
+
+
+# ---------------------------------------------------------------------------
+# Build provenance — /health/ + /api/version/ (both unauthenticated)
+# ---------------------------------------------------------------------------
+
+class TestBuildProvenance:
+    def test_health_includes_provenance(self, client):
+        res = client.get("/health/")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "ok"
+        # Settings defaults resolve locally (no image build args set).
+        assert data["version"] == "dev"
+        assert data["git_sha"] == "unknown"
+        assert data["build_date"] == "unknown"
+
+    def test_version_endpoint_no_auth(self, client):
+        res = client.get("/api/version/")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["version"] == "dev"
+        assert data["git_sha"] == "unknown"
+        assert data["git_sha_short"] == "unknown"
+        assert data["build_date"] == "unknown"
+
+    def test_version_short_sha_truncates(self, client, settings):
+        settings.OPENEASD_GIT_SHA = "0123456789abcdef0123456789abcdef01234567"
+        res = client.get("/api/version/")
+        data = res.json()
+        assert data["git_sha"] == "0123456789abcdef0123456789abcdef01234567"
+        assert data["git_sha_short"] == "01234567"
+
+    def test_health_short_sha_truncates(self, client, settings):
+        settings.OPENEASD_GIT_SHA = "0123456789abcdef0123456789abcdef01234567"
+        res = client.get("/health/")
+        assert res.json()["git_sha"] == "01234567"
+
+    def test_version_support_email_empty_by_default(self, client):
+        assert client.get("/api/version/").json()["support_email"] == ""
+
+    def test_version_support_email_reflects_setting(self, client, settings):
+        settings.SUPPORT_EMAIL = "openeasd@cybersecify.com"
+        assert client.get("/api/version/").json()["support_email"] == "openeasd@cybersecify.com"
+
+    def test_version_no_store_header(self, client):
+        # Must not be CDN-cached, or the app reports a stale build after redeploy.
+        res = client.get("/api/version/")
+        assert res.headers.get("Cache-Control") == "no-store"
+
+    def test_health_no_store_header(self, client):
+        res = client.get("/health/")
+        assert res.headers.get("Cache-Control") == "no-store"
+
+    def test_version_latest_requires_auth(self, client):
+        assert client.get("/api/version/latest/").status_code == 401
+
+    def test_version_latest_shape(self, auth_client, settings):
+        from unittest.mock import patch
+        settings.OPENEASD_VERSION = "0.10.0"
+        with patch("apps.core.api.update_check.get_latest_release",
+                   return_value={"version": "9.9.9", "url": "https://gh/rel"}):
+            res = auth_client.get("/api/version/latest/")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["latest_version"] == "9.9.9"
+        assert data["update_available"] is True  # 9.9.9 > running 0.10.0
+        assert set(data) == {
+            "current_version", "latest_version", "update_available", "release_url",
+        }
+
+    def test_version_latest_graceful_when_github_down(self, auth_client):
+        from unittest.mock import patch
+        with patch("apps.core.api.update_check.get_latest_release", return_value=None):
+            res = auth_client.get("/api/version/latest/")
+        assert res.status_code == 200
+        assert res.json()["update_available"] is False
+
+
+# ---------------------------------------------------------------------------
+# Unauthenticated-rejection tests for endpoints the audit found had no 401 test
+# ---------------------------------------------------------------------------
+
+class TestMissingAuthRejections:
+    """Router-level auth is inherited, but these three protected endpoints had no
+    explicit 401 test — so a future per-endpoint auth=None or a new router would
+    slip through silently. Subscan especially is a second active-scan entry point."""
+
+    def test_subscan_requires_auth(self, client):
+        res = post_json(client, "/api/scans/00000000-0000-0000-0000-000000000000/subscan/", {})
+        assert res.status_code == 401
+
+    def test_domain_monitoring_requires_auth(self, client):
+        res = post_json(client, "/api/domains/1/monitoring/", {})
+        assert res.status_code == 401
+
+    def test_workflow_rename_requires_auth(self, client):
+        res = post_json(client, "/api/workflows/1/rename/", {})
+        assert res.status_code == 401

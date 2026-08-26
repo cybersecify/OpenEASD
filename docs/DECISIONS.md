@@ -79,9 +79,21 @@ real decision).
 ---
 
 ## D-004 — Product boundary: OpenEASD vs Brand Protection
-**Status:** locked · **Decided:** 2026-05-22
+**Status:** SUPERSEDED (2026-08-22) · **Decided:** 2026-05-22
 
-**Decision.** OpenEASD and Brand Protection are intentionally distinct
+> **Superseded.** Brand Protection has been retired — there is no separate paid
+> product. The boundary this decision drew no longer applies. Capabilities it
+> reserved for Brand Protection are now evaluated for OpenEASD on their own
+> merits, with a simple filter: **is it free, does it fit OpenEASD's external
+> attack-surface scope, and does it add real value?** Under that filter,
+> **technology fingerprinting** is now in scope (httpx `-tech-detect`), and
+> **infostealer/credential-leak** signal is under evaluation (free Hudson Rock
+> endpoint, pending a ToS check). Typosquatting, brand impersonation, and A–F
+> letter-grading remain out — not because of any product boundary, but because
+> they are brand-monitoring, not external-attack-surface scanning. The original
+> decision text is kept below for history.
+
+**Original decision (2026-05-22).** OpenEASD and Brand Protection are intentionally distinct
 products with intentionally distinct audiences and outputs.
 
 | | OpenEASD | Brand Protection |
@@ -179,9 +191,11 @@ Calling these out so contributors don't add them back without a discussion:
   intentional — keeps the install one `docker run`. Postgres support is fine
   to add later but not the priority.
 - **No hosted scan UI.** See [D-003](#d-003--distribution-docker-only).
-- **No A–F grades, leaked credentials, typosquatting, brand impersonation,
-  technology fingerprinting.** Those belong to Brand Protection — see
-  [D-004](#d-004--product-boundary-openeasd-vs-brand-protection).
+- **No A–F letter grades, typosquatting, or brand impersonation.** These are
+  brand-monitoring, not external-attack-surface scanning — out of scope by focus.
+  (Technology fingerprinting and infostealer/credential-leak are no longer
+  excluded — Brand Protection is retired; see the superseded
+  [D-004](#d-004--product-boundary-openeasd-vs-brand-protection).)
 - **No "AI-powered" features in copy.** Security community discounts that
   language. If we add real AI later (e.g. finding triage), describe what it
   actually does in plain terms.
@@ -273,7 +287,7 @@ Calling these out so contributors don't add them back without a discussion:
 | D-001 | Audience: security-literate users | locked | 2026-05-21 |
 | D-002 | License: MIT | locked | 2026-04-24 |
 | D-003 | Distribution: Docker-only | locked | 2026-04-24 |
-| D-004 | Product boundary: OpenEASD vs Brand Protection | locked | 2026-05-22 |
+| D-004 | Product boundary: OpenEASD vs Brand Protection | superseded | 2026-05-22 |
 | D-005 | Verification discipline (claims-trace) | locked | 2026-05-20 |
 | D-006 | Wording conventions per surface | locked | 2026-05-22 |
 | D-007 | Canonical 11 attack vectors | locked | 2026-05-20 |

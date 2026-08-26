@@ -45,6 +45,7 @@ ARG NUCLEI_VERSION=3.2.9
 ARG AMASS_VERSION=4.2.0
 ARG ALTERX_VERSION=0.0.4
 ARG KATANA_VERSION=1.6.1
+ARG GITLEAKS_VERSION=8.30.1
 
 RUN curl -fsSL "https://github.com/projectdiscovery/subfinder/releases/download/v${SUBFINDER_VERSION}/subfinder_${SUBFINDER_VERSION}_linux_${TARGETARCH}.zip" \
     -o subfinder.zip && unzip subfinder.zip subfinder && rm subfinder.zip
@@ -70,7 +71,12 @@ RUN curl -fsSL "https://github.com/projectdiscovery/katana/releases/download/v${
 RUN curl -fsSL "https://github.com/owasp-amass/amass/releases/download/v${AMASS_VERSION}/amass_Linux_${TARGETARCH}.zip" \
     -o amass.zip && unzip amass.zip && mv amass_Linux_${TARGETARCH}/amass . && rm -rf amass.zip amass_Linux_${TARGETARCH}
 
-RUN chmod +x subfinder dnsx naabu httpx nuclei amass alterx katana
+# gitleaks — MIT, static Go binary. Release assets use x64/arm64 (not amd64).
+RUN GLARCH="$([ "$TARGETARCH" = "amd64" ] && echo x64 || echo arm64)" \
+    && curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_${GLARCH}.tar.gz" \
+    -o gitleaks.tar.gz && tar -xzf gitleaks.tar.gz gitleaks && rm gitleaks.tar.gz
+
+RUN chmod +x subfinder dnsx naabu httpx nuclei amass alterx katana gitleaks
 
 # ---------------------------------------------------------------------------
 # Stage 2b: build subzy from source (no prebuilt binaries available upstream).
@@ -181,6 +187,16 @@ RUN chmod +x docker-entrypoint.sh
 
 # Pre-collect static files so the image is ready without a volume
 RUN SECRET_KEY=build-time-placeholder python manage.py collectstatic --noinput
+
+# Build provenance — placed late so it never busts the cache of the heavy
+# layers above (these three change on every build). Baked into the running
+# container's env; surfaced via GET /health/ and GET /api/version/. CI supplies
+# real values through build-args (see .github/workflows/ci.yml); local builds
+# fall back to the "dev"/"unknown" defaults, which the UI renders cleanly.
+ARG OPENEASD_VERSION=dev
+ARG OPENEASD_GIT_SHA=unknown
+ARG OPENEASD_BUILD_DATE=unknown
+ENV OPENEASD_VERSION=$OPENEASD_VERSION OPENEASD_GIT_SHA=$OPENEASD_GIT_SHA OPENEASD_BUILD_DATE=$OPENEASD_BUILD_DATE
 
 VOLUME ["/app/data", "/app/logs"]
 EXPOSE 8000

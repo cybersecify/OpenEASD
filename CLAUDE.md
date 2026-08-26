@@ -97,6 +97,7 @@ git describe --tags --abbrev=0
 - **Publish triggers:** every push to `main` (`:latest` tag) and `v*` tags (`:vX.Y` tag)
 - Runner: `ubuntu-24.04`, Python 3.12, `uv sync --group dev` for deps, `libcairo2-dev gcc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0` system deps required (WeasyPrint PDF rendering)
 - `pip-audit --ignore-vuln PYSEC-2025-183` — disputed PyJWT weak-key-length CVE, no fix available
+- **Build provenance:** the `publish` job computes `OPENEASD_VERSION` (git tag for `v*`, else `pyproject.toml` version), `OPENEASD_GIT_SHA` (`github.sha`), and `OPENEASD_BUILD_DATE` (ISO UTC) and passes them as `build-args` to buildx. The Dockerfile bakes them into `ENV` (placed late so they never bust the cache of the heavy layers). Settings read them via `config()` with `dev`/`unknown` defaults for local runs. Surfaced at `GET /health/` + `GET /api/version/`, and shown as a muted footer on the login + change-password pages AND in the authenticated app sidebar (`frontend/src/components/BuildInfo.jsx`). The sidebar footer also does an "update available" check via `GET /api/version/latest/` (authenticated; compares the running build to the latest GitHub release, cached 6h, fail-graceful — logic in `apps/core/api/update_check.py`). The app never self-updates; it only surfaces a heads-up + release link.
 
 ## Commands
 - Always use `uv run python` instead of `python` or `python3`
@@ -174,8 +175,29 @@ docker run -d \
 ```
 - `--cap-add NET_RAW` — required for nmap raw socket scanning
 - `--restart unless-stopped` — survives server reboots
+- **RAM: 2 GB min / 4 GB recommended.** nuclei + amass are memory-hungry and the
+  kernel will OOM-kill them on an under-provisioned host (silent partial scans).
+  `OPENEASD_PROFILE` (default `auto`, from RAM) tunes this: `low` (<2GB or
+  `OPENEASD_LOW_MEMORY=true`) runs tools sequentially + throttles nuclei + skips
+  amass brute so ~1GB completes without OOM; `balanced` (2-8GB) is the old
+  default; `high` (≥8GB) raises LOCAL concurrency. Per-target request rate stays
+  capped across all profiles (politeness — a big box is no licence to hammer the
+  target; higher rates just trip WAFs, which the coverage report flags). Add
+  swap on 1GB hosts. Resolver + tuning in settings.py (`_resolve_profile`,
+  `_PROFILE_TUNING`). nuclei is also severity-scoped per profile (`NUCLEI_SEVERITY`;
+  low=critical/high/medium, else +low; `info` dropped everywhere) — the fix for
+  its freeze/timeout since it compiles all ~13.5k templates into RAM. See
+  `docs/SCAN_OPERATIONAL_LEARNINGS.md`.
 - Volumes: `openeasd-data` (SQLite DB) and `openeasd-logs` persist across container replacements
 - Static files served by WhiteNoise (no nginx needed)
+- **Serve it over HTTPS.** Do NOT expose the app on bare HTTP — login sends
+  credentials and JWTs in cleartext. Put a TLS-terminating reverse proxy in
+  front (Caddy/nginx + Let's Encrypt on a real domain, or Cloudflare) — a bare
+  IP like `http://<ip>/` cannot get a normal cert and must not be used with real
+  credentials. The app already sends `SECURE_PROXY_SSL_HEADER`; once TLS is in
+  front, enable enforcement via env: `SECURE_SSL_REDIRECT=true` and
+  `SECURE_HSTS_SECONDS=31536000`. `SESSION_COOKIE_SECURE`/`CSRF_COOKIE_SECURE`
+  are already on by default when `DEBUG=False`.
 
 ### Kubernetes
 Manifests in `k8s/`. Deploy with `kubectl apply -k k8s/`.
@@ -202,7 +224,7 @@ k8s/
 **Key constraints:**
 - `replicas: 1` required — SQLite RWO PVC allows single-node access only
 - Only `worker` container gets `NET_RAW`; `web` does not need it
-- `GET /health/` — unauthenticated endpoint used by K8s readiness/liveness probes
+- `GET /health/` — unauthenticated endpoint used by K8s readiness/liveness probes; JSON body is `{status, version, git_sha (short 8), build_date}` (build provenance)
 - **Real `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` live in `openeasd-secret`, never in
   the committed configmap.** `configmap.yaml` carries only placeholders; the real
   hostname is set in the secret, which is applied out-of-band and is intentionally
@@ -242,7 +264,7 @@ Don't enable the `ingress` addon if the host already runs Caddy on :80/:443 — 
 ### Scheduler
 - Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (uses `TIME_ZONE` in settings, default 02:00)
 - Configured via env vars: `SCAN_DAILY_HOUR`, `SCAN_DAILY_MINUTE`
-- **Auto-scan consent gate:** `daily_scan` and per-domain monitoring only scan domains with a `DomainAuthorization` record (`is_active=True, authorization__isnull=False`); `run_monitoring_scan` re-checks at run time. The scheduler cannot bypass the authorization gate the manual API/UI already enforce.
+- **Auto-scan consent gate:** `daily_scan` and per-domain monitoring only scan domains with a `DomainAuthorization` record (`is_active=True, authorization__isnull=False`); `run_monitoring_scan` re-checks at run time. The scheduler cannot bypass the authorization gate the manual API/UI already enforce. (Scheduled scans always run the default active Full Scan workflow, so the gate always applies to them — the passive-scan exemption below is manual/`now`-only.)
 - **`SCHEDULED_SCANS_ENABLED`** (env, default `True`) is the master switch for unattended scanning. When `False`, `setup_core_schedules()` registers only the hygiene jobs (watchdog + token purge) and removes any existing `daily_scan`/`monitor_*` schedules on startup — this is how a deployment is made durably manual-only (set in `k8s/configmap.yaml`). Manual/API scans are unaffected.
 - Schedule history visible in Django admin under "Django Q" → "Scheduled tasks"
 - Scheduler code lives in `apps/core/scheduler/scheduler.py`
@@ -256,11 +278,22 @@ ProjectDiscovery tools installed via `pdtm` at `~/.pdtm/go/bin/`:
 
 OWASP/other tools:
 - `amass` — active subdomain enumeration (install separately: `go install -v github.com/owasp-amass/amass/v4/...@master`)
+- `gitleaks` — hardcoded-secret detection over fetched JS assets (MIT, static Go binary from `github.com/gitleaks/gitleaks` releases; baked into the Docker image)
 
 System binary:
 - `nmap` (Homebrew at `/opt/homebrew/bin/nmap`)
 
-Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_KATANA`, `TOOL_NMAP`, `TOOL_NUCLEI`, `TOOL_AMASS`, `TOOL_ALTERX`, `TOOL_CLOUD_ENUM` env vars.
+Tool paths are configurable via `TOOL_SUBFINDER`, `TOOL_DNSX`, `TOOL_NAABU`, `TOOL_HTTPX`, `TOOL_KATANA`, `TOOL_NMAP`, `TOOL_NUCLEI`, `TOOL_AMASS`, `TOOL_ALTERX`, `TOOL_CLOUD_ENUM`, `TOOL_GITLEAKS` env vars.
+
+**Honest scanner identity:** httpx/katana/nuclei send `OPENEASD_USER_AGENT`
+(default `OpenEASD/1.0 (+https://cybersecify.com/openeasd)`) so a target can
+allowlist us deliberately. The httpx analyzer classifies each probe's
+`URL.reachability` (`reached`/`blocked`/`challenged`/`rate_limited`, via
+`apps/httpx/waf.py`); `_finalize_session` aggregates it into `ScanSession`
+coverage fields (`waf_vendor`, `endpoints_probed`, `endpoints_blocked`), surfaced
+as a "Scan Coverage" block in the PDF report. See
+`docs/specs/2026-08-16-waf-coverage-honest-scope.md` (Phase 1: C1–C3; the
+request-counting proxy C4 is deferred).
 
 ## Architecture
 
@@ -318,7 +351,25 @@ Per-module routers (each file exports a `router = Router(auth=JWTAuth())`):
 
 ### Tool auto-registration
 
-Tools self-register via `AppConfig.tool_meta`. **No core files need editing when adding a new tool** (except `settings.INSTALLED_APPS`).
+Tools self-register via `AppConfig.tool_meta`. No core *code* needs editing to
+register a tool — but registration alone does **not** put it in a scan.
+
+**Definition of done for adding (or removing) a tool** — all of these, or the
+registry, the scan, the report, and the public docs drift out of sync (this is
+how asn_discovery/js_secrets shipped registered-but-not-scanned, reading 21 in
+the registry and 19 in every actual scan):
+
+1. Add the app to `settings.INSTALLED_APPS`.
+2. **Add it to the default Full Scan workflow** via a data migration (unless it
+   is deliberately default-off — then document why). Enforced by
+   `tests/unit/test_default_workflow.py::test_full_scan_covers_every_registered_tool`,
+   which fails CI if a registered non-core tool is missing from Full Scan.
+3. Set the `"active"` flag correctly (passive = no target contact → no auth).
+4. Update `README.md` — the tool count, the tool list, and the pipeline diagram.
+5. Update `CHANGELOG.md` (What + Why) and the tool tables in this file.
+6. **Flag the website session** — cybersecify.com's tool count, feature cards,
+   and the sample report must match. Keeping GitHub + website in sync on any
+   tool/feature change is a standing requirement, not an afterthought.
 
 ```python
 # Example: apps/my_tool/apps.py
@@ -344,13 +395,15 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (19 registered tools)
+### Tool apps (22 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
 | `apps/domain_security/` | 1 | Domain Intelligence | Yes | DNS, email, RDAP checks |
+| `apps/hudson_rock/` | 1 | Domain Intelligence | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
 | `apps/subfinder/` | 2 | Surface Enumeration | No | Passive subdomain enumeration |
 | `apps/amass/` | 2 | Surface Enumeration | No | Active subdomain enumeration |
+| `apps/asn_discovery/` | 2 | Surface Enumeration | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
 | `apps/alterx/` | 2 | Surface Enumeration | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
 | `apps/dnsx/` | 3 | Surface Enumeration | No | DNS resolution, public IP filtering |
 | `apps/takeover_check/` | 4 | Surface Enumeration | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
@@ -361,11 +414,12 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/tls_checker/` | 7 | Network Exposure | Yes | TLS/cert analysis + cipher suite enumeration via `nmap --script ssl-enum-ciphers` (all ports) |
 | `apps/ssh_checker/` | 7 | Network Exposure | Yes | SSH config analysis |
 | `apps/nuclei_network/` | 7 | Network Exposure | Yes | Network protocol vuln scan (319 templates, non-web) |
-| `apps/httpx/` | 8 | Web Exposure | No | Web probing, URL discovery |
+| `apps/httpx/` | 8 | Web Exposure | No | Web probing, URL discovery, technology fingerprinting (`-tech-detect` → `URL.technologies`) |
 | `apps/historical_urls/` | 9 | Web Exposure | No | Historical URL discovery via gau + waybackurls (Wayback Machine, OTX, Common Crawl) |
 | `apps/katana/` | 10 | Web Exposure | No | Web crawling, endpoint discovery |
 | `apps/nuclei/` | 11 | Web Exposure | Yes | Web vuln scan (community templates) |
 | `apps/web_checker/` | 11 | Web Exposure | Yes | Security headers, cookies, CORS |
+| `apps/js_secrets/` | 11 | Web Exposure | Yes | Hardcoded-secret detection — fetches discovered `.js` assets and runs gitleaks over them; secret is redacted before storage |
 | `apps/cve_intel/` | 12 | Prioritization | No | Enriches CVE findings in place with EPSS scores + CISA KEV flags (no new findings) |
 
 ### Tool app structure
@@ -381,13 +435,18 @@ apps/<tool>/
 ## Scan pipeline
 
 All scans run through the **dynamic workflow system**. The default "Full Scan"
-workflow executes all 19 tools in phase order. Custom workflows can include
-any subset of tools.
+workflow executes the full tool set in phase order. Custom workflows can include
+any subset of tools. (A newly registered tool is available to any workflow, but
+only joins the default Full Scan when a data migration appends it — see
+`workflows/migrations/0021_*`; `asn_discovery` and `js_secrets` are registered
+but not yet in the default set.)
 
 ```
 Phase 1  domain_security    → Finding (DNS/email/RDAP)
+Phase 1  hudson_rock         → Finding (infostealer exposure via Hudson Rock — passive)
 Phase 2  subfinder          → Subdomain (passive enumeration)
 Phase 2  amass              → Subdomain (active enumeration)
+Phase 2  asn_discovery      → Finding (owned ASN/CIDR ranges via amass intel — informational)
 Phase 2  alterx             → Subdomain (permutation candidates from existing subdomains)
 Phase 3  dnsx               → IPAddress (public-only filter)
 Phase 4  takeover_check     → Finding (subzy — dangling DNS → unclaimed cloud)
@@ -403,7 +462,50 @@ Phase 9  historical_urls    → URL (gau + waybackurls — archived endpoints)
 Phase 10 katana             → URL (web crawling, endpoint discovery)
 Phase 11 nuclei             → Finding (web vulns via templates on URLs)
 Phase 11 web_checker        → Finding (headers, cookies, CORS on URLs)
+Phase 11 js_secrets         → Finding (gitleaks over fetched .js assets — secret redacted)
 ```
+
+### Passive vs active scan modes (the authorization boundary)
+
+Every tool carries an `"active": True/False` flag in its `tool_meta`, exposed by
+the registry via `get_tool_active()` and `is_passive_tool_set(tools)`.
+
+- **Passive** (`active=False`): uses ONLY public / third-party data — CT logs and
+  other subdomain feeds, DNS resolution via public resolvers, WHOIS/RDAP, web
+  archives, cloud-provider bucket APIs, CVE/EPSS/KEV feeds. Sends **no packets to
+  the target's own systems**. Needs **no `DomainAuthorization`**.
+  Passive tools: `subfinder`, `alterx`, `dnsx`, `historical_urls`,
+  `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`.
+- **Active** (`active=True`): probes the target directly (port scans, HTTP/TLS/SSH
+  connections, crawling, vuln templates, AXFR/SMTP/mta-sts probes). **Requires
+  `DomainAuthorization`.**
+  Active tools: `domain_security`, `amass`, `takeover_check`, `naabu`,
+  `service_detection`, `nmap`, `tls_checker`, `ssh_checker`, `nuclei_network`,
+  `httpx`, `katana`, `nuclei`, `web_checker`.
+
+**Default is active.** `tool_meta` omitting `"active"` is treated as active — a
+missing flag can never let a scanner probe an unauthorized target.
+
+**`domain_security` is active, not passive**, despite being mostly DNS lookups: it
+also performs AXFR zone transfers, SMTP open-relay probes, and mta-sts policy
+fetches directly against the target. A tool with ANY code path that touches the
+target is active.
+
+**Authorization rule (`apps/core/scans/api.py`):** a `schedule_type="now"` scan
+whose resolved workflow contains **only passive tools** bypasses the
+`DomainAuthorization` gate. Any active tool, a bare `now` scan (default = active
+Full Scan), or any scheduled (`once`/`recurring`) scan keeps the gate. The
+`subscan` endpoint applies the same rule: an active-tool subscan requires
+authorization for the parent scan's domain.
+
+**"Passive Scan" workflow** (migration `0022_create_passive_scan_workflow.py`):
+predefined, non-default, contains only passive tools — a no-auth recon mode.
+`tests/unit/test_passive_scan.py` asserts every step is passive, so adding an
+active tool there fails CI.
+
+**Runner safety fix:** `service_detection` (active nmap -sV) is auto-injected only
+when `naabu` is in the run. A passive/naabu-less workflow therefore never triggers
+an active probe.
 
 ### Scan flow
 ```
@@ -454,6 +556,8 @@ POST /api/token/pair                      — JWT login → {access, refresh}
 POST /api/token/blacklist                 — blacklist refresh token (logout)
 POST /api/token/refresh                   — exchange refresh → new access token
 POST /api/token/verify                    — verify token validity
+GET  /api/version/                        — build provenance {version, git_sha, git_sha_short, build_date, support_email} (unauthenticated; no-store)
+GET  /api/version/latest/                 — update check {current_version, latest_version, update_available, release_url} (authenticated; cached 6h, fail-graceful)
 GET  /api/user/                           — current user info + must_change_password flag
 POST /api/user/change-password/           — change password; clears must_change_password flag
 GET  /api/dashboard/                      — KPIs, domain status, urgent findings
@@ -503,28 +607,34 @@ GET  /api/notifications/alerts/           — alert history
 |---|---|---|
 | `tests/unit/test_alerts.py` | 7 | Slack/Teams dispatcher |
 | `tests/unit/test_alterx.py` | 17 | collector (binary missing, timeout, happy path, stdin), analyzer, scanner |
-| `tests/unit/test_amass.py` | 19 | Active subdomain enum collector, analyzer, scanner |
+| `tests/unit/test_amass.py` | 21 | Active subdomain enum collector, analyzer, scanner |
+| `tests/unit/test_asn_discovery.py` | 22 | ASN/CIDR discovery — org derivation, ASN/CIDR parsing, collector (binary missing, timeout, two-step happy path), analyzer (info Finding per ASN, safe-scope remediation), scanner |
 | `tests/unit/test_assets.py` | 12 | Asset model constraints, FK chains, cascade delete |
 | `tests/unit/test_cloud_assets.py` | 20 | cloud_assets collector, analyzer, keyword derivation, scanner |
 | `tests/unit/test_cve_intel.py` | 24 | EPSS/KEV enrichment, CVE extraction (both finding shapes), feed-failure fallback |
 | `tests/unit/test_dnsx.py` | 21 | Public IP filter, analyzer, scanner |
-| `tests/unit/test_domain_authorization.py` | 9 | DomainAuthorization model + scan-entry gating |
-| `tests/unit/test_domain_security.py` | 41 | DNS/email/RDAP — **slow, real network** |
+| `tests/unit/test_domain_authorization.py` | 10 | DomainAuthorization model + scan-entry gating |
+| `tests/unit/test_domain_security.py` | 52 | DNS/email/RDAP — **slow, real network** |
 | `tests/unit/test_domains.py` | 13 | Domain CRUD |
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
-| `tests/unit/test_httpx.py` | 11 | JSON parser, Port lookup, Subdomain link |
-| `tests/unit/test_k8s_manifests.py` | 57 | k8s manifest structure, envFrom order, probes, secret/configmap split |
-| `tests/unit/test_katana.py` | 18 | JSONL parser, Port/Subdomain FK links, scanner orchestrator |
+| `tests/unit/test_httpx.py` | 16 | JSON parser, Port lookup, Subdomain link, honest UA, tech-detect flag + technology storage/dedup |
+| `tests/unit/test_hudson_rock.py` | 17 | collector (both endpoints keyless + honest UA, fail-graceful on timeout/500/429/bad-JSON, 429 retry), analyzer (severity, counts/families/URLs/attribution, no-finding-when-zero, **no plaintext/email persisted**, URL cap), scanner |
+| `tests/unit/test_js_secrets.py` | 26 | `.js` URL filter + cap, fetch-error handling, gitleaks JSON parser, analyzer Findings + dedup + secret redaction (full secret never stored), scanner, binary-missing/timeout |
+| `tests/unit/test_k8s_manifests.py` | 59 | k8s manifest structure, envFrom order, probes, secret/configmap split |
+| `tests/unit/test_katana.py` | 19 | JSONL parser, Port/Subdomain FK links, scanner orchestrator, honest UA |
 | `tests/unit/test_management_commands.py` | 11 | `verify_tools` + other management commands |
 | `tests/unit/test_monitoring.py` | 17 | sync_domain_monitoring_jobs, per-domain monitoring, authorization gate |
 | `tests/unit/test_naabu.py` | 10 | JSON parser, FK to IPAddress |
-| `tests/unit/test_nmap.py` | 23 | Severity mapping, vulners XML parser, web/non-web exclusion, backport matching |
+| `tests/unit/test_nmap.py` | 26 |
+| `tests/unit/test_nmap_backports.py` | 16 | Backport-aware CVE demotion engine — Debian/Ubuntu version compare, check_backport, `protocol 2.0` false-positive guard | Severity mapping, vulners XML parser, web/non-web exclusion, backport matching |
 | `tests/unit/test_notifications.py` | 25 | NotificationConfig, Slack/Teams alerts, alert-history API |
-| `tests/unit/test_nuclei.py` | 31 | CVE parsing, severity, dedup, URL linking, collector |
+| `tests/unit/test_nuclei.py` | 33 | CVE parsing, severity, dedup, URL linking, collector, honest UA |
 | `tests/unit/test_nuclei_network.py` | 28 | Network-template parsing, non-web targeting, collector |
 | `tests/unit/test_pipeline_phases.py` | 1 | Phase ordering sanity |
 | `tests/unit/test_qcluster_config.py` | 4 | Django-Q cluster config |
-| `tests/unit/test_reports.py` | 34 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment |
+| `tests/unit/test_reports.py` | 51 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block, technology stack block |
+| `tests/unit/test_waf_detection.py` | 16 | WAF/block/challenge classifier (spec C1) — vendor fingerprint, false-positive guards, analyzer wiring |
+| `tests/unit/test_coverage.py` | 6 | Scan coverage (spec C2) — endpoint counts, dominant vendor, report note wording |
 | `tests/unit/test_scans.py` | 30 | ScanSession, scheduling, scan_start views |
 | `tests/unit/test_scheduler.py` | 33 | reap_stuck_scans, token purge, daily_scan, authorization gate, `SCHEDULED_SCANS_ENABLED` switch |
 | `tests/unit/test_service_detection.py` | 64 | XML parsing, Port enrichment, is_web |
@@ -535,11 +645,16 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_tls_checker.py` | 87 | Cert parsing, ciphers, protocols, HSTS, collector, scanner, cipher enumeration |
 | `tests/unit/test_tools_healthcheck.py` | 14 | Tool binary preflight / health checks |
 | `tests/unit/test_user_profile.py` | 7 | UserProfile `must_change_password` flag |
-| `tests/unit/test_settings_security.py` | 4 | SECRET_KEY strength guard (DEBUG=False + insecure default) |
+| `tests/unit/test_settings_security.py` | 16 | SECRET_KEY strength guard (DEBUG=False + insecure default) |
 | `tests/unit/test_insights_builder.py` | 4 | FindingTypeSummary prune only when aggregation_complete |
 | `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
-| `tests/unit/test_workflow_runner.py` | 31 | run_workflow, service_detection injection, step failure, cancellation, phase parallelism |
+| `tests/unit/test_passive_scan.py` | 21 | registry `active` classification, `is_passive_tool_set`, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
+| `tests/unit/test_workflow_runner.py` | 33 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism |
+| `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow with the complete 18-tool set (migration 0021), idempotent gap-fill |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
-| `tests/test_api_endpoints.py` | 89 | Smoke tests for all API endpoints (auth + payload shape) |
+| `tests/unit/test_update_check.py` | 22 | Update-available check — version parse/compare, cached GitHub fetch, fail-graceful on timeout/HTTP-error/bad-payload, endpoint shape |
+| `tests/unit/test_proc_env.py` | 4 | `go_memory_env()` — GOMEMLIMIT/GOGC set in low profile, unchanged otherwise, preserves existing env |
+| `tests/unit/test_coverage_regression.py` | 10 | Silent-block coverage counting (probed-vs-reached), coverage-regression finding (high block ratio / findings drop / stable = no flag), partial scan status when a tool fails |
+| `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
 
-**Total: 1020 tests** (979 fast + 41 slow domain_security)
+**Total: 1350 tests** (1298 fast + 52 slow domain_security)

@@ -4,6 +4,7 @@ import logging
 
 from apps.core.assets.models import Port, Subdomain
 from apps.core.web_assets.models import URL
+from apps.httpx.waf import classify
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,21 @@ def analyze(session, records: list[dict]) -> list[URL]:
         # Subdomain lookup uses the hostname directly
         sub_fk = sub_map.get(host)
 
+        title = (r.get("title") or "")[:500]
+        web_server = (r.get("webserver") or "")[:200]
+        reachability, _vendor = classify(r.get("status_code"), title, web_server)
+
+        # httpx -tech-detect emits a "tech" array of technology strings. Keep a
+        # deduped, order-preserving list of plain strings, capped defensively.
+        technologies = []
+        for t in (r.get("tech") or []):
+            if not isinstance(t, str):
+                continue
+            t = t.strip()[:100]
+            if t and t not in technologies:
+                technologies.append(t)
+        technologies = technologies[:50]
+
         objs.append(URL(
             session=session,
             port=port_fk,
@@ -69,9 +85,11 @@ def analyze(session, records: list[dict]) -> list[URL]:
             host=host or "",
             port_number=port_num,
             status_code=r.get("status_code"),
-            title=(r.get("title") or "")[:500],
-            web_server=(r.get("webserver") or "")[:200],
+            title=title,
+            web_server=web_server,
             content_length=r.get("content_length"),
+            reachability=reachability,
+            technologies=technologies,
             source="httpx",
         ))
 

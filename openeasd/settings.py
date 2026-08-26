@@ -5,6 +5,7 @@ OpenEASD - Automated External Attack Surface Detection
 Company: Cybersecify | Author: Rathnakara G N
 """
 
+import os
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -44,6 +45,34 @@ if "pytest" not in sys.modules:
 
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
 
+# --- Production HTTPS / security hardening (DEBUG=False only) ---
+def _security_settings(debug: bool) -> dict:
+    """Production security flags. Pure + testable (see test_settings_security).
+
+    - SECURE_PROXY_SSL_HEADER is always set: behind a TLS-terminating proxy
+      (Caddy/nginx/Cloudflare) it lets Django see the original HTTPS scheme; with
+      no proxy it is simply never matched, so it is harmless.
+    - The rest apply only outside DEBUG. Cookies are secure-by-default (an
+      HTTP-only deploy should fix TLS, not weaken this). SSL redirect + HSTS
+      default OFF because enabling them before TLS is terminated breaks the site
+      (redirect loop / HSTS pin) — turn them on via env once TLS is in front.
+    """
+    flags = {"SECURE_PROXY_SSL_HEADER": ("HTTP_X_FORWARDED_PROTO", "https")}
+    if not debug:
+        flags.update(
+            SESSION_COOKIE_SECURE=config("SESSION_COOKIE_SECURE", default=True, cast=bool),
+            CSRF_COOKIE_SECURE=config("CSRF_COOKIE_SECURE", default=True, cast=bool),
+            SECURE_CONTENT_TYPE_NOSNIFF=True,
+            SECURE_SSL_REDIRECT=config("SECURE_SSL_REDIRECT", default=False, cast=bool),
+            SECURE_HSTS_SECONDS=config("SECURE_HSTS_SECONDS", default=0, cast=int),
+            SECURE_HSTS_INCLUDE_SUBDOMAINS=config("SECURE_HSTS_INCLUDE_SUBDOMAINS", default=True, cast=bool),
+            SECURE_HSTS_PRELOAD=config("SECURE_HSTS_PRELOAD", default=False, cast=bool),
+        )
+    return flags
+
+
+globals().update(_security_settings(DEBUG))
+
 # Allow Vite dev server to make CSRF-protected POST requests in development
 CSRF_TRUSTED_ORIGINS = config(
     "CSRF_TRUSTED_ORIGINS",
@@ -75,8 +104,10 @@ INSTALLED_APPS = [
     "ninja_jwt",
     "ninja_jwt.token_blacklist",
     "apps.domain_security",
+    "apps.hudson_rock",
     "apps.subfinder",
     "apps.amass",
+    "apps.asn_discovery",
     "apps.alterx",
     "apps.dnsx",
     "apps.takeover_check",
@@ -92,6 +123,7 @@ INSTALLED_APPS = [
     "apps.nuclei",
     "apps.nuclei_network",
     "apps.web_checker",
+    "apps.js_secrets",
     "apps.cve_intel",
 ]
 
@@ -205,11 +237,14 @@ for _dir in [OPENEASD_DATA_DIR, OPENEASD_LOGS_DIR]:
 # The old defaults (timeout 3600 / retry 7200) killed every large scan: a full
 # scan runs past 1h, timeout kills it, then retry re-queues a zombie at exactly
 # 2h. max_attempts:1 is the real "no retries" switch the retry comment claimed.
-# Derived, not guessed: the worst-case sum of per-tool caps (same-phase tools run
-# in parallel) is ~3.4h — dominated by nuclei_network's 1h cap in phase 7. Set the
-# worker hard-kill above that ceiling so "every tool within its cap => scan always
-# completes" is a guarantee, not a hope. 4h leaves ~35m margin over the ceiling.
-Q_TASK_TIMEOUT = config("Q_TASK_TIMEOUT", default=14400, cast=int)   # 4h hard cap per scan task
+# The worker hard-kill caps the WHOLE scan, so it must exceed the sum of per-tool
+# caps (different-phase tools run sequentially). nuclei is now allowed up to 6h
+# (NUCLEI_TIMEOUT) so it can FINISH a large surface rather than be capped — worst
+# case nuclei(6h)+nuclei_network(1h)+amass(0.5h)+the rest ≈ 8h. Set a generous 24h
+# so a big uncapped scan completes within the 48h window instead of being killed.
+# The freeze fixes (GOMEMLIMIT + bulk-size) keep the box responsive during a long
+# run. (Was 4h, which killed nuclei mid-scan on any large surface.)
+Q_TASK_TIMEOUT = config("Q_TASK_TIMEOUT", default=86400, cast=int)   # 24h hard cap per scan task
 Q_TASK_RETRY = config("Q_TASK_RETRY", default=Q_TASK_TIMEOUT + 1200, cast=int)
 # Guard: retry <= timeout causes the broker to re-run a task while it's still
 # running. Force retry strictly above timeout regardless of env misconfiguration.
@@ -262,6 +297,128 @@ TOOL_NUCLEI = config("TOOL_NUCLEI", default="nuclei")
 TOOL_AMASS = config("TOOL_AMASS", default="amass")
 TOOL_ALTERX = config("TOOL_ALTERX", default="alterx")
 TOOL_CLOUD_ENUM = config("TOOL_CLOUD_ENUM", default="cloud_enum")
+TOOL_GITLEAKS = config("TOOL_GITLEAKS", default="gitleaks")
+
+# Honest scanner identity. Sent as the User-Agent on the tools that probe the
+# target's web surface (httpx, katana, nuclei) so a customer can deliberately
+# allowlist us. Some nuclei templates hard-set their own UA; those are not
+# overridden. See docs/specs/2026-08-16-waf-coverage-honest-scope.md (C3).
+OPENEASD_USER_AGENT = config(
+    "OPENEASD_USER_AGENT",
+    default="OpenEASD/1.0 (+https://cybersecify.com/openeasd)",
+)
+
+# Resource profile — adapts scan behaviour to the host's specs.
+#   low      : same-phase tools run sequentially, nuclei throttled, amass skips
+#              brute — survives ~1 GB without OOM (slower).
+#   balanced : phase-parallel, nuclei -c 25 (the previous default).
+#   high     : phase-parallel + higher LOCAL concurrency and deeper enumeration
+#              for big boxes. Per-target request rate stays polite on purpose —
+#              a bigger box is no licence to hammer the target (and higher rates
+#              just trip WAFs, which the coverage report then flags).
+# OPENEASD_PROFILE = auto (default) | low | balanced | high. "auto" picks from
+# host RAM. OPENEASD_LOW_MEMORY=true is kept as a back-compat alias for low.
+def _detect_ram_gb():
+    """Best-effort total RAM in GB (Linux/macOS via sysconf); None if unknown."""
+    try:
+        return (os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")) / (1024 ** 3)
+    except (ValueError, OSError, AttributeError):
+        return None
+
+
+def _resolve_profile() -> str:
+    if config("OPENEASD_LOW_MEMORY", default=False, cast=bool):
+        return "low"  # explicit legacy flag wins
+    p = config("OPENEASD_PROFILE", default="auto").lower()
+    if p in ("low", "balanced", "high"):
+        return p
+    ram = _detect_ram_gb()  # auto
+    if ram is None:
+        return "balanced"
+    if ram < 2:
+        return "low"
+    if ram >= 8:
+        return "high"
+    return "balanced"
+
+
+PROFILE = _resolve_profile()
+LOW_MEMORY = PROFILE == "low"  # runner serialises + amass skips brute when true
+
+# Per-profile tuning. nuclei_rate (per-target request rate) is deliberately
+# capped — it scales politely, NOT with your CPU, to stay under WAF/abuse
+# thresholds. nuclei_c raises local template parallelism.
+#
+# nuclei_sev scopes which template severities run. This is the single biggest
+# lever for nuclei's two real problems: (1) FREEZE — nuclei compiles its whole
+# template set (~13.5k) into RAM at startup regardless of target count; ~38% of
+# templates are `info` and ~4% `low`, and dropping them cuts the load memory that
+# swaps a 1 GB box. (2) TIMEOUT — fewer templates means fewer requests per target,
+# so the run finishes inside the wall-clock cap. `info` findings are also mostly
+# recon noise for a prioritised attack-surface report and are already covered by
+# httpx tech-detect + web_checker, so dropping them raises signal, not lowers it.
+# low profile is tightest (critical/high/medium); bigger boxes also run `low`.
+#
+# nuclei_bs (-bulk-size) is the REAL peak-memory lever. nuclei parses all ~13.5k
+# templates up front regardless (~500 MB fixed — so -severity does NOT shrink the
+# startup parse; it only cuts the executed set → fewer requests → no TIMEOUT).
+# Runtime peak ≈ c × bulk_size × per-host response buffer, so on a 1 GB box the
+# bound that actually prevents the FREEZE is GOMEMLIMIT + a small bulk_size.
+# Default bulk_size is 25; we scale it down hard on the low profile.
+_PROFILE_TUNING = {
+    "low":      {"nuclei_c": 10, "nuclei_rate": 40,  "nuclei_sev": "critical,high,medium,low", "nuclei_bs": 5},
+    "balanced": {"nuclei_c": 25, "nuclei_rate": 100, "nuclei_sev": "critical,high,medium,low", "nuclei_bs": 15},
+    "high":     {"nuclei_c": 40, "nuclei_rate": 150, "nuclei_sev": "critical,high,medium,low", "nuclei_bs": 25},
+}
+NUCLEI_CONCURRENCY = _PROFILE_TUNING[PROFILE]["nuclei_c"]
+NUCLEI_RATE_LIMIT = _PROFILE_TUNING[PROFILE]["nuclei_rate"]
+NUCLEI_BULK_SIZE = _PROFILE_TUNING[PROFILE]["nuclei_bs"]
+# Optional cap on how many URLs nuclei probes. Default 0 = NO CAP — scan the whole
+# discovered surface and deliver complete results (the product's whole value). We
+# give nuclei the TIME to finish (NUCLEI_TIMEOUT below + the 24h scan watchdog)
+# rather than truncating its output. A deployment that WANTS to bound it can set
+# NUCLEI_MAX_TARGETS>0; when it does, live-probed (httpx) URLs are prioritised and
+# the truncation is logged (never silent).
+NUCLEI_MAX_TARGETS = config("NUCLEI_MAX_TARGETS", default=0, cast=int)
+# Wall-clock cap for the whole nuclei run. Generous by default (6h) so nuclei
+# actually FINISHES a large surface instead of being cut off mid-scan — completing
+# with full output matters more than finishing fast, and the scan window is 48h.
+NUCLEI_TIMEOUT = config("NUCLEI_TIMEOUT", default=21600, cast=int)
+# Overridable: drop to critical,high,medium to trade coverage for speed, or add
+# info to include tech-detect templates (noisy, redundant with httpx tech-detect).
+NUCLEI_SEVERITY = config("NUCLEI_SEVERITY", default=_PROFILE_TUNING[PROFILE]["nuclei_sev"])
+
+# Soft memory ceiling for the nuclei/nuclei_network Go processes. nuclei loads
+# its whole template set into RAM (the real footprint — independent of the polite
+# rate cap), which on a 1 GB box swaps hard and can freeze the whole host,
+# including the web UI, for minutes. GOMEMLIMIT makes the Go runtime GC
+# aggressively as it nears the ceiling, holding RSS down (costs some CPU, keeps
+# full template coverage). Only applied in the low profile; empty = leave Go's
+# default (unbounded) alone. GOGC lowered alongside to trade CPU for memory.
+NUCLEI_GOMEMLIMIT = config("NUCLEI_GOMEMLIMIT", default=("600MiB" if LOW_MEMORY else ""))
+
+# Hudson Rock (Cavalier) OSINT API base — free, keyless infostealer-exposure
+# intelligence. OSS use permitted by Hudson Rock co-founder Alon Gal. Overridable
+# for testing / self-hosting.
+HUDSON_ROCK_BASE_URL = config(
+    "HUDSON_ROCK_BASE_URL",
+    default="https://cavalier.hudsonrock.com/api/json/v2/osint-tools",
+)
+
+# Build provenance — baked into the image at build time (see Dockerfile ARG/ENV
+# + the CI publish job's build-args). Lets a deployer verify exactly what
+# version/commit/date the running image was built from, via GET /health/ and
+# GET /api/version/. Defaults render cleanly for local (non-image) runs.
+OPENEASD_VERSION = config("OPENEASD_VERSION", default="dev")
+OPENEASD_GIT_SHA = config("OPENEASD_GIT_SHA", default="unknown")
+OPENEASD_BUILD_DATE = config("OPENEASD_BUILD_DATE", default="unknown")
+
+# Support/contact address for the in-app "Report an issue" / "Request a feature"
+# links. When set, those buttons become mailto: links to this address (a branded
+# deployment can route them to its own support inbox). When empty (the OSS
+# default), the buttons fall back to filing a GitHub issue with the build
+# auto-attached. Surfaced via GET /api/version/ so the SPA can render either.
+SUPPORT_EMAIL = config("SUPPORT_EMAIL", default="")
 
 # Logging
 LOGGING = {
@@ -277,15 +434,22 @@ LOGGING = {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "verbose",
+            "level": "WARNING",
+        },
+        "console_access": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+            "level": "INFO",
         },
         "file": {
             "class": "logging.FileHandler",
             "filename": BASE_DIR / "logs" / "openeasd.log",
             "formatter": "verbose",
+            "level": "DEBUG",
         },
     },
     "root": {
-        "handlers": ["console"],
+        "handlers": ["console", "file"],
         "level": "INFO",
     },
     "loggers": {
@@ -295,8 +459,33 @@ LOGGING = {
             "propagate": False,
         },
         "src": {
-            "handlers": ["console"],
+            "handlers": ["file"],
             "level": "INFO",
+            "propagate": False,
+        },
+        "django_q": {
+            "handlers": ["file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django.server": {
+            "handlers": ["console_access", "file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console", "file"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+        "weasyprint": {
+            "handlers": ["file"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+        "fontTools": {
+            "handlers": ["file"],
+            "level": "WARNING",
             "propagate": False,
         },
     },

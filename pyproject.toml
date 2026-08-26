@@ -9,7 +9,7 @@ authors = [
 ]
 dependencies = [
     # Web framework
-    "django>=5.2.16",
+    "django>=5.2.17",
     "django-ninja>=1.6.2",
     # Configuration
     "python-decouple>=3.8",
@@ -33,7 +33,7 @@ dependencies = [
     "django-ninja-jwt>=5.0",
     "whitenoise>=6.7",
     "lxml>=6.1.0",
-    "pypdf>=6.10.2",
+    "pypdf>=6.15",
     "urllib3>=2.7.0",
     "idna>=3.15",
 ]

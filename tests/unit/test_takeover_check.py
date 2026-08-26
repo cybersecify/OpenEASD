@@ -125,18 +125,29 @@ class TestAnalyze:
     def test_links_subdomain_fk_when_session_has_match(self):
         sess = self._session()
         sub = self._subdomain(sess, "blog.example.com")
-        records = [{"subdomain": "blog.example.com", "vulnerable": True}]
+        records = [{"subdomain": "blog.example.com", "vulnerable": True, "service": "GitHub Pages"}]
         findings = analyze(sess, records)
         assert findings[0].subdomain_id == sub.id
 
     def test_no_subdomain_fk_when_session_missing_match(self):
         sess = self._session()
-        # Note: no Subdomain row created
-        records = [{"subdomain": "blog.example.com", "vulnerable": True}]
+        # No Subdomain row created, but service is known — finding still created
+        records = [{"subdomain": "blog.example.com", "vulnerable": True, "service": "GitHub Pages"}]
         findings = analyze(sess, records)
         assert findings[0].subdomain is None
-        # But target field still populated for free-floating findings
         assert findings[0].target == "blog.example.com"
+
+    def test_vulnerable_record_without_fingerprint_still_reported(self):
+        # A vulnerable record with no recognizable service must NOT be silently
+        # dropped — subzy field drift would otherwise make every real takeover
+        # vanish. It is reported with an "unidentified service" label instead.
+        sess = self._session()
+        records = [{"subdomain": "blog.example.com", "vulnerable": True}]
+        findings = analyze(sess, records)
+        assert len(findings) == 1
+        assert findings[0].target == "blog.example.com"
+        assert findings[0].severity == "high"
+        assert "unidentified" in findings[0].title.lower()
 
     def test_dedupes_by_subdomain_name(self):
         sess = self._session()
@@ -184,6 +195,15 @@ class TestCollectorEdgeCases:
     def test_nonzero_exit_returns_empty(self, mock_run, _which):
         mock_run.return_value = MagicMock(returncode=1, stderr="boom")
         assert collect(["foo.example.com"]) == []
+
+    @patch("apps.takeover_check.collector.shutil.which", return_value="/usr/local/bin/subzy")
+    @patch("apps.takeover_check.collector.subprocess.run")
+    def test_timeout_raises(self, mock_run, _which):
+        import subprocess
+        from apps.core.workflows.exceptions import ToolTimeout
+        mock_run.side_effect = subprocess.TimeoutExpired("subzy", 1800)
+        with pytest.raises(ToolTimeout):
+            collect(["foo.example.com"])
 
     @patch("apps.takeover_check.collector.shutil.which", return_value="/usr/local/bin/subzy")
     @patch("apps.takeover_check.collector.subprocess.run")

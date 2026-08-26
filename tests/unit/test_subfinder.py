@@ -29,12 +29,30 @@ class TestSubfinderCollector:
         assert records[1]["host"] == "www.example.com"
 
     def test_handles_missing_ip(self):
+        # A JSON record with a host but no ip must map to {host, ip: None} —
+        # the host is preserved, only the absent ip becomes None.
         sess = self._session()
         fake = MagicMock()
         fake.stdout = '{"host":"api.example.com"}\n'
         with patch("apps.subfinder.collector.subprocess.run", return_value=fake):
             records = collect(sess)
+        assert len(records) == 1
+        assert records[0]["host"] == "api.example.com"
         assert records[0]["ip"] is None
+
+    def test_skips_json_line_without_host(self):
+        # A structured JSON line that carries no "host" key (e.g. a stats/log
+        # object subfinder can emit) must be dropped, not stored as a subdomain.
+        sess = self._session()
+        fake = MagicMock()
+        fake.stdout = (
+            '{"level":"info","msg":"enumerating"}\n'
+            '{"host":"api.example.com","ip":"1.2.3.4"}\n'
+        )
+        with patch("apps.subfinder.collector.subprocess.run", return_value=fake):
+            records = collect(sess)
+        assert len(records) == 1
+        assert records[0]["host"] == "api.example.com"
 
     def test_handles_plain_text_fallback(self):
         sess = self._session()
@@ -93,6 +111,20 @@ class TestSubfinderAnalyzer:
         records = [{"host": ""}, {"host": "  "}, {"host": "valid.example.com"}]
         objs = analyze(sess, records)
         assert len(objs) == 1
+
+    def test_drops_out_of_scope_garbage_host(self):
+        # subfinder's plain-text fallback can turn a stray log line into a bogus
+        # "host". The analyzer's in-scope filter must drop anything that isn't a
+        # subdomain of the target, keeping only the real one.
+        from apps.core.scans.models import ScanSession
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        records = [
+            {"host": "[INF] enumerating sources"},   # log noise → out of scope
+            {"host": "evil.attacker.com"},           # unrelated domain → dropped
+            {"host": "api.example.com"},             # legit → kept
+        ]
+        objs = analyze(sess, records)
+        assert [o.subdomain for o in objs] == ["api.example.com"]
 
 
 @pytest.mark.django_db

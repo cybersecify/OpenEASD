@@ -1,6 +1,7 @@
 """Central Django Ninja API instance for OpenEASD."""
 
-from django.http import JsonResponse
+from django.conf import settings
+from django.http import HttpResponse, JsonResponse
 from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError, ValidationError
 from ninja_jwt.routers.obtain import obtain_pair_router   # POST /pair, POST /refresh
@@ -73,6 +74,38 @@ def validation_error_handler(request, exc):
 api.add_router("/token", obtain_pair_router)
 api.add_router("/token", verify_router)
 api.add_router("/token", blacklist_router)
+
+
+# ---------------------------------------------------------------------------
+# Build provenance — unauthenticated. Lets a deployer confirm exactly what
+# version/commit/date the running image was built from. Baked into the image
+# at build time (Dockerfile ARG/ENV + CI build-args). Defaults render cleanly
+# for local runs ("dev"/"unknown").
+# ---------------------------------------------------------------------------
+@api.get("/version/", auth=None)
+def version(request, response: HttpResponse):
+    sha = settings.OPENEASD_GIT_SHA
+    # no-store so a CDN never serves a stale build line after a redeploy.
+    response["Cache-Control"] = "no-store"
+    return {
+        "version": settings.OPENEASD_VERSION,
+        "git_sha": sha,
+        "git_sha_short": sha[:8],
+        "build_date": settings.OPENEASD_BUILD_DATE,
+        # Empty on OSS default → SPA uses GitHub issue links; set on a branded
+        # deployment → SPA routes "Report an issue"/"Request a feature" to mailto.
+        "support_email": getattr(settings, "SUPPORT_EMAIL", ""),
+    }
+
+
+# Update-available check — authenticated. Compares the running build to the
+# latest public GitHub release so a logged-in operator learns when their
+# deployment is behind. The app never self-updates; this is a heads-up + link.
+# Cached (6h) and fully fail-graceful — GitHub being down never breaks the page.
+@api.get("/version/latest/", auth=JWTAuth())
+def version_latest(request):
+    from apps.core.api.update_check import check_for_update
+    return check_for_update()
 
 
 # ---------------------------------------------------------------------------

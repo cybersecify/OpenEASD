@@ -13,7 +13,8 @@ import tempfile
 
 from django.conf import settings
 from apps.core.assets.models import Port
-from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+from apps.core.workflows.exceptions import ToolBinaryMissing
+from apps.core.workflows.proc import run_capped
 
 logger = logging.getLogger(__name__)
 
@@ -103,25 +104,41 @@ def collect(session) -> list[dict]:
         "-pt", "network,ssl",
         "-tags", ",".join(sorted(tags)),
         "-severity", "critical,high,medium,low",
+        # Same peak-memory bound as the web run (see apps/nuclei/collector.py).
+        "-bulk-size", str(getattr(settings, "NUCLEI_BULK_SIZE", 15)),
         "-jsonl", "-silent", "-no-color",
     ]
 
+    stdout, stderr = "", ""
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT, stdin=subprocess.DEVNULL)
+        # run_capped (not subprocess.run) so an escaped interactsh/resolver helper
+        # can't hold the stdout pipe open and wedge the worker on timeout — the
+        # same anti-hang fix the web nuclei collector already had.
+        from apps.core.workflows.proc_env import go_memory_env
+        result = run_capped(cmd, TIMEOUT, env=go_memory_env())
+        stdout, stderr = result.stdout, result.stderr
     except FileNotFoundError:
         logger.error(f"[nuclei_network:{session.id}] Binary not found: {binary}")
         raise ToolBinaryMissing(f"nuclei binary not found: {binary}")
-    except subprocess.TimeoutExpired:
-        logger.error(f"[nuclei_network:{session.id}] Timed out after {TIMEOUT}s")
-        raise ToolTimeout(f"nuclei_network timed out after {TIMEOUT}s")
+    except subprocess.TimeoutExpired as exc:
+        # Deliver the network findings nuclei wrote before the wall (run_capped
+        # attaches partial stdout to exc.output) instead of discarding them and
+        # reporting a false-clean 0. Logged so the truncation is visible.
+        stdout = exc.output or ""
+        logger.warning(
+            f"[nuclei_network:{session.id}] Time-limited at {TIMEOUT}s — delivering "
+            f"{len(stdout.splitlines())} partial output lines"
+        )
     finally:
         os.unlink(tmp)
 
-    if result.returncode != 0 and result.stderr:
-        logger.warning(f"[nuclei_network:{session.id}] stderr: {result.stderr[:500]}")
+    # Surface stderr regardless of exit code (nuclei exits 0 with template-load
+    # warnings) so silent under-coverage is visible.
+    if stderr and stderr.strip():
+        logger.warning(f"[nuclei_network:{session.id}] stderr: {stderr[:500]}")
 
     records = []
-    for line in result.stdout.strip().splitlines():
+    for line in stdout.strip().splitlines():
         if not line:
             continue
         try:

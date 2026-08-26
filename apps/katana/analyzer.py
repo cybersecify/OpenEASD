@@ -11,6 +11,12 @@ logger = logging.getLogger(__name__)
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
+def _in_scope(host: str, domain: str) -> bool:
+    host = host.lower()
+    domain = domain.lower()
+    return host == domain or host.endswith("." + domain)
+
+
 def analyze(session, records: list[dict]) -> list[URL]:
     """Build URL asset instances from raw katana JSONL records.
 
@@ -40,7 +46,10 @@ def analyze(session, records: list[dict]) -> list[URL]:
     seen = set()
 
     for r in records:
-        endpoint = (r.get("request") or {}).get("endpoint", "").strip()
+        request = r.get("request")
+        if not isinstance(request, dict):
+            request = {}
+        endpoint = (request.get("endpoint") or "").strip()
         if not endpoint or endpoint in seen:
             continue
         seen.add(endpoint)
@@ -49,6 +58,9 @@ def analyze(session, records: list[dict]) -> list[URL]:
         scheme = parsed.scheme or ""
         host = parsed.hostname or ""
         if not host:
+            continue
+
+        if not _in_scope(host, session.domain):
             continue
 
         # Explicit port in URL, else default for scheme

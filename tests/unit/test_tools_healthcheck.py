@@ -12,7 +12,6 @@ import subprocess
 from io import StringIO
 from unittest.mock import patch
 
-import pytest
 from django.core.management import call_command
 
 from apps.core.dashboard.management.commands.tools_healthcheck import (
@@ -120,11 +119,11 @@ class TestCommand:
             return_value=(True, "OK"),
         ) as mock_probe:
             call_command("tools_healthcheck", "--quick", stdout=out)
-        # All 9 quick probes should fire (subfinder, dnsx, naabu, httpx, katana, nuclei, nmap, amass, cloud_enum)
-        assert mock_probe.call_count == 9
+        # All 10 quick probes should fire (subfinder, dnsx, naabu, httpx, katana, nuclei, nmap, amass, cloud_enum, gitleaks)
+        assert mock_probe.call_count == 10
         output = out.getvalue()
         assert "version mode" in output
-        assert "All 9 tools OK." in output
+        assert "All 10 tools OK." in output
 
     def test_functional_mode_runs_full_probes(self, db):
         out = StringIO()
@@ -133,7 +132,7 @@ class TestCommand:
             return_value=(True, "OK"),
         ) as mock_probe:
             call_command("tools_healthcheck", stdout=out)
-        assert mock_probe.call_count == 9
+        assert mock_probe.call_count == 10
         assert "functional mode" in out.getvalue()
 
     def test_failure_summary_lists_count(self, db):
@@ -151,7 +150,7 @@ class TestCommand:
         output = out.getvalue()
         assert "FAIL" in output
         assert "naabu" in output
-        assert "1 of 9 tool(s) failed" in output
+        assert "1 of 10 tool(s) failed" in output
 
     def test_command_always_exits_zero_even_with_failures(self, db):
         """Healthcheck is observability, not gating — never crashes the boot."""

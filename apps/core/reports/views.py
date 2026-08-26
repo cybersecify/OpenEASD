@@ -4,7 +4,6 @@ import base64
 import csv
 import functools
 import logging
-from io import BytesIO
 from pathlib import Path
 
 from django.conf import settings
@@ -44,6 +43,7 @@ _SCOPE_BY_SOURCE = {
 }
 _SCOPE_BY_CHECK = {
     "rdap": "Domain", "dns": "DNS", "caa": "DNS", "dnssec": "DNS",
+    "open_relay": "Email / DNS",
 }
 
 # CWE mapping per check_type. Unmapped check types render "—".
@@ -66,6 +66,15 @@ _CWE_BY_CHECK = {
     "dmarc": "CWE-358: Improperly Implemented Security Check for Standard",
     "spf": "CWE-358: Improperly Implemented Security Check for Standard",
     "dkim": "CWE-358: Improperly Implemented Security Check for Standard",
+    "dnssec": "CWE-346: Origin Validation Error",
+    "dns": "CWE-693: Protection Mechanism Failure",
+    "open_relay": "CWE-284: Improper Access Control",
+    "rdap": "CWE-284: Improper Access Control",
+    "sshv1_supported": "CWE-327: Use of a Broken or Risky Cryptographic Algorithm",
+    "weak_ssh_host_key": "CWE-326: Inadequate Encryption Strength",
+    "weak_ssh_cipher": "CWE-326: Inadequate Encryption Strength",
+    "ssh_password_auth": "CWE-287: Improper Authentication",
+    "ssh_root_login": "CWE-269: Improper Privilege Management",
 }
 
 
@@ -84,6 +93,85 @@ def _risk_rating(vuln_counts):
     if vuln_counts.get("low"):
         return "LOW"
     return "INFORMATIONAL"
+
+
+# Human labels for fingerprinted WAF/edge vendors.
+_WAF_VENDOR_LABEL = {
+    "cloudflare": "Cloudflare",
+    "akamai": "Akamai",
+    "sucuri": "Sucuri",
+    "imperva": "Imperva",
+    "aws": "AWS",
+    "f5": "F5",
+    "barracuda": "Barracuda",
+    "ddos-guard": "DDoS-Guard",
+}
+
+
+def _collect_technologies(session):
+    """Distinct technologies fingerprinted across a session's web assets.
+
+    Aggregates the per-URL ``technologies`` lists (httpx -tech-detect),
+    de-duplicates case-insensitively (first spelling wins), and returns them
+    sorted case-insensitively. Informational only — no version/EOL/CVE
+    inference. Returns [] when nothing was fingerprinted.
+    """
+    seen = {}
+    for row in URL.objects.filter(session=session).values_list("technologies", flat=True):
+        for tech in (row or []):
+            if not isinstance(tech, str):
+                continue
+            tech = tech.strip()
+            if tech:
+                seen.setdefault(tech.lower(), tech)
+    return sorted(seen.values(), key=str.lower)
+
+
+def _coverage_context(session):
+    """Scan Coverage block for the report (spec C2).
+
+    Returns None when no edge interference was observed (no block/challenge on any
+    probed endpoint), so the report renders the block only when it applies.
+    Reports the *observation* + a hedged vendor guess — never the WAF config, and
+    an endpoint count, never a request percentage (that is a Phase 2 output).
+    """
+    blocked = session.endpoints_blocked
+    if not blocked:
+        return None
+    vendor = session.waf_vendor
+    probed = session.endpoints_probed
+    if vendor and vendor != "unidentified":
+        vendor_phrase = f"fingerprint suggests {_WAF_VENDOR_LABEL.get(vendor, vendor.title())}"
+    else:
+        vendor_phrase = "WAF/edge, vendor unidentified"
+
+    # Two distinct shapes both land in `endpoints_blocked`:
+    #  - vendor set  -> endpoints RESPONDED with a block/challenge page (real WAF)
+    #  - vendor ""   -> endpoints returned NOTHING (silent drop). Do not claim they
+    #    "returned block/challenge responses" — they didn't respond at all, and the
+    #    count can also include probed ports that simply aren't HTTP services.
+    if vendor:
+        observation = (
+            f"{blocked} of {probed} probed endpoints returned block or challenge "
+            f"responses ({vendor_phrase})"
+        )
+    else:
+        observation = (
+            f"{blocked} of {probed} probed endpoints did not return an HTTP response "
+            f"— probes appear to have been dropped/blocked at the network edge (or "
+            f"the port is not an HTTP service)"
+        )
+    return {
+        "endpoints_probed": probed,
+        "endpoints_blocked": blocked,
+        "vendor_phrase": vendor_phrase,
+        "note": (
+            f"{observation}. Findings reflect only reachable endpoints. Absence of "
+            f"findings on unreachable surfaces is not evidence they are secure. To "
+            f"obtain full-coverage results, allowlist the scanner (OpenEASD/1.0, "
+            f"source IP on file) at your edge/WAF and re-run."
+        ),
+    }
 
 # Cybersecify report logos, embedded as base64 data-URIs. "white" is used on the
 # dark (#0d1117) cover; "brand" (green) is used in the running header on white
@@ -264,11 +352,74 @@ def _group_findings_by_issue(findings):
                 if c and c not in cves:
                     cves.append(c)
         grp["cves"] = cves
-        # Affected endpoints as a pill grid (3 per row) — xhtml2pdf renders
-        # bordered table cells reliably but not inline-block spans.
+        # Threat intel rollup from cve_intel (extra: cisa_kev / epss_score /
+        # epss_percentile). KEV = at least one CVE is on CISA's actively-exploited
+        # list; EPSS percentile is the highest across the group's CVEs.
+        dict_extras = [f.extra for f in grp["instances"] if isinstance(f.extra, dict)]
+        grp["cisa_kev"] = any(e.get("cisa_kev") for e in dict_extras)
+        pctls = [e.get("epss_percentile") for e in dict_extras if e.get("epss_percentile") is not None]
+        grp["epss_percentile"] = max(pctls) if pctls else None
+        # Plain-language business impact, shown on critical/high finding cards so
+        # a decision-maker (not just an engineer) understands what's at stake.
+        grp["business_impact"] = (
+            _BUSINESS_IMPACT.get(grp["check_type"]) or _BUSINESS_IMPACT_BY_SEV.get(grp["severity"], "")
+        ) if grp["severity"] in ("critical", "high") else ""
+        # Affected endpoints as a pill grid (3 per row). Capped at 50 per group
+        # to prevent OOM when a single finding fires on thousands of URLs.
         endpoints = [(f.url.url if f.url else f.target) for f in grp["instances"]]
-        grp["endpoint_rows"] = [endpoints[i:i + 3] for i in range(0, len(endpoints), 3)]
+        cap = 50
+        shown = endpoints[:cap]
+        grp["endpoint_rows"] = [shown[i:i + 3] for i in range(0, len(shown), 3)]
+        grp["endpoint_overflow"] = max(0, len(endpoints) - cap)
     return result
+
+
+# Plain-language business risk for the headline "Fix First" block — spoken to a
+# decision-maker, not an engineer. Keyed by check_type; severity fallback below.
+_BUSINESS_IMPACT = {
+    "unencrypted_service": "Data to this service crosses the internet in plaintext — anyone on the network path can read it.",
+    "subdomain_takeover": "An attacker can claim this dangling subdomain and serve content under your name — phishing, malware, or session-cookie theft.",
+    "missing_csp": "A single injected script would run in your users' browsers (cross-site scripting).",
+    "cve": "A publicly known vulnerability with a documented exploit is reachable from the internet.",
+    "dnssec": "DNS answers for your domain can be forged, silently redirecting users to attacker servers.",
+    "dmarc": "Anyone can send email that appears to come from your domain — brand and phishing risk.",
+    "mta_sts": "Email to your mail servers can be forced down to plaintext and intercepted in transit.",
+    "rdap": "Your domain registration lapses soon — expiry means outage and a hijack window.",
+}
+_BUSINESS_IMPACT_BY_SEV = {
+    "critical": "Directly exploitable from the internet and high-impact — treat as urgent.",
+    "high": "A serious weakness an external attacker can leverage.",
+}
+_SEV_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
+
+
+def _priority_score(grp) -> float:
+    """Rank findings for the 'Fix First' block: severity first, then measured
+    CVSS, with a dominant boost for actively-exploited (CISA KEV) issues and a
+    nudge for high EPSS (exploit-probability)."""
+    score = _SEV_RANK.get(grp["severity"], 0) * 100
+    score += (grp.get("cvss") or 0) * 5
+    if grp.get("cisa_kev"):
+        score += 500  # actively exploited in the wild dominates the ranking
+    if grp.get("epss_percentile"):
+        score += grp["epss_percentile"] * 50
+    return score
+
+
+def _top_risks(groups, limit=5):
+    """The decision-maker's shortlist: critical/high (or actively-exploited)
+    issues, ranked by priority, each with a plain-language impact line."""
+    candidates = [
+        g for g in groups
+        if g["severity"] in ("critical", "high") or g.get("cisa_kev")
+    ]
+    ranked = sorted(candidates, key=_priority_score, reverse=True)[:limit]
+    for g in ranked:
+        # Reuse the per-group business_impact; fall back for KEV-only mediums.
+        g["impact"] = g.get("business_impact") or \
+            _BUSINESS_IMPACT.get(g["check_type"]) or \
+            _BUSINESS_IMPACT_BY_SEV.get(g["severity"], "")
+    return ranked
 
 
 def _render_pdf(html: str) -> bytes:
@@ -306,6 +457,7 @@ def export_scan_pdf(request, session_uuid):
     # Findings collapsed into issue groups (identical write-up → one block with
     # a table of affected targets) for both the overview and the detail section.
     issue_groups = _group_findings_by_issue(findings)
+    top_risks = _top_risks(issue_groups)
     groups_by_severity = [
         (sev, [g for g in issue_groups if g["severity"] == sev])
         for sev in _SEVERITY_ORDER
@@ -329,15 +481,28 @@ def export_scan_pdf(request, session_uuid):
         "urls": URL.objects.filter(session=session).count(),
     }
 
-    # Scope & methodology — the registered scan pipeline, grouped by phase group,
-    # with the findings each group raised in this scan. Purely from the registry.
+    # Technology stack — the distinct technologies fingerprinted across all web
+    # assets (httpx -tech-detect). Informational only: no version/EOL/CVE
+    # inference. Sorted case-insensitively, deduped.
+    technologies = _collect_technologies(session)
+
+    # Scope & methodology — tools that ran in this scan's workflow, grouped by
+    # phase group, with findings each group raised.
     from apps.core.workflows.registry import get_registry
+    registry = get_registry()
+    # Workflow's chosen tools + always-on core tools (e.g. service_detection)
+    workflow_tools = (
+        set(session.workflow.enabled_tools()) if session.workflow_id
+        else {n for n, i in registry.items() if not i.get("core")}
+    )
+    core_tools = {n for n, i in registry.items() if i.get("core")}
+    active_tools = workflow_tools | core_tools
     src_counts = {}
     for row in findings.order_by().values("source").annotate(n=Count("id")):
         src_counts[row["source"]] = row["n"]
     _pg = {}
-    for name, info in get_registry().items():
-        if info.get("core"):
+    for name, info in registry.items():
+        if name not in active_tools:
             continue
         group = info.get("phase_group") or "Other"
         d = _pg.setdefault(group, {"phase": info["phase"], "tools": [], "findings": 0, "produces": False})
@@ -350,7 +515,24 @@ def export_scan_pdf(request, session_uuid):
           "produces": v["produces"], "phase": v["phase"]} for g, v in _pg.items()),
         key=lambda r: r["phase"],
     )
-    tool_count = sum(1 for _n, i in get_registry().items() if not i.get("core"))
+    tool_count = len(active_tools)
+
+    # Workflow step diagnostics — only populated for partial scans
+    workflow_steps = []
+    if session.status == "partial":
+        from apps.core.workflows.models import WorkflowRun, WorkflowStepResult
+        run = WorkflowRun.objects.filter(session=session).first()
+        if run:
+            for step in WorkflowStepResult.objects.filter(run=run).order_by("order"):
+                dur = None
+                if step.started_at and step.finished_at:
+                    dur = int((step.finished_at - step.started_at).total_seconds())
+                workflow_steps.append({
+                    "tool": step.tool,
+                    "status": step.status,
+                    "duration": dur,
+                    "error": step.error or "",
+                })
 
     # Scan duration
     scan_duration = None
@@ -376,11 +558,16 @@ def export_scan_pdf(request, session_uuid):
         "total_findings": len(issue_groups),   # headline = unique issue count
         "raw_total": raw_total,                # raw detections, shown only in the note
         "risk_rating": risk_rating,
+        "top_risks": top_risks,
+        "headline_risk": top_risks[0] if top_risks else None,
+        "coverage": _coverage_context(session),
         "asset_counts": asset_counts,
+        "technologies": technologies,
         "methodology": methodology,
         "tool_count": tool_count,
         "vector_count": len(methodology),
         "scan_duration": scan_duration,
+        "workflow_steps": workflow_steps,
         "generated_at": timezone.now(),
         "logo_data_uri": _logo_data_uri("white"),          # dark cover
         "header_logo_data_uri": _logo_data_uri("brand"),   # light-page running header

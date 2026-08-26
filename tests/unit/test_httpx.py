@@ -32,12 +32,53 @@ class TestHttpxCollector:
         records = collect(sess, [])
         assert records == []
 
+    def test_sends_honest_user_agent(self):
+        sess = self._session()
+        fake = MagicMock()
+        fake.stdout = ""
+        with patch("apps.httpx.collector.subprocess.run", return_value=fake) as run:
+            collect(sess, ["www.example.com:443"])
+        cmd = run.call_args[0][0]
+        assert "-H" in cmd
+        ua = cmd[cmd.index("-H") + 1]
+        assert ua.startswith("User-Agent: OpenEASD/")
+
+    def test_sends_tech_detect_flag(self):
+        sess = self._session()
+        fake = MagicMock()
+        fake.stdout = ""
+        with patch("apps.httpx.collector.subprocess.run", return_value=fake) as run:
+            collect(sess, ["www.example.com:443"])
+        cmd = run.call_args[0][0]
+        assert "-tech-detect" in cmd
+
     def test_raises_on_binary_not_found(self):
         from apps.core.workflows.exceptions import ToolBinaryMissing
         sess = self._session()
         with patch("apps.httpx.collector.subprocess.run", side_effect=FileNotFoundError):
             with pytest.raises(ToolBinaryMissing):
                 collect(sess, ["www.example.com:80"])
+
+    def test_raises_on_timeout(self):
+        import subprocess
+        from apps.core.workflows.exceptions import ToolTimeout
+        sess = self._session()
+        with patch("apps.httpx.collector.subprocess.run",
+                   side_effect=subprocess.TimeoutExpired("httpx", 600)):
+            with pytest.raises(ToolTimeout):
+                collect(sess, ["www.example.com:443"])
+
+    def test_skips_malformed_json_line(self):
+        sess = self._session()
+        fake = MagicMock()
+        fake.stdout = (
+            "garbage-not-json\n"
+            '{"url":"https://www.example.com:443","host":"www.example.com","port":"443","status_code":200}\n'
+        )
+        with patch("apps.httpx.collector.subprocess.run", return_value=fake):
+            records = collect(sess, ["www.example.com:443"])
+        assert len(records) == 1
+        assert records[0]["url"] == "https://www.example.com:443"
 
 
 @pytest.mark.django_db
@@ -102,6 +143,41 @@ class TestHttpxAnalyzer:
         assert f.content_length == 1234
         assert f.scheme == "https"
 
+    def test_stores_technologies_from_tech_field(self):
+        sess, _, _, _ = self._setup_session_with_assets()
+        records = [{
+            "url": "https://www.example.com:443",
+            "host": "www.example.com",
+            "host_ip": "1.2.3.4",
+            "port": "443",
+            "tech": ["Nginx", "PHP", "WordPress"],
+        }]
+        objs = analyze(sess, records)
+        assert objs[0].technologies == ["Nginx", "PHP", "WordPress"]
+
+    def test_technologies_default_empty_when_absent(self):
+        sess, _, _, _ = self._setup_session_with_assets()
+        records = [{
+            "url": "https://www.example.com:443",
+            "host": "www.example.com",
+            "host_ip": "1.2.3.4",
+            "port": "443",
+        }]
+        objs = analyze(sess, records)
+        assert objs[0].technologies == []
+
+    def test_technologies_deduped_and_cleaned(self):
+        sess, _, _, _ = self._setup_session_with_assets()
+        records = [{
+            "url": "https://www.example.com:443",
+            "host": "www.example.com",
+            "host_ip": "1.2.3.4",
+            "port": "443",
+            "tech": ["Nginx", "Nginx", "  PHP  ", "", 123],
+        }]
+        objs = analyze(sess, records)
+        assert objs[0].technologies == ["Nginx", "PHP"]
+
     def test_dedupes_same_url(self):
         sess, _, _, _ = self._setup_session_with_assets()
         records = [
@@ -125,6 +201,21 @@ class TestHttpxAnalyzer:
         assert len(objs) == 1
         assert objs[0].port is None
         assert objs[0].subdomain is None
+
+    def test_non_numeric_port_yields_none_port_number_and_no_fk(self):
+        # httpx should always emit a numeric port, but a malformed "port" value
+        # must degrade to port_number=None (and no Port FK) rather than crash.
+        sess, sub, ip, port = self._setup_session_with_assets()
+        records = [{
+            "url": "https://www.example.com",
+            "host": "www.example.com",
+            "host_ip": "1.2.3.4",
+            "port": "notaport",
+        }]
+        objs = analyze(sess, records)
+        assert len(objs) == 1
+        assert objs[0].port_number is None
+        assert objs[0].port is None
 
     def test_truncates_long_title(self):
         sess, _, _, _ = self._setup_session_with_assets()

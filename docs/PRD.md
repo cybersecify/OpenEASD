@@ -103,8 +103,8 @@ for the full rationale.
 - No RBAC, SAML, or multi-tenant support
 - No Postgres or horizontal scaling
 - No hosted "scan any domain" UI
-- No A–F grades, typosquatting, leaked credentials, brand impersonation,
-  technology fingerprinting — those belong to a separate product
+- No A–F letter grades, typosquatting, or brand impersonation — these are
+  brand-monitoring, not external-attack-surface scanning (out of scope by focus)
 - No "AI-powered" features in marketing copy
 
 ---

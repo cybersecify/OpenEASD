@@ -977,3 +977,59 @@ class TestSupportedCipherFindings:
         findings = analyze(sess, results)
         f = next((f for f in findings if f.check_type == "rc4_cipher"), None)
         assert f is not None
+
+
+# ---------------------------------------------------------------------------
+# CDN IP exclusion — tls_checker must not probe or emit findings for CDN IPs
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestTlsCheckerCdnExclusion:
+    def _make_session_with_cdn_ip(self):
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import IPAddress, Port
+
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        ip = IPAddress.objects.create(
+            session=sess, address="172.67.191.147", version=4, source="dnsx"
+        )
+        Port.objects.create(
+            session=sess, ip_address=ip, address="172.67.191.147",
+            port=443, protocol="tcp", state="open", service="https",
+            is_web=True, source="naabu",
+        )
+        Port.objects.create(
+            session=sess, ip_address=ip, address="172.67.191.147",
+            port=8443, protocol="tcp", state="open", service="https",
+            is_web=False, source="naabu",
+        )
+        return sess
+
+    def test_cdn_ip_not_probed(self):
+        """No TLS probe should be issued for a Cloudflare IP."""
+        sess = self._make_session_with_cdn_ip()
+        with patch("apps.tls_checker.collector._probe_tls") as mock_probe:
+            with patch("apps.tls_checker.collector._probe_tls_details") as mock_details:
+                collect(sess)
+        mock_probe.assert_not_called()
+        mock_details.assert_not_called()
+
+    def test_cdn_ip_produces_no_results(self):
+        """collect() must return an empty list when only CDN ports exist."""
+        sess = self._make_session_with_cdn_ip()
+        with patch("apps.tls_checker.collector._probe_tls", return_value=None):
+            results = collect(sess)
+        assert results == []
+
+    def test_cdn_ip_produces_no_unencrypted_finding(self):
+        """The false-positive CRITICAL finding must not appear for Cloudflare IPs."""
+        from apps.tls_checker.analyzer import analyze as tls_analyze
+        sess = self._make_session_with_cdn_ip()
+        with patch("apps.tls_checker.collector._probe_tls", return_value=None):
+            results = collect(sess)
+        findings = tls_analyze(sess, results)
+        critical = [f for f in findings if f.check_type == "unencrypted_service"]
+        assert critical == [], (
+            f"Got {len(critical)} unencrypted_service finding(s) on Cloudflare IP "
+            f"— these are false positives and must be suppressed"
+        )
