@@ -15,7 +15,7 @@ import tempfile
 
 from django.conf import settings
 
-from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+from apps.core.workflows.exceptions import ToolBinaryMissing
 from apps.core.workflows.proc import run_capped
 
 logger = logging.getLogger(__name__)
@@ -26,9 +26,10 @@ logger = logging.getLogger(__name__)
 # Time is not the constraint here — value and not
 # missing findings are — and this stays under the 4h worker/watchdog budget
 # even with nuclei_network (1h) also in the Full Scan. If a very large target
-# still exceeds it, the collector raises ToolTimeout so the scan reports
-# `partial` honestly rather than a misleading 0.
-TIMEOUT = 7200        # hard wall-clock cap for the whole nuclei run (2h)
+# still exceeds it, the collector DELIVERS the partial findings nuclei already
+# wrote (run_capped carries them on TimeoutExpired.output) rather than discarding
+# them — a time-boxed run is a worthwhile result, and its findings are saved.
+TIMEOUT = 21600       # fallback wall-clock cap (6h); settings.NUCLEI_TIMEOUT overrides
 REQUEST_TIMEOUT = 5   # seconds per HTTP request (nuclei -timeout)
 # Lowered 150 -> 100 to be gentler on targets. Observed hosts already self-
 # throttle to ~85-95 rps so this rarely binds, but it caps load on hosts that
@@ -57,8 +58,10 @@ def _select_targets(session) -> list[str]:
     rest = list(URL.objects.filter(session=session).exclude(source="httpx").values_list("url", flat=True))
     targets = list(dict.fromkeys(live + rest))  # dedupe, live-probed first
 
-    cap = getattr(settings, "NUCLEI_MAX_TARGETS", 400)
-    if len(targets) > cap:
+    # No cap by default (NUCLEI_MAX_TARGETS=0): scan the whole surface. Only
+    # truncate if a deployment explicitly opts in — and then log it, never silent.
+    cap = getattr(settings, "NUCLEI_MAX_TARGETS", 0)
+    if cap and len(targets) > cap:
         logger.warning(
             f"[nuclei:{session.id}] Capping {len(targets)} URLs to {cap} "
             f"(live-probed first); {len(targets) - cap} not scanned this run"
@@ -126,27 +129,37 @@ def collect(session) -> list[dict]:
     ]
     logger.info(f"[nuclei:{session.id}] Scanning {len(targets)} web targets")
 
+    stdout, stderr = "", ""
     try:
         # Cap nuclei's Go heap on low-memory hosts (env unchanged on balanced/high).
         from apps.core.workflows.proc_env import go_memory_env
-        result = run_capped(cmd, TIMEOUT, env=go_memory_env())
+        timeout = getattr(settings, "NUCLEI_TIMEOUT", TIMEOUT)
+        result = run_capped(cmd, timeout, env=go_memory_env())
+        stdout, stderr = result.stdout, result.stderr
     except FileNotFoundError:
         logger.error(f"[nuclei:{session.id}] Binary not found: {binary}")
         raise ToolBinaryMissing(f"nuclei binary not found: {binary}")
-    except subprocess.TimeoutExpired:
-        logger.error(f"[nuclei:{session.id}] Timed out after {TIMEOUT}s")
-        raise ToolTimeout(f"nuclei timed out after {TIMEOUT}s")
+    except subprocess.TimeoutExpired as exc:
+        # A time-boxed nuclei run is still a worthwhile result on a large surface:
+        # deliver the findings it DID write before the wall (run_capped attaches
+        # the partial stdout to exc.output) instead of discarding them and
+        # reporting a misleading 0. Logged, so the truncation is visible.
+        stdout = exc.output or ""
+        logger.warning(
+            f"[nuclei:{session.id}] Time-limited at {timeout}s — delivering "
+            f"{len(stdout.splitlines())} partial output lines"
+        )
     finally:
         os.unlink(tmp)
 
     # Surface stderr regardless of exit code: nuclei routinely exits 0 while
     # logging "could not load N templates" / interactsh failures to stderr, which
     # is silent under-coverage if only checked on nonzero rc.
-    if result.stderr and result.stderr.strip():
-        logger.warning(f"[nuclei:{session.id}] stderr: {result.stderr[:500]}")
+    if stderr and stderr.strip():
+        logger.warning(f"[nuclei:{session.id}] stderr: {stderr[:500]}")
 
     records = []
-    for line in result.stdout.strip().splitlines():
+    for line in stdout.strip().splitlines():
         if not line:
             continue
         try:

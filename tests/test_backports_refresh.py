@@ -1,4 +1,3 @@
-import pytest
 import json
 from unittest.mock import patch, MagicMock
 from apps.nmap.sources.ubuntu_usn import fetch_ubuntu_backports

@@ -290,16 +290,27 @@ class TestNucleiCollector:
             with pytest.raises(ToolBinaryMissing):
                 collect(sess)
 
-    def test_timeout_raises(self):
-        """A wall-clock timeout must surface as ToolTimeout, not a silent [] —
-        this is the false-green that made nuclei look 'completed' with 0 findings."""
+    def test_timeout_delivers_partial_findings(self):
+        """A wall-clock timeout must DELIVER whatever nuclei already found rather
+        than discard it and report 0. run_capped attaches partial stdout to the
+        TimeoutExpired's .output; the collector parses it and returns the findings,
+        logging that the run was time-limited (visible, never silent)."""
         import subprocess as sp
-        from apps.core.workflows.exceptions import ToolTimeout
         sess = self._make_session()
-        with patch("apps.nuclei.collector.run_capped",
-                   side_effect=sp.TimeoutExpired(cmd="nuclei", timeout=1800)):
-            with pytest.raises(ToolTimeout):
-                collect(sess)
+        exc = sp.TimeoutExpired(cmd="nuclei", timeout=1800)
+        exc.output = json.dumps(_nuclei_record()) + "\n"  # one finding written before the wall
+        with patch("apps.nuclei.collector.run_capped", side_effect=exc):
+            records = collect(sess)   # must NOT raise
+        assert len(records) == 1
+
+    def test_timeout_with_no_partial_output_returns_empty(self):
+        """If nuclei timed out before writing anything, deliver [] (still no raise)."""
+        import subprocess as sp
+        sess = self._make_session()
+        exc = sp.TimeoutExpired(cmd="nuclei", timeout=1800)  # .output is None
+        with patch("apps.nuclei.collector.run_capped", side_effect=exc):
+            records = collect(sess)
+        assert records == []
 
     def test_invalid_json_skipped(self):
         sess = self._make_session()
@@ -328,7 +339,7 @@ class TestNucleiCollector:
         cmd = captured["cmd"]
         for flag in ("-rate-limit", "-c", "-timeout", "-retries"):
             assert flag in cmd, f"missing {flag}"
-        assert captured["timeout"] == 7200
+        assert captured["timeout"] == 21600  # NUCLEI_TIMEOUT default (6h)
         # per-target rate must stay polite regardless of resource profile
         rate = int(cmd[cmd.index("-rate-limit") + 1])
         assert rate <= 150, f"per-target rate {rate} too aggressive"
