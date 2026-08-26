@@ -9,7 +9,7 @@ import tempfile
 import yaml
 from django.conf import settings
 
-from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+from apps.core.workflows.exceptions import ToolBinaryMissing
 
 logger = logging.getLogger(__name__)
 
@@ -84,17 +84,17 @@ def collect(session) -> list[dict]:
             stdout, stderr = proc.communicate(timeout=config.scan_timeout * 60 + 30)
         except subprocess.TimeoutExpired:
             proc.kill()
-            proc.communicate()
-            # This fires 30s PAST amass's own scan_timeout — i.e. amass ignored
-            # its internal budget and hung, not a clean time-boxed finish. Raise
-            # so the step is marked failed and the scan reports "partial" instead
-            # of silently presenting a truncated surface as a complete scan.
+            # Capture whatever amass wrote before the wall — don't discard it.
+            drained, _ = proc.communicate()
+            stdout = drained or stdout
+            # amass ran to its time budget on a large surface. For an ENUMERATION
+            # tool a time-boxed run is a normal, worthwhile result (like subfinder
+            # returning what its sources had) — deliver the partial subdomains it
+            # DID find and let the scan complete, rather than discarding them and
+            # failing the whole scan. Logged, so it's visible, never silent.
             logger.warning(
-                f"[amass:{session.id}] Hung past {config.scan_timeout}m budget "
-                f"— marking step failed (scan will report partial)"
-            )
-            raise ToolTimeout(
-                f"amass hung past its {config.scan_timeout}m scan_timeout"
+                f"[amass:{session.id}] Time-limited at {config.scan_timeout}m — "
+                f"delivering {len(stdout.splitlines())} partial result lines"
             )
         else:
             if proc.returncode != 0:

@@ -243,16 +243,30 @@ def test_collect_binary_missing_raises(MockPort, mock_run, mock_session):
 
 @patch("apps.nuclei_network.collector.run_capped")
 @patch("apps.nuclei_network.collector.Port")
-def test_collect_timeout_raises(MockPort, mock_run, mock_session):
-    """A wall-clock timeout must surface as ToolTimeout so the scan reports
-    'partial' rather than a false-clean network sweep."""
+def test_collect_timeout_delivers_partial_findings(MockPort, mock_run, mock_session):
+    """A wall-clock timeout must DELIVER the network findings nuclei already wrote
+    (run_capped carries them on TimeoutExpired.output) rather than discard them and
+    report a false-clean 0. Logged so the truncation is visible."""
+    import json
     import subprocess as sp
-    from apps.core.workflows.exceptions import ToolTimeout
     port = MagicMock(address="1.2.3.4", port=6379, service="redis")
     MockPort.objects.filter.return_value = [port]
-    mock_run.side_effect = sp.TimeoutExpired(cmd="nuclei", timeout=3600)
-    with pytest.raises(ToolTimeout):
-        collect(mock_session)
+    exc = sp.TimeoutExpired(cmd="nuclei", timeout=3600)
+    exc.output = json.dumps({"template-id": "redis-unauth", "info": {"severity": "high"}}) + "\n"
+    mock_run.side_effect = exc
+    records = collect(mock_session)   # must NOT raise
+    assert len(records) == 1
+
+
+@patch("apps.nuclei_network.collector.run_capped")
+@patch("apps.nuclei_network.collector.Port")
+def test_collect_timeout_no_output_returns_empty(MockPort, mock_run, mock_session):
+    """Timeout before any output → deliver [] (still no raise)."""
+    import subprocess as sp
+    port = MagicMock(address="1.2.3.4", port=6379, service="redis")
+    MockPort.objects.filter.return_value = [port]
+    mock_run.side_effect = sp.TimeoutExpired(cmd="nuclei", timeout=3600)  # .output is None
+    assert collect(mock_session) == []
 
 
 @patch("apps.nuclei_network.collector.run_capped")
