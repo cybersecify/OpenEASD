@@ -8,7 +8,7 @@ from django.utils import timezone
 class TestCreateSubscanSession:
     def _make_completed_session(self, domain="target.com"):
         from apps.core.scans.models import ScanSession
-        from apps.core.workflows.models import Workflow, WorkflowStep
+        from apps.core.workflows.models import Workflow
         workflow = Workflow.objects.filter(is_default=True).first()
         return ScanSession.objects.create(
             domain=domain,

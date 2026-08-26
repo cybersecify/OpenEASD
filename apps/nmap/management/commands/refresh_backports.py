@@ -1,4 +1,3 @@
-import os
 import json
 from pathlib import Path
 import sys
@@ -44,7 +43,7 @@ def do_refresh():
 
     # Atomic write: write to .tmp first, then replace, so a crash/SIGKILL mid-write
     # never leaves backports.json empty or half-written.
-    import tempfile, os
+    import os
     tmp_path = output_path.with_suffix(".json.tmp")
     print(f"Writing to {output_path} (atomic)...")
     with open(tmp_path, "w", encoding="utf-8") as f:

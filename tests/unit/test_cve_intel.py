@@ -180,7 +180,6 @@ class TestRunCveIntel:
     @pytest.mark.django_db
     def test_enriches_and_persists(self):
         from apps.cve_intel.scanner import run_cve_intel
-        from apps.core.findings.models import Finding
         session = self._session()
         f = self._finding(session, cve="CVE-2021-1")
         kev = {"CVE-2021-1": {"date_added": "2022-01-01", "due_date": "2022-01-15"}}
