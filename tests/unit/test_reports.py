@@ -7,7 +7,7 @@ PDF rendering is mocked (via _render_pdf) so tests need no WeasyPrint libs.
 
 import csv
 import io
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import User

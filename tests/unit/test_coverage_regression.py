@@ -59,7 +59,7 @@ class TestCoverageRegression:
 
     def test_findings_drop_flags(self):
         from apps.core.findings.models import Finding
-        prev = _session(status="completed", total_findings=50)
+        _session(status="completed", total_findings=50)  # baseline the check compares against
         cur = _session(total_findings=10)
         _check_coverage_regression(cur)
         assert Finding.objects.filter(session=cur, check_type="coverage_regression").exists()

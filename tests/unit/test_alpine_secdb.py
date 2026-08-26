@@ -1,5 +1,4 @@
 import json
-import urllib.request
 import pytest
 from unittest.mock import patch, MagicMock
 from apps.nmap.sources.alpine_secdb import fetch_alpine_backports
