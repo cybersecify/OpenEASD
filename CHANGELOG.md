@@ -21,6 +21,14 @@ commits to recover the reasoning.
   - **amass delivers its partial subdomains on a time-limit** instead of
     discarding them and failing the scan — a time-boxed enumeration run is a
     normal, worthwhile result (like subfinder), and it's logged.
+  - **nuclei + nuclei_network deliver the findings they already wrote when the
+    wall-clock still hits** instead of raising and reporting a false 0. The
+    hardened runner (`run_capped`) already captured the partial stdout on
+    `TimeoutExpired.output`; the collectors now parse and return it. **Why:** on a
+    very large surface even the 6h budget can be exceeded — dropping tens of real
+    findings because the run was one template short of done is exactly the
+    "results, not challenges" failure the uncap set out to fix. The truncation is
+    logged, so it's visible, never silent.
   - **All profiles now include `low` severity** in nuclei (only `info` tech-detect
     noise, already covered by httpx, is dropped) — more findings, not fewer.
 
