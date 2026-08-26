@@ -3,8 +3,6 @@
 import datetime
 import json
 import pytest
-from django.contrib.auth.models import User
-from ninja_jwt.tokens import AccessToken
 
 
 def post_json(client, path, data):
@@ -144,3 +142,21 @@ class TestScanStartAuthorizationGate:
             "scheduled_at": "2030-01-01T03:00:00",
         })
         assert resp.status_code == 403
+
+    def test_authorization_is_domain_scoped(self, auth_client, domain):
+        # Authorizing ONE domain must NOT authorize scanning ANOTHER. This is the
+        # test that would fail if the gate ever regressed to a global
+        # DomainAuthorization.objects.exists() (authorize A -> scan anything).
+        from apps.core.domains.models import Domain, DomainAuthorization
+        other = Domain.objects.create(name="other.example.com", is_active=True)
+        DomainAuthorization.objects.create(
+            domain=other, auth_type="owner",
+            authorized_at=datetime.date(2026, 1, 15), authorized_by="Alice",
+        )
+        # example.com (the `domain` fixture) has NO authorization of its own.
+        resp = post_json(auth_client, "/api/scans/start/", {
+            "domain": "example.com",
+            "schedule_type": "now",
+        })
+        assert resp.status_code == 403
+        assert resp.json()["error"]["message"] == "Domain is not authorized for scanning"

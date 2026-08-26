@@ -3,6 +3,7 @@ import { Button } from '../components/ui/button.jsx';
 import { apiPost, apiGet } from '../api/client.js';
 import { auth } from '../auth.js';
 import { useNavigate } from 'react-router-dom';
+import BuildInfo from '../components/BuildInfo.jsx';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -51,6 +52,7 @@ export default function LoginPage() {
             {loading ? 'Signing in…' : 'Sign in'}
           </Button>
         </form>
+        <BuildInfo className="mt-6" />
       </div>
     </div>
   );

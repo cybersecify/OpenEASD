@@ -7,6 +7,207 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Tools now run to completion and deliver full output — no output caps.** The
+  product's value is complete results in one UI, so instead of *capping* tools to
+  fit the small box we give them the TIME to finish (the scan window is 48h and
+  the freeze is fixed, so the box stays responsive during a long run):
+  - **Removed the nuclei URL cap** (default `NUCLEI_MAX_TARGETS=0`) — nuclei scans
+    the whole discovered surface, not a truncated subset. (A deployment can still
+    opt into a cap; it's then logged, never silent.)
+  - **nuclei wall-clock 2h → 6h** (`NUCLEI_TIMEOUT`), **worker hard-kill 4h → 24h**
+    (`Q_TASK_TIMEOUT`), **stuck-scan watchdog 4h → 24h** — so a large scan finishes
+    instead of being killed mid-run.
+  - **amass delivers its partial subdomains on a time-limit** instead of
+    discarding them and failing the scan — a time-boxed enumeration run is a
+    normal, worthwhile result (like subfinder), and it's logged.
+  - **nuclei + nuclei_network deliver the findings they already wrote when the
+    wall-clock still hits** instead of raising and reporting a false 0. The
+    hardened runner (`run_capped`) already captured the partial stdout on
+    `TimeoutExpired.output`; the collectors now parse and return it. **Why:** on a
+    very large surface even the 6h budget can be exceeded — dropping tens of real
+    findings because the run was one template short of done is exactly the
+    "results, not challenges" failure the uncap set out to fix. The truncation is
+    logged, so it's visible, never silent.
+  - **All profiles now include `low` severity** in nuclei (only `info` tech-detect
+    noise, already covered by httpx, is dropped) — more findings, not fewer.
+
+### Fixed
+- **Subdomain count no longer inflated by dead alterx guesses.** alterx generates
+  permutation *candidates* (dev-api.…, api-staging.…); those that don't resolve
+  were stored and counted as real subdomains — a cybersecify.com run showed
+  "1,862 subdomains" for a **5-subdomain** surface (1,857 dead alterx candidates).
+  dnsx now prunes unresolved alterx candidates after resolution, so the count
+  reflects the real, live surface. Discovery-tool names (subfinder/amass) are kept
+  even when unresolved — those are real observed names, not guesses.
+- **Two issues the live cybersecify.com validation run exposed.** (1) A **passive
+  scan spuriously emitted a `scan_coverage` "results incomplete" finding** because
+  the coverage-regression check diffed it against a prior *active* (Full Scan)
+  baseline — a passive scan runs far fewer tools, so it always looked like a
+  collapse. The check now only compares scans of the **same workflow**. (2)
+  **nuclei hit its 2h wall on a large surface** (a Full Scan fed it 368 URLs);
+  its target list is now **capped per profile** (`NUCLEI_MAX_TARGETS`; low=100),
+  live-probed (httpx) URLs first, cap logged (never silent).
+- **CI runs on every PR** (dropped the `pull_request` `paths-ignore`): now that CI
+  is a required status check, a docs-only PR would otherwise never trigger it and
+  be unmergeable. The `push` `paths-ignore` still skips the image republish on
+  docs-only merges.
+
+### Changed
+- **nuclei hardening (follow-up to the severity scoping).** Three parallel agents
+  investigated nuclei's freeze/timeout/value; key finding: `-severity` does NOT
+  cut the ~500 MB startup template parse (nuclei parses all templates then
+  filters) — it only fixes the TIMEOUT. So the FREEZE is now bounded by
+  `GOMEMLIMIT` **+ `-bulk-size`** scaled per profile (low=5) — the real
+  peak-memory lever, previously left at the default 25. Also: `-type http` on the
+  web run (skips dns/tcp/ssl already covered by nuclei_network/tls_checker),
+  `-max-host-error` (abandon dead hosts), `-exclude-tags dos,fuzzing,intrusive`,
+  and stderr surfaced regardless of exit code. **Fixed:** `nuclei_network` used a
+  plain `subprocess.run` with no process-group kill — the exact worker-wedging
+  hang the web collector was rewritten to avoid; both now share `run_capped`
+  (`apps/core/workflows/proc.py`). Added a **weekly CI cron** so baked
+  nuclei-templates refresh on cadence. Learnings + the corrected freeze
+  attribution recorded in `docs/SCAN_OPERATIONAL_LEARNINGS.md`.
+
+### Added
+- **Configurable support channel for the in-app "Report an issue" / "Request a
+  feature" links** (`SUPPORT_EMAIL` env). When set, the footer buttons become
+  `mailto:` links to that address with the running build pre-filled in the body
+  (a branded deployment routes users to its own support inbox); when empty (OSS
+  default) they fall back to filing a GitHub issue. Surfaced via
+  `GET /api/version/` (`support_email`).
+
+### Changed
+- **nuclei template severity scoping — the fix for its freeze/timeout/noise.**
+  nuclei compiles its entire ~13,500-template set into RAM at startup regardless
+  of target count, which (1) swaps a small host into a multi-minute freeze and
+  (2) makes the run hit its wall-clock cap. `info` templates are ~38% of the set
+  and `low` ~4%, and `info` is mostly recon noise already covered by httpx
+  tech-detect + web_checker. So the scan now runs `-severity` scoped per resource
+  profile: `low` → `critical,high,medium`; `balanced`/`high` → `+low`; `info`
+  dropped everywhere. Overridable via `NUCLEI_SEVERITY`. Cuts template-load
+  memory **and** request volume, raising signal. Combined with the existing
+  low-profile `GOMEMLIMIT` cap, this is what lets nuclei complete on a 1 GB box.
+  **Learning captured in** `docs/SCAN_OPERATIONAL_LEARNINGS.md` with regression
+  tests, per the standing "operational issues become tests" rule.
+
+### Fixed
+- **Live defects found by a full test-suite audit (silent-failure class).** A
+  7-agent audit of the ~45-file suite found real bugs the 1200+ tests missed
+  because they were shallow on failure modes (and, in two cases, actively
+  codified the bug):
+  - **amass swallowed its own timeout** and returned partial results with no
+    error, so a hung amass made the whole scan read `completed` with a truncated
+    surface. Now raises `ToolTimeout` (→ scan `partial`). The test that asserted
+    the swallow was rewritten to assert the raise.
+  - **takeover_check silently dropped `vulnerable:True` records** whose service
+    it couldn't fingerprint — so any drift in subzy's output fields would make
+    every real subdomain takeover vanish. Now reports them with an "unidentified
+    service" label. The test that blessed the drop was inverted.
+  - **nmap returned a falsely-clean CVE result when every target IP timed out**
+    (per-IP timeouts are still skipped as degraded, but an all-IP timeout now
+    raises `ToolTimeout`).
+  - **The coverage note claimed endpoints "returned block or challenge
+    responses" even for silent drops** that returned nothing; wording now
+    distinguishes a real WAF block-page from a no-response/non-HTTP endpoint.
+  - **domain_security aborted the entire RDAP check** (`KeyError`) on a real
+    registrar event missing `eventAction`; now guarded.
+  - **alterx** no longer silently returns nothing when its binary is missing —
+    it raises `ToolBinaryMissing` like every other tool (dead unreachable branch
+    removed).
+  - **nuclei / nuclei_network crashed on `info: null`** — `data.get("info", {})`
+    returns `None` when the key is present with a null value, then `.get()` on it
+    raised `AttributeError` and lost the finding. Now `data.get("info") or {}`.
+  - **katana crashed on a non-dict `request` or null `endpoint`** in crawl output.
+    Both are now guarded. (All three surfaced by new adversarial parser tests.)
+- **Silent scan degradation is now surfaced, not hidden.** Three linked fixes so a
+  scan that was blocked/incomplete stops reading as a clean, complete scan (found
+  after the droplet's results quietly dropped from ~50 findings to ~18 when the
+  target began dropping its probes, only noticed by manually comparing reports):
+  - **Scan status reflects the workflow outcome.** `_finalize_session` no longer
+    hard-codes `completed`; if any tool failed or timed out (run is `partial`),
+    the scan is marked **`partial`**. Previously a half-finished scan (e.g. nuclei
+    timing out) still showed `completed`.
+  - **Silent blocks are counted.** httpx records how many endpoints it was asked
+    to probe (`endpoints_probed`); coverage now treats every probed endpoint that
+    did not come back cleanly as blocked/unreachable — so "probed 100, 0 came
+    back" (a silent IP drop that leaves no URL to classify) is visible instead of
+    looking like a clean site. **Why:** the prior logic only classified URLs httpx
+    *returned*, so a total block (zero URLs) read as `probed=0, blocked=0`.
+  - **Coverage-regression warning.** A scan that surfaces far less than the
+    previous one for the same domain (findings or live web endpoints halved, or
+    ≥80% of probes unreachable) now emits an in-report `scan_coverage` finding
+    telling the operator the results are a lower bound and the scanner may be
+    blocked — instead of them having to diff two reports by eye.
+- **Provenance endpoints (`/api/version/`, `/health/`) now send `Cache-Control:
+  no-store`.** **Why:** Cloudflare (and any CDN) was caching the unauthenticated
+  `/api/version/`, so the in-app build line showed a stale version/sha for hours
+  after a redeploy. No-store keeps the displayed build honest on every deploy.
+
+### Changed
+- **nuclei / nuclei_network now honour a Go soft memory limit in the `low`
+  profile** (`NUCLEI_GOMEMLIMIT`, default `600MiB`; `GOGC=50`). **Why:** nuclei
+  loads its whole template set into RAM (the real footprint — independent of the
+  polite request-rate cap), which on a 1 GB host swaps hard and can freeze the
+  whole box, including the web UI, for minutes. `GOMEMLIMIT` makes the Go runtime
+  GC aggressively near the ceiling, holding RSS down while keeping full template
+  coverage. Unset (unbounded, prior behaviour) on the balanced/high profiles.
+
+### Added
+- **In-app version footer + "update available" check for logged-in users.** The
+  build provenance line (`OpenEASD vX.Y.Z · <sha> · <date>`) and the
+  Report-an-issue / Request-a-feature links now render in the sidebar of every
+  authenticated page, not only on the login screen. A new authenticated endpoint
+  `GET /api/version/latest/` compares the running build against the latest public
+  GitHub release (cached 6h, fully fail-graceful) and the footer shows an "↑
+  Update available: vX.Y.Z" link when the deployment is behind. **Why:** an
+  operator using the app never saw which version they were running or how to
+  report a problem — both were hidden pre-login — and had no signal that a newer
+  release existed. The app still never self-updates; this is a heads-up + link,
+  so upgrades stay an explicit redeploy.
+- **Infostealer-exposure tool (Hudson Rock)** — a new passive Domain-Intelligence
+  tool that surfaces a domain's infostealer-log exposure via Hudson Rock's free,
+  keyless Cavalier API (aggregate counts, stealer families, last-seen dates, and
+  system-level affected login URLs). **Why:** stolen-credential exposure from
+  info-stealer malware is a leading breach vector that no port/web scan can see;
+  it is public-source (passive) intel that complements the active surface scan.
+  OSS use permitted by Hudson Rock co-founder Alon Gal. Privacy: only aggregate
+  counts are stored — the tool never persists or displays plaintext credentials
+  or individual email addresses, and it is fail-graceful so it can never fail a
+  scan. Added to the Full Scan and Passive Scan workflows (tool count 21 → 22).
+- **Passive vs active scan modes** (#251). A "Passive Scan" workflow uses only
+  public-source tools and needs no `DomainAuthorization`; any active tool keeps
+  the gate. **Why:** lets you scan an inbound inquiry from public data alone
+  without authorization, while active probing stays gated. `domain_security` is
+  classified active (it does AXFR/SMTP/mta-sts probes, not just DNS lookups).
+- **ASN/IP-range discovery** tool via `amass intel` (#245) — finds org-owned
+  CIDRs with no DNS record. Reports ranges only; does not auto-expand scanning.
+- **gitleaks JS-secret scanning** (#248) — hardcoded keys in crawled JavaScript
+  that nuclei's path-based templates miss. Secrets are redacted, never stored.
+- **Technology fingerprinting** via httpx `-tech-detect` (#247).
+- **DNSSEC chain-of-trust, MTA-STS, and open-relay checks** in domain_security
+  (#244). Open-relay probe is safe — it never sends message data.
+- **Report: "Fix First" priority block + EPSS/KEV** (#243) and **headline risk,
+  plain-language business impact, and honest snapshot framing** (#250). **Why:**
+  make the report read like a prioritised analyst review, not a flat dump.
+- **WAF/edge coverage reporting + honest `OpenEASD/1.0` user agent**. **Why:** an
+  empty result should mean "clean", never "silently blocked", and a target can
+  deliberately allowlist the scanner.
+- **Scheduled security-bump workflow** (#239) — keeps the lockfile ahead of the
+  CVE feed so pip-audit stops failing unrelated PRs.
+
+### Changed
+- **Full Scan is the default workflow again** (#236), applied to existing DBs.
+- **D-004 (Brand Protection product boundary) retired** (#246) — Brand Protection
+  is no longer a separate product; capabilities are judged on free + in-scope + value.
+
+### Fixed
+- False positives: CDN edge IPs excluded from port/TLS scans (#237); out-of-scope
+  URLs and cross-domain crawl dropped (#241, #249); TLS SNI uses hostname not IP
+  (#241); takeover skipped on unknown service, alterx skipped on wildcard DNS (#242).
+- PDF endpoint OOM cap at 50/finding — fixes a gunicorn OOM on very large scans (#238).
+- Removed hardcoded `.bank.in`/RBI text from the DNSSEC finding — now framework-neutral (#249).
+
 ## [v0.10.0] — 2026-08-03
 
 ### Added

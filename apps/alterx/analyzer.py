@@ -23,9 +23,12 @@ def analyze(session, raw: list[str]) -> list[Subdomain]:
     objs: list[Subdomain] = []
     seen: set[str] = set()
 
+    domain = session.domain.lower()
     for line in raw:
         host = line.strip().lower()
         if not host or not _VALID_HOSTNAME.match(host):
+            continue
+        if not (host == domain or host.endswith("." + domain)):
             continue
         if host in seen or host in existing:
             continue

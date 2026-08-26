@@ -175,10 +175,13 @@ def test_build_tags_amqp_maps_to_rabbitmq():
     assert "rabbitmq" in tags
 
 
-def test_build_tags_returns_set():
+def test_build_tags_returns_deduped_set_with_baseline():
+    # Two redis ports must collapse to a single "redis" tag, and the baseline
+    # tags must always be present alongside it.
     ports = [_port("redis"), _port("redis")]
     tags = _build_tags(ports)
     assert isinstance(tags, set)
+    assert tags == {"redis", "misconfig", "exposures", "default-login", "cves"}
 
 
 @pytest.fixture
@@ -188,7 +191,7 @@ def mock_session():
     return s
 
 
-@patch("apps.nuclei_network.collector.subprocess.run")
+@patch("apps.nuclei_network.collector.run_capped")
 @patch("apps.nuclei_network.collector.Port")
 def test_collect_builds_correct_command(MockPort, mock_run, mock_session):
     port = MagicMock()
@@ -216,10 +219,197 @@ def test_collect_builds_correct_command(MockPort, mock_run, mock_session):
     assert "info" not in sev_val
 
 
-@patch("apps.nuclei_network.collector.subprocess.run")
+@patch("apps.nuclei_network.collector.run_capped")
 @patch("apps.nuclei_network.collector.Port")
 def test_collect_no_ports_returns_empty(MockPort, mock_run, mock_session):
     MockPort.objects.filter.return_value = []
     result = collect(mock_session)
     assert result == []
     mock_run.assert_not_called()
+
+
+@patch("apps.nuclei_network.collector.run_capped")
+@patch("apps.nuclei_network.collector.Port")
+def test_collect_binary_missing_raises(MockPort, mock_run, mock_session):
+    """A missing nuclei binary must surface as ToolBinaryMissing, not a silent []
+    — a false 'completed with 0 findings' hides the broken install."""
+    from apps.core.workflows.exceptions import ToolBinaryMissing
+    port = MagicMock(address="1.2.3.4", port=6379, service="redis")
+    MockPort.objects.filter.return_value = [port]
+    mock_run.side_effect = FileNotFoundError()
+    with pytest.raises(ToolBinaryMissing):
+        collect(mock_session)
+
+
+@patch("apps.nuclei_network.collector.run_capped")
+@patch("apps.nuclei_network.collector.Port")
+def test_collect_timeout_delivers_partial_findings(MockPort, mock_run, mock_session):
+    """A wall-clock timeout must DELIVER the network findings nuclei already wrote
+    (run_capped carries them on TimeoutExpired.output) rather than discard them and
+    report a false-clean 0. Logged so the truncation is visible."""
+    import json
+    import subprocess as sp
+    port = MagicMock(address="1.2.3.4", port=6379, service="redis")
+    MockPort.objects.filter.return_value = [port]
+    exc = sp.TimeoutExpired(cmd="nuclei", timeout=3600)
+    exc.output = json.dumps({"template-id": "redis-unauth", "info": {"severity": "high"}}) + "\n"
+    mock_run.side_effect = exc
+    records = collect(mock_session)   # must NOT raise
+    assert len(records) == 1
+
+
+@patch("apps.nuclei_network.collector.run_capped")
+@patch("apps.nuclei_network.collector.Port")
+def test_collect_timeout_no_output_returns_empty(MockPort, mock_run, mock_session):
+    """Timeout before any output → deliver [] (still no raise)."""
+    import subprocess as sp
+    port = MagicMock(address="1.2.3.4", port=6379, service="redis")
+    MockPort.objects.filter.return_value = [port]
+    mock_run.side_effect = sp.TimeoutExpired(cmd="nuclei", timeout=3600)  # .output is None
+    assert collect(mock_session) == []
+
+
+@patch("apps.nuclei_network.collector.run_capped")
+@patch("apps.nuclei_network.collector.Port")
+def test_collect_skips_non_json_lines(MockPort, mock_run, mock_session):
+    """Log noise / partial lines in stdout must be skipped, not crash the parse."""
+    import json
+    port = MagicMock(address="1.2.3.4", port=6379, service="redis")
+    MockPort.objects.filter.return_value = [port]
+    good = json.dumps({"template-id": "redis-exposure", "info": {"severity": "high"}})
+    mock_run.return_value = MagicMock(
+        returncode=0,
+        stdout="[INF] running templates\n" + good + "\nnot-json{\n",
+        stderr="",
+    )
+    records = collect(mock_session)
+    assert len(records) == 1
+    assert records[0]["template-id"] == "redis-exposure"
+
+
+# ---------------------------------------------------------------------------
+# Analyzer — raw nuclei JSON → Finding, dedup, severity fallback, Port FK
+# ---------------------------------------------------------------------------
+
+from apps.nuclei_network.analyzer import analyze
+
+
+def _net_record(template_id="redis-exposure", name="Redis Exposure",
+                severity="high", matched_at="1.2.3.4:6379",
+                cve_ids=None, cvss_score=None, info="__default__"):
+    """Build a realistic nuclei network JSON record. Pass info=None to simulate
+    a record whose entire "info" object is JSON null."""
+    if info == "__default__":
+        classification = {}
+        if cve_ids:
+            classification["cve-id"] = cve_ids
+        if cvss_score is not None:
+            classification["cvss-score"] = cvss_score
+        info = {
+            "name": name,
+            "severity": severity,
+            "description": "desc",
+            "remediation": "fix",
+            "classification": classification,
+        }
+    return {
+        "template-id": template_id,
+        "info": info,
+        "matched-at": matched_at,
+        "host": matched_at,
+        "matcher-name": "",
+        "extracted-results": [],
+    }
+
+
+@pytest.mark.django_db
+class TestNucleiNetworkAnalyzer:
+    def _make_session(self):
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import IPAddress, Port
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4", port=6379,
+                            protocol="tcp", state="open", is_web=False, source="naabu")
+        return sess
+
+    def test_empty_records(self):
+        sess = self._make_session()
+        assert analyze(sess, []) == []
+
+    def test_basic_finding_links_port_fk(self):
+        sess = self._make_session()
+        findings = analyze(sess, [_net_record()])
+        assert len(findings) == 1
+        f = findings[0]
+        assert f.source == "nuclei_network"
+        assert f.severity == "high"
+        assert f.check_type == "network"
+        assert f.port is not None
+        assert f.port.port == 6379
+        assert f.target == "1.2.3.4:6379"
+
+    def test_cve_record_check_type_and_title(self):
+        sess = self._make_session()
+        findings = analyze(sess, [_net_record(
+            template_id="CVE-2022-0543", name="Redis Lua RCE",
+            severity="critical", cve_ids=["CVE-2022-0543"], cvss_score=10.0,
+        )])
+        f = findings[0]
+        assert f.check_type == "cve"
+        assert "CVE-2022-0543" in f.title
+        assert f.extra["cvss_score"] == 10.0
+
+    def test_deduplication_same_template_and_matched_at(self):
+        sess = self._make_session()
+        findings = analyze(sess, [_net_record(), _net_record()])
+        assert len(findings) == 1
+
+    def test_different_matched_at_not_deduped(self):
+        sess = self._make_session()
+        findings = analyze(sess, [
+            _net_record(matched_at="1.2.3.4:6379"),
+            _net_record(matched_at="1.2.3.4:6380"),
+        ])
+        assert len(findings) == 2
+
+    def test_severity_fallback_unknown_maps_to_info(self):
+        sess = self._make_session()
+        findings = analyze(sess, [_net_record(severity="totally-bogus")])
+        assert findings[0].severity == "info"
+
+    def test_severity_fallback_empty_string_maps_to_info(self):
+        sess = self._make_session()
+        findings = analyze(sess, [_net_record(severity="")])
+        assert findings[0].severity == "info"
+
+    def test_info_null_does_not_crash(self):
+        # Regression: a record whose whole "info" object is JSON null used to
+        # crash analyze() with AttributeError on None.get(...).
+        sess = self._make_session()
+        findings = analyze(sess, [_net_record(info=None)])
+        assert len(findings) == 1
+        assert findings[0].severity == "info"
+        assert findings[0].check_type == "network"
+
+    def test_matched_at_ipv6_bracketed_no_crash_port_fk_none(self):
+        # "[::1]:6379" rsplits to ("[::1]", 6379) which has no Port row → None,
+        # but must never raise.
+        sess = self._make_session()
+        findings = analyze(sess, [_net_record(matched_at="[::1]:6379")])
+        assert len(findings) == 1
+        assert findings[0].port is None
+        assert findings[0].target == "[::1]:6379"
+
+    def test_matched_at_no_colon_port_fk_none(self):
+        sess = self._make_session()
+        findings = analyze(sess, [_net_record(matched_at="justahost")])
+        assert len(findings) == 1
+        assert findings[0].port is None
+
+    def test_matched_at_non_numeric_port_fk_none(self):
+        # "host:notaport" → int("notaport") raises ValueError, caught → None.
+        sess = self._make_session()
+        findings = analyze(sess, [_net_record(matched_at="1.2.3.4:notaport")])
+        assert len(findings) == 1
+        assert findings[0].port is None

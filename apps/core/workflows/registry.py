@@ -46,6 +46,16 @@ def _discover_tools():
             "requires": meta.get("requires", []),
             "produces_findings": meta.get("produces_findings", False),
             "core": meta.get("core", False),
+            # active=True means the tool sends packets to the target's own
+            # systems (port scans, HTTP/TLS/SSH probes, crawlers, vuln templates)
+            # and therefore requires DomainAuthorization. active=False means the
+            # tool uses only public / third-party data (CT logs, archives, DNS
+            # resolvers, cloud-provider APIs, threat feeds) and never touches the
+            # target. Default True is deliberate: an unclassified tool is treated
+            # as active, so a missing flag can never let a scanner probe an
+            # unauthorized target. (Classification idea seeded by vennela's parked
+            # ACTIVE_SCANNING_ENABLED work, commit 4e47c0c.)
+            "active": meta.get("active", True),
         }
         logger.debug(f"[registry] Registered tool: {tool_name}")
 
@@ -86,6 +96,30 @@ def get_tool_requires() -> dict[str, list[str]]:
 def get_tool_produces_findings() -> dict[str, bool]:
     """Dynamic map: tool_name → whether the tool writes to the Finding table."""
     return {name: info["produces_findings"] for name, info in get_registry().items()}
+
+
+def get_tool_active() -> dict[str, bool]:
+    """Dynamic map: tool_name → True if the tool actively probes the target.
+
+    Active tools send packets to the target's own infrastructure and require
+    DomainAuthorization. Passive tools (active=False) use only public /
+    third-party sources and need no authorization.
+    """
+    return {name: info["active"] for name, info in get_registry().items()}
+
+
+def is_passive_tool_set(tools) -> bool:
+    """True only if EVERY tool in `tools` is passive (active=False).
+
+    Conservative: an empty set is not passive (nothing to authorize, but also
+    nothing to run — callers treat it as needing auth), and an unknown tool
+    defaults to active. A single active tool makes the whole set active.
+    """
+    active_map = get_tool_active()
+    tools = list(tools)
+    if not tools:
+        return False
+    return all(not active_map.get(t, True) for t in tools)
 
 
 def get_tool_phase_groups() -> dict[str, str]:

@@ -138,6 +138,45 @@ class TestParseNmapSvXml:
     def test_malformed_xml_returns_empty(self):
         assert _parse_nmap_sv_xml("<bad xml") == {}
 
+    def test_non_digit_portid_skipped(self):
+        # A garbage portid (nmap should never emit this, but be defensive) must
+        # be skipped without an int() crash — and valid ports still parsed.
+        xml = dedent("""\
+            <?xml version="1.0"?>
+            <nmaprun>
+              <host><ports>
+                <port protocol="tcp" portid="notaport">
+                  <state state="open"/>
+                  <service name="http"/>
+                </port>
+                <port protocol="tcp" portid="443">
+                  <state state="open"/>
+                  <service name="https"/>
+                </port>
+              </ports></host>
+            </nmaprun>
+        """)
+        assert _parse_nmap_sv_xml(xml) == {443: "https"}
+
+    def test_port_without_service_element_skipped(self):
+        # A <port> with no <service> child carries no name to classify on and
+        # must be skipped, not raise on a None service element.
+        xml = dedent("""\
+            <?xml version="1.0"?>
+            <nmaprun>
+              <host><ports>
+                <port protocol="tcp" portid="8000">
+                  <state state="open"/>
+                </port>
+                <port protocol="tcp" portid="443">
+                  <state state="open"/>
+                  <service name="https"/>
+                </port>
+              </ports></host>
+            </nmaprun>
+        """)
+        assert _parse_nmap_sv_xml(xml) == {443: "https"}
+
 
 # ---------------------------------------------------------------------------
 # detect_services (DB required)

@@ -215,6 +215,26 @@ class TestDeployment:
         sources = [e["secretRef"]["name"] for e in web.get("envFrom", []) if "secretRef" in e]
         assert "openeasd-secret" in sources
 
+    def _assert_secret_after_configmap(self, container):
+        # "last source wins": the secret's real ALLOWED_HOSTS must override the
+        # configmap placeholder, so secretRef MUST come AFTER configMapRef in
+        # envFrom. Swapping the order 400s every request on the live host.
+        env_from = container.get("envFrom", [])
+        cfg_idx = next(i for i, e in enumerate(env_from) if "configMapRef" in e)
+        sec_idx = next(i for i, e in enumerate(env_from) if "secretRef" in e)
+        assert sec_idx > cfg_idx, (
+            f"{container['name']}: secretRef (idx {sec_idx}) must come AFTER "
+            f"configMapRef (idx {cfg_idx}) so the secret overrides the placeholder"
+        )
+
+    def test_web_secret_overrides_configmap_order(self):
+        self._assert_secret_after_configmap(
+            find_container(self.pod_spec["containers"], "web"))
+
+    def test_worker_secret_overrides_configmap_order(self):
+        self._assert_secret_after_configmap(
+            find_container(self.pod_spec["containers"], "worker"))
+
     # Worker container
     def test_has_worker_container(self):
         find_container(self.pod_spec["containers"], "worker")

@@ -1,5 +1,4 @@
 import logging
-import shutil
 import subprocess
 
 from django.conf import settings
@@ -17,9 +16,6 @@ def collect(subdomains: list[str]) -> list[str]:
         return []
 
     binary = getattr(settings, "TOOL_ALTERX", "alterx")
-    if not shutil.which(binary):
-        logger.debug("alterx binary not found at %r — skipping", binary)
-        return []
 
     stdin_data = "\n".join(subdomains)
 

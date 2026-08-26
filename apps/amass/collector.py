@@ -9,7 +9,7 @@ import tempfile
 import yaml
 from django.conf import settings
 
-from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+from apps.core.workflows.exceptions import ToolBinaryMissing
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +36,16 @@ def collect(session) -> list[dict]:
     # stdout by default. The parser below handles both plain text and JSONL.
     cmd = [binary, "enum", "-d", domain, "-silent"]
 
-    if config.wordlist_file:
+    low_memory = getattr(settings, "LOW_MEMORY", False)
+
+    # Brute-force wordlist expansion is amass's biggest memory driver — it's what
+    # OOM-kills it on a ~1 GB host. In low-memory mode skip -brute (and cap DNS
+    # query concurrency) so amass still enumerates from passive sources + normal
+    # resolution and actually completes, instead of thrashing to death.
+    if config.wordlist_file and not low_memory:
         cmd += ["-brute", "-w", config.wordlist_file.path]
+    if low_memory:
+        cmd += ["-max-dns-queries", "1000"]
 
     cmd += ["-timeout", str(config.scan_timeout)]
 
@@ -57,38 +65,52 @@ def collect(session) -> list[dict]:
             f"[amass:{session.id}] Using providers: {', '.join(provider_names)}"
         )
 
-    brute = f" +brute({config.wordlist_file.name})" if config.wordlist_file else ""
+    brute = f" +brute({config.wordlist_file.name})" if (config.wordlist_file and not low_memory) else (" (low-memory: no brute)" if low_memory else "")
     logger.info(
         f"[amass:{session.id}] Scanning {domain} "
         f"(mode=active{brute}, timeout={config.scan_timeout}m)"
     )
 
+    stdout = ""
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=config.scan_timeout * 60 + 30,  # seconds, with 30s grace
             stdin=subprocess.DEVNULL,
         )
+        try:
+            stdout, stderr = proc.communicate(timeout=config.scan_timeout * 60 + 30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            # Capture whatever amass wrote before the wall — don't discard it.
+            drained, _ = proc.communicate()
+            stdout = drained or stdout
+            # amass ran to its time budget on a large surface. For an ENUMERATION
+            # tool a time-boxed run is a normal, worthwhile result (like subfinder
+            # returning what its sources had) — deliver the partial subdomains it
+            # DID find and let the scan complete, rather than discarding them and
+            # failing the whole scan. Logged, so it's visible, never silent.
+            logger.warning(
+                f"[amass:{session.id}] Time-limited at {config.scan_timeout}m — "
+                f"delivering {len(stdout.splitlines())} partial result lines"
+            )
+        else:
+            if proc.returncode != 0:
+                logger.warning(f"[amass:{session.id}] Exited with code {proc.returncode}")
+                if stderr:
+                    logger.warning(f"[amass:{session.id}] stderr: {stderr[:500]}")
     except FileNotFoundError:
         logger.error(f"[amass:{session.id}] Binary not found: {binary}")
         raise ToolBinaryMissing(f"amass binary not found: {binary}")
-    except subprocess.TimeoutExpired:
-        logger.error(f"[amass:{session.id}] Timed out after {config.scan_timeout}m")
-        raise ToolTimeout(f"amass timed out after {config.scan_timeout}m")
     finally:
         if config_tmp:
             os.unlink(config_tmp)
 
-    if result.returncode != 0:
-        logger.warning(f"[amass:{session.id}] Exited with code {result.returncode}")
-        if result.stderr:
-            logger.warning(f"[amass:{session.id}] stderr: {result.stderr[:500]}")
-
     records = []
     seen = set()
-    for line in result.stdout.strip().splitlines():
+    for line in stdout.strip().splitlines():
         if not line:
             continue
         try:

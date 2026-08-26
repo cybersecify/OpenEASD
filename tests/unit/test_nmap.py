@@ -202,13 +202,44 @@ class TestNmapAnalyzer:
         assert f.service == "ssh"
         assert "OpenSSH" in f.version
 
+    # XML where the SAME CVE appears twice on the same port (vulners can list a
+    # CVE under multiple CPE tables). The (ip, port, cve) `seen` guard must
+    # collapse these into a single Finding.
+    DUP_CVE_XML = """<?xml version="1.0"?>
+<nmaprun>
+<host>
+<address addr="1.2.3.4" addrtype="ipv4"/>
+<ports><port protocol="tcp" portid="22">
+<state state="open"/>
+<service name="ssh" product="OpenSSH" version="7.2p2"/>
+<script id="vulners">
+<table key="cpe:/a:openbsd:openssh:7.2p2">
+<table>
+<elem key="id">CVE-2018-15473</elem>
+<elem key="cvss">5.0</elem>
+<elem key="type">cve</elem>
+</table>
+</table>
+<table key="cpe:/a:openssh:openssh:7.2p2">
+<table>
+<elem key="id">CVE-2018-15473</elem>
+<elem key="cvss">5.0</elem>
+<elem key="type">cve</elem>
+</table>
+</table>
+</script>
+</port></ports>
+</host>
+</nmaprun>
+"""
+
     def test_analyze_dedupes_same_cve_on_same_port(self):
         sess = self._make_session()
-        # Pass the same XML twice for the same IP — only one set should be created
-        findings = analyze(sess, {"1.2.3.4": self.SAMPLE_XML})
-        cves_first_run = [f.cve for f in findings]
-        # Re-run analyze on same data — should still only see each CVE once
-        assert sorted(cves_first_run) == sorted(set(cves_first_run))
+        # The same CVE is present twice in the XML; the seen guard must fire so
+        # only ONE Finding survives for CVE-2018-15473.
+        findings = analyze(sess, {"1.2.3.4": self.DUP_CVE_XML})
+        assert len(findings) == 1
+        assert findings[0].cve == "CVE-2018-15473"
 
     def test_analyze_handles_malformed_xml(self):
         sess = self._make_session()
@@ -363,3 +394,50 @@ class TestNmapScanner:
         called_with = mock_collect.call_args[0][1]
         assert "1.2.3.4" in called_with
         assert called_with["1.2.3.4"] == [22]
+
+
+# ---------------------------------------------------------------------------
+# Collector failure modes (timeout / binary-missing) — added by test audit
+# ---------------------------------------------------------------------------
+
+import types as _types
+from unittest.mock import patch as _patch, MagicMock as _MagicMock
+import subprocess as _subprocess
+
+
+class TestNmapCollectorFailureModes:
+    def _sess(self):
+        return _types.SimpleNamespace(id=1)
+
+    def _ok(self, stdout="<nmaprun/>"):
+        m = _MagicMock()
+        m.returncode = 0
+        m.stdout = stdout
+        m.stderr = ""
+        return m
+
+    def test_all_ips_timeout_raises(self):
+        # Every target IP timing out means the CVE scan produced nothing due to
+        # timeouts — must raise so the scan reports 'partial', not falsely 'clean'.
+        from apps.nmap.collector import collect
+        from apps.core.workflows.exceptions import ToolTimeout
+        with _patch("apps.nmap.collector.subprocess.run",
+                    side_effect=_subprocess.TimeoutExpired("nmap", 360)):
+            with __import__("pytest").raises(ToolTimeout):
+                collect(self._sess(), {"1.2.3.4": [80], "5.6.7.8": [443]})
+
+    def test_partial_timeout_returns_survivors(self):
+        # One IP timing out is degraded, not failure — the reachable IP's result
+        # is still returned and no exception is raised.
+        from apps.nmap.collector import collect
+        with _patch("apps.nmap.collector.subprocess.run",
+                    side_effect=[_subprocess.TimeoutExpired("nmap", 360), self._ok("<nmaprun>ok</nmaprun>")]):
+            out = collect(self._sess(), {"1.1.1.1": [80], "2.2.2.2": [443]})
+        assert list(out.keys()) == ["2.2.2.2"]
+
+    def test_binary_missing_raises(self):
+        from apps.nmap.collector import collect
+        from apps.core.workflows.exceptions import ToolBinaryMissing
+        with _patch("apps.nmap.collector.subprocess.run", side_effect=FileNotFoundError()):
+            with __import__("pytest").raises(ToolBinaryMissing):
+                collect(self._sess(), {"1.2.3.4": [80]})

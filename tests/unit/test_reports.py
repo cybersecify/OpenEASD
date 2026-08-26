@@ -7,7 +7,7 @@ PDF rendering is mocked (via _render_pdf) so tests need no WeasyPrint libs.
 
 import csv
 import io
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import User
@@ -112,6 +112,31 @@ class TestExportFindingsCsv:
     def test_unauthenticated_redirects(self, session, findings):
         c = Client()
         res = c.get(f"/reports/{session.uuid}/csv/")
+        assert res.status_code in (302, 301)
+
+    def test_valid_bearer_token_grants_access(self, session, findings, user):
+        from ninja_jwt.tokens import AccessToken
+        c = Client()
+        token = str(AccessToken.for_user(user))
+        res = c.get(f"/reports/{session.uuid}/csv/",
+                    HTTP_AUTHORIZATION=f"Bearer {token}")
+        assert res.status_code == 200
+
+    def test_garbage_token_rejected(self, session, findings):
+        c = Client()
+        res = c.get(f"/reports/{session.uuid}/csv/?token=not.a.jwt")
+        assert res.status_code in (302, 301)  # redirect to /login, not 200
+
+    def test_deactivated_user_token_rejected(self, session, findings, user):
+        # A valid-looking token for a since-deactivated user must be refused
+        # (the view resolves User.objects.get(id=..., is_active=True)).
+        from ninja_jwt.tokens import AccessToken
+        token = str(AccessToken.for_user(user))
+        user.is_active = False
+        user.save()
+        c = Client()
+        res = c.get(f"/reports/{session.uuid}/csv/",
+                    HTTP_AUTHORIZATION=f"Bearer {token}")
         assert res.status_code in (302, 301)
 
     def test_not_found_returns_404(self, authed_client):
@@ -266,6 +291,53 @@ class TestReportCtaPdfContext:
 
 
 @pytest.mark.django_db
+class TestTechnologyStackBlock:
+    """The report renders a Technology Stack block only when web assets were
+    fingerprinted (httpx -tech-detect). Distinct techs are aggregated across
+    all URLs, deduped, and sorted."""
+
+    def _capture(self, authed_client, session):
+        captured = {}
+
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert res.status_code == 200
+        return captured["html"]
+
+    def _url(self, session, url, technologies):
+        from apps.core.web_assets.models import URL
+        return URL.objects.create(
+            session=session, url=url, host="report.example.com",
+            source="httpx", technologies=technologies,
+        )
+
+    def test_absent_when_no_technologies(self, authed_client, session, findings):
+        # URLs with no fingerprints must not render the block.
+        self._url(session, "https://report.example.com/", [])
+        html = self._capture(authed_client, session)
+        assert "Technology Stack" not in html
+
+    def test_absent_when_no_urls(self, authed_client, session, findings):
+        html = self._capture(authed_client, session)
+        assert "Technology Stack" not in html
+
+    def test_present_and_aggregated_when_technologies(self, authed_client, session, findings):
+        self._url(session, "https://report.example.com/", ["Nginx", "PHP"])
+        self._url(session, "https://www.report.example.com/", ["WordPress", "nginx"])
+        html = self._capture(authed_client, session)
+        assert "Technology Stack" in html
+        assert "Nginx" in html
+        assert "PHP" in html
+        assert "WordPress" in html
+        # Deduped case-insensitively → 3 distinct (Nginx, PHP, WordPress).
+        assert "3 distinct" in html
+
+
+@pytest.mark.django_db
 class TestScanCoverageBlock:
     """The report renders a Scan Coverage block only when edge blocking was seen."""
 
@@ -354,6 +426,127 @@ class TestPdfSeverityCounts:
         assert "3 raw scanner detections into 1 unique issue" in html
 
 
+@pytest.mark.django_db
+class TestPartialScanDiagnostics:
+    """A 'partial' scan shows a step-diagnostics table explaining which pipeline
+    steps failed; a completed scan shows nothing."""
+
+    def _render(self, authed_client, session):
+        captured = {}
+
+        def cap(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.reports.views._render_pdf", side_effect=cap):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert res.status_code == 200
+        return captured["html"]
+
+    def test_diagnostics_shown_for_partial_scan(self, authed_client, session):
+        from apps.core.workflows.models import Workflow, WorkflowRun, WorkflowStepResult
+        session.status = "partial"
+        session.save(update_fields=["status"])
+        wf = Workflow.objects.create(name="WF", is_default=False)
+        run = WorkflowRun.objects.create(session=session, workflow=wf, status="partial")
+        WorkflowStepResult.objects.create(run=run, tool="nuclei", status="failed",
+                                          order=1, error="timed out after 1800s")
+        WorkflowStepResult.objects.create(run=run, tool="httpx", status="completed", order=2)
+        html = self._render(authed_client, session)
+        assert "Scan Step Diagnostics" in html
+        assert "nuclei" in html
+        assert "timed out after 1800s" in html
+
+    def test_no_diagnostics_for_completed_scan(self, authed_client, session):
+        html = self._render(authed_client, session)  # session fixture is 'completed'
+        assert "Scan Step Diagnostics" not in html
+
+
+class TestTopRisksAndIntel:
+    """The 'Fix First' block ranks by priority (KEV dominates) and the report
+    surfaces EPSS/KEV threat intel collected by cve_intel."""
+
+    def _mk(self, session, **kw):
+        from apps.core.findings.models import Finding
+        base = dict(
+            session=session, source="tls_checker", check_type="unencrypted_service",
+            severity="critical", target="1.1.1.1:5432", description="d", remediation="r",
+            status="open", title="Unencrypted POSTGRESQL", extra={},
+        )
+        base.update(kw)
+        return Finding.objects.create(**base)
+
+    def _groups(self, session):
+        from apps.core.reports.views import _group_findings_by_issue
+        from apps.core.findings.models import Finding
+        return _group_findings_by_issue(Finding.objects.filter(session=session))
+
+    def test_epss_kev_rollup_onto_group(self, db, session):
+        self._mk(session, source="nmap", check_type="cve", title="OpenSSL CVE",
+                 extra={"cisa_kev": True, "epss_percentile": 0.97})
+        grp = self._groups(session)[0]
+        assert grp["cisa_kev"] is True
+        assert grp["epss_percentile"] == 0.97
+
+    def test_kev_outranks_non_kev_critical(self, db, session):
+        from apps.core.reports.views import _top_risks
+        self._mk(session, title="Plain critical", extra={})
+        self._mk(session, source="nmap", check_type="cve", severity="medium",
+                 title="Exploited medium", target="2.2.2.2:80",
+                 extra={"cisa_kev": True, "epss_percentile": 0.99})
+        top = _top_risks(self._groups(session))
+        assert top[0]["title"] == "Exploited medium"  # KEV dominates severity
+        assert top[0]["impact"]  # plain-language line attached
+
+    def test_top_risks_excludes_low_medium_noise(self, db, session):
+        from apps.core.reports.views import _top_risks
+        self._mk(session, title="Crit", extra={})
+        self._mk(session, severity="low", check_type="missing_referrer_policy",
+                 title="Low thing", target="x", extra={})
+        titles = [g["title"] for g in _top_risks(self._groups(session))]
+        assert "Crit" in titles
+        assert "Low thing" not in titles  # low/medium without KEV are not "fix first"
+
+    def test_business_impact_on_high_crit_only(self, db, session):
+        self._mk(session, title="Crit")  # unencrypted_service critical
+        self._mk(session, severity="low", check_type="missing_referrer_policy",
+                 title="Low thing", target="x")
+        by_sev = {g["severity"]: g for g in self._groups(session)}
+        assert by_sev["critical"]["business_impact"]        # populated
+        assert by_sev["low"]["business_impact"] == ""       # not on low
+
+    def test_report_renders_headline_and_snapshot(self, authed_client, session):
+        self._mk(session, title="Unencrypted POSTGRESQL")
+        captured = {}
+
+        def cap(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.reports.views._render_pdf", side_effect=cap):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert res.status_code == 200
+        assert "Most urgent:" in captured["html"]                 # headline risk
+        assert "point-in-time snapshot" in captured["html"]        # snapshot framing
+        assert "Business Impact" in captured["html"]               # buyer-language on card
+
+    def test_report_renders_fix_first_and_kev_badge(self, authed_client, session):
+        self._mk(session, source="nmap", check_type="cve", title="Exploited CVE",
+                 extra={"cisa_kev": True, "epss_percentile": 0.98})
+        captured = {}
+
+        def cap(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.reports.views._render_pdf", side_effect=cap):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert res.status_code == 200
+        assert "Priority Actions" in captured["html"]
+        assert "KEV" in captured["html"]
+
+
+@pytest.mark.django_db
 class TestFindingGrouping:
     """Repeated issues (identical write-up across targets) collapse into one
     block with a table of affected targets, instead of one full card each."""
@@ -367,6 +560,20 @@ class TestFindingGrouping:
         )
         base.update(kw)
         return Finding.objects.create(**base)
+
+    def test_endpoints_capped_at_50_with_overflow(self, db, session):
+        """A finding firing on thousands of targets caps shown endpoints at 50
+        (OOM guard) and records the overflow count for the 'N more' note."""
+        from apps.core.reports.views import _group_findings_by_issue
+        from apps.core.findings.models import Finding
+        for i in range(120):
+            self._mk(session, target=f"10.0.0.{i}:443",
+                     title=f"Unencrypted HTTPS on 10.0.0.{i}:443")
+        findings = Finding.objects.filter(session=session)
+        grp = _group_findings_by_issue(findings)[0]
+        shown = sum(len(row) for row in grp["endpoint_rows"])
+        assert shown == 50
+        assert grp["endpoint_overflow"] == 70
 
     def test_identical_writeups_collapse_and_strip_target(self, db, session):
         from apps.core.reports.views import _group_findings_by_issue

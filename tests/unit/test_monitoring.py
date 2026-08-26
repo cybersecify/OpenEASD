@@ -58,7 +58,6 @@ class TestSyncDomainMonitoringJobs:
     def test_stale_schedule_removed_when_domain_deactivated(self, db):
         from django_q.models import Schedule
         from apps.core.scheduler.scheduler import sync_domain_monitoring_jobs
-        from apps.core.domains.models import Domain
 
         domain = self._make_domain("stale.com", interval=12)
         sync_domain_monitoring_jobs()
@@ -72,7 +71,6 @@ class TestSyncDomainMonitoringJobs:
     def test_stale_schedule_removed_when_interval_cleared(self, db):
         from django_q.models import Schedule
         from apps.core.scheduler.scheduler import sync_domain_monitoring_jobs
-        from apps.core.domains.models import Domain
 
         domain = self._make_domain("cleared.com", interval=6)
         sync_domain_monitoring_jobs()

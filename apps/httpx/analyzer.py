@@ -65,6 +65,17 @@ def analyze(session, records: list[dict]) -> list[URL]:
         web_server = (r.get("webserver") or "")[:200]
         reachability, _vendor = classify(r.get("status_code"), title, web_server)
 
+        # httpx -tech-detect emits a "tech" array of technology strings. Keep a
+        # deduped, order-preserving list of plain strings, capped defensively.
+        technologies = []
+        for t in (r.get("tech") or []):
+            if not isinstance(t, str):
+                continue
+            t = t.strip()[:100]
+            if t and t not in technologies:
+                technologies.append(t)
+        technologies = technologies[:50]
+
         objs.append(URL(
             session=session,
             port=port_fk,
@@ -78,6 +89,7 @@ def analyze(session, records: list[dict]) -> list[URL]:
             web_server=web_server,
             content_length=r.get("content_length"),
             reachability=reachability,
+            technologies=technologies,
             source="httpx",
         ))
 

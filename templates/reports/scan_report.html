@@ -85,6 +85,7 @@
     /* ── Badges (rounded, filled) ─────────────────────────── */
     .badge { display: inline-block; padding: 3px 9px; font-size: 8px; font-weight: bold; color: #fff; text-transform: uppercase; border-radius: 10px; white-space: nowrap; }
     .pill-open { display: inline-block; background-color: #e8590c; color: #fff; font-size: 8px; font-weight: bold; padding: 3px 11px; text-transform: uppercase; border-radius: 10px; white-space: nowrap; }
+    .techtag { display: inline-block; background-color: #eef1f5; color: #1f2933; font-size: 9px; padding: 3px 9px; margin: 0 5px 5px 0; border: 0.5px solid #d0d7de; border-radius: 10px; white-space: nowrap; }
 
     /* ── Detailed findings ────────────────────────────────── */
     .sev-banner { color: #fff; font-weight: bold; font-size: 12px; padding: 8px 14px; margin: 20px 0 12px; border-radius: 6px; }
@@ -122,7 +123,7 @@
   <div class="cover-assess">{{ session.domain }} · External Attack Surface Detection Report</div>
   <div class="cover-line">
     Scan Date <strong>{{ session.end_time|default:generated_at|date:"F j, Y" }}</strong> · Generated <strong>{{ generated_at|date:"F j, Y · H:i" }} UTC</strong><br>
-    Target <strong>{{ session.domain }}</strong> · Scan Type {{ session.scan_type|title }} · Scan ID {{ session.uuid }}
+    Target <strong>{{ session.domain }}</strong> · Scan Type {{ session.workflow.name|default:session.scan_type|title }} · Scan ID {{ session.uuid }}
   </div>
 
   <table class="cover-tiles"><tr>
@@ -159,14 +160,41 @@
 <div class="risk no-break" style="border-color:#e8590c;">
   <div class="l" style="color:#e8590c;">Overall Risk Rating</div>
   <div class="v" style="color:#e8590c;">{{ risk_rating }}</div>
+  {% if headline_risk %}<p style="margin:8px 0 0;font-size:10px;line-height:1.5;color:#333;"><strong>Most urgent:</strong> {{ headline_risk.title }}{% if headline_risk.cisa_kev %} (actively exploited){% endif %} — {{ headline_risk.impact }}</p>{% endif %}
 </div>
 {% endwith %}
+
+<p class="lead" style="font-style:italic;font-size:9px;color:#666;">This is a point-in-time snapshot of the externally observable attack surface, taken from the public internet. It does not include authenticated, internal, or manual testing, and an attack surface changes over time — treat it as a baseline, not a certificate.</p>
 
 {% if coverage %}
 <div class="risk no-break" style="border-color:#e8590c;">
   <div class="l" style="color:#e8590c;">Scan Coverage — Edge Blocking Observed</div>
   <p style="margin:6px 0 0;font-size:10px;line-height:1.5;">{{ coverage.note }}</p>
 </div>
+{% endif %}
+
+{% if top_risks %}
+<div class="h2">Priority Actions — Fix These First</div>
+<p class="lead">The highest-impact issues, ranked. Actively-exploited (CISA KEV) and internet-facing critical issues come first. The full list is in Section 3.</p>
+<table class="grid">
+  <thead><tr>
+    <th style="width:5%;">#</th><th style="width:36%;">Issue</th>
+    <th style="width:47%;">Why it matters</th><th style="width:12%;">Severity</th>
+  </tr></thead>
+  <tbody>
+    {% for r in top_risks %}
+    <tr>
+      <td><strong>{{ forloop.counter }}</strong></td>
+      <td>
+        <strong>{{ r.title }}</strong>{% if r.cisa_kev %} <span class="badge" style="background:#c92a2a;">Actively Exploited</span>{% endif %}
+        <div style="font-size:8px;color:#888;margin-top:2px;">{{ r.scope }} · {{ r.instances|length }} host{{ r.instances|length|pluralize }}</div>
+      </td>
+      <td style="font-size:9px;line-height:1.4;">{{ r.impact }}</td>
+      <td><span class="badge bg-{{ r.severity }}">{{ r.severity|upper }}</span>{% if r.cvss %} <span style="font-size:8px;color:#888;">{{ r.cvss }}</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
 {% endif %}
 
 <div class="h2">Severity Distribution</div>
@@ -187,6 +215,12 @@
   <td><div class="n accent">{{ asset_counts.urls }}</div><div class="l">Web URLs</div></td>
 </tr></table>
 
+{% if technologies %}
+<div class="h2">Technology Stack</div>
+<p class="lead">Technologies fingerprinted on reachable web assets ({{ technologies|length }} distinct). Informational only — no version, end-of-life, or vulnerability inference is implied.</p>
+<div>{% for tech in technologies %}<span class="techtag">{{ tech }}</span>{% endfor %}</div>
+{% endif %}
+
 <!-- ==================== 2. SCOPE & METHODOLOGY ================= -->
 <div class="page-break"></div>
 <div class="h1">2. Scope &amp; Methodology</div>
@@ -202,6 +236,39 @@
 </table>
 <p class="lead" style="font-style:italic;">Every finding is traceable to a specific tool, check type, and target in Detailed Findings. Automated version-to-CVE matching can over-report where a vendor backports fixes without changing the version banner; such matches should be validated against the actual package build.</p>
 
+{% if workflow_steps %}
+<div class="h2">Scan Step Diagnostics (Partial Scan)</div>
+<p class="lead" style="font-style:italic;">This scan completed with status <strong>Partial</strong> — one or more pipeline steps did not finish successfully. The table below shows the outcome of every step that was attempted.</p>
+<table class="grid">
+  <thead>
+    <tr>
+      <th style="width:5%;">#</th>
+      <th style="width:25%;">Tool</th>
+      <th style="width:12%;">Status</th>
+      <th style="width:12%;">Duration</th>
+      <th style="width:46%;">Error / Note</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for step in workflow_steps %}
+    <tr>
+      <td>{{ forloop.counter }}</td>
+      <td><strong>{{ step.tool }}</strong></td>
+      <td>
+        {% if step.status == "completed" %}Completed
+        {% elif step.status == "failed" %}FAILED
+        {% elif step.status == "skipped" %}Skipped
+        {% elif step.status == "running" %}Timed Out
+        {% else %}{{ step.status|title }}{% endif %}
+      </td>
+      <td>{% if step.duration %}{{ step.duration }}s{% else %}—{% endif %}</td>
+      <td style="font-size:0.85em;word-break:break-word;">{% if step.error %}{{ step.error|truncatechars:300 }}{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
 <!-- ==================== 3. FINDINGS SUMMARY ==================== -->
 <div class="page-break"></div>
 <div class="h1">3. Findings Summary</div>
@@ -216,7 +283,7 @@
     {% for g in issue_groups %}
     <tr>
       <td style="white-space:nowrap; word-break:normal;">{{ g.fid }}</td>
-      <td><strong>{{ g.title }}</strong></td>
+      <td><strong>{{ g.title }}</strong>{% if g.cisa_kev %} <span class="badge" style="background:#c92a2a;">KEV</span>{% endif %}</td>
       <td>{{ g.scope }}</td>
       <td><span class="badge bg-{{ g.severity }}">{{ g.severity|upper }}</span></td>
       <td>{% if g.cvss %}{{ g.cvss }}{% else %}—{% endif %}</td>
@@ -250,12 +317,19 @@
     <tr><th>Category</th><td>{% if g.cwe %}{{ g.cwe }}{% else %}—{% endif %}</td></tr>
     <tr><th>Source / Check</th><td><span style="font-family:'Courier New',monospace;">{{ g.source }} · {{ g.check_type }}</span></td></tr>
     {% if g.cves %}<tr><th>CVEs</th><td><span style="font-family:'Courier New',monospace;">{{ g.cves|join:", " }}</span></td></tr>{% endif %}
+    {% if g.cisa_kev or g.epss_percentile %}<tr><th>Exploitation</th><td>{% if g.cisa_kev %}<span class="badge" style="background:#c92a2a;">CISA KEV — Actively Exploited</span> {% endif %}{% if g.epss_percentile %}EPSS {{ g.epss_percentile|floatformat:2 }} percentile{% endif %}</td></tr>{% endif %}
     <tr><th>Affected Endpoints</th><td style="padding:4px 6px;">
       <table class="ep-grid">
         {% for row in g.endpoint_rows %}<tr>{% for ep in row %}<td class="ep-cell">{{ ep }}</td>{% endfor %}</tr>{% endfor %}
       </table>
+      {% if g.endpoint_overflow %}<p style="font-size:0.8em;color:#666;margin:4px 0 0;">… and {{ g.endpoint_overflow }} more endpoint{{ g.endpoint_overflow|pluralize }} (see CSV export for full list)</p>{% endif %}
     </td></tr>
   </table>
+
+  {% if g.business_impact %}
+  <div class="sect-lbl">Business Impact</div>
+  <div class="prose">{{ g.business_impact }}</div>
+  {% endif %}
 
   <div class="sect-lbl">Description</div>
   <div class="prose">{{ g.description }}</div>

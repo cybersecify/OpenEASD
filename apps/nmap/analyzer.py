@@ -152,6 +152,13 @@ def analyze(session, xml_outputs: dict[str, str]) -> list[Finding]:
                             severity = "info"
                             extra.update(backport_info)
 
+                        cvss_score = v.get("cvss", 0)
+                        desc = (
+                            f"{v['id']} was detected by Nmap Vulners on "
+                            f"{service_name or 'unknown service'} {version} at {ip}:{port_num}. "
+                            f"Reported CVSS score: {cvss_score}. "
+                            "This is a version-based match — validate against the installed package build before treating as confirmed."
+                        )
                         findings.append(Finding(
                             session=session,
                             source="nmap",
@@ -160,8 +167,8 @@ def analyze(session, xml_outputs: dict[str, str]) -> list[Finding]:
                             target=f"{ip}:{port_num}",
                             severity=severity,
                             title=f"{v['id']} on {service_name or 'unknown'} {version}".strip(),
-                            description=output[:2000],
-                            extra=extra,
+                            description=desc,
+                            extra={**extra, "raw_vulners_output": output[:2000]},
                         ))
 
     return findings

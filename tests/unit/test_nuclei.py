@@ -178,6 +178,33 @@ class TestNucleiAnalyzer:
         findings = analyze(sess, records)
         assert len(findings[0].title) <= 250
 
+    def test_unknown_severity_falls_back_to_info(self):
+        sess = self._make_session()
+        findings = analyze(sess, [_nuclei_record(severity="totally-bogus")])
+        assert findings[0].severity == "info"
+
+    def test_empty_severity_falls_back_to_info(self):
+        sess = self._make_session()
+        findings = analyze(sess, [_nuclei_record(severity="")])
+        assert findings[0].severity == "info"
+
+    def test_info_null_does_not_crash(self):
+        # Regression: a record whose whole "info" object is JSON null used to
+        # crash analyze() with AttributeError on None.get(...). It must instead
+        # build a valid info-severity finding.
+        sess = self._make_session()
+        record = {
+            "template-id": "some-template",
+            "info": None,
+            "host": "https://example.com",
+            "matched-at": "https://example.com/x",
+        }
+        findings = analyze(sess, [record])
+        assert len(findings) == 1
+        assert findings[0].severity == "info"
+        assert findings[0].check_type == "web"
+        assert findings[0].title == "some-template"
+
 
 # ---------------------------------------------------------------------------
 # Collector — mocked subprocess
@@ -210,7 +237,7 @@ class TestNucleiCollector:
         mock_result.returncode = 0
         mock_result.stderr = ""
 
-        with patch("apps.nuclei.collector._run", return_value=mock_result) as mock_run:
+        with patch("apps.nuclei.collector.run_capped", return_value=mock_result) as mock_run:
             records = collect(sess)
 
         assert mock_run.called
@@ -220,7 +247,7 @@ class TestNucleiCollector:
         from apps.core.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
 
-        with patch("apps.nuclei.collector._run") as mock_run:
+        with patch("apps.nuclei.collector.run_capped") as mock_run:
             records = collect(sess)
 
         assert records == []
@@ -232,32 +259,58 @@ class TestNucleiCollector:
         mock_result.stdout = ""
         mock_result.returncode = 0
         mock_result.stderr = ""
-        with patch("apps.nuclei.collector._run", return_value=mock_result) as mock_run:
+        with patch("apps.nuclei.collector.run_capped", return_value=mock_result) as mock_run:
             collect(sess)
         cmd = mock_run.call_args[0][0]
         assert "-H" in cmd
         ua = cmd[cmd.index("-H") + 1]
         assert ua.startswith("User-Agent: OpenEASD/")
 
+    def test_uses_profile_resolved_concurrency(self, settings):
+        # nuclei reads the profile-resolved values from settings (low = 10/40).
+        settings.NUCLEI_CONCURRENCY = 10
+        settings.NUCLEI_RATE_LIMIT = 40
+        sess = self._make_session()
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mock_result.returncode = 0
+        mock_result.stderr = ""
+        with patch("apps.nuclei.collector.run_capped", return_value=mock_result) as mock_run:
+            collect(sess)
+        cmd = mock_run.call_args[0][0]
+        assert cmd[cmd.index("-c") + 1] == "10"
+        assert cmd[cmd.index("-rate-limit") + 1] == "40"
+
     def test_binary_not_found_raises(self):
         """A missing binary must surface as ToolBinaryMissing, not a silent [] —
         otherwise the runner marks the step 'completed' and the failure hides."""
         from apps.core.workflows.exceptions import ToolBinaryMissing
         sess = self._make_session()
-        with patch("apps.nuclei.collector._run", side_effect=FileNotFoundError):
+        with patch("apps.nuclei.collector.run_capped", side_effect=FileNotFoundError):
             with pytest.raises(ToolBinaryMissing):
                 collect(sess)
 
-    def test_timeout_raises(self):
-        """A wall-clock timeout must surface as ToolTimeout, not a silent [] —
-        this is the false-green that made nuclei look 'completed' with 0 findings."""
+    def test_timeout_delivers_partial_findings(self):
+        """A wall-clock timeout must DELIVER whatever nuclei already found rather
+        than discard it and report 0. run_capped attaches partial stdout to the
+        TimeoutExpired's .output; the collector parses it and returns the findings,
+        logging that the run was time-limited (visible, never silent)."""
         import subprocess as sp
-        from apps.core.workflows.exceptions import ToolTimeout
         sess = self._make_session()
-        with patch("apps.nuclei.collector._run",
-                   side_effect=sp.TimeoutExpired(cmd="nuclei", timeout=1800)):
-            with pytest.raises(ToolTimeout):
-                collect(sess)
+        exc = sp.TimeoutExpired(cmd="nuclei", timeout=1800)
+        exc.output = json.dumps(_nuclei_record()) + "\n"  # one finding written before the wall
+        with patch("apps.nuclei.collector.run_capped", side_effect=exc):
+            records = collect(sess)   # must NOT raise
+        assert len(records) == 1
+
+    def test_timeout_with_no_partial_output_returns_empty(self):
+        """If nuclei timed out before writing anything, deliver [] (still no raise)."""
+        import subprocess as sp
+        sess = self._make_session()
+        exc = sp.TimeoutExpired(cmd="nuclei", timeout=1800)  # .output is None
+        with patch("apps.nuclei.collector.run_capped", side_effect=exc):
+            records = collect(sess)
+        assert records == []
 
     def test_invalid_json_skipped(self):
         sess = self._make_session()
@@ -266,7 +319,7 @@ class TestNucleiCollector:
         mock_result.returncode = 0
         mock_result.stderr = ""
 
-        with patch("apps.nuclei.collector._run", return_value=mock_result):
+        with patch("apps.nuclei.collector.run_capped", return_value=mock_result):
             records = collect(sess)
         assert len(records) == 1
 
@@ -275,20 +328,88 @@ class TestNucleiCollector:
         sess = self._make_session()
         captured = {}
 
-        def fake_run(cmd, timeout):
+        def fake_run(cmd, timeout, env=None):
             captured["cmd"] = cmd
             captured["timeout"] = timeout
             return MagicMock(stdout="", returncode=0, stderr="")
 
-        with patch("apps.nuclei.collector._run", side_effect=fake_run):
+        with patch("apps.nuclei.collector.run_capped", side_effect=fake_run):
             collect(sess)
 
         cmd = captured["cmd"]
         for flag in ("-rate-limit", "-c", "-timeout", "-retries"):
             assert flag in cmd, f"missing {flag}"
-        assert captured["timeout"] == 7200
-        # gentler rate limit for politeness (see collector RATE_LIMIT)
-        assert "100" in cmd
+        assert captured["timeout"] == 21600  # NUCLEI_TIMEOUT default (6h)
+        # per-target rate must stay polite regardless of resource profile
+        rate = int(cmd[cmd.index("-rate-limit") + 1])
+        assert rate <= 150, f"per-target rate {rate} too aggressive"
+
+    def test_cmd_scopes_severity_and_drops_info(self, settings):
+        # Freeze/timeout learning: nuclei must NOT load the full ~13.5k template
+        # set (info is ~38%). Assert -severity is passed and excludes "info".
+        settings.NUCLEI_SEVERITY = "critical,high,medium"
+        sess = self._make_session()
+        captured = {}
+
+        def fake_run(cmd, timeout, env=None):
+            captured["cmd"] = cmd
+            return MagicMock(stdout="", returncode=0, stderr="")
+
+        with patch("apps.nuclei.collector.run_capped", side_effect=fake_run):
+            collect(sess)
+
+        cmd = captured["cmd"]
+        assert "-severity" in cmd
+        sev = cmd[cmd.index("-severity") + 1]
+        assert "info" not in sev.split(",")
+        assert "critical" in sev and "high" in sev
+
+    def test_cmd_includes_memory_and_scope_flags(self, settings):
+        # bulk-size (real peak-memory bound), http-only type, and host-error cap.
+        settings.NUCLEI_BULK_SIZE = 5
+        sess = self._make_session()
+        captured = {}
+
+        def fake_run(cmd, timeout, env=None):
+            captured["cmd"] = cmd
+            return MagicMock(stdout="", returncode=0, stderr="")
+
+        with patch("apps.nuclei.collector.run_capped", side_effect=fake_run):
+            collect(sess)
+        cmd = captured["cmd"]
+        assert cmd[cmd.index("-bulk-size") + 1] == "5"
+        assert cmd[cmd.index("-type") + 1] == "http"
+        assert "-max-host-error" in cmd
+        assert "dos,fuzzing,intrusive" in cmd[cmd.index("-exclude-tags") + 1]
+
+    def test_severity_is_settings_driven(self, settings):
+        settings.NUCLEI_SEVERITY = "critical,high"
+        sess = self._make_session()
+        captured = {}
+
+        def fake_run(cmd, timeout, env=None):
+            captured["cmd"] = cmd
+            return MagicMock(stdout="", returncode=0, stderr="")
+
+        with patch("apps.nuclei.collector.run_capped", side_effect=fake_run):
+            collect(sess)
+        cmd = captured["cmd"]
+        assert cmd[cmd.index("-severity") + 1] == "critical,high"
+
+    def test_go_memory_limit_applied_to_subprocess(self, settings):
+        # Freeze learning: the Go heap cap must actually reach the nuclei process.
+        settings.NUCLEI_GOMEMLIMIT = "600MiB"
+        sess = self._make_session()
+        captured = {}
+
+        def fake_run(cmd, timeout, env=None):
+            captured["env"] = env
+            return MagicMock(stdout="", returncode=0, stderr="")
+
+        with patch("apps.nuclei.collector.run_capped", side_effect=fake_run):
+            collect(sess)
+        assert captured["env"] is not None
+        assert captured["env"].get("GOMEMLIMIT") == "600MiB"
 
     def test_cmd_disables_runtime_template_update(self):
         """nuclei must never download/update templates at scan time.
@@ -300,11 +421,11 @@ class TestNucleiCollector:
         sess = self._make_session()
         captured = {}
 
-        def fake_run(cmd, timeout):
+        def fake_run(cmd, timeout, env=None):
             captured["cmd"] = cmd
             return MagicMock(stdout="", returncode=0, stderr="")
 
-        with patch("apps.nuclei.collector._run", side_effect=fake_run):
+        with patch("apps.nuclei.collector.run_capped", side_effect=fake_run):
             collect(sess)
 
         assert "-disable-update-check" in captured["cmd"]
@@ -321,7 +442,7 @@ class TestRunProcessGroupKill:
         use wait() (not communicate()) so an escaped child holding the stdout pipe
         can't block us — the bug that wedged the scan past the timeout."""
         import subprocess as sp
-        from apps.nuclei import collector
+        from apps.core.workflows import proc
 
         fake_proc = MagicMock()
         fake_proc.pid = 4242
@@ -332,11 +453,11 @@ class TestRunProcessGroupKill:
             0,
         ]
 
-        with patch("apps.nuclei.collector.subprocess.Popen", return_value=fake_proc), \
-             patch("apps.nuclei.collector.os.getpgid", return_value=4242), \
-             patch("apps.nuclei.collector.os.killpg") as mock_killpg:
+        with patch("apps.core.workflows.proc.subprocess.Popen", return_value=fake_proc), \
+             patch("apps.core.workflows.proc.os.getpgid", return_value=4242), \
+             patch("apps.core.workflows.proc.os.killpg") as mock_killpg:
             with pytest.raises(sp.TimeoutExpired):
-                collector._run(["nuclei"], timeout=1)
+                proc.run_capped(["nuclei"], timeout=1)
 
         mock_killpg.assert_called_once()
         # the post-kill drain wait() must run so the dead process is reaped
@@ -345,15 +466,15 @@ class TestRunProcessGroupKill:
         assert not fake_proc.communicate.called
 
     def test_returns_completed_process_on_success(self):
-        from apps.nuclei import collector
+        from apps.core.workflows import proc
 
         fake_proc = MagicMock()
         fake_proc.pid = 99
         fake_proc.returncode = 0
         fake_proc.wait.return_value = 0
 
-        with patch("apps.nuclei.collector.subprocess.Popen", return_value=fake_proc):
-            result = collector._run(["nuclei"], timeout=10)
+        with patch("apps.core.workflows.proc.subprocess.Popen", return_value=fake_proc):
+            result = proc.run_capped(["nuclei"], timeout=10)
 
         assert result.returncode == 0
         # stdout/stderr come from the temp output files (empty under a mocked Popen)
@@ -361,8 +482,8 @@ class TestRunProcessGroupKill:
         assert not fake_proc.communicate.called
 
     def test_real_run_captures_output(self):
-        from apps.nuclei import collector
-        result = collector._run(["printf", "hello\nworld\n"], timeout=10)
+        from apps.core.workflows import proc
+        result = proc.run_capped(["printf", "hello\nworld\n"], timeout=10)
         assert result.returncode == 0
         assert "hello" in result.stdout and "world" in result.stdout
 
@@ -374,7 +495,7 @@ class TestRunProcessGroupKill:
         import sys
         import time
         import subprocess as sp
-        from apps.nuclei import collector
+        from apps.core.workflows import proc
 
         script = (
             "import os, sys, time\n"
@@ -386,10 +507,10 @@ class TestRunProcessGroupKill:
         )
         start = time.monotonic()
         with pytest.raises(sp.TimeoutExpired):
-            collector._run([sys.executable, "-c", script], timeout=1)
+            proc.run_capped([sys.executable, "-c", script], timeout=1)
         elapsed = time.monotonic() - start
-        # If _run still used communicate(), this would block ~45s. It must not.
-        assert elapsed < collector._DRAIN_GRACE, f"hung for {elapsed:.1f}s"
+        # If run_capped still used communicate(), this would block ~45s. It must not.
+        assert elapsed < proc._DRAIN_GRACE, f"hung for {elapsed:.1f}s"
 
 
 # ---------------------------------------------------------------------------
@@ -423,3 +544,42 @@ class TestNucleiScanner:
         with patch("apps.nuclei.scanner.collect", return_value=[]):
             findings = run_nuclei(sess)
         assert findings == []
+
+
+# ---------------------------------------------------------------------------
+# Target selection: live-first prioritisation + cap (added after the
+# cybersecify.com run fed nuclei 368 URLs and it hit the 2h wall)
+# ---------------------------------------------------------------------------
+
+import pytest as _pytest
+
+
+@_pytest.mark.django_db
+class TestSelectTargets:
+    def _session(self):
+        from apps.core.scans.models import ScanSession
+        return ScanSession.objects.create(domain="example.com", scan_type="full")
+
+    def _url(self, session, host, source):
+        from apps.core.web_assets.models import URL
+        return URL.objects.create(
+            session=session, url=f"https://{host}", host=host,
+            scheme="https", source=source,
+        )
+
+    def test_live_httpx_urls_prioritised_over_archived(self):
+        from apps.nuclei.collector import _select_targets
+        s = self._session()
+        self._url(s, "archived.example.com", "historical_urls")
+        self._url(s, "live.example.com", "httpx")
+        targets = _select_targets(s)
+        assert targets[0] == "https://live.example.com"  # httpx first
+
+    def test_caps_target_list(self, settings):
+        from apps.nuclei.collector import _select_targets
+        settings.NUCLEI_MAX_TARGETS = 3
+        s = self._session()
+        for i in range(10):
+            self._url(s, f"h{i}.example.com", "httpx")
+        targets = _select_targets(s)
+        assert len(targets) == 3  # capped, never silently unbounded

@@ -137,8 +137,13 @@ class TestRunWorkflowSuccess:
 # ---------------------------------------------------------------------------
 
 class TestServiceDetectionInjection:
-    def test_service_detection_injected_when_missing(self, db, run, workflow):
-        # workflow has subfinder + dnsx but NO service_detection
+    def test_service_detection_injected_when_missing(self, db, session):
+        # workflow has naabu (which produces ports) but NO service_detection —
+        # it must be auto-injected to classify those ports.
+        wf = Workflow.objects.create(name="Naabu No SD Workflow")
+        WorkflowStep.objects.create(workflow=wf, tool="subfinder", order=1, enabled=True)
+        WorkflowStep.objects.create(workflow=wf, tool="naabu",     order=2, enabled=True)
+        run = WorkflowRun.objects.create(workflow=wf, session=session)
         tools_used = []
 
         def track_runner(tool_name):
@@ -149,6 +154,44 @@ class TestServiceDetectionInjection:
             run_workflow(run.id)
 
         assert "service_detection" in tools_used
+
+    def test_service_detection_not_injected_without_naabu(self, db, run, workflow):
+        # workflow has subfinder + dnsx but NO naabu → no ports to classify, so
+        # service_detection (an ACTIVE nmap -sV probe) must NOT be injected.
+        # This is the passive-boundary guarantee: a naabu-less workflow never
+        # triggers an active probe.
+        tools_used = []
+
+        def track_runner(tool_name):
+            tools_used.append(tool_name)
+            return MagicMock(return_value=None)
+
+        with patch("apps.core.workflows.runner._get_runner", side_effect=track_runner):
+            run_workflow(run.id)
+
+        assert "service_detection" not in tools_used
+
+    def test_service_detection_not_injected_for_subscan_only_tools(self, db, session):
+        # A subscan passes only_tools. Even with naabu present, service_detection
+        # must NOT be auto-injected: the parent scan already classified these ports,
+        # and injecting the active nmap -sV probe would cross the passive/
+        # authorization boundary for a targeted re-run (runner.py guards on
+        # `only_tools is None`).
+        wf = Workflow.objects.create(name="Subscan Naabu Only")
+        WorkflowStep.objects.create(workflow=wf, tool="naabu", order=1, enabled=True)
+        run = WorkflowRun.objects.create(workflow=wf, session=session)
+
+        tools_used = []
+
+        def track_runner(tool_name):
+            tools_used.append(tool_name)
+            return MagicMock(return_value=None)
+
+        with patch("apps.core.workflows.runner._get_runner", side_effect=track_runner):
+            run_workflow(run.id, only_tools=["naabu"])
+
+        assert "naabu" in tools_used
+        assert "service_detection" not in tools_used
 
     def test_service_detection_inserted_after_naabu(self, db, session):
         wf = Workflow.objects.create(name="Naabu Workflow")
@@ -433,6 +476,54 @@ class TestPhaseParallelExecution:
         run.refresh_from_db()
         assert run.status == "completed", (
             "Run is not 'completed' — tools likely ran serially (barrier never satisfied)"
+        )
+
+    def test_low_memory_runs_phase_sequentially(self, transactional_db, settings):
+        """Under LOW_MEMORY a multi-tool phase must run STRICTLY one tool at a time.
+
+        Proving "the run completed and both tools ran" is not enough — the parallel
+        path would also satisfy that. Each runner bumps a shared 'currently running'
+        counter and records the peak, with a brief sleep so a parallel run would
+        overlap. Serial execution means the observed peak concurrency is exactly 1
+        (mirrors the Barrier(2) parallelism proof for the non-low-memory case).
+        """
+        settings.LOW_MEMORY = True
+        import threading
+        import time
+        from apps.core.scans.models import ScanSession
+
+        lock = threading.Lock()
+        concurrent = [0]
+        peak = [0]
+
+        session = ScanSession.objects.create(
+            domain="lowmem.example.com", scan_type="full", status="running"
+        )
+        wf = Workflow.objects.create(name="LowMem Phase 7")
+        WorkflowStep.objects.create(workflow=wf, tool="nmap",        order=1, enabled=True)
+        WorkflowStep.objects.create(workflow=wf, tool="tls_checker", order=2, enabled=True)
+        run = WorkflowRun.objects.create(workflow=wf, session=session)
+
+        def seq_runner(tool_name):
+            def runner(sess):
+                with lock:
+                    concurrent[0] += 1
+                    peak[0] = max(peak[0], concurrent[0])
+                time.sleep(0.05)  # window for a parallel run to overlap
+                with lock:
+                    concurrent[0] -= 1
+                return []
+            return runner
+
+        with patch("apps.core.workflows.runner._get_runner", side_effect=seq_runner):
+            run_workflow(run.id)
+
+        run.refresh_from_db()
+        assert run.status == "completed"
+        ran = set(WorkflowStepResult.objects.filter(run=run).values_list("tool", flat=True))
+        assert {"nmap", "tls_checker"} <= ran
+        assert peak[0] == 1, (
+            f"LOW_MEMORY must serialise the phase; observed peak concurrency {peak[0]}"
         )
 
     def test_phase_boundary_respected(self, transactional_db):

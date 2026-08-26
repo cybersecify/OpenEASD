@@ -49,6 +49,48 @@ class TestNaabuCollector:
             with pytest.raises(ToolBinaryMissing):
                 collect(sess, ["1.2.3.4"])
 
+    def test_raises_on_timeout(self):
+        import subprocess
+        from apps.core.workflows.exceptions import ToolTimeout
+        sess = self._session()
+        with patch("apps.naabu.collector.subprocess.run",
+                   side_effect=subprocess.TimeoutExpired("naabu", 900)):
+            with pytest.raises(ToolTimeout):
+                collect(sess, ["1.2.3.4"])
+
+    def test_skips_malformed_json_line(self):
+        sess = self._session()
+        fake = MagicMock()
+        fake.stdout = (
+            "not-json-noise\n"
+            '{"ip":"1.2.3.4","port":80,"protocol":"tcp"}\n'
+        )
+        with patch("apps.naabu.collector.subprocess.run", return_value=fake):
+            records = collect(sess, ["1.2.3.4"])
+        assert len(records) == 1
+        assert records[0]["port"] == 80
+
+    def test_empty_stdout_returns_empty(self):
+        sess = self._session()
+        fake = MagicMock()
+        fake.stdout = ""
+        with patch("apps.naabu.collector.subprocess.run", return_value=fake):
+            records = collect(sess, ["1.2.3.4"])
+        assert records == []
+
+    def test_record_with_neither_ip_nor_host_skipped(self):
+        sess = self._session()
+        fake = MagicMock()
+        fake.stdout = (
+            '{"port":80,"protocol":"tcp"}\n'                       # no ip/host → skip
+            '{"ip":"1.2.3.4","port":443,"protocol":"tcp"}\n'      # kept
+        )
+        with patch("apps.naabu.collector.subprocess.run", return_value=fake):
+            records = collect(sess, ["1.2.3.4"])
+        assert len(records) == 1
+        assert records[0]["host"] == "1.2.3.4"
+        assert records[0]["port"] == 443
+
 
 @pytest.mark.django_db
 class TestNaabuAnalyzer:
@@ -120,3 +162,41 @@ class TestNaabuScanner:
 
         assert len(saved) == 2
         assert Port.objects.filter(session=sess, source="naabu").count() == 2
+
+    def test_cdn_ips_are_excluded_from_scan(self):
+        """Cloudflare anycast IPs must not be passed to naabu."""
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import IPAddress
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        # Two Cloudflare IPs that caused false-positive CRITICAL findings
+        IPAddress.objects.create(session=sess, address="172.67.191.147", version=4, source="dnsx")
+        IPAddress.objects.create(session=sess, address="104.21.84.116", version=4, source="dnsx")
+        # One non-CDN IP
+        IPAddress.objects.create(session=sess, address="93.184.216.34", version=4, source="dnsx")
+
+        passed_targets = []
+
+        def _capture_collect(session, targets):
+            passed_targets.extend(targets)
+            return []
+
+        with patch("apps.naabu.scanner.collect", side_effect=_capture_collect):
+            run_naabu(sess)
+
+        assert "172.67.191.147" not in passed_targets
+        assert "104.21.84.116" not in passed_targets
+        assert "93.184.216.34" in passed_targets
+
+    def test_all_cdn_ips_returns_early(self):
+        """When every discovered IP is CDN, run_naabu returns [] without calling collect."""
+        from apps.core.scans.models import ScanSession
+        from apps.core.assets.models import IPAddress
+        sess = ScanSession.objects.create(domain="cdn-only.com", scan_type="full")
+        IPAddress.objects.create(session=sess, address="172.67.191.147", version=4, source="dnsx")
+        IPAddress.objects.create(session=sess, address="104.21.84.116", version=4, source="dnsx")
+
+        with patch("apps.naabu.scanner.collect") as mock_collect:
+            result = run_naabu(sess)
+
+        mock_collect.assert_not_called()
+        assert result == []
