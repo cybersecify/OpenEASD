@@ -12,7 +12,6 @@ import subprocess
 from io import StringIO
 from unittest.mock import patch
 
-import pytest
 from django.core.management import call_command
 
 from apps.core.dashboard.management.commands.tools_healthcheck import (

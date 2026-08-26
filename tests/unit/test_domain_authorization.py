@@ -3,8 +3,6 @@
 import datetime
 import json
 import pytest
-from django.contrib.auth.models import User
-from ninja_jwt.tokens import AccessToken
 
 
 def post_json(client, path, data):

@@ -24,10 +24,12 @@ class TestResourceProfile:
             assert "info" not in sev
             assert "critical" in sev and "high" in sev and "medium" in sev
 
-    def test_low_profile_tightest_severity(self):
-        # low drops `low` too (memory); bigger boxes keep it.
-        assert "low" not in _PROFILE_TUNING["low"]["nuclei_sev"].split(",")
-        assert "low" in _PROFILE_TUNING["balanced"]["nuclei_sev"].split(",")
+    def test_all_profiles_keep_low_severity(self):
+        # Deliver complete findings: every profile includes `low` (only info,
+        # tech-detect noise already covered by httpx, is dropped). Don't limit
+        # real output — give tools the time to finish instead.
+        for prof in ("low", "balanced", "high"):
+            assert "low" in _PROFILE_TUNING[prof]["nuclei_sev"].split(",")
 
     def test_bulk_size_scales_down_on_low_profile(self):
         # -bulk-size is the real peak-memory lever: smallest on the 1 GB box.
