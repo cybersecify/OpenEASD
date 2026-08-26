@@ -110,13 +110,6 @@ def collect(session) -> list[dict]:
         logger.info(f"[web_checker:{session.id}] No URLs to check")
         return []
 
-    _URL_CAP = 5000
-    if len(urls) > _URL_CAP:
-        logger.warning(
-            f"[web_checker:{session.id}] Capping {len(urls)} unique hosts to {_URL_CAP}"
-        )
-        urls = urls[:_URL_CAP]
-
     results = []
     for url_obj in urls:
         target = url_obj.url
