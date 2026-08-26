@@ -1,7 +1,7 @@
 """Unit tests for apps/amass — collector, analyzer, and scanner."""
 
 import subprocess
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
