@@ -102,8 +102,13 @@ _CWE_BY_CHECK = {
     "server_version_disclosure": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
     "server_poweredby_disclosure": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
     "directory_listing": "CWE-548: Exposure of Information Through Directory Listing",
-    # MTA-STS
-    "mta_sts": "CWE-319: Cleartext Transmission of Sensitive Information",
+    # Attack surface / cloud / secrets / intel
+    "subdomain_takeover": "CWE-284: Improper Access Control",
+    "open_cloud_bucket": "CWE-732: Incorrect Permission Assignment for Critical Resource",
+    "exposed_secret": "CWE-540: Inclusion of Sensitive Information in Source Code",
+    "infostealer_exposure": "CWE-522: Insufficiently Protected Credentials",
+    "asn": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
+    "coverage_regression": "CWE-693: Protection Mechanism Failure",
 }
 
 

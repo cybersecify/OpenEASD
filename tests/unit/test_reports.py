@@ -684,3 +684,44 @@ class TestReportEnrichment:
         assert "Scope &amp; Methodology" in html
         assert "Network Exposure" in html          # a registry phase group
         assert 'class="ep-cell"' in html           # endpoints render as a pill grid
+
+
+# ---------------------------------------------------------------------------
+# CWE mapping guard — every emitted check_type must have an entry
+# ---------------------------------------------------------------------------
+
+import re
+from pathlib import Path
+
+
+def _emitted_check_types() -> set:
+    """Collect every check_type string value emitted across all tool apps.
+
+    Two sources:
+    - Literal check_type="..." assignments (covers most tools)
+    - _HEADER_CHECKS tuple table in web_checker (check_type passed via variable)
+    """
+    literal = re.compile(r'check_type=["\']([^"\']+)["\']')
+    apps_dir = Path(__file__).parents[2] / "apps"
+
+    found = set()
+    for py_file in apps_dir.rglob("*.py"):
+        if "test" in py_file.name:
+            continue
+        src = py_file.read_text(encoding="utf-8", errors="ignore")
+        found.update(literal.findall(src))
+
+    from apps.web_checker.analyzer import _HEADER_CHECKS
+    found.update(row[1] for row in _HEADER_CHECKS)
+
+    return found
+
+
+def test_every_emitted_check_type_has_cwe_mapping():
+    from apps.core.reports.views import _CWE_BY_CHECK
+
+    unmapped = _emitted_check_types() - set(_CWE_BY_CHECK)
+    assert not unmapped, (
+        f"check_types with no CWE mapping in _CWE_BY_CHECK: {sorted(unmapped)}\n"
+        "Add an entry in apps/core/reports/views.py for each."
+    )
