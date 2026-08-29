@@ -83,7 +83,7 @@ RUN chmod +x subfinder dnsx naabu httpx nuclei amass alterx katana gitleaks
 # Cross-compiled from $BUILDPLATFORM for $TARGETARCH so emulated arm64 builds
 # stay fast.
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM golang:1.26 AS subzy-builder
+FROM --platform=$BUILDPLATFORM golang:1.27 AS subzy-builder
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -101,7 +101,7 @@ RUN go install -ldflags="-s -w" github.com/PentestPad/subzy@${SUBZY_VERSION} \
 # ---------------------------------------------------------------------------
 # Stage 2c: build gau + waybackurls from source (pure-Go, cross-compiles cleanly).
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM golang:1.26 AS history-builder
+FROM --platform=$BUILDPLATFORM golang:1.27 AS history-builder
 
 ARG TARGETOS
 ARG TARGETARCH

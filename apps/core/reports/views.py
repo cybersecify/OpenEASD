@@ -4,7 +4,6 @@ import base64
 import csv
 import functools
 import logging
-from io import BytesIO
 from pathlib import Path
 
 from django.conf import settings
