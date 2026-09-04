@@ -108,6 +108,7 @@ _CWE_BY_CHECK = {
     "infostealer_exposure": "CWE-522: Insufficiently Protected Credentials",
     "asn": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
     "coverage_regression": "CWE-693: Protection Mechanism Failure",
+    "shodan_exposure": "CWE-668: Exposure of Resource to Wrong Sphere",
 }
 
 
