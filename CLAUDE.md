@@ -395,7 +395,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (22 registered tools)
+### Tool apps (23 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
@@ -409,6 +409,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/takeover_check/` | 4 | Surface Enumeration | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
 | `apps/cloud_assets/` | 4 | Surface Enumeration | Yes | Public cloud bucket enumeration via cloud_enum (AWS S3 / Azure Blob / GCP Storage) |
 | `apps/naabu/` | 5 | Port Discovery | No | Port scanning (top 100 TCP) |
+| `apps/shodan/` | 5 | Port Discovery | Yes | Passive exposure intel from Shodan's own scan data — ports/services/CVEs per resolved IP. BYOK: free InternetDB tier (no key, no credits), full host API when `SHODAN_API_KEY` set (`SHODAN_MAX_IPS` caps the paid path). CVEs land in `extra["cve_ids"]` so `cve_intel` enriches them. Passive, fail-graceful |
 | `apps/core/service_detection/` | 6 | Port Discovery | No | nmap -sV enriches Port.service + is_web |
 | `apps/nmap/` | 7 | Network Exposure | Yes | NSE vulners CVE scan (non-web ports); backport-aware CVE matching (`backports.json` registry) |
 | `apps/tls_checker/` | 7 | Network Exposure | Yes | TLS/cert analysis + cipher suite enumeration via `nmap --script ssl-enum-ciphers` (all ports) |
@@ -452,6 +453,7 @@ Phase 3  dnsx               → IPAddress (public-only filter)
 Phase 4  takeover_check     → Finding (subzy — dangling DNS → unclaimed cloud)
 Phase 4  cloud_assets       → Finding (open S3/Azure/GCP buckets — cloud_enum)
 Phase 5  naabu              → Port (top 100 TCP scan)
+Phase 5  shodan             → Finding (passive exposure: ports/services/CVEs from Shodan's data)
 Phase 6  service_detection  → enriches Port.service + Port.is_web
 Phase 7  nmap               → Finding (CVEs on non-web ports, is_web=False)  ┐
 Phase 7  tls_checker        → Finding (cipher/cert/protocol on all ports)    │ parallel
@@ -472,10 +474,11 @@ the registry via `get_tool_active()` and `is_passive_tool_set(tools)`.
 
 - **Passive** (`active=False`): uses ONLY public / third-party data — CT logs and
   other subdomain feeds, DNS resolution via public resolvers, WHOIS/RDAP, web
-  archives, cloud-provider bucket APIs, CVE/EPSS/KEV feeds. Sends **no packets to
-  the target's own systems**. Needs **no `DomainAuthorization`**.
+  archives, cloud-provider bucket APIs, Shodan's own scan dataset, CVE/EPSS/KEV
+  feeds. Sends **no packets to the target's own systems**. Needs **no
+  `DomainAuthorization`**.
   Passive tools: `subfinder`, `alterx`, `dnsx`, `historical_urls`,
-  `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`.
+  `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`, `shodan`.
 - **Active** (`active=True`): probes the target directly (port scans, HTTP/TLS/SSH
   connections, crawling, vuln templates, AXFR/SMTP/mta-sts probes). **Requires
   `DomainAuthorization`.**
@@ -619,6 +622,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
 | `tests/unit/test_httpx.py` | 16 | JSON parser, Port lookup, Subdomain link, honest UA, tech-detect flag + technology storage/dedup |
 | `tests/unit/test_hudson_rock.py` | 17 | collector (both endpoints keyless + honest UA, fail-graceful on timeout/500/429/bad-JSON, 429 retry), analyzer (severity, counts/families/URLs/attribution, no-finding-when-zero, **no plaintext/email persisted**, URL cap), scanner |
+| `tests/unit/test_shodan.py` | 20 | collector tier selection (free InternetDB vs paid host API, BYO-key), `SHODAN_MAX_IPS` cap on paid path only, fail-graceful (404/timeout/500/429/bad-JSON never raise), analyzer (exposure + CVE findings, `extra["cve_ids"]` for cve_intel enrichment, invalid-CVE filter), scanner |
 | `tests/unit/test_js_secrets.py` | 26 | `.js` URL filter + cap, fetch-error handling, gitleaks JSON parser, analyzer Findings + dedup + secret redaction (full secret never stored), scanner, binary-missing/timeout |
 | `tests/unit/test_k8s_manifests.py` | 59 | k8s manifest structure, envFrom order, probes, secret/configmap split |
 | `tests/unit/test_katana.py` | 19 | JSONL parser, Port/Subdomain FK links, scanner orchestrator, honest UA |
@@ -657,4 +661,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_coverage_regression.py` | 10 | Silent-block coverage counting (probed-vs-reached), coverage-regression finding (high block ratio / findings drop / stable = no flag), partial scan status when a tool fails |
 | `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
 
-**Total: 1350 tests** (1298 fast + 52 slow domain_security)
+**Total: 1370 tests** (1318 fast + 52 slow domain_security)
