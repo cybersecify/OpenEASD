@@ -129,21 +129,23 @@ A self-hosted web platform that automatically discovers and monitors an organiza
 - Visual scan diff view (delta between scans rendered as a graph)
 - Asset tagging and grouping
 
-**v2.0 — Agentic AI OpenEASD** *(direction set 2026-05-31, design TBD)*
+**v2.0 — Agentic AI OpenEASD** *(direction set 2026-05-31; scope + backend decided 2026-09-05 — see D-014/D-015)*
 
 Direction: turn OpenEASD from a scanner that emits findings into an analyst that produces prioritised, contextualised remediation guidance. Move from "here are 76 findings, 3 critical" to "here are the 3 things that actually matter on this surface, here's why, here's the fix in order."
 
-Candidate scopes (specific shape to be defined — these are sketches, not commitments):
+Decided shape — three capabilities on one framework (`apps/core/ai/`):
 
-- **LLM-powered triage** — feed scan output + asset context + organisation profile into an LLM that produces a ranked "fix this first" list with reasoning, not just raw CVE/severity dumps
-- **Chat interface over findings** — "show me everything critical on `staging.example.com`", "summarise this scan in one paragraph", "what's the biggest delta from last week's scan?"
-- **Auto-generated tool integrations** — an agent that reads a new scanner tool's docs/GitHub README and produces a draft of the four-file plugin (`apps.py`, `collector.py`, `analyzer.py`, `scanner.py`) for human review
-- **Multi-agent recon planning** — a coordinating agent that decides which scanners to run based on initial discovery (e.g., "host runs Postfix on 25 — load the email-relay-misconfig profile" rather than blindly running every Phase-7 tool)
-- **Remediation playbooks** — auto-generated step-by-step fix guides per finding type, with reasoning the user can verify
+- **Findings triage** — after each scan, a ranked "fix these first" list with per-item rationale (fix now / plan / monitor / likely noise), shown on the scan detail page and in the PDF report
+- **Adaptive scan orchestration** — a bounded agent that may launch follow-up subscans based on what the scan found (e.g., "Postfix on 25/tcp — run the email-relay checks"), with hard caps on iterations and subscans; active tools still require `DomainAuthorization`, re-checked at the agent's own dispatch boundary
+- **Report + alert summaries** — a plain-language analyst paragraph in the PDF report and Slack/Teams alerts
+
+Backend: **Cloudflare Workers AI only**, BYOK (`CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` env vars; off and invisible when unset). Consent posture per D-013 (amended): explicit first-use consent gates enabling AI at all; every call is audit-logged (time, scan, purpose, model, token counts, finding IDs) and prompt/response bodies are never persisted. With AI off, results stay on your machine exactly as before.
+
+Chat-over-findings, auto-generated tool integrations, and remediation playbooks remain future candidates, not v2.0 commitments.
 
 **Hypothesis:** AI turns OpenEASD from "another scanner wrapper" into an analyst-grade tool. The current OSS recon-tool space is saturated with wrappers; analyst-grade output is genuinely scarce. If we ship even one of the candidate scopes well, it becomes the durable differentiation vs. running `nuclei + nmap + subfinder` by hand.
 
-**Status:** planning phase. Specific scope, model selection (local LLM vs API), cost-per-scan envelope, and user opt-in mechanics all undefined. Decision needed before any code is committed.
+**Status:** decided (D-014 backend, D-015 scope); implementation in progress.
 
 ---
 
