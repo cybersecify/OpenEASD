@@ -126,6 +126,7 @@ INSTALLED_APPS = [
     "apps.js_secrets",
     "apps.shodan",
     "apps.typosquat",
+    "apps.github_recon",
     "apps.cve_intel",
 ]
 
@@ -314,6 +315,28 @@ TOOL_GITLEAKS = config("TOOL_GITLEAKS", default="gitleaks")
 # the licensed host API) or disable the shodan tool. See THIRD_PARTY_NOTICES.md.
 SHODAN_API_KEY = config("SHODAN_API_KEY", default="")
 SHODAN_MAX_IPS = config("SHODAN_MAX_IPS", default=50, cast=int)
+
+# GitHub Org Recon tool (apps/github_recon) — passive. Enumerates the target org's
+# PUBLIC GitHub repos via GitHub's official REST API and surfaces exposed infra
+# references (internal hostnames/subdomains, cloud-bucket URLs, API endpoints) in
+# that public code/config. Two-tier, BYO-token:
+#   * No token  -> unauthenticated API, 60 req/hr. We cap total requests
+#                  (GITHUB_MAX_REQUESTS) + repos (GITHUB_MAX_REPOS) to stay under it,
+#                  so the tool always adds value out of the box.
+#   * GITHUB_TOKEN set (per-deployment SECRET — NEVER bake into the public image,
+#     that would leak the token; a read-only/public_repo-scope classic or
+#     fine-grained token is plenty) -> authenticated API, 5000 req/hr, richer
+#     coverage within the same caps.
+# GITHUB_ORG overrides the domain-derived org guess (use it for orgs whose GitHub
+# login differs from the apex label, or multi-part TLDs like example.co.uk).
+# NOTE: honours GitHub's REST API rate limits and only uses the official API.
+# NOTE (concurrent PRs): GITHUB_TOKEN / GITHUB_ORG may also be introduced by the
+# github_secrets tool PR — at merge, keep ONE definition of each (reviewer reconciles).
+GITHUB_TOKEN = config("GITHUB_TOKEN", default="")
+GITHUB_ORG = config("GITHUB_ORG", default="")
+GITHUB_API_BASE = config("GITHUB_API_BASE", default="https://api.github.com")
+GITHUB_MAX_REPOS = config("GITHUB_MAX_REPOS", default=50, cast=int)
+GITHUB_MAX_REQUESTS = config("GITHUB_MAX_REQUESTS", default=100, cast=int)
 
 # Honest scanner identity. Sent as the User-Agent on the tools that probe the
 # target's web surface (httpx, katana, nuclei) so a customer can deliberately

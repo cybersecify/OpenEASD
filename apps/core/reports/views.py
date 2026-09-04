@@ -112,6 +112,13 @@ _CWE_BY_CHECK = {
     # A registered lookalike domain is infrastructure built to be visually
     # confused with the org's real domain — the essence of CWE-451.
     "lookalike_domain": "CWE-451: User Interface (UI) Misrepresentation of Critical Information",
+    # github_recon — infra references (internal hostnames/subdomains, cloud-bucket
+    # URLs, API endpoints) and the public-repo surface leaked in the org's PUBLIC
+    # GitHub source. CWE-200 (Exposure of Sensitive Information to an Unauthorized
+    # Actor) is the exact category: the data is not itself a vuln, but exposing it
+    # hands an attacker recon they should have had to work for.
+    "github_infra_exposure": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
+    "github_public_repos": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
 }
 
 
