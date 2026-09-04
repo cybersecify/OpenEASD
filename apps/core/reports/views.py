@@ -506,6 +506,33 @@ def export_scan_pdf(request, session_uuid):
     raw_total = sum(vuln_counts.values())
     risk_rating = _risk_rating(unique_counts)
 
+    # Exposure Score — one 0-100 executive number (higher = worse) + letter grade,
+    # derived from the raw per-detection severity counts so it matches the score
+    # stored per scan by the insights builder. Trend vs the same domain's previous
+    # scan is pulled from stored ScanSummary rows (Python-side; SQLite JSON quirk).
+    from apps.core.insights.scoring import compute_exposure_score, grade_for_score
+    from apps.core.insights.models import ScanSummary
+
+    exposure_score = compute_exposure_score(
+        critical=vuln_counts["critical"], high=vuln_counts["high"],
+        medium=vuln_counts["medium"], low=vuln_counts["low"],
+    )
+    exposure_grade = grade_for_score(exposure_score)
+    prev_summary = (
+        ScanSummary.objects.filter(domain=session.domain)
+        .exclude(session=session)
+        .order_by("-scan_date")
+        .first()
+    )
+    exposure_trend = None
+    if prev_summary is not None:
+        delta = exposure_score - prev_summary.exposure_score
+        exposure_trend = {
+            "previous_score": prev_summary.exposure_score,
+            "change": delta,
+            "direction": "up" if delta > 0 else ("down" if delta < 0 else "flat"),
+        }
+
     # Asset counts
     asset_counts = {
         "subdomains": Subdomain.objects.filter(session=session, is_active=True).count(),
@@ -591,6 +618,9 @@ def export_scan_pdf(request, session_uuid):
         "total_findings": len(issue_groups),   # headline = unique issue count
         "raw_total": raw_total,                # raw detections, shown only in the note
         "risk_rating": risk_rating,
+        "exposure_score": exposure_score,
+        "exposure_grade": exposure_grade,
+        "exposure_trend": exposure_trend,
         "top_risks": top_risks,
         "headline_risk": top_risks[0] if top_risks else None,
         "coverage": _coverage_context(session),

@@ -19,6 +19,7 @@ from apps.core.domains.models import Domain
 from apps.core.queries import latest_session_ids
 from apps.core.scans.models import ScanDelta
 from .models import ScanSummary, FindingTypeSummary
+from .scoring import compute_exposure_score, grade_for_score
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,12 @@ def build_insights(session) -> None:
     new_exp = ScanDelta.objects.filter(session=session, change_type="new").count()
     removed_exp = ScanDelta.objects.filter(session=session, change_type="removed").count()
 
+    exposure_score = compute_exposure_score(
+        critical=counts["critical"], high=counts["high"],
+        medium=counts["medium"], low=counts["low"],
+    )
+    exposure_grade = grade_for_score(exposure_score)
+
     ScanSummary.objects.update_or_create(
         session=session,
         defaults={
@@ -57,6 +64,8 @@ def build_insights(session) -> None:
             "new_exposures": new_exp,
             "removed_exposures": removed_exp,
             "tool_breakdown": tool_breakdown,
+            "exposure_score": exposure_score,
+            "exposure_grade": exposure_grade,
             **{f"{sev}_count": counts[sev] for sev in SEVERITIES},
         },
     )
