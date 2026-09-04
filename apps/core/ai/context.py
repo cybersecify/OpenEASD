@@ -99,6 +99,108 @@ def build_triage_messages(session, findings: list) -> list[dict]:
     ]
 
 
+def tools_already_run(root_session) -> list[str]:
+    """Tools executed for this scan: the root workflow run's steps plus every
+    tool an earlier agent subscan already ran."""
+    from apps.core.workflows.models import WorkflowStepResult
+
+    tools = set(
+        WorkflowStepResult.objects.filter(run__session=root_session)
+        .exclude(status__in=("skipped",))
+        .values_list("tool", flat=True)
+    )
+    for sub in root_session.subscans.all():
+        tools.update(sub.subscan_tools or [])
+    return sorted(tools)
+
+
+def _tool_catalog() -> list[dict]:
+    from apps.core.workflows.registry import get_registry
+
+    return [
+        {
+            "name": name,
+            "label": meta.get("label", name),
+            "phase_group": meta.get("phase_group", ""),
+            "active": meta.get("active", True),
+        }
+        for name, meta in sorted(get_registry().items())
+        if not meta.get("core")
+    ]
+
+
+def _latest_agent_subscan_results(agent_run) -> dict | None:
+    """Severity counts + top titles from the most recent executed agent subscan."""
+    from apps.core.findings.models import Finding
+
+    last = (
+        agent_run.actions.filter(status="executed", subscan_session__isnull=False)
+        .order_by("-id")
+        .first()
+    )
+    if last is None:
+        return None
+    sub = last.subscan_session
+    findings = list(
+        Finding.objects.filter(session=sub).exclude(severity="info")
+        .order_by("severity")[:20]
+    )
+    return {
+        "tools": (sub.subscan_tools or []),
+        "status": sub.status,
+        "severity_counts": severity_counts(sub),
+        "top_findings": [
+            {"severity": f.severity, "title": f.title[:150], "target": f.target}
+            for f in findings[:10]
+        ],
+    }
+
+
+def build_orchestration_messages(root_session, agent_run, cfg) -> list[dict]:
+    import json
+
+    from apps.core.domains.models import DomainAuthorization
+
+    from .models import AITriage
+
+    triage = AITriage.objects.filter(session=root_session, status="completed").first()
+    domain_authorized = DomainAuthorization.objects.filter(
+        domain__name=root_session.domain
+    ).exists()
+
+    payload = {
+        "scan": scan_facts(root_session),
+        "analyst_overview": triage.overview if triage else None,
+        "tools_already_run": tools_already_run(root_session),
+        "available_tools": _tool_catalog(),
+        "domain_authorized_for_active_tools": domain_authorized,
+        "previous_agent_subscan": _latest_agent_subscan_results(agent_run),
+        "budget": {
+            "iterations_remaining": max(cfg.max_agent_iterations - agent_run.iterations_used, 0),
+            "subscans_remaining": max(cfg.max_subscans_per_scan - agent_run.subscans_launched, 0),
+        },
+    }
+    instructions = (
+        "You may schedule targeted follow-up scanning for this attack surface. "
+        "Return JSON with `actions` (1-5 entries):\n"
+        "- run_subscan: re-scan with a specific list of tool names from "
+        "available_tools, when their output would materially change the "
+        "assessment (e.g. a service was found that a not-yet-run tool covers). "
+        "At most ONE run_subscan is executed per step. Never pick tools already "
+        "in tools_already_run. Tools marked active require "
+        "domain_authorized_for_active_tools to be true.\n"
+        "- flag_finding: mark one finding_id as needing human attention, with a "
+        "note saying why.\n"
+        "- done: stop, with a short summary of what the follow-up work showed. "
+        "Choose done when no additional tool would change the assessment — "
+        "running more scans has real cost and is NOT the default."
+    )
+    return [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": instructions + "\n\n" + json.dumps(payload)},
+    ]
+
+
 def build_summary_messages(session, kind: str, triage_overview: str = "") -> list[dict]:
     import json
 

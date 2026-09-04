@@ -229,6 +229,10 @@ def _finalize_session(session):
     # deltas) and re-fire alerts the parent already sent. Skip them for subscans.
     if session.scan_type == "subscan":
         logger.info(f"[scan:{session_id}] Subscan — skipping deltas, insights, and alerts")
+        # Resume a running agent orchestration chain, if this subscan belongs
+        # to one (no-op otherwise; apps/core/ai/hooks is fail-graceful).
+        from apps.core.ai.hooks import maybe_continue_agent
+        maybe_continue_agent(session)
         return
 
     _detect_deltas(session)
@@ -247,6 +251,10 @@ def _finalize_session(session):
     run_ai_post_scan(session)
 
     _dispatch_alerts(session)
+
+    # Adaptive orchestration (last — the scan's own output never waits on it).
+    from apps.core.ai.hooks import maybe_start_agent
+    maybe_start_agent(session)
 
 
 # ---------------------------------------------------------------------------

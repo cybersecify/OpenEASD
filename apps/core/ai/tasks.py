@@ -16,6 +16,24 @@ def enqueue_triage(session_id: int) -> None:
     async_task("apps.core.ai.tasks._run_triage_task", session_id)
 
 
+def enqueue_agent_step(root_session_id: int) -> None:
+    """Queue one orchestration step. Steps chain through the queue (a subscan's
+    finalize enqueues the next one) so no task ever waits on another."""
+    async_task("apps.core.ai.tasks._run_agent_step", root_session_id)
+
+
+def _run_agent_step(root_session_id: int) -> None:
+    """Worker entry — catches everything so a failed step can never crash the
+    cluster; the pre-incremented iteration counter keeps the loop bounded even
+    when a step dies here."""
+    try:
+        from .orchestrator import run_agent_step
+
+        run_agent_step(root_session_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("[ai] agent step failed for session %s", root_session_id)
+
+
 def _run_triage_task(session_id: int) -> None:
     """Worker entry — catches everything (a queued AI task must never crash
     the cluster or mark hygiene noise in django-q's failure list)."""

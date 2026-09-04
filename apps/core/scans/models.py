@@ -23,6 +23,7 @@ class ScanSession(models.Model):
         ("recurring", "Recurring"),
         ("monitoring", "Monitoring"),
         ("subscan", "Subscan"),
+        ("agent", "Agent"),
     ]
 
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
