@@ -25,9 +25,9 @@ def _is_live(subdomain: str, timeout: int = 8) -> bool:
                 f"{scheme}://{subdomain}/",
                 headers={"User-Agent": "OpenEASD/1.0"},
             )
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
                 return resp.status < 400
-        except Exception:
+        except Exception:  # nosec B112
             continue
     return False
 
