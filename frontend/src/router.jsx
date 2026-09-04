@@ -15,6 +15,7 @@ import WorkflowsPage from './pages/WorkflowsPage.jsx';
 import WorkflowDetailPage from './pages/WorkflowDetailPage.jsx';
 import InsightsPage from './pages/InsightsPage.jsx';
 import NotificationsPage from './pages/NotificationsPage.jsx';
+import AiPage from './pages/AiPage.jsx';
 
 function NotFound() {
   return <div className="p-8 text-body">404 - Page not found</div>;
@@ -42,6 +43,7 @@ export const router = createBrowserRouter([
       { path: '/workflows/:id', element: <WorkflowDetailPage /> },
       { path: '/insights', element: <InsightsPage /> },
       { path: '/notifications', element: <NotificationsPage /> },
+      { path: '/ai', element: <AiPage /> },
     ],
   },
   { path: '*', element: <NotFound /> },

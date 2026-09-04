@@ -13,6 +13,7 @@ const NAV = [
   { label: 'Workflows',      path: '/workflows' },
   { label: 'Insights',       path: '/insights' },
   { label: 'Notifications',  path: '/notifications' },
+  { label: 'AI Analysis',    path: '/ai' },
 ];
 
 function NavLink({ path, label, badge }) {
