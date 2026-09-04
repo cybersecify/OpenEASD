@@ -6,11 +6,30 @@ a vulnerable subdomain + an identifiable service fingerprint.
 """
 
 import logging
+import urllib.request
 
 from apps.core.assets.models import Subdomain
 from apps.core.findings.models import Finding
 
 logger = logging.getLogger(__name__)
+
+
+def _is_live(subdomain: str, timeout: int = 8) -> bool:
+    """Return True if the subdomain serves real content (HTTP < 400).
+
+    A live subdomain cannot be taken over — the resource is already claimed.
+    """
+    for scheme in ("https", "http"):
+        try:
+            req = urllib.request.Request(
+                f"{scheme}://{subdomain}/",
+                headers={"User-Agent": "OpenEASD/1.0"},
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
+                return resp.status < 400
+        except Exception:  # nosec B112
+            continue
+    return False
 
 
 def _is_vulnerable(record: dict) -> bool:
@@ -75,22 +94,33 @@ def analyze(session, records: list[dict]) -> list[Finding]:
         seen.add(subdomain_name)
 
         service = _service_of(record)
-        # Do NOT drop a vulnerable record just because we couldn't name the
-        # service: subzy flagged it vulnerable, and silently skipping it would
-        # make every real takeover vanish if subzy's field names ever drift.
-        # Emit the finding with an "unidentified service" label and a note to
-        # verify manually.
-        unfingerprinted = service == "unknown"
-        service_label = "an unidentified service" if unfingerprinted else service
-        if unfingerprinted:
+        if service == "unknown":
+            # subzy flagged vulnerable but couldn't identify the hosting service.
+            # Probe the subdomain — if it serves real content it's a live site,
+            # not a dangling CNAME, so suppress the finding (false positive).
+            if _is_live(subdomain_name):
+                logger.info(
+                    "[takeover_check:%s] Skipping %s — subzy flagged vulnerable "
+                    "but HTTP probe returned live content (false positive)",
+                    session.id,
+                    subdomain_name,
+                )
+                continue
             logger.warning(
-                "[takeover_check:%s] %s flagged vulnerable but subzy returned no "
-                "service fingerprint — reporting anyway (verify manually)",
+                "[takeover_check:%s] %s — no service fingerprint and not live, "
+                "reporting for manual verification",
                 session.id,
                 subdomain_name,
             )
 
         subdomain_fk = subdomain_index.get(subdomain_name)
+        unidentified = service == "unknown"
+        service_label = "an unidentified service" if unidentified else service
+        extra_note = (
+            " subzy flagged this as vulnerable but could not identify the hosting "
+            "service and the subdomain did not return live content — verify manually."
+            if unidentified else ""
+        )
 
         findings.append(Finding(
             session=session,
@@ -103,9 +133,7 @@ def analyze(session, records: list[dict]) -> list[Finding]:
                 f"resource. An attacker who registers that resource on the "
                 f"hosting service could serve arbitrary content under your "
                 f"subdomain — credential phishing, malware delivery, or SSO-cookie "
-                f"theft from same-eTLD context."
-                + (" subzy flagged this as vulnerable but did not identify the "
-                   "hosting service — verify manually." if unfingerprinted else "")
+                f"theft from same-eTLD context." + extra_note
             ),
             remediation=(
                 "Either remove the dangling DNS record or reclaim the unused "
@@ -116,7 +144,7 @@ def analyze(session, records: list[dict]) -> list[Finding]:
             subdomain=subdomain_fk,
             target=subdomain_name,
             extra={
-                "service": service,
+                "service": service_label,
                 "raw": record,
             },
         ))
