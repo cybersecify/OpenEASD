@@ -101,6 +101,7 @@ INSTALLED_APPS = [
     "apps.core.notifications",
     "apps.core.insights",
     "apps.core.reports",
+    "apps.core.ai",
     "ninja_jwt",
     "ninja_jwt.token_blacklist",
     "apps.domain_security",
@@ -332,6 +333,26 @@ GITHUB_API_BASE = config("GITHUB_API_BASE", default="https://api.github.com")
 GITHUB_ORG = config("GITHUB_ORG", default="")
 GITHUB_SECRETS_GLOBAL_SEARCH = config(
     "GITHUB_SECRETS_GLOBAL_SEARCH", default=False, cast=bool
+)
+
+# Agentic AI subsystem (apps/core/ai). BYOK: Cloudflare Workers AI, called
+# directly from Django (D-014). Entirely OFF unless BOTH credentials are set
+# AND the operator enables the feature AND records consent in the UI — with
+# any of those missing, every scan runs exactly as if this subsystem did not
+# exist. Credentials are PER-DEPLOYMENT secrets (never baked into the public
+# image, never stored in the DB, never returned by the API). Finding data is
+# sent to Cloudflare only on consented deployments; prompt and response
+# bodies are NEVER persisted (AIInvocation audit rows carry metadata only —
+# D-013 4c). CLOUDFLARE_AI_MAX_CALLS_PER_SCAN is a hard per-scan budget the
+# client enforces so no agent loop can run up the operator's bill.
+CLOUDFLARE_ACCOUNT_ID = config("CLOUDFLARE_ACCOUNT_ID", default="")
+CLOUDFLARE_API_TOKEN = config("CLOUDFLARE_API_TOKEN", default="")
+CLOUDFLARE_AI_MODEL = config(
+    "CLOUDFLARE_AI_MODEL", default="@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+)
+CLOUDFLARE_AI_TIMEOUT = config("CLOUDFLARE_AI_TIMEOUT", default=60, cast=int)
+CLOUDFLARE_AI_MAX_CALLS_PER_SCAN = config(
+    "CLOUDFLARE_AI_MAX_CALLS_PER_SCAN", default=10, cast=int
 )
 
 # Honest scanner identity. Sent as the User-Agent on the tools that probe the
