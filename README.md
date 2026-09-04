@@ -14,7 +14,7 @@
 
 Use it as a **red teamer** to map external surface fast on targets you're authorised to test. Use it as a **defender** to see what's leaking out of your own infrastructure: subdomains, exposed ports, dangling CNAMEs, missing TLS, known CVEs, without paying $500-5000/mo for a commercial EASM platform.
 
-OpenEASD wraps the open-source recon tools security teams already use: `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `cloud_enum`, `naabu`, `nmap`, `httpx`, `gau`, `waybackurls`, `katana`, `nuclei`, `gitleaks`, behind a single web UI with scheduling, alerts, and findings tracking. Twenty-four tools across DNS/DNSSEC, email (SPF/DMARC/DKIM/MTA-STS/open-relay), TLS, SSH, ports, CVEs, subdomain takeover, ASN/IP-range discovery, historical URLs, cloud assets, exposed secrets in JavaScript, leaked secrets in public GitHub (passive; searches GitHub's code-search API for the org's committed credentials and runs gitleaks over the hits — bring-your-own GitHub token), infostealer-log exposure (via Hudson Rock's keyless Cavalier API), Shodan-sourced exposure (passive; free InternetDB tier out of the box, richer with a bring-your-own Shodan key), technology fingerprinting, web hygiene, and CVE prioritisation (EPSS + CISA KEV). Run a **passive scan** (public-source only, no authorization needed) or an **active scan** (probes the target, authorization required). Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
+OpenEASD wraps the open-source recon tools security teams already use: `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `cloud_enum`, `naabu`, `nmap`, `httpx`, `gau`, `katana`, `nuclei`, `gitleaks`, behind a single web UI with scheduling, alerts, and findings tracking. Twenty-six tools across DNS/DNSSEC, email (SPF/DMARC/DKIM/MTA-STS/open-relay), TLS, SSH, ports, CVEs, subdomain takeover, ASN/IP-range discovery, historical URLs, cloud assets, exposed secrets in JavaScript, leaked secrets in public GitHub (passive; searches GitHub's code-search API for the org's committed credentials and runs gitleaks over the hits — bring-your-own GitHub token), infostealer-log exposure (via Hudson Rock's keyless Cavalier API), data-breach exposure (passive; free XposedOrNot tier out of the box, authoritative with a bring-your-own Have I Been Pwned key), Shodan-sourced exposure (passive; free InternetDB tier out of the box, richer with a bring-your-own Shodan key), lookalike / typosquat domain detection (passive; phishing infrastructure and brand abuse targeting your domain), technology fingerprinting, web hygiene, and CVE prioritisation (EPSS + CISA KEV). Run a **passive scan** (public-source only, no authorization needed) or an **active scan** (probes the target, authorization required). Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
 
 Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok S Kamat](https://www.linkedin.com/in/ashokskamat/) of [Cybersecify](https://cybersecify.com), the same tool we run in engagements and on our own infrastructure.
 
@@ -47,7 +47,6 @@ its maintainer's official source. No repackaging, no mirroring:
 | `amass` | [github.com/owasp-amass/amass](https://github.com/owasp-amass/amass) (OWASP) |
 | `subzy` | [github.com/PentestPad/subzy](https://github.com/PentestPad/subzy) (Go modules) |
 | `gau` | [github.com/lc/gau](https://github.com/lc/gau) (Go modules) |
-| `waybackurls` | [github.com/tomnomnom/waybackurls](https://github.com/tomnomnom/waybackurls) (Go modules) |
 | `cloud_enum` | [github.com/initstring/cloud_enum](https://github.com/initstring/cloud_enum) |
 | `gitleaks` | [github.com/gitleaks/gitleaks](https://github.com/gitleaks/gitleaks) (MIT, signed releases) |
 | `nmap` | `apt-get install nmap` (Ubuntu 24.04 official) |
@@ -168,7 +167,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ## Features
 
-- **Automated pipeline**: 23-tool scan workflow from domain to findings
+- **Automated pipeline**: 26-tool scan workflow from domain to findings
 - **Network attack surface scanning**: CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
 - **CVE prioritisation**: EPSS exploit-probability scores + CISA KEV (known-exploited-in-the-wild) flags enrich CVE findings in place, so you triage by real-world risk rather than severity alone
 - **Dynamic workflows**: Create custom scan configurations, enable/disable tools per workflow
@@ -195,6 +194,10 @@ Phase 1  Hudson Rock        - Infostealer-log exposure via Hudson Rock's keyless
                              Cavalier API (aggregate counts only, no plaintext)
 Phase 1  GitHub Secrets      - Leaked secrets in public GitHub via gitleaks
                              (passive; BYO GITHUB_TOKEN, redacted before storage)
+Phase 1  Typosquat          - Lookalike / typosquat domain detection (passive;
+                             registered lookalikes via public DNS — phishing/brand abuse)
+Phase 1  Breach Check       - Data-breach exposure via XposedOrNot (free/keyless)
+                             or Have I Been Pwned (BYO key); counts only, no PII
 
 ── Surface Enumeration ─────────────────────────────────────────────────────
 Phase 2  Subfinder         - Passive subdomain enumeration
@@ -217,7 +220,7 @@ Phase 7  Nuclei Network    - Network protocol vuln templates (non-web ports)
 
 ── Web Exposure ─────────────────────────────────────────────────────────────
 Phase 8  httpx             - Web probing, URL discovery, technology fingerprinting
-Phase 9  Historical URLs   - Archived URL discovery via gau + waybackurls
+Phase 9  Historical URLs   - Archived URL discovery via gau
 Phase 10 Katana            - Deep URL crawl on top of httpx
 Phase 11 Nuclei            - Web vulnerability scanning (community templates)
 Phase 11 Web Checker       - Security headers, cookies, CORS analysis
@@ -254,6 +257,7 @@ apps/                   - Tool apps (add/remove freely)
   domain_security/      - DNS, email, RDAP checks
   hudson_rock/          - Infostealer-log exposure (Hudson Rock Cavalier API)
   github_secrets/       - Leaked secrets in public GitHub (gitleaks, BYO token)
+  breach_check/         - Data-breach exposure (XposedOrNot free / HIBP BYO key)
   subfinder/            - Passive subdomain enumeration
   amass/                - Active subdomain enumeration
   alterx/               - Subdomain permutation (from discovered subdomains)
@@ -265,7 +269,7 @@ apps/                   - Tool apps (add/remove freely)
   ssh_checker/          - SSH configuration audit
   nuclei_network/       - Network protocol vuln scanning
   httpx/                - Web probing
-  historical_urls/      - Archived URL discovery (gau + waybackurls)
+  historical_urls/      - Archived URL discovery (gau)
   katana/               - Deep URL crawl
   nuclei/               - Web vulnerability scanning
   web_checker/          - Security headers, cookies, CORS

@@ -68,29 +68,26 @@ class TestCollect:
         assert collect([]) == []
 
     @patch("apps.historical_urls.collector._run_tool")
-    def test_combines_gau_and_waybackurls(self, mock_run_tool):
-        mock_run_tool.side_effect = [
-            ["https://example.com/from-gau"],
-            ["https://example.com/from-wb"],
+    def test_collects_gau_urls(self, mock_run_tool):
+        mock_run_tool.return_value = [
+            "https://example.com/a", "https://example.com/b",
         ]
         result = collect(["example.com"])
-        assert "https://example.com/from-gau" in result
-        assert "https://example.com/from-wb" in result
+        assert "https://example.com/a" in result
+        assert "https://example.com/b" in result
 
     @patch("apps.historical_urls.collector._run_tool")
-    def test_deduplicates_across_tools(self, mock_run_tool):
-        mock_run_tool.side_effect = [
-            ["https://example.com/page"],
-            ["https://example.com/page"],
-        ]
-        result = collect(["example.com"])
+    def test_deduplicates_across_subdomains(self, mock_run_tool):
+        # gau run against two subdomains returns the same URL → deduped to one.
+        mock_run_tool.return_value = ["https://example.com/page"]
+        result = collect(["a.example.com", "b.example.com"])
         assert result.count("https://example.com/page") == 1
 
     @patch("apps.historical_urls.collector._run_tool")
-    def test_runs_both_tools_per_subdomain(self, mock_run_tool):
+    def test_runs_gau_once_per_subdomain(self, mock_run_tool):
         mock_run_tool.return_value = []
         collect(["a.example.com", "b.example.com"])
-        assert mock_run_tool.call_count == 4
+        assert mock_run_tool.call_count == 2  # gau only, one call per subdomain
 
     @patch("apps.historical_urls.collector._run_tool")
     def test_both_tools_missing_returns_empty(self, mock_run_tool):

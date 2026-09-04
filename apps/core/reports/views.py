@@ -59,6 +59,8 @@ _CWE_BY_CHECK = {
     "missing_xcto": "CWE-693: Protection Mechanism Failure",
     "cors": "CWE-942: Permissive Cross-domain Policy with Untrusted Domains",
     "cve": "CWE-1395: Dependency on Vulnerable Third-Party Component",
+    # breach_check — breached credentials/accounts exposed in third-party breaches
+    "breach_exposure": "CWE-359: Exposure of Private Personal Information to an Unauthorized Actor",
     "weak_ssh_kex": "CWE-326: Inadequate Encryption Strength",
     "weak_ssh_mac": "CWE-326: Inadequate Encryption Strength",
     "weak_cipher": "CWE-326: Inadequate Encryption Strength",
@@ -109,6 +111,9 @@ _CWE_BY_CHECK = {
     "asn": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
     "coverage_regression": "CWE-693: Protection Mechanism Failure",
     "shodan_exposure": "CWE-668: Exposure of Resource to Wrong Sphere",
+    # A registered lookalike domain is infrastructure built to be visually
+    # confused with the org's real domain — the essence of CWE-451.
+    "lookalike_domain": "CWE-451: User Interface (UI) Misrepresentation of Critical Information",
 }
 
 

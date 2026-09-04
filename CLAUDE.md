@@ -395,13 +395,15 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (24 registered tools)
+### Tool apps (26 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
 | `apps/domain_security/` | 1 | Domain Intelligence | Yes | DNS, email, RDAP checks |
 | `apps/hudson_rock/` | 1 | Domain Intelligence | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
 | `apps/github_secrets/` | 1 | Domain Intelligence | Yes | Leaked secrets in PUBLIC GitHub — searches GitHub's code-search API (org-scoped by default) for the target org's committed credentials, fetches the hits, runs gitleaks over them (same engine as `js_secrets`), REDACTS before storage (`check_type="exposed_secret"`, shared with js_secrets). Passive (queries GitHub, not the target); BYOK MANDATORY (`GITHUB_TOKEN` — code-search needs auth; no token → logged no-op); fail-graceful |
+| `apps/typosquat/` | 1 | Domain Intelligence | Yes | Lookalike / typosquat domain detection — generates lookalike candidates algorithmically (homoglyph/typo/omission/insertion/repetition/transposition/hyphenation/TLD-swap) then checks which are registered via public DNS (A/MX → medium/weaponizable, NS-only → low). Passive (queries candidate domains' DNS, never the target), no key, fail-graceful |
+| `apps/breach_check/` | 1 | Domain Intelligence | Yes | Data-breach exposure for the domain. BYOK: free keyless XposedOrNot catalog by default, authoritative Have I Been Pwned `breacheddomain` when `HIBP_API_KEY` set. Aggregate COUNTS + public breach metadata only — never email aliases/credentials. Passive, fail-graceful |
 | `apps/subfinder/` | 2 | Surface Enumeration | No | Passive subdomain enumeration |
 | `apps/amass/` | 2 | Surface Enumeration | No | Active subdomain enumeration |
 | `apps/asn_discovery/` | 2 | Surface Enumeration | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
@@ -417,7 +419,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/ssh_checker/` | 7 | Network Exposure | Yes | SSH config analysis |
 | `apps/nuclei_network/` | 7 | Network Exposure | Yes | Network protocol vuln scan (319 templates, non-web) |
 | `apps/httpx/` | 8 | Web Exposure | No | Web probing, URL discovery, technology fingerprinting (`-tech-detect` → `URL.technologies`) |
-| `apps/historical_urls/` | 9 | Web Exposure | No | Historical URL discovery via gau + waybackurls (Wayback Machine, OTX, Common Crawl) |
+| `apps/historical_urls/` | 9 | Web Exposure | No | Historical URL discovery via gau (Wayback Machine, OTX, Common Crawl, URLScan) |
 | `apps/katana/` | 10 | Web Exposure | No | Web crawling, endpoint discovery |
 | `apps/nuclei/` | 11 | Web Exposure | Yes | Web vuln scan (community templates) |
 | `apps/web_checker/` | 11 | Web Exposure | Yes | Security headers, cookies, CORS |
@@ -447,6 +449,8 @@ but not yet in the default set.)
 Phase 1  domain_security    → Finding (DNS/email/RDAP)
 Phase 1  hudson_rock         → Finding (infostealer exposure via Hudson Rock — passive)
 Phase 1  github_secrets      → Finding (leaked secrets in public GitHub via gitleaks — passive, BYO token)
+Phase 1  typosquat           → Finding (registered lookalike/typosquat domains via public DNS — passive)
+Phase 1  breach_check        → Finding (data-breach exposure: XposedOrNot free / HIBP BYO-key — passive, counts only)
 Phase 2  subfinder          → Subdomain (passive enumeration)
 Phase 2  amass              → Subdomain (active enumeration)
 Phase 2  asn_discovery      → Finding (owned ASN/CIDR ranges via amass intel — informational)
@@ -462,7 +466,7 @@ Phase 7  tls_checker        → Finding (cipher/cert/protocol on all ports)    �
 Phase 7  ssh_checker        → Finding (SSH config on service="ssh" ports)    │
 Phase 7  nuclei_network     → Finding (network protocol vulns, non-web ports)┘
 Phase 8  httpx              → URL (web probing, CDN-aware via SNI)
-Phase 9  historical_urls    → URL (gau + waybackurls — archived endpoints)
+Phase 9  historical_urls    → URL (gau — archived endpoints)
 Phase 10 katana             → URL (web crawling, endpoint discovery)
 Phase 11 nuclei             → Finding (web vulns via templates on URLs)
 Phase 11 web_checker        → Finding (headers, cookies, CORS on URLs)
@@ -481,7 +485,7 @@ the registry via `get_tool_active()` and `is_passive_tool_set(tools)`.
   `DomainAuthorization`**.
   Passive tools: `subfinder`, `alterx`, `dnsx`, `historical_urls`,
   `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`, `shodan`,
-  `github_secrets`.
+  `typosquat`, `breach_check`, `github_secrets`.
 - **Active** (`active=True`): probes the target directly (port scans, HTTP/TLS/SSH
   connections, crawling, vuln templates, AXFR/SMTP/mta-sts probes). **Requires
   `DomainAuthorization`.**
@@ -625,6 +629,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
 | `tests/unit/test_httpx.py` | 16 | JSON parser, Port lookup, Subdomain link, honest UA, tech-detect flag + technology storage/dedup |
 | `tests/unit/test_hudson_rock.py` | 17 | collector (both endpoints keyless + honest UA, fail-graceful on timeout/500/429/bad-JSON, 429 retry), analyzer (severity, counts/families/URLs/attribution, no-finding-when-zero, **no plaintext/email persisted**, URL cap), scanner |
+| `tests/unit/test_breach_check.py` | 29 | Two-tier BYOK — free XposedOrNot parse (keyless + honest UA) + HIBP `breacheddomain` path (key set → HIBP used, `hibp-api-key` header sent, 404/403 = no-data), fail-graceful (timeout/500/429/bad-JSON never raise), 429 backoff, analyzer (severity high on large-account/recent, counts + attribution, no-finding-when-zero, breach-name cap), **PRIVACY: alias keys/emails/credentials never persisted (collector + analyzer + end-to-end)**, scanner |
 | `tests/unit/test_shodan.py` | 20 | collector tier selection (free InternetDB vs paid host API, BYO-key), `SHODAN_MAX_IPS` cap on paid path only, fail-graceful (404/timeout/500/429/bad-JSON never raise), analyzer (exposure + CVE findings, `extra["cve_ids"]` for cve_intel enrichment, invalid-CVE filter), scanner |
 | `tests/unit/test_js_secrets.py` | 26 | `.js` URL filter + cap, fetch-error handling, gitleaks JSON parser, analyzer Findings + dedup + secret redaction (full secret never stored), scanner, binary-missing/timeout |
 | `tests/unit/test_github_secrets.py` | 32 | no-token skip (BYOK gate), org resolution (override high-confidence / apex-label low-confidence), org-scoped query building + global-search opt-in, rate-limit helpers (429/403-zero-remaining/secondary + capped backoff), collector fail-graceful (network/500/429-exhausted/bad-JSON never raise) + 429-then-success backoff, search→fetch→gitleaks happy path, gitleaks binary-missing/timeout raise, redaction (full secret never persisted — asserted at DB level), analyzer Finding shape + dedup, scanner |
@@ -649,6 +654,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_ssh_checker.py` | 34 | SSH probe, host key, kex/cipher/MAC, auth, collector |
 | `tests/unit/test_subfinder.py` | 10 | JSON parser, dedup, hostname normalization |
 | `tests/unit/test_subscan.py` | 12 | Targeted re-scan of a single tool / subset |
+| `tests/unit/test_typosquat.py` | 29 | candidate generation (all 8 techniques, uniqueness, no-original, www-strip, cap/truncation-logged), passive DNS registration check (A/MX/NS, NXDOMAIN + timeout never raise), analyzer (A/MX → medium, NS-only → low, one Finding per lookalike), scanner (saves + never-raises) |
 | `tests/unit/test_takeover_check.py` | 35 | collector (missing binary, bad JSON, happy path), analyzer (vulnerable/non-vulnerable, FK link, dedup), scanner |
 | `tests/unit/test_tls_checker.py` | 87 | Cert parsing, ciphers, protocols, HSTS, collector, scanner, cipher enumeration |
 | `tests/unit/test_tools_healthcheck.py` | 14 | Tool binary preflight / health checks |
@@ -666,4 +672,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_coverage_regression.py` | 10 | Silent-block coverage counting (probed-vs-reached), coverage-regression finding (high block ratio / findings drop / stable = no flag), partial scan status when a tool fails |
 | `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
 
-**Total: 1445 tests** (1393 fast + 52 slow domain_security)
+**Total: 1493 tests** (1441 fast + 52 slow domain_security)

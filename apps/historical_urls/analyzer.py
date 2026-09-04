@@ -27,8 +27,8 @@ _DEFAULT_PORTS = {"http": 80, "https": 443}
 # Only http(s) URLs are kept. Archive sources (Wayback/OTX/Common Crawl) are
 # third-party-influenceable and can return non-navigable schemes such as
 # ``javascript:`` or ``data:``; storing those risks rendering them as clickable
-# links in the UI (→ XSS / token theft). gau/waybackurls emit essentially only
-# http(s), so this drops no legitimate endpoints.
+# links in the UI (→ XSS / token theft). gau emits essentially only http(s), so
+# this drops no legitimate endpoints.
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
 
 
