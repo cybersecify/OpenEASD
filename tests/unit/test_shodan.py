@@ -52,7 +52,7 @@ class TestShodanCollectorTiers:
                 "tags": [], "vulns": ["CVE-2021-1234"]}
         with patch("apps.shodan.collector.requests.get", return_value=_resp(json_body=body)) as g:
             results = collect(sess)
-        assert "internetdb.shodan.io" in g.call_args[0][0]
+        assert g.call_args[0][0].startswith("https://internetdb.shodan.io/")
         assert results[0]["tier"] == "internetdb"
         assert results[0]["ports"] == [22, 443]
         assert results[0]["vulns"] == ["CVE-2021-1234"]
@@ -66,7 +66,7 @@ class TestShodanCollectorTiers:
                 "vulns": ["CVE-2021-1234"], "cpes": [], "hostnames": [], "tags": []}
         with patch("apps.shodan.collector.requests.get", return_value=_resp(json_body=body)) as g:
             results = collect(sess)
-        assert "api.shodan.io/shodan/host" in g.call_args[0][0]
+        assert g.call_args[0][0].startswith("https://api.shodan.io/shodan/host/")
         assert g.call_args.kwargs["params"]["key"] == "testkey"
         assert results[0]["tier"] == "host"
         assert results[0]["services"][0]["product"] == "nginx"
