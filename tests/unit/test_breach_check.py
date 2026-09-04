@@ -64,7 +64,7 @@ class TestCollectXposedOrNot:
 
         assert len(calls) == 1
         url, headers, timeout = calls[0]
-        assert "xposedornot.com" in url
+        assert url.split("/")[2].endswith("xposedornot.com")
         assert "breaches" in url and "domain=example.com" in url
         assert "hibp-api-key" not in headers  # keyless
         assert "OpenEASD" in headers["User-Agent"]  # honest UA
@@ -139,7 +139,7 @@ class TestCollectHIBP:
 
         assert len(calls) == 1
         url, headers = calls[0]
-        assert "haveibeenpwned.com" in url
+        assert url.split("/")[2].endswith("haveibeenpwned.com")
         assert "breacheddomain/example.com" in url
         assert headers["hibp-api-key"] == "secret-key-123"  # key sent as header
         assert "OpenEASD" in headers["User-Agent"]  # HIBP requires a UA
