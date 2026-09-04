@@ -127,6 +127,7 @@ INSTALLED_APPS = [
     "apps.js_secrets",
     "apps.shodan",
     "apps.typosquat",
+    "apps.github_secrets",
     "apps.cve_intel",
 ]
 
@@ -315,6 +316,23 @@ TOOL_GITLEAKS = config("TOOL_GITLEAKS", default="gitleaks")
 # the licensed host API) or disable the shodan tool. See THIRD_PARTY_NOTICES.md.
 SHODAN_API_KEY = config("SHODAN_API_KEY", default="")
 SHODAN_MAX_IPS = config("SHODAN_MAX_IPS", default=50, cast=int)
+
+# GitHub public-secret tool (apps/github_secrets). BYOK is MANDATORY: GitHub's
+# code-search API requires auth, so with no GITHUB_TOKEN the tool is a logged
+# no-op (it never breaks a keyless Full Scan). The token is a PER-DEPLOYMENT
+# secret — NEVER bake it into the public image (that would leak the token and
+# spend the operator's own GitHub quota). A fine-grained/classic PAT with only
+# public read scope is sufficient. GITHUB_ORG pins the org to search (strongly
+# recommended — auto-derivation from the domain apex label is best-effort and
+# treated as lower confidence). GITHUB_SECRETS_GLOBAL_SEARCH enables a noisy
+# un-scoped bare-string search in addition to the org-scoped queries (off by
+# default). GitHub's API ToS applies: official API only, honour rate limits.
+GITHUB_TOKEN = config("GITHUB_TOKEN", default="")
+GITHUB_API_BASE = config("GITHUB_API_BASE", default="https://api.github.com")
+GITHUB_ORG = config("GITHUB_ORG", default="")
+GITHUB_SECRETS_GLOBAL_SEARCH = config(
+    "GITHUB_SECRETS_GLOBAL_SEARCH", default=False, cast=bool
+)
 
 # Honest scanner identity. Sent as the User-Agent on the tools that probe the
 # target's web surface (httpx, katana, nuclei) so a customer can deliberately
