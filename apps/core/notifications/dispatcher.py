@@ -55,6 +55,28 @@ def _group_by_severity(findings: list) -> dict:
     return grouped
 
 
+_AI_SUMMARY_MAX_CHARS = 300
+
+
+def _get_triage_summary(session) -> "str | None":
+    """AI alert summary for the session, truncated, or None. Never raises —
+    an AI lookup can never fail an alert (same philosophy as the pipeline's
+    alert wrapping)."""
+    try:
+        from apps.core.ai.models import AISummary
+
+        row = AISummary.objects.filter(session=session, kind="alert").first()
+        if not row or not row.text.strip():
+            return None
+        text = row.text.strip()
+        if len(text) > _AI_SUMMARY_MAX_CHARS:
+            text = text[: _AI_SUMMARY_MAX_CHARS - 1] + "…"
+        return text
+    except Exception:  # noqa: BLE001
+        logger.warning("[alerts] AI summary lookup failed — sending without it")
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Slack
 # ---------------------------------------------------------------------------
@@ -70,6 +92,12 @@ def _build_slack_payload(session, grouped: dict, threshold: str) -> dict:
         {"type": "section", "text": {"type": "mrkdwn", "text": f"{header}\n{meta}\n*{total} finding(s) found*"}},
         {"type": "divider"},
     ]
+
+    summary = _get_triage_summary(session)
+    if summary:
+        # One extra block, right after the header section; absent => payload
+        # byte-identical to pre-AI behavior.
+        blocks.insert(2, {"type": "section", "text": {"type": "mrkdwn", "text": f"_{summary}_"}})
 
     for sev in ["critical", "high", "medium", "low"]:
         items = grouped.get(sev, [])
@@ -128,6 +156,9 @@ def _build_teams_payload(session, grouped: dict, threshold: str) -> dict:
     color = SEV_COLORS.get(top_sev, "0078D7")
 
     facts = []
+    summary = _get_triage_summary(session)
+    if summary:
+        facts.append({"name": "Summary", "value": summary})
     for sev in ["critical", "high", "medium", "low"]:
         items = grouped.get(sev, [])
         if not items:
