@@ -103,7 +103,12 @@ def collect(subdomains: list[str]) -> list[dict]:
             logger.warning("subzy output not valid JSON: %s", e)
             return []
 
-        records = data if isinstance(data, list) else [data]
+        # subzy occasionally emits a JSON array containing a null element; filter
+        # to dicts so a None can never reach the analyzer (which crashed on
+        # record.get() — the bug that flipped scans to `partial`). The analyzer
+        # guards this too (defence in depth).
+        raw_records = data if isinstance(data, list) else [data]
+        records = [r for r in raw_records if isinstance(r, dict)]
         logger.info("subzy returned %d records", len(records))
         return records
 
