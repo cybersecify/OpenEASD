@@ -240,6 +240,12 @@ def _finalize_session(session):
     from apps.core.insights.builder import build_insights
     build_insights(session)
 
+    # AI triage + summaries (no-op unless keys + consent — apps/core/ai/hooks
+    # is fail-graceful). Must precede _dispatch_alerts so alerts can carry the
+    # summary.
+    from apps.core.ai.hooks import run_ai_post_scan
+    run_ai_post_scan(session)
+
     _dispatch_alerts(session)
 
 
