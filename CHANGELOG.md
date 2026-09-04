@@ -7,6 +7,27 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Third-party licensing hygiene (attribution + notices).** Added a
+  `THIRD_PARTY_NOTICES.md` covering every bundled binary and data source: MIT
+  notices (ProjectDiscovery ×7, nuclei-templates, gitleaks, gau, cloud_enum),
+  the **Apache-2.0 NOTICE for amass** (was missing), a **GPL-2.0 source offer for
+  subzy**, the **NPSL "uses Nmap Security Scanner" notice**, and EPSS/CISA-KEV/
+  Hudson-Rock/Shodan data-source attributions. Added the EPSS + KEV + Hudson Rock
+  citation to the PDF report's Methodology section. **Why:** the Docker image
+  redistributes these binaries, so their licenses require the notices; this closes
+  the gap flagged by a dependency licence/ToS audit. No license purchase is
+  required for OpenEASD's free/non-commercial use.
+- **Documented Shodan InternetDB's non-commercial restriction** (settings +
+  notices): a *paid* product built on OpenEASD must supply its own Shodan key
+  rather than rely on the free keyless InternetDB tier.
+
+### Removed
+- **Dropped `waybackurls`** from the historical-URL collector and the Docker image.
+  It ships without a declared license (redistribution-ambiguous), and `gau` — which
+  we already run — is a strict superset of its one source (the Wayback Machine),
+  also covering Common Crawl, AlienVault OTX, and URLScan. Zero coverage loss.
+
 ### Added
 - **Data-breach exposure tool (`apps/breach_check`) — tool #24.** A passive,
   Phase-1 (Domain Intelligence) tool that reports which of the org's accounts /
@@ -42,6 +63,30 @@ commits to recover the reasoning.
   value, while HIBP BYO-key gives operators the authoritative per-account data
   when they have it. `HIBP_API_KEY` is a per-deployment secret, never baked into
   the public image.
+- **Lookalike / typosquat domain tool (`apps/typosquat`) — tool #24.** Generates
+  lookalike candidates for the apex domain algorithmically — homoglyph, adjacent-key
+  substitution/insertion, omission, repetition, transposition, hyphenation, and
+  common-TLD swaps (capped at `MAX_CANDIDATES=300`, truncation logged, never silent)
+  — then checks which are **registered / weaponizable** via public DNS. A candidate
+  with A/MX records (can serve a phishing page or receive mail) is `medium`; one with
+  only NS (registered/parked) is `low`. One Finding per registered lookalike
+  (`check_type="lookalike_domain"`, CWE-451 UI Misrepresentation), with the technique,
+  DNS records, and resolved IPs in `extra`. Passive (`active=False`, no
+  `DomainAuthorization`, no API key) — every DNS query targets the CANDIDATE domain's
+  public DNS; **the target is never contacted**. Fail-graceful: any resolver
+  error / timeout / NXDOMAIN is treated as "not registered" and skipped; the tool
+  never raises and never fails a scan. In default Full Scan + Passive Scan (migration
+  `0026`). 29 tests.
+
+  **Why:** lookalike domains are the *threat surface* a defender doesn't see from
+  their own assets — phishing infrastructure and brand abuse are stood up on
+  confusable domains (`examp1e.com`, `example-support.com`, `example.io`) that never
+  appear in the org's DNS or CT logs. Surfacing which confusable names are already
+  *registered and live* is a high-signal, zero-cost addition to the passive report:
+  it needs no key, no authorization, and no packet to the target, yet it names
+  concrete attacker-controlled infrastructure — a strong free-report hook and a
+  natural upsell signal (continuous lookalike monitoring / takedown). It runs in the
+  no-auth **Passive Scan** mode, so a prospect gets it before granting authorization.
 - **Exposure Score + trend — one 0–100 executive risk number per scan.** Each
   completed scan now gets a single saturating, severity-weighted score
   (`raw = 25*critical + 8*high + 2*medium + 0.5*low`, capped at 100; `info`

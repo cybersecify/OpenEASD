@@ -126,6 +126,7 @@ INSTALLED_APPS = [
     "apps.web_checker",
     "apps.js_secrets",
     "apps.shodan",
+    "apps.typosquat",
     "apps.cve_intel",
 ]
 
@@ -292,7 +293,6 @@ TOOL_DNSX = config("TOOL_DNSX", default="dnsx")
 TOOL_NAABU = config("TOOL_NAABU", default="naabu")
 TOOL_HTTPX = config("TOOL_HTTPX", default="httpx")
 TOOL_GAU = config("TOOL_GAU", default="gau")
-TOOL_WAYBACKURLS = config("TOOL_WAYBACKURLS", default="waybackurls")
 TOOL_KATANA = config("TOOL_KATANA", default="katana")
 TOOL_NMAP = config("TOOL_NMAP", default="nmap")
 TOOL_NUCLEI = config("TOOL_NUCLEI", default="nuclei")
@@ -308,6 +308,11 @@ TOOL_GITLEAKS = config("TOOL_GITLEAKS", default="gitleaks")
 # upgrade to the full host API (service banners + versions). SHODAN_MAX_IPS caps
 # the paid path's per-scan queries to protect the plan's credit quota (the free
 # InternetDB path is uncapped — it costs no credits).
+# NOTE ON COMMERCIAL USE: Shodan's free InternetDB is licensed for NON-COMMERCIAL
+# use ("you can use it at a company but you can't use it to build commercial
+# products that you charge money for"). If you build a PAID product/service on
+# OpenEASD, supply your own paid Shodan plan via SHODAN_API_KEY (which switches to
+# the licensed host API) or disable the shodan tool. See THIRD_PARTY_NOTICES.md.
 SHODAN_API_KEY = config("SHODAN_API_KEY", default="")
 SHODAN_MAX_IPS = config("SHODAN_MAX_IPS", default=50, cast=int)
 

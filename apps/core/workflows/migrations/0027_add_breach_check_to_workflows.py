@@ -52,7 +52,7 @@ def remove_tool(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("workflow", "0025_add_shodan_to_workflows"),
+        ("workflow", "0026_add_typosquat_to_workflows"),
     ]
 
     operations = [

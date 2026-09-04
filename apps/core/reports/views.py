@@ -111,6 +111,9 @@ _CWE_BY_CHECK = {
     "asn": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
     "coverage_regression": "CWE-693: Protection Mechanism Failure",
     "shodan_exposure": "CWE-668: Exposure of Resource to Wrong Sphere",
+    # A registered lookalike domain is infrastructure built to be visually
+    # confused with the org's real domain — the essence of CWE-451.
+    "lookalike_domain": "CWE-451: User Interface (UI) Misrepresentation of Critical Information",
 }
 
 
