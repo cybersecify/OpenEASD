@@ -66,6 +66,8 @@ def analyze(session, records: list[dict]) -> list[Finding]:
     seen: set[str] = set()
 
     for record in records:
+        if not isinstance(record, dict):
+            continue
         if not _is_vulnerable(record):
             continue
 

@@ -7,6 +7,27 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Third-party licensing hygiene (attribution + notices).** Added a
+  `THIRD_PARTY_NOTICES.md` covering every bundled binary and data source: MIT
+  notices (ProjectDiscovery ×7, nuclei-templates, gitleaks, gau, cloud_enum),
+  the **Apache-2.0 NOTICE for amass** (was missing), a **GPL-2.0 source offer for
+  subzy**, the **NPSL "uses Nmap Security Scanner" notice**, and EPSS/CISA-KEV/
+  Hudson-Rock/Shodan data-source attributions. Added the EPSS + KEV + Hudson Rock
+  citation to the PDF report's Methodology section. **Why:** the Docker image
+  redistributes these binaries, so their licenses require the notices; this closes
+  the gap flagged by a dependency licence/ToS audit. No license purchase is
+  required for OpenEASD's free/non-commercial use.
+- **Documented Shodan InternetDB's non-commercial restriction** (settings +
+  notices): a *paid* product built on OpenEASD must supply its own Shodan key
+  rather than rely on the free keyless InternetDB tier.
+
+### Removed
+- **Dropped `waybackurls`** from the historical-URL collector and the Docker image.
+  It ships without a declared license (redistribution-ambiguous), and `gau` — which
+  we already run — is a strict superset of its one source (the Wayback Machine),
+  also covering Common Crawl, AlienVault OTX, and URLScan. Zero coverage loss.
+
 ### Added
 - **Lookalike / typosquat domain tool (`apps/typosquat`) — tool #24.** Generates
   lookalike candidates for the apex domain algorithmically — homoglyph, adjacent-key
@@ -32,6 +53,25 @@ commits to recover the reasoning.
   concrete attacker-controlled infrastructure — a strong free-report hook and a
   natural upsell signal (continuous lookalike monitoring / takedown). It runs in the
   no-auth **Passive Scan** mode, so a prospect gets it before granting authorization.
+- **Exposure Score + trend — one 0–100 executive risk number per scan.** Each
+  completed scan now gets a single saturating, severity-weighted score
+  (`raw = 25*critical + 8*high + 2*medium + 0.5*low`, capped at 100; `info`
+  contributes 0) plus a letter grade (A best … F worst; bands 0–19 A, 20–39 B,
+  40–59 C, 60–79 D, 80–100 F). A clean scan scores 0 / grade A. The score and
+  grade are stored per scan on `ScanSummary` (migration
+  `insights.0002`), so trend is queryable, and the delta vs the same domain's
+  previous scan (up = worse / down = better / flat) is computed Python-side to
+  avoid the SQLite JSON-aggregation quirk. Surfaced in `GET /api/insights/`
+  (per-scan `exposure_score`/`exposure_grade` on each `scan_trend` entry, plus a
+  top-level `exposure` object with the latest domain's score, grade, and trend),
+  in `GET /api/dashboard/` (per-domain `exposure_score`/`exposure_grade` on each
+  `domain_status` row), and as an "Exposure Score" block in the PDF report.
+  **Why:** the finding list lands with an engineer but not with the non-technical
+  buyer who signs off; a single number that trends over time gives that reader
+  something to track and anchors the free→paid value story (you improved your
+  score, here's how to keep improving it). Weights are named module constants in
+  `apps/core/insights/scoring.py` so the curve stays tunable. Frontend rendering
+  of the score/trend is deferred (backend + report only for now).
 - **Shodan passive exposure tool (`apps/shodan`) — tool #23.** Reads Shodan's own
   internet-wide scan dataset for each resolved public IP and reports exposed
   ports/services + known CVEs, **without sending a packet to the target**

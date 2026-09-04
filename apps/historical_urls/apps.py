@@ -5,9 +5,9 @@ class HistoricalUrlsConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.historical_urls"
     label = "historical_urls"
-    verbose_name = "Historical URLs (gau + waybackurls)"
+    verbose_name = "Historical URLs (gau)"
     tool_meta = {
-        "label": "Historical URLs (gau + waybackurls)",
+        "label": "Historical URLs (gau)",
         "runner": "apps.historical_urls.scanner.run_historical_urls",
         "phase": 9,
         "phase_group": "Web Exposure",
