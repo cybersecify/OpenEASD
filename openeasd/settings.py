@@ -124,6 +124,7 @@ INSTALLED_APPS = [
     "apps.nuclei_network",
     "apps.web_checker",
     "apps.js_secrets",
+    "apps.shodan",
     "apps.cve_intel",
 ]
 
@@ -298,6 +299,16 @@ TOOL_AMASS = config("TOOL_AMASS", default="amass")
 TOOL_ALTERX = config("TOOL_ALTERX", default="alterx")
 TOOL_CLOUD_ENUM = config("TOOL_CLOUD_ENUM", default="cloud_enum")
 TOOL_GITLEAKS = config("TOOL_GITLEAKS", default="gitleaks")
+
+# Shodan passive-exposure tool (apps/shodan). BYOK: with no key it uses Shodan's
+# FREE InternetDB endpoint (ports + CVEs, no credits) — so the tool always adds
+# value out of the box. Set SHODAN_API_KEY (per-deployment secret, NEVER baked
+# into the public image — that would leak the key and breach Shodan's ToS) to
+# upgrade to the full host API (service banners + versions). SHODAN_MAX_IPS caps
+# the paid path's per-scan queries to protect the plan's credit quota (the free
+# InternetDB path is uncapped — it costs no credits).
+SHODAN_API_KEY = config("SHODAN_API_KEY", default="")
+SHODAN_MAX_IPS = config("SHODAN_MAX_IPS", default=50, cast=int)
 
 # Honest scanner identity. Sent as the User-Agent on the tools that probe the
 # target's web surface (httpx, katana, nuclei) so a customer can deliberately

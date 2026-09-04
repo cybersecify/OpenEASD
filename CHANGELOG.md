@@ -27,6 +27,27 @@ commits to recover the reasoning.
   score, here's how to keep improving it). Weights are named module constants in
   `apps/core/insights/scoring.py` so the curve stays tunable. Frontend rendering
   of the score/trend is deferred (backend + report only for now).
+- **Shodan passive exposure tool (`apps/shodan`) — tool #23.** Reads Shodan's own
+  internet-wide scan dataset for each resolved public IP and reports exposed
+  ports/services + known CVEs, **without sending a packet to the target**
+  (passive, `active=False`, no `DomainAuthorization`). Two-tier, bring-your-own-key:
+  - **Free tier (default, zero config):** Shodan **InternetDB** — ports, CPEs,
+    CVE ids per IP. No key, no credits. Every Docker deployment gets it.
+  - **Enhanced tier:** set `SHODAN_API_KEY` → full host API (service banners +
+    versions + tags). `SHODAN_MAX_IPS` (default 50) caps the paid path's queries
+    to protect plan credits; the free path is uncapped (costs nothing).
+
+  **Why:** completes the "what's already publicly visible about you" picture that
+  the passive report is built on — Shodan shows exposure from an external vantage
+  that active tools (nmap) can't reach when a target blocks or rate-limits our
+  scanner, and it runs in the no-auth **Passive Scan** mode where nmap cannot.
+  **Not a duplicate of nmap:** different *method* (passive/external vs
+  active/first-hand) covering a different failure mode. CVE ids are stored in
+  `extra["cve_ids"]` so the existing `cve_intel` phase enriches them with EPSS +
+  CISA KEV — a Shodan-surfaced KEV CVE is exactly the "worth a pentest" signal.
+  **Key never ships in the image** (that would leak it + breach Shodan's ToS): the
+  key is a per-deployment secret; keyless users get the free tier. In default Full
+  Scan + Passive Scan (migration `0025`). 20 tests.
 
 ### Changed
 - **Tools now run to completion and deliver full output — no output caps.** The
