@@ -21,7 +21,7 @@ def post_json(client, path, data):
 # third-party data and never touch the target.
 _PASSIVE = {
     "subfinder", "alterx", "dnsx", "historical_urls",
-    "cloud_assets", "cve_intel", "asn_discovery",
+    "cloud_assets", "cve_intel", "asn_discovery", "breach_check",
 }
 _ACTIVE = {
     "domain_security", "amass", "takeover_check", "naabu", "service_detection",
