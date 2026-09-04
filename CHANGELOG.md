@@ -29,6 +29,30 @@ commits to recover the reasoning.
   also covering Common Crawl, AlienVault OTX, and URLScan. Zero coverage loss.
 
 ### Added
+- **Lookalike / typosquat domain tool (`apps/typosquat`) — tool #24.** Generates
+  lookalike candidates for the apex domain algorithmically — homoglyph, adjacent-key
+  substitution/insertion, omission, repetition, transposition, hyphenation, and
+  common-TLD swaps (capped at `MAX_CANDIDATES=300`, truncation logged, never silent)
+  — then checks which are **registered / weaponizable** via public DNS. A candidate
+  with A/MX records (can serve a phishing page or receive mail) is `medium`; one with
+  only NS (registered/parked) is `low`. One Finding per registered lookalike
+  (`check_type="lookalike_domain"`, CWE-451 UI Misrepresentation), with the technique,
+  DNS records, and resolved IPs in `extra`. Passive (`active=False`, no
+  `DomainAuthorization`, no API key) — every DNS query targets the CANDIDATE domain's
+  public DNS; **the target is never contacted**. Fail-graceful: any resolver
+  error / timeout / NXDOMAIN is treated as "not registered" and skipped; the tool
+  never raises and never fails a scan. In default Full Scan + Passive Scan (migration
+  `0026`). 29 tests.
+
+  **Why:** lookalike domains are the *threat surface* a defender doesn't see from
+  their own assets — phishing infrastructure and brand abuse are stood up on
+  confusable domains (`examp1e.com`, `example-support.com`, `example.io`) that never
+  appear in the org's DNS or CT logs. Surfacing which confusable names are already
+  *registered and live* is a high-signal, zero-cost addition to the passive report:
+  it needs no key, no authorization, and no packet to the target, yet it names
+  concrete attacker-controlled infrastructure — a strong free-report hook and a
+  natural upsell signal (continuous lookalike monitoring / takedown). It runs in the
+  no-auth **Passive Scan** mode, so a prospect gets it before granting authorization.
 - **Exposure Score + trend — one 0–100 executive risk number per scan.** Each
   completed scan now gets a single saturating, severity-weighted score
   (`raw = 25*critical + 8*high + 2*medium + 0.5*low`, capped at 100; `info`
