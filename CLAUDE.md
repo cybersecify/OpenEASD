@@ -297,7 +297,7 @@ request-counting proxy C4 is deferred).
 
 ## Architecture
 
-### Core infrastructure — `apps/core/` (14 sub-apps)
+### Core infrastructure — `apps/core/` (15 sub-apps)
 
 | App | Label | Purpose |
 |---|---|---|
@@ -313,6 +313,7 @@ request-counting proxy C4 is deferred).
 | `notifications/` | `alerts` | Slack/Teams alerts, NotificationConfig model, alert history |
 | `insights/` | `insights` | ScanSummary (incl. per-scan Exposure Score + grade, `scoring.py`), FindingTypeSummary, charts |
 | `reports/` | `reports` | CSV + PDF export |
+| `ai/` | `ai` | AI analysis (Cloudflare Workers AI, BYOK): finding triage, bounded adaptive orchestration, report/alert summaries, consent + per-call audit log |
 | `api/` | — | Django Ninja API — routers, JWT auth, error handlers |
 
 ### REST API module — `apps/core/api/`
@@ -558,6 +559,42 @@ class Finding(models.Model):
 
 **SQLite quirk:** Don't use `Max("extra__cvss_score")` or other aggregations on JSON-extracted fields — Django/SQLite fails. Group in Python instead.
 
+## AI subsystem — `apps/core/ai/` (D-014/D-015)
+
+Core subsystem, deliberately **NOT a registry tool** (no `tool_meta`): it runs
+post-finalize over the whole session and has orchestration authority, so its
+gate is consent + keys, never workflow membership.
+
+- **Backend:** Cloudflare Workers AI only, called directly via REST. BYOK env
+  vars: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` (never stored in DB or
+  returned by API), `CLOUDFLARE_AI_MODEL` (default
+  `@cf/meta/llama-3.3-70b-instruct-fp8-fast`), `CLOUDFLARE_AI_TIMEOUT` (60s),
+  `CLOUDFLARE_AI_MAX_CALLS_PER_SCAN` (10 — hard per-scan budget enforced in
+  `client.py`).
+- **Gate:** `guard.is_ai_active()` = keys configured AND `AISettings.enabled`
+  AND current-version consent recorded. Checked at every entry, never cached
+  across tasks (revocation is immediate).
+- **Pipeline wiring** (all via `apps/core/ai/hooks.py`, the fail-graceful
+  boundary — the ONLY module pipeline.py imports): `run_ai_post_scan` (triage +
+  summaries, inline, after `build_insights` / before `_dispatch_alerts`),
+  `maybe_start_agent` (last line of finalize), `maybe_continue_agent` (subscan
+  early-return branch — resumes a running agent chain).
+- **Orchestration:** one LLM decision per Django-Q step (closed action space:
+  `run_subscan`/`flag_finding`/`done`); a launched subscan's finalize
+  re-enqueues the next step, so nothing blocks the single worker. Bounded by
+  `max_agent_iterations` (consumed BEFORE the LLM call) and
+  `max_subscans_per_scan`; denial/failure/revocation terminal. Agent subscans
+  go only through `create_subscan_session` with `triggered_by="agent"`, and
+  `guard.gate_subscan_tools` re-checks `is_passive_tool_set` +
+  `DomainAuthorization` at the agent's dispatch boundary (the API-layer gate
+  does not cover internal callers).
+- **Safety invariants (all tested):** AI-off ⇒ scans byte-identical to pre-AI;
+  no active agent subscan without DomainAuthorization; `AIInvocation` audit
+  rows are metadata-only (model has no TextField — bodies structurally
+  unpersistable); the loop always terminates; no AI failure escapes hooks.py;
+  the AI layer never writes `Finding` rows (`test_ai_invariants.py` greps for
+  it).
+
 ## URL layout
 
 ### REST API (`/api/`)
@@ -602,6 +639,12 @@ GET  /api/notifications/config/           — get Slack/Teams notification confi
 POST /api/notifications/config/           — update notification config
 POST /api/notifications/test/             — send a test alert
 GET  /api/notifications/alerts/           — alert history
+GET  /api/ai/config/                      — AI settings (credential presence booleans only — values never leave the env)
+POST /api/ai/config/                      — enable/disable; enabling requires current-version consent (consent_accepted stamps it)
+POST /api/ai/test/                        — Workers AI connectivity probe (fixed prompt, no scan data; allowed pre-consent)
+GET  /api/ai/triage/<uuid>/               — triage status + ranked items + agent decisions (disabled|absent|running|complete|failed)
+POST /api/ai/triage/<uuid>/run/           — manual (re-)run via Django-Q (409 while scan/triage in flight)
+GET  /api/ai/audit/                       — paginated AI call log (metadata only, never bodies)
 ```
 
 ### Other routes
@@ -640,12 +683,12 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_naabu.py` | 10 | JSON parser, FK to IPAddress |
 | `tests/unit/test_nmap.py` | 26 |
 | `tests/unit/test_nmap_backports.py` | 16 | Backport-aware CVE demotion engine — Debian/Ubuntu version compare, check_backport, `protocol 2.0` false-positive guard | Severity mapping, vulners XML parser, web/non-web exclusion, backport matching |
-| `tests/unit/test_notifications.py` | 25 | NotificationConfig, Slack/Teams alerts, alert-history API |
+| `tests/unit/test_notifications.py` | 32 | NotificationConfig, Slack/Teams alerts, alert-history API, AI summary block/fact (absent = payload byte-identical) |
 | `tests/unit/test_nuclei.py` | 33 | CVE parsing, severity, dedup, URL linking, collector, honest UA |
 | `tests/unit/test_nuclei_network.py` | 28 | Network-template parsing, non-web targeting, collector |
 | `tests/unit/test_pipeline_phases.py` | 1 | Phase ordering sanity |
 | `tests/unit/test_qcluster_config.py` | 4 | Django-Q cluster config |
-| `tests/unit/test_reports.py` | 51 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block, technology stack block |
+| `tests/unit/test_reports.py` | 57 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block, technology stack block, AI Analyst Summary block (absent without AI rows) |
 | `tests/unit/test_waf_detection.py` | 16 | WAF/block/challenge classifier (spec C1) — vendor fingerprint, false-positive guards, analyzer wiring |
 | `tests/unit/test_coverage.py` | 6 | Scan coverage (spec C2) — endpoint counts, dominant vendor, report note wording |
 | `tests/unit/test_scans.py` | 30 | ScanSession, scheduling, scan_start views |
@@ -670,6 +713,16 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_update_check.py` | 22 | Update-available check — version parse/compare, cached GitHub fetch, fail-graceful on timeout/HTTP-error/bad-payload, endpoint shape |
 | `tests/unit/test_proc_env.py` | 4 | `go_memory_env()` — GOMEMLIMIT/GOGC set in low profile, unchanged otherwise, preserves existing env |
 | `tests/unit/test_coverage_regression.py` | 10 | Silent-block coverage counting (probed-vs-reached), coverage-regression finding (high block ratio / findings drop / stable = no flag), partial scan status when a tool fails |
+| `tests/unit/test_ai_client.py` | 20 | Workers AI client — envelope parsing (dict/string response), audit rows + token accounting, 429/5xx retry, schema-mismatch corrective retry, per-scan call budget |
+| `tests/unit/test_ai_models.py` | 9 | AISettings singleton + consent versioning, AIInvocation no-TextField invariant, audit survives session deletion, OneToOne/unique constraints |
+| `tests/unit/test_ai_guard.py` | 12 | is_ai_active gate matrix, gate_subscan_tools (unknown-drop, passive-allowed, active-needs-DomainAuthorization) |
+| `tests/unit/test_ai_api.py` | 27 | config GET/POST (no credential leak, CONSENT_REQUIRED, consent stamping, disable-keeps-consent), test endpoint, triage GET/run status matrix, triage task, audit pagination |
+| `tests/unit/test_ai_context.py` | 7 | Prompt builders — severity-ranked selection + cap, info excluded, description truncation, message payloads |
+| `tests/unit/test_ai_triage.py` | 6 | Ranked item persistence, hallucinated/duplicate id drop, failed status, replace-on-rerun |
+| `tests/unit/test_ai_summaries.py` | 7 | Report + alert kinds, absent-on-failure, triage overview feeds prompt, update-in-place |
+| `tests/unit/test_ai_pipeline.py` | 10 | Invariants 1 + 5 — AI-off finalize byte-identical, hook ordering before alerts, subscan skip, failure swallowing |
+| `tests/unit/test_ai_orchestrator.py` | 22 | Agent loop — gate/revocation terminal, iteration pre-consumption, caps, denied-without-auth, sanctioned subscan path (`triggered_by="agent"`), flag never mutates Finding.status, chain hooks |
+| `tests/unit/test_ai_invariants.py` | 3 | Grep-style: AI layer only Finding.objects.filter, audit writer has no body params, client creates only AIInvocation |
 | `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
 
-**Total: 1493 tests** (1441 fast + 52 slow domain_security)
+**Total: 1633 tests** (1581 fast + 52 slow domain_security)

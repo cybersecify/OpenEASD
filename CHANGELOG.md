@@ -7,6 +7,26 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **AI analysis layer (`apps/core/ai`) — triage, adaptive orchestration, and
+  summaries via Cloudflare Workers AI (BYOK).** After each scan it ranks
+  findings by exploitability with a per-finding rationale ("Fix These First"
+  panel on scan detail + "Analyst Summary" block in the PDF), can schedule
+  bounded follow-up subscans based on what was found (hard caps on iterations
+  and subscans; active tools re-checked against `DomainAuthorization` at the
+  agent's own dispatch boundary), and writes plain-language report/alert
+  summaries (one extra Slack block / Teams fact when present). Entirely off
+  unless `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` are set AND the
+  operator enables it AND records consent (first-use dialog); with the gate
+  closed every scan runs byte-identical to before. Every call is recorded in
+  an audit log (time, scan, purpose, model, token counts, finding IDs — the
+  audit model has no text fields, so prompt/response bodies are structurally
+  unpersistable). New `/ai` page (settings, consent, connection test, call
+  log) and `/api/ai/` router. **Why:** v2.0 direction per D-009/D-014/D-015 —
+  the differentiation is being smarter about scanner output than the tools we
+  wrap; scanner-grade output is commodity, analyst-grade output is not.
+  Supersedes the Ollama/Claude design of D-010–D-012 (see DECISIONS.md).
+
 ### Changed
 - **Third-party licensing hygiene (attribution + notices).** Added a
   `THIRD_PARTY_NOTICES.md` covering every bundled binary and data source: MIT
