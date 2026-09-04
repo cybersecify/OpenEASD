@@ -125,6 +125,7 @@ INSTALLED_APPS = [
     "apps.web_checker",
     "apps.js_secrets",
     "apps.shodan",
+    "apps.typosquat",
     "apps.cve_intel",
 ]
 

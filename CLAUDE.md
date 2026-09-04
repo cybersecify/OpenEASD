@@ -395,12 +395,13 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (23 registered tools)
+### Tool apps (24 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
 | `apps/domain_security/` | 1 | Domain Intelligence | Yes | DNS, email, RDAP checks |
 | `apps/hudson_rock/` | 1 | Domain Intelligence | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
+| `apps/typosquat/` | 1 | Domain Intelligence | Yes | Lookalike / typosquat domain detection — generates lookalike candidates algorithmically (homoglyph/typo/omission/insertion/repetition/transposition/hyphenation/TLD-swap) then checks which are registered via public DNS (A/MX → medium/weaponizable, NS-only → low). Passive (queries candidate domains' DNS, never the target), no key, fail-graceful |
 | `apps/subfinder/` | 2 | Surface Enumeration | No | Passive subdomain enumeration |
 | `apps/amass/` | 2 | Surface Enumeration | No | Active subdomain enumeration |
 | `apps/asn_discovery/` | 2 | Surface Enumeration | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
@@ -445,6 +446,7 @@ but not yet in the default set.)
 ```
 Phase 1  domain_security    → Finding (DNS/email/RDAP)
 Phase 1  hudson_rock         → Finding (infostealer exposure via Hudson Rock — passive)
+Phase 1  typosquat           → Finding (registered lookalike/typosquat domains via public DNS — passive)
 Phase 2  subfinder          → Subdomain (passive enumeration)
 Phase 2  amass              → Subdomain (active enumeration)
 Phase 2  asn_discovery      → Finding (owned ASN/CIDR ranges via amass intel — informational)
@@ -478,7 +480,8 @@ the registry via `get_tool_active()` and `is_passive_tool_set(tools)`.
   feeds. Sends **no packets to the target's own systems**. Needs **no
   `DomainAuthorization`**.
   Passive tools: `subfinder`, `alterx`, `dnsx`, `historical_urls`,
-  `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`, `shodan`.
+  `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`, `shodan`,
+  `typosquat`.
 - **Active** (`active=True`): probes the target directly (port scans, HTTP/TLS/SSH
   connections, crawling, vuln templates, AXFR/SMTP/mta-sts probes). **Requires
   `DomainAuthorization`.**
@@ -645,6 +648,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_ssh_checker.py` | 34 | SSH probe, host key, kex/cipher/MAC, auth, collector |
 | `tests/unit/test_subfinder.py` | 10 | JSON parser, dedup, hostname normalization |
 | `tests/unit/test_subscan.py` | 12 | Targeted re-scan of a single tool / subset |
+| `tests/unit/test_typosquat.py` | 29 | candidate generation (all 8 techniques, uniqueness, no-original, www-strip, cap/truncation-logged), passive DNS registration check (A/MX/NS, NXDOMAIN + timeout never raise), analyzer (A/MX → medium, NS-only → low, one Finding per lookalike), scanner (saves + never-raises) |
 | `tests/unit/test_takeover_check.py` | 35 | collector (missing binary, bad JSON, happy path), analyzer (vulnerable/non-vulnerable, FK link, dedup), scanner |
 | `tests/unit/test_tls_checker.py` | 87 | Cert parsing, ciphers, protocols, HSTS, collector, scanner, cipher enumeration |
 | `tests/unit/test_tools_healthcheck.py` | 14 | Tool binary preflight / health checks |
@@ -661,4 +665,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_coverage_regression.py` | 10 | Silent-block coverage counting (probed-vs-reached), coverage-regression finding (high block ratio / findings drop / stable = no flag), partial scan status when a tool fails |
 | `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
 
-**Total: 1370 tests** (1318 fast + 52 slow domain_security)
+**Total: 1402 tests** (1350 fast + 52 slow domain_security)

@@ -14,7 +14,7 @@
 
 Use it as a **red teamer** to map external surface fast on targets you're authorised to test. Use it as a **defender** to see what's leaking out of your own infrastructure: subdomains, exposed ports, dangling CNAMEs, missing TLS, known CVEs, without paying $500-5000/mo for a commercial EASM platform.
 
-OpenEASD wraps the open-source recon tools security teams already use: `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `cloud_enum`, `naabu`, `nmap`, `httpx`, `gau`, `waybackurls`, `katana`, `nuclei`, `gitleaks`, behind a single web UI with scheduling, alerts, and findings tracking. Twenty-three tools across DNS/DNSSEC, email (SPF/DMARC/DKIM/MTA-STS/open-relay), TLS, SSH, ports, CVEs, subdomain takeover, ASN/IP-range discovery, historical URLs, cloud assets, exposed secrets in JavaScript, infostealer-log exposure (via Hudson Rock's keyless Cavalier API), Shodan-sourced exposure (passive; free InternetDB tier out of the box, richer with a bring-your-own Shodan key), technology fingerprinting, web hygiene, and CVE prioritisation (EPSS + CISA KEV). Run a **passive scan** (public-source only, no authorization needed) or an **active scan** (probes the target, authorization required). Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
+OpenEASD wraps the open-source recon tools security teams already use: `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `cloud_enum`, `naabu`, `nmap`, `httpx`, `gau`, `waybackurls`, `katana`, `nuclei`, `gitleaks`, behind a single web UI with scheduling, alerts, and findings tracking. Twenty-four tools across DNS/DNSSEC, email (SPF/DMARC/DKIM/MTA-STS/open-relay), TLS, SSH, ports, CVEs, subdomain takeover, ASN/IP-range discovery, historical URLs, cloud assets, exposed secrets in JavaScript, infostealer-log exposure (via Hudson Rock's keyless Cavalier API), Shodan-sourced exposure (passive; free InternetDB tier out of the box, richer with a bring-your-own Shodan key), lookalike / typosquat domain detection (passive; phishing infrastructure and brand abuse targeting your domain), technology fingerprinting, web hygiene, and CVE prioritisation (EPSS + CISA KEV). Run a **passive scan** (public-source only, no authorization needed) or an **active scan** (probes the target, authorization required). Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
 
 Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok S Kamat](https://www.linkedin.com/in/ashokskamat/) of [Cybersecify](https://cybersecify.com), the same tool we run in engagements and on our own infrastructure.
 
@@ -193,6 +193,8 @@ Phase 1  Domain Security   - DNS, DNSSEC chain-of-trust, email
                              (SPF/DMARC/DKIM/MTA-STS/open-relay), RDAP checks
 Phase 1  Hudson Rock        - Infostealer-log exposure via Hudson Rock's keyless
                              Cavalier API (aggregate counts only, no plaintext)
+Phase 1  Typosquat          - Lookalike / typosquat domain detection (passive;
+                             registered lookalikes via public DNS — phishing/brand abuse)
 
 ── Surface Enumeration ─────────────────────────────────────────────────────
 Phase 2  Subfinder         - Passive subdomain enumeration
