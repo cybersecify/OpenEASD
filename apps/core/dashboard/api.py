@@ -73,6 +73,8 @@ def api_dashboard(request):
             "last_scan": session.start_time.isoformat() if session and session.start_time else None,
             "critical": summary.critical_count if summary else 0,
             "high": summary.high_count if summary else 0,
+            "exposure_score": summary.exposure_score if summary else 0,
+            "exposure_grade": summary.exposure_grade if summary else "A",
         })
 
     running_count = ScanSession.objects.filter(status__in=["pending", "running"]).count()

@@ -8,6 +8,25 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Added
+- **Exposure Score + trend — one 0–100 executive risk number per scan.** Each
+  completed scan now gets a single saturating, severity-weighted score
+  (`raw = 25*critical + 8*high + 2*medium + 0.5*low`, capped at 100; `info`
+  contributes 0) plus a letter grade (A best … F worst; bands 0–19 A, 20–39 B,
+  40–59 C, 60–79 D, 80–100 F). A clean scan scores 0 / grade A. The score and
+  grade are stored per scan on `ScanSummary` (migration
+  `insights.0002`), so trend is queryable, and the delta vs the same domain's
+  previous scan (up = worse / down = better / flat) is computed Python-side to
+  avoid the SQLite JSON-aggregation quirk. Surfaced in `GET /api/insights/`
+  (per-scan `exposure_score`/`exposure_grade` on each `scan_trend` entry, plus a
+  top-level `exposure` object with the latest domain's score, grade, and trend),
+  in `GET /api/dashboard/` (per-domain `exposure_score`/`exposure_grade` on each
+  `domain_status` row), and as an "Exposure Score" block in the PDF report.
+  **Why:** the finding list lands with an engineer but not with the non-technical
+  buyer who signs off; a single number that trends over time gives that reader
+  something to track and anchors the free→paid value story (you improved your
+  score, here's how to keep improving it). Weights are named module constants in
+  `apps/core/insights/scoring.py` so the curve stays tunable. Frontend rendering
+  of the score/trend is deferred (backend + report only for now).
 - **Shodan passive exposure tool (`apps/shodan`) — tool #23.** Reads Shodan's own
   internet-wide scan dataset for each resolved public IP and reports exposed
   ports/services + known CVEs, **without sending a packet to the target**

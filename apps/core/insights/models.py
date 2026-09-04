@@ -22,6 +22,13 @@ class ScanSummary(models.Model):
     low_count = models.IntegerField(default=0)
     total_findings = models.IntegerField(default=0)
 
+    # Exposure Score — single 0-100 executive risk number (higher = worse) + its
+    # letter grade (A best, F worst). Derived from the severity counts above at
+    # build time (see apps.core.insights.scoring). Stored per scan so trend is
+    # queryable without recomputing.
+    exposure_score = models.IntegerField(default=0)
+    exposure_grade = models.CharField(max_length=1, default="A")
+
     # Delta counts
     new_exposures = models.IntegerField(default=0)
     removed_exposures = models.IntegerField(default=0)

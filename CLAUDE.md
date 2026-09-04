@@ -311,7 +311,7 @@ request-counting proxy C4 is deferred).
 | `workflows/` | `workflow` | Workflow CRUD, dynamic runner, tool registry |
 | `scheduler/` | `scheduler` | Django-Q2 schedule setup, daily/weekly scans, per-domain monitoring, stuck scan watchdog |
 | `notifications/` | `alerts` | Slack/Teams alerts, NotificationConfig model, alert history |
-| `insights/` | `insights` | ScanSummary, FindingTypeSummary, charts |
+| `insights/` | `insights` | ScanSummary (incl. per-scan Exposure Score + grade, `scoring.py`), FindingTypeSummary, charts |
 | `reports/` | `reports` | CSV + PDF export |
 | `api/` | — | Django Ninja API — routers, JWT auth, error handlers |
 
@@ -563,7 +563,7 @@ GET  /api/version/                        — build provenance {version, git_sha
 GET  /api/version/latest/                 — update check {current_version, latest_version, update_available, release_url} (authenticated; cached 6h, fail-graceful)
 GET  /api/user/                           — current user info + must_change_password flag
 POST /api/user/change-password/           — change password; clears must_change_password flag
-GET  /api/dashboard/                      — KPIs, domain status, urgent findings
+GET  /api/dashboard/                      — KPIs, domain status (incl. per-domain exposure_score/grade), urgent findings
 GET  /api/domains/                        — list domains (enriched)
 POST /api/domains/                        — add domain
 POST /api/domains/<pk>/toggle/            — activate/deactivate
@@ -590,7 +590,7 @@ POST /api/workflows/<pk>/update/          — update workflow name/tools
 POST /api/workflows/<pk>/rename/          — rename workflow
 POST /api/workflows/<pk>/delete/          — delete workflow
 POST /api/workflows/<pk>/steps/<tool>/toggle/ — toggle single tool step
-GET  /api/insights/                       — trends, top hosts, asset growth, KPIs
+GET  /api/insights/                       — trends, top hosts, asset growth, KPIs, Exposure Score + trend (per-scan exposure_score/grade + top-level exposure block)
 GET  /api/notifications/config/           — get Slack/Teams notification config
 POST /api/notifications/config/           — update notification config
 POST /api/notifications/test/             — send a test alert
@@ -651,6 +651,7 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_user_profile.py` | 7 | UserProfile `must_change_password` flag |
 | `tests/unit/test_settings_security.py` | 16 | SECRET_KEY strength guard (DEBUG=False + insecure default) |
 | `tests/unit/test_insights_builder.py` | 4 | FindingTypeSummary prune only when aggregation_complete |
+| `tests/unit/test_exposure_score.py` | 38 | Exposure Score — formula (clean=0, weights, saturation cap), grade bands, trend delta (up/down/flat/no-baseline), builder populates ScanSummary, insights + dashboard API fields, PDF report exposure block |
 | `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
 | `tests/unit/test_passive_scan.py` | 21 | registry `active` classification, `is_passive_tool_set`, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
 | `tests/unit/test_workflow_runner.py` | 33 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism |
@@ -661,4 +662,4 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_coverage_regression.py` | 10 | Silent-block coverage counting (probed-vs-reached), coverage-regression finding (high block ratio / findings drop / stable = no flag), partial scan status when a tool fails |
 | `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
 
-**Total: 1370 tests** (1318 fast + 52 slow domain_security)
+**Total: 1408 tests** (1356 fast + 52 slow domain_security)
