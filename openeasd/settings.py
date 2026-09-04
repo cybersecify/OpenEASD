@@ -105,6 +105,7 @@ INSTALLED_APPS = [
     "ninja_jwt.token_blacklist",
     "apps.domain_security",
     "apps.hudson_rock",
+    "apps.breach_check",
     "apps.subfinder",
     "apps.amass",
     "apps.asn_discovery",
@@ -419,6 +420,20 @@ NUCLEI_GOMEMLIMIT = config("NUCLEI_GOMEMLIMIT", default=("600MiB" if LOW_MEMORY 
 HUDSON_ROCK_BASE_URL = config(
     "HUDSON_ROCK_BASE_URL",
     default="https://cavalier.hudsonrock.com/api/json/v2/osint-tools",
+)
+
+# Breach-exposure tool (apps/breach_check). Two-tier BYOK: with no key it uses
+# XposedOrNot's FREE keyless public breach catalog (which known breaches are tied
+# to the domain) — so the tool always adds value out of the box. Set HIBP_API_KEY
+# (a per-deployment secret, NEVER baked into the public image — that would leak
+# the operator's paid key) to switch to the authoritative Have I Been Pwned
+# breacheddomain endpoint, which also needs the operator to have verified domain
+# ownership with HIBP. Only aggregate counts + public breach metadata are ever
+# stored — never email aliases or credentials. Base URLs overridable for testing.
+HIBP_API_KEY = config("HIBP_API_KEY", default="")
+HIBP_BASE_URL = config("HIBP_BASE_URL", default="https://haveibeenpwned.com/api/v3")
+BREACH_CHECK_XON_BASE_URL = config(
+    "BREACH_CHECK_XON_BASE_URL", default="https://api.xposedornot.com/v1"
 )
 
 # Build provenance — baked into the image at build time (see Dockerfile ARG/ENV
