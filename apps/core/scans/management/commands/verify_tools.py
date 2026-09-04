@@ -97,8 +97,9 @@ TOOL_BINARY_SETTING = {
     "cloud_assets": "TOOL_CLOUD_ENUM",
 }
 
-# historical_urls shells out to two binaries.
-MULTI_BINARY = {"historical_urls": ["TOOL_GAU", "TOOL_WAYBACKURLS"]}
+# historical_urls shells out to gau (waybackurls was dropped — undeclared license,
+# and gau already covers its sources).
+MULTI_BINARY = {"historical_urls": ["TOOL_GAU"]}
 
 # Below this wall-clock (seconds), a completed-but-empty external-tool run is
 # almost certainly a no-op (missing binary / empty input), not real work.

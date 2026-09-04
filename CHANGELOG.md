@@ -7,6 +7,27 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Third-party licensing hygiene (attribution + notices).** Added a
+  `THIRD_PARTY_NOTICES.md` covering every bundled binary and data source: MIT
+  notices (ProjectDiscovery ×7, nuclei-templates, gitleaks, gau, cloud_enum),
+  the **Apache-2.0 NOTICE for amass** (was missing), a **GPL-2.0 source offer for
+  subzy**, the **NPSL "uses Nmap Security Scanner" notice**, and EPSS/CISA-KEV/
+  Hudson-Rock/Shodan data-source attributions. Added the EPSS + KEV + Hudson Rock
+  citation to the PDF report's Methodology section. **Why:** the Docker image
+  redistributes these binaries, so their licenses require the notices; this closes
+  the gap flagged by a dependency licence/ToS audit. No license purchase is
+  required for OpenEASD's free/non-commercial use.
+- **Documented Shodan InternetDB's non-commercial restriction** (settings +
+  notices): a *paid* product built on OpenEASD must supply its own Shodan key
+  rather than rely on the free keyless InternetDB tier.
+
+### Removed
+- **Dropped `waybackurls`** from the historical-URL collector and the Docker image.
+  It ships without a declared license (redistribution-ambiguous), and `gau` — which
+  we already run — is a strict superset of its one source (the Wayback Machine),
+  also covering Common Crawl, AlienVault OTX, and URLScan. Zero coverage loss.
+
 ### Added
 - **Exposure Score + trend — one 0–100 executive risk number per scan.** Each
   completed scan now gets a single saturating, severity-weighted score

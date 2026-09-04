@@ -99,22 +99,21 @@ RUN go install -ldflags="-s -w" github.com/PentestPad/subzy@${SUBZY_VERSION} \
        fi
 
 # ---------------------------------------------------------------------------
-# Stage 2c: build gau + waybackurls from source (pure-Go, cross-compiles cleanly).
+# Stage 2c: build gau from source (pure-Go, cross-compiles cleanly).
+# (waybackurls was dropped — it ships without a declared license, and gau already
+# covers its one source, the Wayback Machine, plus Common Crawl / OTX / URLScan.)
 # ---------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM golang:1.27 AS history-builder
 
 ARG TARGETOS
 ARG TARGETARCH
 ARG GAU_VERSION=v2.2.4
-ARG WAYBACKURLS_VERSION=v0.1.0
 
 ENV CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH
 
 RUN go install github.com/lc/gau/v2/cmd/gau@${GAU_VERSION} \
-    && go install github.com/tomnomnom/waybackurls@${WAYBACKURLS_VERSION} \
     && mkdir -p /history-tools \
-    && (mv /go/bin/${TARGETOS}_${TARGETARCH}/gau /history-tools/ 2>/dev/null || mv /go/bin/gau /history-tools/) \
-    && (mv /go/bin/${TARGETOS}_${TARGETARCH}/waybackurls /history-tools/ 2>/dev/null || mv /go/bin/waybackurls /history-tools/)
+    && (mv /go/bin/${TARGETOS}_${TARGETARCH}/gau /history-tools/ 2>/dev/null || mv /go/bin/gau /history-tools/)
 
 # ---------------------------------------------------------------------------
 # Stage 3: runtime
