@@ -416,7 +416,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/ssh_checker/` | 7 | Network Exposure | Yes | SSH config analysis |
 | `apps/nuclei_network/` | 7 | Network Exposure | Yes | Network protocol vuln scan (319 templates, non-web) |
 | `apps/httpx/` | 8 | Web Exposure | No | Web probing, URL discovery, technology fingerprinting (`-tech-detect` → `URL.technologies`) |
-| `apps/historical_urls/` | 9 | Web Exposure | No | Historical URL discovery via gau + waybackurls (Wayback Machine, OTX, Common Crawl) |
+| `apps/historical_urls/` | 9 | Web Exposure | No | Historical URL discovery via gau (Wayback Machine, OTX, Common Crawl, URLScan) |
 | `apps/katana/` | 10 | Web Exposure | No | Web crawling, endpoint discovery |
 | `apps/nuclei/` | 11 | Web Exposure | Yes | Web vuln scan (community templates) |
 | `apps/web_checker/` | 11 | Web Exposure | Yes | Security headers, cookies, CORS |
@@ -460,7 +460,7 @@ Phase 7  tls_checker        → Finding (cipher/cert/protocol on all ports)    �
 Phase 7  ssh_checker        → Finding (SSH config on service="ssh" ports)    │
 Phase 7  nuclei_network     → Finding (network protocol vulns, non-web ports)┘
 Phase 8  httpx              → URL (web probing, CDN-aware via SNI)
-Phase 9  historical_urls    → URL (gau + waybackurls — archived endpoints)
+Phase 9  historical_urls    → URL (gau — archived endpoints)
 Phase 10 katana             → URL (web crawling, endpoint discovery)
 Phase 11 nuclei             → Finding (web vulns via templates on URLs)
 Phase 11 web_checker        → Finding (headers, cookies, CORS on URLs)
