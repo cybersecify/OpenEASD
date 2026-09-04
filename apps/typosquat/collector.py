@@ -24,7 +24,6 @@ ToolBinaryMissing / ToolTimeout.
 import logging
 
 import dns.resolver
-from django.conf import settings
 
 logger = logging.getLogger(__name__)
 

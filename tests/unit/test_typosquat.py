@@ -47,26 +47,26 @@ class TestGenerateCandidates:
     def test_omission_technique_present(self):
         names = {c["candidate"] for c in generate_candidates("example.com")}
         # dropping the leading 'e' yields "xample.com"
-        assert "xample.com" in names
+        assert names & {"xample.com"}
 
     def test_transposition_technique_present(self):
         names = {c["candidate"] for c in generate_candidates("example.com")}
         # swap first two chars of "example" -> "xeample"
-        assert "xeample.com" in names
+        assert names & {"xeample.com"}
 
     def test_repetition_technique_present(self):
         names = {c["candidate"] for c in generate_candidates("example.com")}
         # double the leading 'e' -> "eexample"
-        assert "eexample.com" in names
+        assert names & {"eexample.com"}
 
     def test_hyphenation_technique_present(self):
         names = {c["candidate"] for c in generate_candidates("example.com")}
-        assert "e-xample.com" in names
+        assert names & {"e-xample.com"}
 
     def test_homoglyph_technique_present(self):
         names = {c["candidate"] for c in generate_candidates("example.com")}
         # 'a' -> '4' homoglyph in "example" -> "ex4mple"
-        assert "ex4mple.com" in names
+        assert names & {"ex4mple.com"}
 
     def test_tld_swap_present_and_tagged(self):
         cands = generate_candidates("example.com")
@@ -82,8 +82,8 @@ class TestGenerateCandidates:
     def test_strips_leading_www(self):
         names = {c["candidate"] for c in generate_candidates("www.example.com")}
         # generation should behave as if apex is example.com
-        assert "example.net" in names
-        assert "www.example.com" not in names
+        assert names & {"example.net"}
+        assert not (names & {"www.example.com"})
 
     def test_empty_domain_returns_empty(self):
         assert generate_candidates("") == []
