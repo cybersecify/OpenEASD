@@ -164,6 +164,20 @@
 </div>
 {% endwith %}
 
+<div class="risk no-break" style="border-color:#1971c2;">
+  <div class="l" style="color:#1971c2;">Exposure Score</div>
+  <div class="v" style="color:#1971c2;">{{ exposure_score }}/100 &nbsp;&middot;&nbsp; Grade {{ exposure_grade }}</div>
+  <p style="margin:8px 0 0;font-size:10px;line-height:1.5;color:#333;">A single 0–100 measure of externally observable risk (higher is worse), weighted by finding severity.
+  {% if exposure_trend %}
+    {% if exposure_trend.direction == "up" %}Up {{ exposure_trend.change }} from {{ exposure_trend.previous_score }} at the previous scan — posture worsened.
+    {% elif exposure_trend.direction == "down" %}Down {{ exposure_trend.change|cut:"-" }} from {{ exposure_trend.previous_score }} at the previous scan — posture improved.
+    {% else %}Unchanged from the previous scan ({{ exposure_trend.previous_score }}).
+    {% endif %}
+  {% else %}No previous scan to trend against — this is the baseline.
+  {% endif %}
+  </p>
+</div>
+
 <p class="lead" style="font-style:italic;font-size:9px;color:#666;">This is a point-in-time snapshot of the externally observable attack surface, taken from the public internet. It does not include authenticated, internal, or manual testing, and an attack surface changes over time — treat it as a baseline, not a certificate.</p>
 
 {% if coverage %}
@@ -235,6 +249,7 @@
   </tbody>
 </table>
 <p class="lead" style="font-style:italic;">Every finding is traceable to a specific tool, check type, and target in Detailed Findings. Automated version-to-CVE matching can over-report where a vendor backports fixes without changing the version banner; such matches should be validated against the actual package build.</p>
+<p class="lead" style="font-size:0.85em;color:#868e96;">Exploitation prioritisation uses the Exploit Prediction Scoring System (EPSS) from <strong>FIRST.org</strong> (first.org/epss) and the <strong>CISA</strong> Known Exploited Vulnerabilities catalogue. Infostealer-exposure data is provided by <strong>Hudson Rock</strong> (hudsonrock.com).</p>
 
 {% if workflow_steps %}
 <div class="h2">Scan Step Diagnostics (Partial Scan)</div>

@@ -11,9 +11,39 @@ from apps.core.assets.models import IPAddress, Port, Subdomain
 from apps.core.domains.models import Domain
 from apps.core.findings.models import Finding
 from apps.core.insights.models import FindingTypeSummary, ScanSummary
+from apps.core.insights.scoring import exposure_trend
 from apps.core.web_assets.models import URL
 
 router = Router(auth=JWTAuth())
+
+
+def _latest_exposure(active_domains: list) -> dict | None:
+    """Exposure Score + trend for the single most-recently-scanned domain.
+
+    Compares that domain's newest scan to its own previous scan (Python-side, to
+    avoid the SQLite JSON-agg quirk — plain integer fields here, but the trend
+    math stays in Python for consistency with the rest of the insights code).
+    Returns None when there are no summaries yet.
+    """
+    latest = (
+        ScanSummary.objects.filter(domain__in=active_domains)
+        .order_by("-scan_date")
+        .first()
+    )
+    if latest is None:
+        return None
+    previous = (
+        ScanSummary.objects.filter(domain=latest.domain)
+        .exclude(id=latest.id)
+        .order_by("-scan_date")
+        .first()
+    )
+    trend = exposure_trend(
+        latest.exposure_score,
+        previous.exposure_score if previous else None,
+    )
+    trend["domain"] = latest.domain
+    return trend
 
 
 def _asset_counts_per_session(session_ids: list) -> dict:
@@ -59,6 +89,8 @@ def api_insights(request):
             "low": s.low_count,
             "tool_breakdown": s.tool_breakdown or {},
             "total": s.total_findings,
+            "exposure_score": s.exposure_score,
+            "exposure_grade": s.exposure_grade,
         }
         for s in summaries
     ]
@@ -146,6 +178,7 @@ def api_insights(request):
         "kpi_open_high": kpi_open_high,
         "kpi_new": kpi_new,
         "kpi_fixed": kpi_fixed,
+        "exposure": _latest_exposure(active_domains),
         "scan_trend": scan_trend,
         "delta_trend": delta_trend,
         "asset_growth": asset_growth,
