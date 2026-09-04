@@ -122,6 +122,136 @@ class TestTestEndpoint:
             assert _post(auth_client, "/api/ai/test/", {}).status_code == 200
 
 
+def _activate(settings):
+    settings.CLOUDFLARE_ACCOUNT_ID = "acct"
+    settings.CLOUDFLARE_API_TOKEN = "tok"
+    cfg = AISettings.get()
+    cfg.enabled = True
+    cfg.save()
+    cfg.record_consent("admin")
+
+
+def _finished_session(status="completed"):
+    from apps.core.scans.models import ScanSession
+    return ScanSession.objects.create(domain="example.com", scan_type="full", status=status)
+
+
+@pytest.mark.django_db
+class TestTriageGet:
+    def test_unknown_session_404(self, auth_client, configured):
+        import uuid
+        assert auth_client.get(f"/api/ai/triage/{uuid.uuid4()}/").status_code == 404
+
+    def test_disabled_when_gate_closed(self, auth_client, unconfigured):
+        sess = _finished_session()
+        data = auth_client.get(f"/api/ai/triage/{sess.uuid}/").json()
+        assert data["status"] == "disabled"
+
+    def test_absent(self, auth_client, settings):
+        _activate(settings)
+        sess = _finished_session()
+        data = auth_client.get(f"/api/ai/triage/{sess.uuid}/").json()
+        assert data["status"] == "absent"
+        assert data["decisions"] == []
+
+    def test_complete_with_items(self, auth_client, settings):
+        from apps.core.ai.models import AITriage
+        from apps.core.findings.models import Finding
+        _activate(settings)
+        sess = _finished_session()
+        f = Finding.objects.create(session=sess, source="nmap", check_type="cve",
+                                   severity="critical", title="big", target="example.com")
+        triage = AITriage.objects.create(session=sess, status="completed",
+                                         overview="the overview", model="m")
+        triage.items.create(finding=f, finding_key="nmap:cve:big", rank=1,
+                            priority="fix_now", rationale="because")
+        data = auth_client.get(f"/api/ai/triage/{sess.uuid}/").json()
+        assert data["status"] == "complete"
+        assert data["triage"]["summary"] == "the overview"
+        item = data["triage"]["items"][0]
+        assert item["finding_id"] == f.id
+        assert item["severity"] == "critical"
+        assert item["priority"] == "fix_now"
+
+    def test_failed_and_running(self, auth_client, settings):
+        from apps.core.ai.models import AITriage
+        _activate(settings)
+        sess = _finished_session()
+        AITriage.objects.create(session=sess, status="failed")
+        assert auth_client.get(f"/api/ai/triage/{sess.uuid}/").json()["status"] == "failed"
+        AITriage.objects.filter(session=sess).update(status="running")
+        assert auth_client.get(f"/api/ai/triage/{sess.uuid}/").json()["status"] == "running"
+
+
+@pytest.mark.django_db
+class TestTriageRun:
+    def test_gate_closed_400(self, auth_client, unconfigured):
+        sess = _finished_session()
+        assert _post(auth_client, f"/api/ai/triage/{sess.uuid}/run/", {}).status_code == 400
+
+    def test_scan_running_409(self, auth_client, settings):
+        _activate(settings)
+        sess = _finished_session(status="running")
+        assert _post(auth_client, f"/api/ai/triage/{sess.uuid}/run/", {}).status_code == 409
+
+    def test_in_flight_409(self, auth_client, settings):
+        from apps.core.ai.models import AITriage
+        _activate(settings)
+        sess = _finished_session()
+        AITriage.objects.create(session=sess, status="running")
+        assert _post(auth_client, f"/api/ai/triage/{sess.uuid}/run/", {}).status_code == 409
+
+    def test_enqueues_and_marks_running(self, auth_client, settings):
+        from apps.core.ai.models import AITriage
+        _activate(settings)
+        sess = _finished_session()
+        with patch("apps.core.ai.tasks.async_task") as enqueue:
+            resp = _post(auth_client, f"/api/ai/triage/{sess.uuid}/run/", {})
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "running"
+        enqueue.assert_called_once_with("apps.core.ai.tasks._run_triage_task", sess.id)
+        assert AITriage.objects.get(session=sess).status == "running"
+
+
+@pytest.mark.django_db
+class TestTriageTask:
+    def test_task_runs_triage_and_summaries(self, settings):
+        from apps.core.ai.tasks import _run_triage_task
+        _activate(settings)
+        sess = _finished_session()
+        with patch("apps.core.ai.triage.run_triage", return_value=object()) as triage, \
+             patch("apps.core.ai.summaries.run_summaries") as summaries:
+            _run_triage_task(sess.id)
+        triage.assert_called_once()
+        summaries.assert_called_once()
+
+    def test_task_clears_marker_when_nothing_to_triage(self, settings):
+        from apps.core.ai.models import AITriage
+        from apps.core.ai.tasks import _run_triage_task
+        _activate(settings)
+        sess = _finished_session()
+        AITriage.objects.create(session=sess, status="running")
+        with patch("apps.core.ai.triage.run_triage", return_value=None), \
+             patch("apps.core.ai.summaries.run_summaries"):
+            _run_triage_task(sess.id)
+        assert AITriage.objects.filter(session=sess).count() == 0
+
+    def test_task_gate_closed_clears_marker(self, unconfigured):
+        from apps.core.ai.models import AITriage
+        from apps.core.ai.tasks import _run_triage_task
+        sess = _finished_session()
+        AITriage.objects.create(session=sess, status="running")
+        _run_triage_task(sess.id)
+        assert AITriage.objects.filter(session=sess).count() == 0
+
+    def test_task_swallows_exceptions(self, settings):
+        from apps.core.ai.tasks import _run_triage_task
+        _activate(settings)
+        sess = _finished_session()
+        with patch("apps.core.ai.triage.run_triage", side_effect=RuntimeError("boom")):
+            _run_triage_task(sess.id)  # must not raise
+
+
 @pytest.mark.django_db
 class TestAuditEndpoint:
     def test_requires_auth(self, client):

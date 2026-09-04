@@ -26,13 +26,19 @@ def _run_triage_task(session_id: int) -> None:
         from .summaries import run_summaries
         from .triage import run_triage
 
+        from .models import AITriage
+
         if not is_ai_active():
             logger.info("[ai] triage task for session %s skipped — gate closed", session_id)
+            AITriage.objects.filter(session_id=session_id, status="running").delete()
             return
         session = ScanSession.objects.filter(id=session_id).first()
         if session is None:
             return
-        run_triage(session)
+        result = run_triage(session)
+        if result is None:
+            # Nothing to triage — clear any in-flight marker the API set.
+            AITriage.objects.filter(session=session, status="running").delete()
         run_summaries(session)
     except Exception:  # noqa: BLE001
         logger.exception("[ai] manual triage task failed for session %s", session_id)

@@ -8,6 +8,7 @@ recorded consent (revocation = no new calls).
 
 import logging
 import time
+import uuid as uuid_lib
 
 from ninja import Router, Schema
 from ninja.errors import HttpError
@@ -112,6 +113,107 @@ def test_connection(request):
     if out is None:
         raise HttpError(502, "Cloudflare Workers AI call failed — check the audit log for details.")
     return {"ok": True, "model": client.resolve_model(), "latency_ms": latency_ms}
+
+
+def _serialize_triage(triage) -> dict:
+    items = []
+    for item in triage.items.select_related("finding").all():
+        finding = item.finding
+        items.append({
+            "rank": item.rank,
+            "finding_id": finding.id if finding else None,
+            "title": finding.title if finding else item.finding_key.split(":", 2)[-1],
+            "severity": finding.severity if finding else None,
+            "target": finding.target if finding else None,
+            "priority": item.priority,
+            "rationale": item.rationale,
+        })
+    return {
+        "summary": triage.overview,
+        "model": triage.model,
+        "generated_at": triage.created_at.isoformat(),
+        "items": items,
+    }
+
+
+def _serialize_decisions(session) -> list[dict]:
+    from .models import AgentRun
+
+    run = AgentRun.objects.filter(root_session=session).prefetch_related("actions").first()
+    if run is None:
+        return []
+    return [
+        {
+            "timestamp": a.created_at.isoformat(),
+            "iteration": a.iteration,
+            "action": a.action_type,
+            "status": a.status,
+            "rationale": a.rationale,
+            "denial_reason": a.denial_reason or None,
+            "subscan_uuid": str(a.subscan_session.uuid) if a.subscan_session else None,
+        }
+        for a in run.actions.all()
+    ]
+
+
+def _get_session_or_404(session_uuid):
+    from apps.core.scans.models import ScanSession
+
+    session = ScanSession.objects.filter(uuid=session_uuid).first()
+    if session is None:
+        raise HttpError(404, "Scan session not found")
+    return session
+
+
+@router.get("/triage/{session_uuid}/")
+def get_triage(request, session_uuid: uuid_lib.UUID):
+    from .guard import is_ai_active
+    from .models import AITriage
+
+    session = _get_session_or_404(session_uuid)
+
+    if not is_ai_active():
+        return {"status": "disabled", "triage": None, "decisions": [], "error": None}
+
+    triage = AITriage.objects.filter(session=session).first()
+    decisions = _serialize_decisions(session)
+
+    if triage is None:
+        return {"status": "absent", "triage": None, "decisions": decisions, "error": None}
+    if triage.status == "running":
+        return {"status": "running", "triage": None, "decisions": decisions, "error": None}
+    if triage.status == "failed":
+        return {
+            "status": "failed", "triage": None, "decisions": decisions,
+            "error": "Analysis call failed — see the AI Call Log for details.",
+        }
+    return {
+        "status": "complete",
+        "triage": _serialize_triage(triage),
+        "decisions": decisions,
+        "error": None,
+    }
+
+
+@router.post("/triage/{session_uuid}/run/")
+def run_triage_now(request, session_uuid: uuid_lib.UUID):
+    from .guard import is_ai_active
+    from .models import AITriage
+    from .tasks import enqueue_triage
+
+    session = _get_session_or_404(session_uuid)
+
+    if not is_ai_active():
+        raise HttpError(400, "Enable analysis (with consent) on the AI Analysis page first.")
+    if session.status in ("pending", "running"):
+        raise HttpError(409, "Scan is still running — triage runs automatically when it finishes.")
+    if AITriage.objects.filter(session=session, status="running").exists():
+        raise HttpError(409, "A triage run is already in flight for this scan.")
+
+    # In-flight marker so the UI can poll; the task replaces it with the result.
+    AITriage.objects.update_or_create(session=session, defaults={"status": "running"})
+    enqueue_triage(session.id)
+    return {"ok": True, "status": "running"}
 
 
 @router.get("/audit/")

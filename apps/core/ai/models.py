@@ -111,7 +111,11 @@ class AITriage(models.Model):
     from the audit-log no-bodies rule which covers raw prompts/responses.
     """
 
-    STATUS_CHOICES = [("completed", "Completed"), ("failed", "Failed")]
+    STATUS_CHOICES = [
+        ("running", "Running"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+    ]
 
     session = models.OneToOneField(
         "scans.ScanSession", on_delete=models.CASCADE, related_name="ai_triage"
