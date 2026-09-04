@@ -8,6 +8,42 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Added
+- **GitHub public-secret tool (`apps/github_secrets`) — tool #24.** Searches
+  **public GitHub** for the target org's leaked secrets: confirms the org via
+  `GET /orgs/{org}`, runs org-scoped `GET /search/code` queries (`.env`,
+  `.npmrc`, `credentials`, `id_rsa`, `.pem`, and an `org:{org} "{domain}"` string
+  search), fetches the matching blobs (capped by count + bytes), and runs
+  **gitleaks** over them — the same detection engine `js_secrets` points at
+  fetched JavaScript, aimed here at the org's public GitHub footprint. Findings
+  share `check_type="exposed_secret"` with js_secrets so both secret sources
+  group together in the report. **Passive** (`active=False`): every request goes
+  to GitHub's own API, **never to the target** — no `DomainAuthorization`. In
+  default Full Scan + Passive Scan (migration `0026`). 32 tests.
+  - **BYOK is mandatory** (`GITHUB_TOKEN`): GitHub's code-search API requires
+    auth, so with no token the tool is a **logged no-op** — a keyless Full Scan
+    is never broken. `GITHUB_ORG` pins the org (recommended; auto-derivation from
+    the domain apex label is best-effort and flagged lower-confidence).
+    `GITHUB_SECRETS_GLOBAL_SEARCH` (default off) enables an extra noisy un-scoped
+    bare-string search; default is **org-scoped only**.
+  - **Redaction is enforced** (reused verbatim from js_secrets): only a redacted
+    `secret_preview` + scrubbed `match_preview` are stored — the full secret
+    never lands in the DB or report (asserted at the DB level in tests).
+  - **Fail-graceful + bounded:** any GitHub API timeout / non-200 / exhausted
+    rate-limit (429, 403 + zero remaining, secondary limit) / JSON error is
+    logged and skipped, never raised (only a missing/timed-out gitleaks binary
+    raises, like js_secrets); GitHub rate limits are honoured with capped backoff
+    (`Retry-After` / `X-RateLimit-Reset`); queries, files, and bytes are all
+    capped per session.
+
+  **Why:** credentials committed to public GitHub are one of the most common and
+  most damaging real-world leaks, and they are harvested by automated scanners
+  within minutes of a push — this surfaces them in the same passive, no-auth
+  recon pass that already runs before any target contact, closing a gap that the
+  on-site `js_secrets` (which only sees the target's own served JS) cannot cover.
+  **Key never ships in the image** (that would leak the token + spend the
+  operator's own GitHub quota + breach GitHub's API ToS): the token is a
+  per-deployment secret and the operator uses their own quota. Uses GitHub's
+  official API only and honours its rate limits.
 - **Exposure Score + trend — one 0–100 executive risk number per scan.** Each
   completed scan now gets a single saturating, severity-weighted score
   (`raw = 25*critical + 8*high + 2*medium + 0.5*low`, capped at 100; `info`
