@@ -306,3 +306,41 @@ class TestScanner:
 
         with patch("apps.takeover_check.scanner.collect", return_value=[]):
             assert run_takeover_check(sess) == []
+
+
+# ---------------------------------------------------------------------------
+# Regression: subzy null / non-dict array elements (scan went `partial` when a
+# subzy JSON array carried a null element → analyzer crashed on None.get()).
+# Fixed in #292 (analyzer guard) + collector filter (defence in depth). Guarded
+# here so it can't come back. See docs/SCAN_OPERATIONAL_LEARNINGS.md.
+# ---------------------------------------------------------------------------
+
+class TestSubzyNullRecordRegression:
+    @patch("apps.takeover_check.collector.shutil.which", return_value="/usr/local/bin/subzy")
+    @patch("apps.takeover_check.collector.subprocess.run")
+    def test_collector_filters_null_and_non_dict_array_elements(self, mock_run, _which):
+        def fake_run(cmd, **kwargs):
+            with open(cmd[cmd.index("--output") + 1], "w") as f:
+                json.dump(
+                    [{"subdomain": "vuln.example.com", "vulnerable": True}, None, "junk"],
+                    f,
+                )
+            return MagicMock(returncode=0, stderr="")
+
+        mock_run.side_effect = fake_run
+        records = collect(["vuln.example.com"])
+        assert all(isinstance(r, dict) for r in records)
+        assert len(records) == 1  # the None and the string are filtered out
+
+    @pytest.mark.django_db
+    def test_analyzer_skips_null_and_non_dict_records(self):
+        """analyze() must skip non-dict records instead of crashing on
+        None.get() — the exact failure that made scans report `partial`."""
+        from apps.core.scans.models import ScanSession
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        # A None + a bare string mixed with a valid, non-vulnerable dict.
+        result = analyze(
+            sess,
+            [None, "junk", {"subdomain": "x.example.com", "vulnerable": False}],
+        )
+        assert result == []  # no raise, non-dicts skipped
