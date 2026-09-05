@@ -723,6 +723,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_ai_pipeline.py` | 10 | Invariants 1 + 5 — AI-off finalize byte-identical, hook ordering before alerts, subscan skip, failure swallowing |
 | `tests/unit/test_ai_orchestrator.py` | 22 | Agent loop — gate/revocation terminal, iteration pre-consumption, caps, denied-without-auth, sanctioned subscan path (`triggered_by="agent"`), flag never mutates Finding.status, chain hooks |
 | `tests/unit/test_ai_invariants.py` | 3 | Grep-style: AI layer only Finding.objects.filter, audit writer has no body params, client creates only AIInvocation |
+| `tests/integration/test_ai_flow.py` | 6 | AI end-to-end (only the Cloudflare HTTP edge + queue mocked): finalize → triage/summaries/agent/audit, report + alert carry output, subscan chain roundtrip, AI-off zero traces, Cloudflare-down scan still completes; plus an opt-in LIVE smoke test (runs only with real `CLOUDFLARE_*` env: `pytest tests/integration/test_ai_flow.py -k live`) |
 | `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
 
-**Total: 1633 tests** (1581 fast + 52 slow domain_security)
+**Total: 1639 tests** (1587 fast + 52 slow domain_security)
