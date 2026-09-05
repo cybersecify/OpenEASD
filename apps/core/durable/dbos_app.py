@@ -12,8 +12,7 @@ there is still just one database to run (no second service).
 
 from django.conf import settings
 
-QUEUE_NAME = "scans"
-_SYSTEM_SCHEMA = "dbos"
+from .constants import QUEUE_NAME, SYSTEM_SCHEMA as _SYSTEM_SCHEMA
 
 _client = None
 

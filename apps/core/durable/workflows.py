@@ -12,7 +12,7 @@ import logging
 from dbos import DBOS, Queue
 from django.conf import settings
 
-from .dbos_app import QUEUE_NAME
+from .constants import QUEUE_NAME
 
 logger = logging.getLogger(__name__)
 
