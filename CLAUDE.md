@@ -89,11 +89,11 @@ git describe --tags --abbrev=0
 
 ## CI/CD (GitHub Actions)
 - Pipeline: `.github/workflows/ci.yml` — runs on every push to `main` and `v*` tags
-- **4 parallel jobs:**
-  - `test` — pytest (fast, excludes `test_domain_security.py`), bandit (SAST), pip-audit (CVE scan)
+- **4 jobs:**
+  - `test` — pytest (fast, excludes `test_domain_security.py`) against a **`postgres:17-alpine` service container** (DB_* env), bandit (SAST), pip-audit (CVE scan)
   - `frontend` — `npm ci && npm run build`
-  - `docker` — `docker buildx build` for `linux/amd64` (no push, cache check)
-  - `publish` — builds `linux/amd64` + `linux/arm64` and pushes to `ghcr.io/cybersecify/openeasd`
+  - `docker` — matrix over the `web` + `worker` build targets, `docker buildx build` for `linux/amd64` (no push, cache check per target)
+  - `publish` — matrix over `web` + `worker`; builds `linux/amd64` + `linux/arm64` and pushes to `ghcr.io/cybersecify/openeasd-web` and `-worker`
 - **Publish triggers:** every push to `main` (`:latest` tag) and `v*` tags (`:vX.Y` tag)
 - Runner: `ubuntu-24.04`, Python 3.12, `uv sync --group dev` for deps, `libcairo2-dev gcc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0` system deps required (WeasyPrint PDF rendering)
 - `pip-audit --ignore-vuln PYSEC-2025-183` — disputed PyJWT weak-key-length CVE, no fix available
@@ -112,9 +112,9 @@ git describe --tags --abbrev=0
 - Django 5+ with plain Django views (no DRF, no Celery, no Redis)
 - **Django Ninja** REST API under `/api/` — Schema-based, auto-docs at `/api/docs`
 - **JWT Bearer auth** — access + refresh tokens via `djangorestframework-simplejwt` (ninja-jwt wrapper); token blacklist handled by simplejwt's built-in `OutstandingToken`/`BlacklistedToken` models
-- **Django-Q2** — background task queue for scan execution AND all scheduling (ORM broker, tasks stored in Django DB). `setup_core_schedules()` in `SchedulerConfig.ready()` registers daily scans, stuck-scan watchdog, JWT token purge, and per-domain monitoring jobs as `django_q.models.Schedule` entries. APScheduler has been fully removed.
+- **DBOS** — durable-execution engine for scan execution AND all scheduling, backed by PostgreSQL (its checkpoint tables live in a `dbos` schema in the same DB). Scans are durable workflows whose phases are checkpointed steps, so a crashed/restarted worker RESUMES a scan instead of losing it. Scheduling is DBOS `@scheduled` cron workflows (daily scan, monitoring sweep, user-schedule sweep, stuck-scan watchdog, JWT token purge) registered by the `dbos_worker` process. Django-Q2 and APScheduler have been fully removed.
 - **WhiteNoise** — serves collected static files (frontend bundle) when `DEBUG=False` (Docker/prod); uses `CompressedManifestStaticFilesStorage` for gzip + content-hash fingerprinting
-- SQLite database (dev), configurable via `DB_NAME` env var
+- **PostgreSQL** database — configured via `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`/`DB_PASSWORD` (or `DATABASE_URL`). Postgres has no single-writer lock, so scans run concurrently (`DBOS_SCAN_CONCURRENCY`, default 2).
 
 ### Frontend (React SPA — new primary UI)
 - **React 19 + Vite 8** — `frontend/` directory, builds to `frontend/dist/`
@@ -133,7 +133,7 @@ git describe --tags --abbrev=0
 
 ### Frontend dev setup
 ```bash
-# Quickest: starts Django (:8001) + Vite dev server + qcluster worker together
+# Quickest: starts Django (:8001) + Vite dev server + DBOS worker together
 make dev
 
 # Or manually in three terminals:
@@ -144,8 +144,8 @@ uv run manage.py runserver 8001
 cd frontend && npm install && npm run dev
 # App runs at http://localhost:5173
 
-# Terminal 3 — Background worker (required for scans to execute)
-uv run manage.py qcluster
+# Terminal 3 — DBOS worker (required for scans to execute; needs PostgreSQL running)
+uv run manage.py dbos_worker
 ```
 
 ### Frontend rules
@@ -160,21 +160,21 @@ uv run manage.py qcluster
 
 ## Deployment
 
-### Docker (production)
+### Docker (production) — 3 services
+
+The stack is **PostgreSQL + web + worker** (Option B). Use Docker Compose:
+
 ```bash
-docker run -d \
-  -p 8000:8000 \
-  -v openeasd-data:/app/data \
-  -v openeasd-logs:/app/logs \
-  -e SECRET_KEY="$(openssl rand -hex 32)" \
-  -e ALLOWED_HOSTS="<IP_OR_DOMAIN>,localhost" \
-  --cap-add NET_RAW \
-  --restart unless-stopped \
-  --name openeasd \
-  ghcr.io/cybersecify/openeasd:latest
+# Set real secrets in docker-compose.yml (SECRET_KEY, DB_PASSWORD, ALLOWED_HOSTS), then:
+docker compose up -d --build
 ```
-- `--cap-add NET_RAW` — required for nmap raw socket scanning
-- `--restart unless-stopped` — survives server reboots
+- `db` — `postgres:17-alpine` (app data + the DBOS `dbos` schema)
+- `web` — `openeasd-web` image (`python:3.12-slim`): gunicorn, enqueue-only, no scanner tools
+- `worker` — `openeasd-worker` image (`ubuntu:24.04`): `dbos_worker` + the full scanner matrix, `--cap-add NET_RAW`
+- The entrypoint is role-aware (`OPENEASD_ROLE`): web migrates, worker waits for migrations then launches.
+- **Two images** (`ghcr.io/cybersecify/openeasd-web` + `-worker`) — the web image carries no offensive tooling.
+- `--cap-add NET_RAW` — required on the worker for nmap raw socket scanning
+- `restart: unless-stopped` — survives server reboots
 - **RAM: 2 GB min / 4 GB recommended.** nuclei + amass are memory-hungry and the
   kernel will OOM-kill them on an under-provisioned host (silent partial scans).
   `OPENEASD_PROFILE` (default `auto`, from RAM) tunes this: `low` (<2GB or
@@ -188,7 +188,7 @@ docker run -d \
   low=critical/high/medium, else +low; `info` dropped everywhere) — the fix for
   its freeze/timeout since it compiles all ~13.5k templates into RAM. See
   `docs/SCAN_OPERATIONAL_LEARNINGS.md`.
-- Volumes: `openeasd-data` (SQLite DB) and `openeasd-logs` persist across container replacements
+- Volumes: PostgreSQL data (its own volume/PVC) and `openeasd-logs` persist across container replacements; app data lives in Postgres, not a file
 - Static files served by WhiteNoise (no nginx needed)
 - **Serve it over HTTPS.** Do NOT expose the app on bare HTTP — login sends
   credentials and JWTs in cleartext. Put a TLS-terminating reverse proxy in
@@ -202,11 +202,12 @@ docker run -d \
 ### Kubernetes
 Manifests in `k8s/`. Deploy with `kubectl apply -k k8s/`.
 
-**Pod layout — single Deployment, single Pod, two containers:**
+**Layout — a PostgreSQL StatefulSet + an app Deployment (one Pod, two containers):**
 ```
-initContainer: init    → migrate + collectstatic + admin user setup (docker-entrypoint.sh)
+initContainer: init    → waits for Postgres, then migrate + collectstatic + admin setup (docker-entrypoint.sh)
 container: web         → gunicorn openeasd.wsgi:application --bind 0.0.0.0:8000 --workers 2
-container: worker      → python manage.py qcluster  (NET_RAW capability for nmap/naabu)
+container: worker      → python manage.py dbos_worker  (NET_RAW capability for nmap/naabu)
+(+ a PostgreSQL StatefulSet alongside — see k8s/postgres.yaml)
 ```
 
 **Files:**
@@ -214,7 +215,8 @@ container: worker      → python manage.py qcluster  (NET_RAW capability for nm
 k8s/
   configmap.yaml        — non-secret env vars; ALLOWED_HOSTS/CSRF are PLACEHOLDERS only
   secret.yaml           — template for SECRET_KEY + real ALLOWED_HOSTS/CSRF (apply out-of-band)
-  pvc.yaml              — openeasd-data (10Gi) + openeasd-logs (2Gi), RWO
+  pvc.yaml              — openeasd-logs (2Gi), RWO (app data is in Postgres)
+  postgres.yaml         — PostgreSQL StatefulSet + headless Service + 10Gi PVC
   deployment.yaml       — single pod with init + web + worker containers
   service.yaml          — ClusterIP, port 80 → 8000
   ingress.yaml          — nginx Ingress; TLS annotations ready to uncomment
@@ -222,7 +224,7 @@ k8s/
 ```
 
 **Key constraints:**
-- `replicas: 1` required — SQLite RWO PVC allows single-node access only
+- `replicas: 1` on the app Deployment (one web + one worker container); Postgres removes the SQLite single-writer limit, so the worker can scale to multiple replicas pulling the same DBOS queue if split into its own Deployment
 - Only `worker` container gets `NET_RAW`; `web` does not need it
 - `GET /health/` — unauthenticated endpoint used by K8s readiness/liveness probes; JSON body is `{status, version, git_sha (short 8), build_date}` (build provenance)
 - **Real `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` live in `openeasd-secret`, never in
@@ -248,7 +250,7 @@ Runs on every container start (init container in K8s, or `CMD` override in Docke
 4. `exec "$@"` — hands off to the actual process
 
 ### First login
-`docker-entrypoint.sh` creates `admin/admin` with `must_change_password=True` on first run. The React app redirects to `/change-password` before allowing access. On every startup, if the default password is still in use, the flag is re-set.
+`docker-entrypoint.sh` is role-aware (`OPENEASD_ROLE`): both roles wait for PostgreSQL; the web/init role runs migrate + collectstatic + admin setup (creating `admin/admin` with `must_change_password=True` on first run, re-flagging if the default password is still in use), while the worker role waits for `migrate --check` to pass then launches (no DDL race). The React app redirects to `/change-password` before allowing access.
 
 ### microk8s deployment (host IP changed)
 If the host IP changes, microk8s certs and kubeconfigs reference the old IP and the cluster goes "not running":
@@ -269,7 +271,7 @@ Don't enable the `ingress` addon if the host already runs Caddy on :80/:443 — 
 - Schedule history visible in Django admin under "Django Q" → "Scheduled tasks"
 - Scheduler code lives in `apps/core/scheduler/scheduler.py`
 - `setup_core_schedules()` called from `apps/core/scheduler/apps.py` → `SchedulerConfig.ready()`
-- Guard runs only in the qcluster process (checks `qcluster` in `sys.argv`) — never runs in gunicorn workers
+- The DBOS `@scheduled` cron workflows register only in the `dbos_worker` process (they are decorators applied when the worker imports `apps/core/durable/workflows`) — never in gunicorn workers
 
 ## External binary tools
 
@@ -297,7 +299,7 @@ request-counting proxy C4 is deferred).
 
 ## Architecture
 
-### Core infrastructure — `apps/core/` (14 sub-apps)
+### Core infrastructure — `apps/core/` (15 sub-apps)
 
 | App | Label | Purpose |
 |---|---|---|
@@ -309,10 +311,11 @@ request-counting proxy C4 is deferred).
 | `findings/` | `findings` | Unified Finding model — all tools write here |
 | `scans/` | `scans` | ScanSession, ScanDelta, pipeline orchestrator |
 | `workflows/` | `workflow` | Workflow CRUD, dynamic runner, tool registry |
-| `scheduler/` | `scheduler` | Django-Q2 schedule setup, daily/weekly scans, per-domain monitoring, stuck scan watchdog |
+| `scheduler/` | `scheduler` | Scan callables (daily_scan, run_due_monitoring_scans, run_due_user_scans, reap_stuck_scans, token purge) invoked by the DBOS `@scheduled` workflows in `apps/core/durable` |
 | `notifications/` | `alerts` | Slack/Teams alerts, NotificationConfig model, alert history |
 | `insights/` | `insights` | ScanSummary (incl. per-scan Exposure Score + grade, `scoring.py`), FindingTypeSummary, charts |
 | `reports/` | `reports` | CSV + PDF export |
+| `ai/` | `ai` | AI analysis (Cloudflare Workers AI, BYOK): finding triage, bounded adaptive orchestration, report/alert summaries, consent + per-call audit log |
 | `api/` | — | Django Ninja API — routers, JWT auth, error handlers |
 
 ### REST API module — `apps/core/api/`
@@ -522,11 +525,35 @@ an active probe.
 ### Scan flow
 ```
 create_scan_session(domain)          # auto-assigns default workflow
-  → run_scan_task(session_id)        # Huey async task
+  → run_scan_task(session_id)        # durably enqueues the DBOS run_scan workflow
     → run_scan(session_id)           # sets status="running"
       → _run_via_workflow(session)   # creates WorkflowRun, calls run_workflow()
         → run_workflow(run_id)       # loops enabled tools, records StepResults
-      → _finalize_session(session)   # count findings, deltas, insights, alerts
+      → _finalize_session(session)   # count findings → coverage → status
+          → _detect_deltas / _check_coverage_regression / build_insights
+          → run_ai_post_scan(session)     # AI triage + summaries (no-op unless keys+consent)
+          → _dispatch_alerts(session)     # Slack/Teams (carries the AI alert summary)
+          → maybe_start_agent(session)    # queues the bounded orchestration agent
+```
+
+### AI layer flow (apps/core/ai — runs only when keys + enabled + consent)
+```
+_finalize_session
+  → run_ai_post_scan(session)              # INLINE in the scan task, before alerts
+      → run_triage(session)                # ranks findings by EXPLOITABILITY
+      │     context: CVSS + EPSS + CISA-KEV (cve_intel enrichment) + exposure
+      │     → AITriage + AITriageItem (priority: fix_now/plan/monitor/likely_noise)
+      → run_summaries(session)             # AISummary rows: report + alert kinds
+  → maybe_start_agent(session)             # CHAINED DBOS agent_step workflows, after alerts
+      → _run_agent_step(root_session)      # ONE LLM decision per step:
+            run_subscan(tools) ─ gate_subscan_tools() re-checks DomainAuthorization
+              → create_subscan_session(triggered_by="agent") → run_scan_task()
+              → that subscan's _finalize_session → maybe_continue_agent() → next step
+            flag_finding(id)   ─ AgentAction marker only (never mutates Finding.status)
+            done(summary)      ─ AgentRun terminal
+      # bounded: ≤ max_agent_iterations, ≤ max_subscans_per_scan, per-scan call budget
+
+every Cloudflare call → AIInvocation audit row (metadata only, never prompt/response bodies)
 ```
 
 ### Key design rules
@@ -558,7 +585,44 @@ class Finding(models.Model):
     extra       = JSONField()      # tool-specific: cve, cvss_score, cipher_name, etc.
 ```
 
-**SQLite quirk:** Don't use `Max("extra__cvss_score")` or other aggregations on JSON-extracted fields — Django/SQLite fails. Group in Python instead.
+**JSON-field aggregation:** the codebase groups JSON-extracted fields (e.g. `extra__cvss_score`) in Python rather than via `Max(...)` DB aggregation — a habit from the former SQLite backend. PostgreSQL supports these aggregations natively, but the Python-side grouping is kept for portability; no need to "fix" it.
+
+## AI subsystem — `apps/core/ai/` (D-014/D-015)
+
+Core subsystem, deliberately **NOT a registry tool** (no `tool_meta`): it runs
+post-finalize over the whole session and has orchestration authority, so its
+gate is consent + keys, never workflow membership.
+
+- **Backend:** Cloudflare Workers AI only, called directly via REST. BYOK
+  credentials: saved via the /ai page (stored in `AISettings`, write-only —
+  never serialized back out) or `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`
+  env vars as fallback (DB wins). `CLOUDFLARE_AI_MODEL` (default
+  `@cf/meta/llama-3.3-70b-instruct-fp8-fast`), `CLOUDFLARE_AI_TIMEOUT` (60s),
+  `CLOUDFLARE_AI_MAX_CALLS_PER_SCAN` (10 — hard per-scan budget enforced in
+  `client.py`).
+- **Gate:** `guard.is_ai_active()` = keys configured AND `AISettings.enabled`
+  AND current-version consent recorded. Checked at every entry, never cached
+  across tasks (revocation is immediate).
+- **Pipeline wiring** (all via `apps/core/ai/hooks.py`, the fail-graceful
+  boundary — the ONLY module pipeline.py imports): `run_ai_post_scan` (triage +
+  summaries, inline, after `build_insights` / before `_dispatch_alerts`),
+  `maybe_start_agent` (last line of finalize), `maybe_continue_agent` (subscan
+  early-return branch — resumes a running agent chain).
+- **Orchestration:** one LLM decision per DBOS agent_step workflow (closed action space:
+  `run_subscan`/`flag_finding`/`done`); a launched subscan's finalize
+  re-enqueues the next step, so nothing blocks the single worker. Bounded by
+  `max_agent_iterations` (consumed BEFORE the LLM call) and
+  `max_subscans_per_scan`; denial/failure/revocation terminal. Agent subscans
+  go only through `create_subscan_session` with `triggered_by="agent"`, and
+  `guard.gate_subscan_tools` re-checks `is_passive_tool_set` +
+  `DomainAuthorization` at the agent's dispatch boundary (the API-layer gate
+  does not cover internal callers).
+- **Safety invariants (all tested):** AI-off ⇒ scans byte-identical to pre-AI;
+  no active agent subscan without DomainAuthorization; `AIInvocation` audit
+  rows are metadata-only (model has no TextField — bodies structurally
+  unpersistable); the loop always terminates; no AI failure escapes hooks.py;
+  the AI layer never writes `Finding` rows (`test_ai_invariants.py` greps for
+  it).
 
 ## URL layout
 
@@ -604,6 +668,12 @@ GET  /api/notifications/config/           — get Slack/Teams notification confi
 POST /api/notifications/config/           — update notification config
 POST /api/notifications/test/             — send a test alert
 GET  /api/notifications/alerts/           — alert history
+GET  /api/ai/config/                      — AI settings (credential presence booleans only — values are never returned)
+POST /api/ai/config/                      — enable/disable + save credentials (write-only; None=unchanged, ""=clear→env fallback); enabling requires current-version consent (consent_accepted stamps it)
+POST /api/ai/test/                        — Workers AI connectivity probe (fixed prompt, no scan data; allowed pre-consent)
+GET  /api/ai/triage/<uuid>/               — triage status + ranked items + agent decisions (disabled|absent|running|complete|failed)
+POST /api/ai/triage/<uuid>/run/           — manual (re-)run via DBOS (409 while scan/triage in flight)
+GET  /api/ai/audit/                       — paginated AI call log (metadata only, never bodies)
 ```
 
 ### Other routes
@@ -643,12 +713,12 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_naabu.py` | 10 | JSON parser, FK to IPAddress |
 | `tests/unit/test_nmap.py` | 26 |
 | `tests/unit/test_nmap_backports.py` | 16 | Backport-aware CVE demotion engine — Debian/Ubuntu version compare, check_backport, `protocol 2.0` false-positive guard | Severity mapping, vulners XML parser, web/non-web exclusion, backport matching |
-| `tests/unit/test_notifications.py` | 25 | NotificationConfig, Slack/Teams alerts, alert-history API |
+| `tests/unit/test_notifications.py` | 32 | NotificationConfig, Slack/Teams alerts, alert-history API, AI summary block/fact (absent = payload byte-identical) |
 | `tests/unit/test_nuclei.py` | 33 | CVE parsing, severity, dedup, URL linking, collector, honest UA |
 | `tests/unit/test_nuclei_network.py` | 28 | Network-template parsing, non-web targeting, collector |
 | `tests/unit/test_pipeline_phases.py` | 1 | Phase ordering sanity |
-| `tests/unit/test_qcluster_config.py` | 4 | Django-Q cluster config |
-| `tests/unit/test_reports.py` | 51 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block, technology stack block |
+| `tests/unit/test_qcluster_config.py` | 3 | Scan-timeout invariants (Q_CLUSTER removed; SCAN_TASK_TIMEOUT + watchdog bound) |
+| `tests/unit/test_reports.py` | 57 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block, technology stack block, AI Analyst Summary block (absent without AI rows) |
 | `tests/unit/test_waf_detection.py` | 16 | WAF/block/challenge classifier (spec C1) — vendor fingerprint, false-positive guards, analyzer wiring |
 | `tests/unit/test_coverage.py` | 6 | Scan coverage (spec C2) — endpoint counts, dominant vendor, report note wording |
 | `tests/unit/test_scans.py` | 30 | ScanSession, scheduling, scan_start views |
@@ -673,6 +743,17 @@ GET  /api/notifications/alerts/           — alert history
 | `tests/unit/test_update_check.py` | 22 | Update-available check — version parse/compare, cached GitHub fetch, fail-graceful on timeout/HTTP-error/bad-payload, endpoint shape |
 | `tests/unit/test_proc_env.py` | 4 | `go_memory_env()` — GOMEMLIMIT/GOGC set in low profile, unchanged otherwise, preserves existing env |
 | `tests/unit/test_coverage_regression.py` | 10 | Silent-block coverage counting (probed-vs-reached), coverage-regression finding (high block ratio / findings drop / stable = no flag), partial scan status when a tool fails |
+| `tests/unit/test_ai_client.py` | 20 | Workers AI client — envelope parsing (dict/string response), audit rows + token accounting, 429/5xx retry, schema-mismatch corrective retry, per-scan call budget |
+| `tests/unit/test_ai_models.py` | 9 | AISettings singleton + consent versioning, AIInvocation no-TextField invariant, audit survives session deletion, OneToOne/unique constraints |
+| `tests/unit/test_ai_guard.py` | 12 | is_ai_active gate matrix, gate_subscan_tools (unknown-drop, passive-allowed, active-needs-DomainAuthorization) |
+| `tests/unit/test_ai_api.py` | 27 | config GET/POST (no credential leak, CONSENT_REQUIRED, consent stamping, disable-keeps-consent), test endpoint, triage GET/run status matrix, triage task, audit pagination |
+| `tests/unit/test_ai_context.py` | 7 | Prompt builders — severity-ranked selection + cap, info excluded, description truncation, message payloads |
+| `tests/unit/test_ai_triage.py` | 6 | Ranked item persistence, hallucinated/duplicate id drop, failed status, replace-on-rerun |
+| `tests/unit/test_ai_summaries.py` | 7 | Report + alert kinds, absent-on-failure, triage overview feeds prompt, update-in-place |
+| `tests/unit/test_ai_pipeline.py` | 10 | Invariants 1 + 5 — AI-off finalize byte-identical, hook ordering before alerts, subscan skip, failure swallowing |
+| `tests/unit/test_ai_orchestrator.py` | 22 | Agent loop — gate/revocation terminal, iteration pre-consumption, caps, denied-without-auth, sanctioned subscan path (`triggered_by="agent"`), flag never mutates Finding.status, chain hooks |
+| `tests/unit/test_ai_invariants.py` | 3 | Grep-style: AI layer only Finding.objects.filter, audit writer has no body params, client creates only AIInvocation |
+| `tests/integration/test_ai_flow.py` | 6 | AI end-to-end (only the Cloudflare HTTP edge + queue mocked): finalize → triage/summaries/agent/audit, report + alert carry output, subscan chain roundtrip, AI-off zero traces, Cloudflare-down scan still completes; plus an opt-in LIVE smoke test (runs only with real `CLOUDFLARE_*` env: `pytest tests/integration/test_ai_flow.py -k live`) |
 | `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
 
-**Total: 1532 tests** (1480 fast + 52 slow domain_security)
+**Total: 1677 tests** (1625 fast + 52 slow domain_security)

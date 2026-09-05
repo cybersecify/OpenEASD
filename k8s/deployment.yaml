@@ -6,13 +6,13 @@ metadata:
   labels:
     app: openeasd
 spec:
-  # SQLite (RWO PVC) — single replica required.
-  # To scale horizontally, migrate to PostgreSQL.
+  # App data is in PostgreSQL now (postgres.yaml), so this pod is stateless
+  # apart from the RWO logs PVC. Kept at replicas:1 with one web + one worker
+  # container; to scale, split web and worker into separate Deployments (the
+  # DBOS worker supports multiple replicas pulling the same Postgres queue).
   replicas: 1
-  # Recreate (not RollingUpdate): the single RWO data PVC can only be mounted by
-  # one pod at a time, so a rolling update deadlocks — the new pod stays Pending
-  # on the volume while the old pod refuses to terminate. Recreate tears the old
-  # pod down first, then starts the new one.
+  # Recreate: the logs PVC is RWO, so a rolling update would deadlock the new
+  # pod on the volume. Recreate tears the old pod down first.
   strategy:
     type: Recreate
   selector:
@@ -25,7 +25,7 @@ spec:
     spec:
       initContainers:
         - name: init
-          image: ghcr.io/cybersecify/openeasd:latest
+          image: ghcr.io/cybersecify/openeasd-web:latest
           # Always re-pull: the :latest tag is mutable, so a deploy that doesn't
           # change the tag string must still fetch the new digest. Without this,
           # k8s defaults to IfNotPresent semantics against the cached image and
@@ -38,14 +38,12 @@ spec:
             - secretRef:
                 name: openeasd-secret
           volumeMounts:
-            - name: data
-              mountPath: /app/data
             - name: logs
               mountPath: /app/logs
 
       containers:
         - name: web
-          image: ghcr.io/cybersecify/openeasd:latest
+          image: ghcr.io/cybersecify/openeasd-web:latest
           imagePullPolicy: Always
           command:
             - gunicorn
@@ -66,8 +64,6 @@ spec:
             - secretRef:
                 name: openeasd-secret
           volumeMounts:
-            - name: data
-              mountPath: /app/data
             - name: logs
               mountPath: /app/logs
           readinessProbe:
@@ -99,20 +95,21 @@ spec:
               memory: "512Mi"
 
         - name: worker
-          image: ghcr.io/cybersecify/openeasd:latest
+          image: ghcr.io/cybersecify/openeasd-worker:latest
           imagePullPolicy: Always
+          # DBOS durable-execution worker: runs scan/AI workflows + the
+          # @scheduled cron workflows. The init container has already applied
+          # migrations before this starts, so it launches against a ready schema.
           command:
             - python
             - manage.py
-            - qcluster
+            - dbos_worker
           envFrom:
             - configMapRef:
                 name: openeasd-config
             - secretRef:
                 name: openeasd-secret
           volumeMounts:
-            - name: data
-              mountPath: /app/data
             - name: logs
               mountPath: /app/logs
           securityContext:
@@ -134,9 +131,6 @@ spec:
               memory: "4Gi"
 
       volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: openeasd-data
         - name: logs
           persistentVolumeClaim:
             claimName: openeasd-logs

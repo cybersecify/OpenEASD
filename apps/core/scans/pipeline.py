@@ -229,6 +229,10 @@ def _finalize_session(session):
     # deltas) and re-fire alerts the parent already sent. Skip them for subscans.
     if session.scan_type == "subscan":
         logger.info(f"[scan:{session_id}] Subscan — skipping deltas, insights, and alerts")
+        # Resume a running agent orchestration chain, if this subscan belongs
+        # to one (no-op otherwise; apps/core/ai/hooks is fail-graceful).
+        from apps.core.ai.hooks import maybe_continue_agent
+        maybe_continue_agent(session)
         return
 
     _detect_deltas(session)
@@ -240,7 +244,17 @@ def _finalize_session(session):
     from apps.core.insights.builder import build_insights
     build_insights(session)
 
+    # AI triage + summaries (no-op unless keys + consent — apps/core/ai/hooks
+    # is fail-graceful). Must precede _dispatch_alerts so alerts can carry the
+    # summary.
+    from apps.core.ai.hooks import run_ai_post_scan
+    run_ai_post_scan(session)
+
     _dispatch_alerts(session)
+
+    # Adaptive orchestration (last — the scan's own output never waits on it).
+    from apps.core.ai.hooks import maybe_start_agent
+    maybe_start_agent(session)
 
 
 # ---------------------------------------------------------------------------
@@ -516,6 +530,89 @@ def _run_via_workflow(session):
 
     run = WorkflowRun.objects.create(workflow=session.workflow, session=session)
     run_workflow(run.id, only_tools=session.subscan_tools)
+
+
+# ---------------------------------------------------------------------------
+# DBOS durable-execution entry points
+#
+# These decompose run_scan into checkpointable stages so the DBOS scan workflow
+# (apps/core/durable/workflows.py) can resume a crashed scan at the phase it was
+# in, instead of the whole run being reaped as failed. Each is safe to call as
+# its own DBOS step; they reuse the same runner internals as run_workflow.
+# ---------------------------------------------------------------------------
+
+def mark_session_running(session_id: int) -> None:
+    """Flip a pending session to running (the run_scan pending-guard). A session
+    that is not pending (cancelled/reaped/already running) is left untouched."""
+    session = ScanSession.objects.get(id=session_id)
+    if session.status != "pending":
+        logger.info(f"[scan:{session_id}] status '{session.status}' != pending — not (re)starting")
+        return
+    session.status = "running"
+    session.save(update_fields=["status"])
+    logger.info(f"[scan:{session_id}] running ({'subscan' if session.parent_session_id else 'scan'}) for {session.domain}")
+
+
+def prepare_session_assets(session_id: int) -> None:
+    """Seed apex / copy parent assets, and create the WorkflowRun (idempotent:
+    a resume reuses the existing run rather than creating a second)."""
+    from apps.core.workflows.models import WorkflowRun
+
+    session = ScanSession.objects.select_related("workflow", "parent_session").get(id=session_id)
+    if session.parent_session_id:
+        _copy_assets_from_parent(session)
+    else:
+        _seed_apex_into_assets(session)
+    WorkflowRun.objects.get_or_create(session=session, defaults={"workflow": session.workflow})
+
+
+def phase_groups_for_session(session_id: int) -> list:
+    """The ordered phase groups this session will run (list of tool-name lists)."""
+    from apps.core.workflows.runner import resolve_phase_groups
+
+    session = ScanSession.objects.select_related("workflow").get(id=session_id)
+    if not session.workflow_id:
+        raise RuntimeError(f"Session {session_id} has no workflow assigned.")
+    return resolve_phase_groups(session.workflow, only_tools=session.subscan_tools)
+
+
+def run_phase_group_for_session(session_id: int, group: list) -> None:
+    """Execute one phase group for the session's WorkflowRun. Skips if the scan
+    was cancelled; base order continues after any StepResults already recorded."""
+    from apps.core.workflows.models import WorkflowRun, WorkflowStepResult
+    from apps.core.workflows.runner import run_one_phase_group
+
+    session = ScanSession.objects.get(id=session_id)
+    session.refresh_from_db(fields=["status"])
+    if session.status == "cancelled":
+        logger.info(f"[scan:{session_id}] cancelled — skipping phase group {group}")
+        return
+    run = WorkflowRun.objects.filter(session=session).order_by("-id").first()
+    base_order = WorkflowStepResult.objects.filter(run=run).count() + 1
+    run_one_phase_group(run, session, group, base_order)
+
+
+def finalize_session_by_id(session_id: int) -> None:
+    """Set the WorkflowRun's terminal status, then run the shared finalize
+    (findings count, deltas, insights, AI, alerts)."""
+    from apps.core.workflows.models import WorkflowRun, WorkflowStepResult
+
+    session = ScanSession.objects.get(id=session_id)
+    session.refresh_from_db(fields=["status"])
+    run = WorkflowRun.objects.filter(session=session).order_by("-id").first()
+    if run is not None and run.status == "running":
+        if session.status == "cancelled":
+            run.status = "cancelled"
+        elif WorkflowStepResult.objects.filter(run=run, status="failed").exists():
+            run.status = "partial"
+        else:
+            run.status = "completed"
+        run.finished_at = django_tz.now()
+        run.save(update_fields=["status", "finished_at"])
+    if session.status == "cancelled":
+        logger.info(f"[scan:{session_id}] cancelled — skipping finalization")
+        return
+    _finalize_session(session)
 
 
 # ---------------------------------------------------------------------------

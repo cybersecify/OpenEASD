@@ -309,3 +309,75 @@ class TestNotificationsAlertsAPI:
     def test_requires_auth(self, client, db):
         resp = client.get("/api/notifications/alerts/")
         assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# AI summary in alert payloads (apps/core/ai integration)
+# ---------------------------------------------------------------------------
+
+def _alert_session():
+    from apps.core.scans.models import ScanSession
+    return ScanSession.objects.create(domain="example.com", scan_type="full", status="completed")
+
+
+_GROUPED = {"high": [{"title": "TLS expired", "check_type": "tls_expiry", "target": "example.com"}]}
+
+
+@pytest.mark.django_db
+class TestAlertAiSummary:
+    def test_slack_payload_identical_without_summary(self):
+        from apps.core.notifications.dispatcher import _build_slack_payload
+        sess = _alert_session()
+        payload = _build_slack_payload(sess, _GROUPED, "high")
+        # header, meta section, divider, one severity section — no AI block.
+        assert len(payload["blocks"]) == 4
+        assert all("Cloudflare" not in str(b) for b in payload["blocks"])
+
+    def test_slack_payload_gains_one_block_with_summary(self):
+        from apps.core.ai.models import AISummary
+        from apps.core.notifications.dispatcher import _build_slack_payload
+        sess = _alert_session()
+        AISummary.objects.create(session=sess, kind="alert", text="One urgent issue.")
+        payload = _build_slack_payload(sess, _GROUPED, "high")
+        assert len(payload["blocks"]) == 5
+        assert payload["blocks"][2]["text"]["text"] == "_One urgent issue._"
+
+    def test_summary_truncated_at_cap(self):
+        from apps.core.ai.models import AISummary
+        from apps.core.notifications.dispatcher import _get_triage_summary
+        sess = _alert_session()
+        AISummary.objects.create(session=sess, kind="alert", text="x" * 500)
+        out = _get_triage_summary(sess)
+        assert len(out) == 300
+        assert out.endswith("…")
+
+    def test_teams_payload_gains_summary_fact(self):
+        from apps.core.ai.models import AISummary
+        from apps.core.notifications.dispatcher import _build_teams_payload
+        sess = _alert_session()
+        AISummary.objects.create(session=sess, kind="alert", text="One urgent issue.")
+        payload = _build_teams_payload(sess, _GROUPED, "high")
+        facts = payload["sections"][0]["facts"]
+        assert facts[0] == {"name": "Summary", "value": "One urgent issue."}
+        assert facts[1]["name"] == "HIGH"
+
+    def test_teams_payload_identical_without_summary(self):
+        from apps.core.notifications.dispatcher import _build_teams_payload
+        sess = _alert_session()
+        payload = _build_teams_payload(sess, _GROUPED, "high")
+        assert [f["name"] for f in payload["sections"][0]["facts"]] == ["HIGH"]
+
+    def test_report_kind_not_used_for_alerts(self):
+        from apps.core.ai.models import AISummary
+        from apps.core.notifications.dispatcher import _get_triage_summary
+        sess = _alert_session()
+        AISummary.objects.create(session=sess, kind="report", text="report text")
+        assert _get_triage_summary(sess) is None
+
+    def test_lookup_failure_sends_without_summary(self):
+        from apps.core.notifications.dispatcher import _build_slack_payload
+        sess = _alert_session()
+        with patch("apps.core.ai.models.AISummary.objects") as broken:
+            broken.filter.side_effect = RuntimeError("db broke")
+            payload = _build_slack_payload(sess, _GROUPED, "high")
+        assert len(payload["blocks"]) == 4  # unchanged, no raise

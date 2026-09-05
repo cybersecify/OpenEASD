@@ -25,7 +25,6 @@ dependencies = [
     # @page rules, rounded corners); needs pango/gdk-pixbuf system libs.
     "weasyprint>=63",
     # Task queue
-    "django-q2>=1.6",
     "croniter>=2.0",
     # XML parsing (safe)
     "defusedxml>=0.7.1",
@@ -36,6 +35,9 @@ dependencies = [
     "pypdf>=6.15",
     "urllib3>=2.7.0",
     "idna>=3.15",
+    "psycopg[binary]>=3.2",
+    "dbos>=0.26",
+    "dj-database-url>=2.2",
 ]
 
 [project.optional-dependencies]

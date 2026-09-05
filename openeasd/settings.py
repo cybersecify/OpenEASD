@@ -86,8 +86,6 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    # Third party
-    "django_q",
     # Local apps
     "apps.core.dashboard",
     "apps.core.assets",
@@ -101,6 +99,8 @@ INSTALLED_APPS = [
     "apps.core.notifications",
     "apps.core.insights",
     "apps.core.reports",
+    "apps.core.ai",
+    "apps.core.durable",
     "ninja_jwt",
     "ninja_jwt.token_blacklist",
     "apps.domain_security",
@@ -165,15 +165,33 @@ WSGI_APPLICATION = "openeasd.wsgi.application"
 ASGI_APPLICATION = "openeasd.asgi.application"
 
 # Database
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / config("DB_NAME", default="data/openeasd.db"),
-        "OPTIONS": {
-            "timeout": 30,  # seconds to wait for write lock under concurrent phase execution
-        },
+# PostgreSQL — the `local` branch re-platforms off SQLite so DBOS can back
+# durable scan execution and so scans can run with real concurrency (no more
+# single-writer lock). Configure via DB_* env vars; DATABASE_URL wins if set.
+_DATABASE_URL = config("DATABASE_URL", default="")
+if _DATABASE_URL:
+    import dj_database_url  # type: ignore
+
+    DATABASES = {"default": dj_database_url.parse(_DATABASE_URL, conn_max_age=600)}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": config("DB_NAME", default="openeasd"),
+            "USER": config("DB_USER", default="openeasd"),
+            "PASSWORD": config("DB_PASSWORD", default="openeasd"),
+            "HOST": config("DB_HOST", default="127.0.0.1"),
+            "PORT": config("DB_PORT", default="5432"),
+            "CONN_MAX_AGE": config("DB_CONN_MAX_AGE", default=600, cast=int),
+        }
     }
-}
+
+# DBOS durable-execution system database. Checkpoints scan workflows/steps so a
+# crashed or restarted worker RESUMES a scan instead of losing it (retiring the
+# reap_stuck_scans watchdog). By default it shares the app's Postgres via a
+# dedicated `dbos` schema; the SQLAlchemy URL is derived from DATABASES in
+# apps/core/durable/dbos_app.py. Override with DBOS_DATABASE_URL to isolate it.
+DBOS_DATABASE_URL = config("DBOS_DATABASE_URL", default="")
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -229,42 +247,21 @@ OPENEASD_LOGS_DIR = BASE_DIR / "logs"
 for _dir in [OPENEASD_DATA_DIR, OPENEASD_LOGS_DIR]:
     _dir.mkdir(parents=True, exist_ok=True)
 
-# Django-Q2 task queue — ORM broker uses the existing Django DB (SQLite)
-#
-# Timer alignment (all three must agree or scans die mid-run):
-#   timeout  — worker hard-kill; MUST exceed a real full scan's wall-clock.
-#   retry    — re-queue window; MUST be > timeout or the broker re-runs a task
-#              that is still executing. max_attempts:1 makes this moot but the
-#              constraint is enforced anyway.
-#   watchdog — reap_stuck_scans (SCAN_TIMEOUT_MINUTES) must be >= timeout so it
-#              only reaps genuinely orphaned scans (dead worker), never a healthy
-#              long-running one.
-# The old defaults (timeout 3600 / retry 7200) killed every large scan: a full
-# scan runs past 1h, timeout kills it, then retry re-queues a zombie at exactly
-# 2h. max_attempts:1 is the real "no retries" switch the retry comment claimed.
-# The worker hard-kill caps the WHOLE scan, so it must exceed the sum of per-tool
-# caps (different-phase tools run sequentially). nuclei is now allowed up to 6h
-# (NUCLEI_TIMEOUT) so it can FINISH a large surface rather than be capped — worst
-# case nuclei(6h)+nuclei_network(1h)+amass(0.5h)+the rest ≈ 8h. Set a generous 24h
-# so a big uncapped scan completes within the 48h window instead of being killed.
-# The freeze fixes (GOMEMLIMIT + bulk-size) keep the box responsive during a long
-# run. (Was 4h, which killed nuclei mid-scan on any large surface.)
-Q_TASK_TIMEOUT = config("Q_TASK_TIMEOUT", default=86400, cast=int)   # 24h hard cap per scan task
-Q_TASK_RETRY = config("Q_TASK_RETRY", default=Q_TASK_TIMEOUT + 1200, cast=int)
-# Guard: retry <= timeout causes the broker to re-run a task while it's still
-# running. Force retry strictly above timeout regardless of env misconfiguration.
-if Q_TASK_RETRY <= Q_TASK_TIMEOUT:
-    Q_TASK_RETRY = Q_TASK_TIMEOUT + 1200
+# Per-scan wall-clock cap (seconds). Under DBOS this bounds a scan step; a full
+# scan can legitimately run for hours (nuclei up to NUCLEI_TIMEOUT), so keep it
+# generous. The stuck-scan watchdog (SCAN_TIMEOUT_MINUTES) must stay >= this so
+# it only reaps genuinely orphaned scans, never a healthy long-running one.
+SCAN_TASK_TIMEOUT = config("SCAN_TASK_TIMEOUT", default=86400, cast=int)  # 24h
 
-Q_CLUSTER = {
-    "name": "openeasd",
-    "workers": 1,       # SQLite is single-writer; >1 workers causes race conditions on task pickup
-    "orm": "default",   # uses Django DB — no Redis needed
-    "timeout": Q_TASK_TIMEOUT,
-    "retry": Q_TASK_RETRY,
-    "max_attempts": 1,  # a killed scan is dead, not retried — never re-queue it
-    "catch_up": False,  # skip missed tasks on worker restart
-}
+# DBOS is the entire task/execution + scheduling layer on this branch (durable,
+# resumable, Postgres-backed) — Django-Q has been removed. Scan-execution tuning
+# consumed in apps/core/durable.
+DBOS_APP_NAME = config("DBOS_APP_NAME", default="openeasd")
+# Max scans executing concurrently across all workers. Postgres (unlike SQLite)
+# handles concurrent writers, so this can be >1 — bounded here to protect target
+# politeness and host RAM (nuclei/amass are memory-hungry).
+DBOS_SCAN_CONCURRENCY = config("DBOS_SCAN_CONCURRENCY", default=2, cast=int)
+SCAN_STEP_TIMEOUT = config("SCAN_STEP_TIMEOUT", default=SCAN_TASK_TIMEOUT, cast=int)
 
 # Scanner timeouts (seconds) — override in .env if needed
 SCANNER_DNS_TIMEOUT = config("SCANNER_DNS_TIMEOUT", default=5, cast=int)
@@ -336,6 +333,29 @@ GITHUB_API_BASE = config("GITHUB_API_BASE", default="https://api.github.com")
 GITHUB_SECRETS_GLOBAL_SEARCH = config("GITHUB_SECRETS_GLOBAL_SEARCH", default=False, cast=bool)
 GITHUB_MAX_REPOS = config("GITHUB_MAX_REPOS", default=50, cast=int)
 GITHUB_MAX_REQUESTS = config("GITHUB_MAX_REQUESTS", default=100, cast=int)
+
+# Agentic AI subsystem (apps/core/ai). BYOK: Cloudflare Workers AI, called
+# directly from Django (D-014 as amended). Entirely OFF unless credentials
+# are available AND the operator enables the feature AND records consent in
+# the UI — with any of those missing, every scan runs exactly as if this
+# subsystem did not exist. Credentials are PER-DEPLOYMENT secrets (never
+# baked into the public image): the operator saves them on the /ai page
+# (stored in AISettings, write-only through the API — never serialized back
+# out), or supplies these env vars as fallback (DB wins, NotificationConfig
+# webhook precedent). Finding data is sent to Cloudflare only on consented
+# deployments; prompt and response bodies are NEVER persisted (AIInvocation
+# audit rows carry metadata only — D-013 4c). CLOUDFLARE_AI_MAX_CALLS_PER_SCAN
+# is a hard per-scan budget the client enforces so no agent loop can run up
+# the operator's bill.
+CLOUDFLARE_ACCOUNT_ID = config("CLOUDFLARE_ACCOUNT_ID", default="")
+CLOUDFLARE_API_TOKEN = config("CLOUDFLARE_API_TOKEN", default="")
+CLOUDFLARE_AI_MODEL = config(
+    "CLOUDFLARE_AI_MODEL", default="@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+)
+CLOUDFLARE_AI_TIMEOUT = config("CLOUDFLARE_AI_TIMEOUT", default=120, cast=int)
+CLOUDFLARE_AI_MAX_CALLS_PER_SCAN = config(
+    "CLOUDFLARE_AI_MAX_CALLS_PER_SCAN", default=10, cast=int
+)
 
 # Honest scanner identity. Sent as the User-Agent on the tools that probe the
 # target's web surface (httpx, katana, nuclei) so a customer can deliberately
@@ -515,7 +535,7 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
-        "django_q": {
+        "dbos": {
             "handlers": ["file"],
             "level": "INFO",
             "propagate": False,

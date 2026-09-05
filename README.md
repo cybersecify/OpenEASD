@@ -14,7 +14,9 @@
 
 Use it as a **red teamer** to map external surface fast on targets you're authorised to test. Use it as a **defender** to see what's leaking out of your own infrastructure: subdomains, exposed ports, dangling CNAMEs, missing TLS, known CVEs, without paying $500-5000/mo for a commercial EASM platform.
 
-OpenEASD wraps the open-source recon tools security teams already use: `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `cloud_enum`, `naabu`, `nmap`, `httpx`, `gau`, `katana`, `nuclei`, `gitleaks`, behind a single web UI with scheduling, alerts, and findings tracking. Twenty-seven tools across DNS/DNSSEC, email (SPF/DMARC/DKIM/MTA-STS/open-relay), TLS, SSH, ports, CVEs, subdomain takeover, ASN/IP-range discovery, historical URLs, cloud assets, exposed secrets in JavaScript, leaked secrets in public GitHub (passive; searches GitHub's code-search API for the org's committed credentials and runs gitleaks over the hits — bring-your-own GitHub token), public-source infrastructure exposure (passive; internal hostnames, cloud buckets, and API endpoints leaked in the org's public GitHub repos), infostealer-log exposure (via Hudson Rock's keyless Cavalier API), data-breach exposure (passive; free XposedOrNot tier out of the box, authoritative with a bring-your-own Have I Been Pwned key), Shodan-sourced exposure (passive; free InternetDB tier out of the box, richer with a bring-your-own Shodan key), lookalike / typosquat domain detection (passive; phishing infrastructure and brand abuse targeting your domain), technology fingerprinting, web hygiene, and CVE prioritisation (EPSS + CISA KEV). Run a **passive scan** (public-source only, no authorization needed) or an **active scan** (probes the target, authorization required). Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
+OpenEASD wraps the open-source recon tools security teams already use: `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `cloud_enum`, `naabu`, `nmap`, `httpx`, `gau`, `katana`, `nuclei`, `gitleaks`, behind a single web UI with scheduling, alerts, and findings tracking. Twenty-seven tools across DNS/DNSSEC, email (SPF/DMARC/DKIM/MTA-STS/open-relay), TLS, SSH, ports, CVEs, subdomain takeover, ASN/IP-range discovery, historical URLs, cloud assets, exposed secrets in JavaScript, leaked secrets in public GitHub (passive; searches GitHub's code-search API for the org's committed credentials and runs gitleaks over the hits — bring-your-own GitHub token), public-source infrastructure exposure (passive; internal hostnames, cloud buckets, and API endpoints leaked in the org's public GitHub repos), infostealer-log exposure (via Hudson Rock's keyless Cavalier API), data-breach exposure (passive; free XposedOrNot tier out of the box, authoritative with a bring-your-own Have I Been Pwned key), Shodan-sourced exposure (passive; free InternetDB tier out of the box, richer with a bring-your-own Shodan key), lookalike / typosquat domain detection (passive; phishing infrastructure and brand abuse targeting your domain), technology fingerprinting, web hygiene, and CVE prioritisation (EPSS + CISA KEV). Run a **passive scan** (public-source only, no authorization needed) or an **active scan** (probes the target, authorization required). Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine — unless you enable the optional Cloudflare Workers AI analysis (off by default, explicit consent required), which sends finding data to your own Cloudflare account.
+
+Optionally, OpenEASD can rank each scan's findings by exploitability and explain why (a "fix these first" list with per-finding rationale), schedule targeted follow-up scan steps based on what was found, and write plain-language report and alert summaries — using Cloudflare Workers AI with your own account (credentials entered on the AI Analysis page, or via `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` env vars). Off by default; enabling it requires explicit consent in the UI, every call is audit-logged (never the prompt or response contents), and active follow-up scanning still requires the same domain authorization as manual scans.
 
 Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok S Kamat](https://www.linkedin.com/in/ashokskamat/) of [Cybersecify](https://cybersecify.com), the same tool we run in engagements and on our own infrastructure.
 
@@ -150,17 +152,11 @@ target is hit — the per-target request rate stays capped across all profiles, 
 
 ## Quick start
 
+OpenEASD runs as three services (PostgreSQL + web + worker). Set the secrets in
+`docker-compose.yml` (`SECRET_KEY`, `DB_PASSWORD`, `ALLOWED_HOSTS`), then:
+
 ```bash
-docker run -d \
-  -p 8000:8000 \
-  -v openeasd-data:/app/data \
-  -v openeasd-logs:/app/logs \
-  -e SECRET_KEY="$(openssl rand -hex 32)" \
-  -e ALLOWED_HOSTS="*" \
-  --cap-add NET_RAW \
-  --restart unless-stopped \
-  --name openeasd \
-  ghcr.io/cybersecify/openeasd:latest
+docker compose up -d --build
 ```
 
 Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced to set a new password) → add a domain → run a scan. Full env-var reference, update path, Kubernetes manifests, and standalone (no-Docker) install are under [Deployment](#deployment).
@@ -231,11 +227,26 @@ Phase 11 JS Secrets        - Hardcoded secrets in JavaScript via gitleaks
 
 ── Prioritization ───────────────────────────────────────────────────────────
 Phase 12 CVE Intel         - Enrich CVE findings with EPSS + CISA KEV
+
+── AI analysis (optional; off by default, bring-your-own Cloudflare) ──────────
+Post-scan Triage          - Rank findings by exploitability (CISA KEV + EPSS
+                            outrank raw CVSS) with a per-finding rationale, plus
+                            plain-language report and alert summaries
+Post-scan Orchestration   - A bounded agent may schedule targeted follow-up
+                            subscans based on what was found (still gated by the
+                            same domain authorization as manual scans)
 ```
 
 Every scan probe also carries an honest `OpenEASD/1.0` user agent (so a target
 can allowlist it), and the report flags WAF/edge blocking so an empty result
 means "clean", never "silently blocked".
+
+The AI stage runs only when Cloudflare Workers AI credentials are provided
+(saved on the AI Analysis page, or `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN`
+env vars) **and** an operator enables it with explicit consent. With it off — the
+default — the pipeline ends at Phase 12 and nothing leaves your machine. Every AI
+call is recorded in an audit log (time, scan, purpose, model, token counts,
+finding IDs); prompt and response contents are never stored.
 
 ## Architecture
 
@@ -249,10 +260,12 @@ apps/core/              - Infrastructure (never changes)
   findings/             - Unified Finding model
   scans/                - ScanSession, pipeline orchestrator
   workflows/            - Dynamic workflow engine + tool registry
-  scheduler/            - Django-Q2 scheduling, daily/weekly scans, per-domain monitoring, stuck scan watchdog
+  scheduler/            - Scan callables (daily / monitoring sweep / user-schedule sweep / watchdog) driven by DBOS @scheduled workflows
+  durable/              - DBOS engine, scan/AI workflows, dbos_worker command
   notifications/        - Slack/Teams alerts
   insights/             - Scan summaries, charts
   reports/              - CSV/PDF export
+  ai/                   - AI analysis (Cloudflare Workers AI, BYOK): triage, orchestration, summaries, consent + audit
   domains/              - Domain management
   dashboard/            - UI home
 
@@ -288,20 +301,19 @@ frontend/               - React 19 + Vite 8 SPA
 
 ## Deployment
 
-### Docker (recommended)
+### Docker Compose (recommended)
+
+OpenEASD runs as three services — **PostgreSQL + web + worker**. Edit the
+secrets in `docker-compose.yml` (`SECRET_KEY`, `DB_PASSWORD`, `ALLOWED_HOSTS`),
+then:
 
 ```bash
-docker run -d \
-  -p 8000:8000 \
-  -v openeasd-data:/app/data \
-  -v openeasd-logs:/app/logs \
-  -e SECRET_KEY="$(openssl rand -hex 32)" \
-  -e ALLOWED_HOSTS="*" \
-  --cap-add NET_RAW \
-  --restart unless-stopped \
-  --name openeasd \
-  ghcr.io/cybersecify/openeasd:latest
+docker compose up -d --build
 ```
+
+- `db` — PostgreSQL 17 (app data + the DBOS durable-execution schema)
+- `web` — the slim `openeasd-web` image (UI/API + PDF reports; no scanner tools)
+- `worker` — the `openeasd-worker` image (DBOS worker + the full scanner matrix, `NET_RAW`)
 
 Open http://localhost:8000, then log in with `admin` / `admin`. You will be forced to set a new password before accessing the app.
 
@@ -323,7 +335,9 @@ docker stop openeasd && docker rm openeasd
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated hostnames (add your server IP/domain) |
 | `CSRF_TRUSTED_ORIGINS` | *(none)* | Required if accessing via a domain, e.g. `https://openeasd.example.com` |
 | `DEBUG` | `False` | Set `True` only for local development |
-| `DB_NAME` | `data/openeasd.db` | SQLite path relative to `/app` |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | `db` / `5432` / `openeasd` / `openeasd` / — | PostgreSQL connection (or set `DATABASE_URL`) |
+| `DBOS_SCAN_CONCURRENCY` | `2` | Max scans executing at once (Postgres has no single-writer lock) |
+| `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` | *(none)* | Optional AI analysis (or enter on the AI Analysis page) |
 | `SLACK_WEBHOOK_URL` | *(none)* | Slack incoming webhook for scan alerts (can also be set in the Notifications UI) |
 | `MS_TEAMS_WEBHOOK_URL` | *(none)* | Teams incoming webhook for scan alerts (can also be set in the Notifications UI) |
 | `ALERT_SEVERITY_THRESHOLD` | `high` | Minimum severity to trigger alerts; overridden by the Notifications UI setting |
@@ -367,11 +381,11 @@ Single pod, two containers, one `ReadWriteOnce` PVC:
 | Container | Command | Resources |
 |---|---|---|
 | `web` | `gunicorn` (2 workers) | 256Mi–512Mi |
-| `worker` | `manage.py qcluster` | 512Mi–1Gi, `NET_RAW` capability |
+| `worker` | `manage.py dbos_worker` | 512Mi–4Gi, `NET_RAW` capability |
 
 An init container runs migrations and admin user setup before the main containers start. The `worker` container gets `NET_RAW` capability for nmap/naabu port scanning.
 
-> **SQLite constraint:** `replicas: 1` is required. To scale horizontally, migrate to PostgreSQL.
+> **Scaling:** the app Deployment is `replicas: 1` (one web + one worker container) alongside a PostgreSQL StatefulSet (`k8s/postgres.yaml`). Postgres removes the old single-writer limit, so the worker can be split into its own Deployment and scaled to multiple replicas pulling the same DBOS queue.
 
 #### Health check
 
@@ -407,13 +421,13 @@ On macOS, start manually:
 
 ```bash
 uv run gunicorn openeasd.wsgi:application --bind 0.0.0.0:8000 --workers 2
-uv run manage.py qcluster   # second terminal
+uv run manage.py dbos_worker   # second terminal (needs PostgreSQL running)
 ```
 
 ### Development Mode
 
 ```bash
-# Terminal 1: Django + Django-Q2 worker
+# Terminal 1: Django + DBOS worker (needs PostgreSQL running)
 uv run python main.py
 
 # Terminal 2: Vite dev server (proxies /api/ to Django on port 8000)
@@ -498,10 +512,10 @@ uv run pytest tests/
 **Backend:**
 - **Django 5**: Web framework
 - **Django Ninja**: REST API with OpenAPI docs
-- **Django-Q2**: Background task queue and scheduler (ORM broker, replaces APScheduler)
-- **croniter**: Cron expression parsing for Django-Q2 CRON schedules
+- **DBOS**: Durable-execution engine — task queue + scheduler, Postgres-backed (crash-resumable scans)
+- **croniter**: Cron parsing for the DBOS user-schedule sweep
 - **WhiteNoise**: Serves static files in production (Docker) with gzip compression
-- **SQLite**: Database (dev), configurable via `DB_NAME`
+- **PostgreSQL** (+ **psycopg 3**): Database — app data and the DBOS checkpoint schema
 - **paramiko**: SSH protocol inspection
 - **cryptography**: X.509 certificate analysis
 - **xhtml2pdf**: PDF report generation

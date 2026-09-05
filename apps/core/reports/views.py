@@ -468,6 +468,43 @@ def _top_risks(groups, limit=5):
     return ranked
 
 
+def _ai_context(session) -> dict:
+    """Optional AI analyst-summary context (apps/core/ai). Returns {} whenever
+    no completed triage exists, so an AI-off deployment renders a byte-identical
+    report — the template gates the whole block on `ai_summary` (report_cta
+    precedent). Never raises: the report must render even if the AI tables are
+    in a weird state."""
+    try:
+        from apps.core.ai.models import AISummary, AITriage
+
+        triage = AITriage.objects.filter(session=session, status="completed").first()
+        summary = AISummary.objects.filter(session=session, kind="report").first()
+        text = (summary.text if summary else "") or (triage.overview if triage else "")
+        if not text:
+            return {}
+        top = []
+        if triage:
+            for item in triage.items.select_related("finding").all()[:5]:
+                finding = item.finding
+                top.append({
+                    "rank": item.rank,
+                    "title": finding.title if finding else item.finding_key.split(":", 2)[-1],
+                    "severity": finding.severity if finding else "",
+                    "rationale": item.rationale,
+                })
+        model = (summary.model if summary else "") or (triage.model if triage else "")
+        generated_at = summary.created_at if summary else triage.created_at
+        return {
+            "ai_summary": text,
+            "ai_triage_top": top,
+            "ai_model_name": model,
+            "ai_generated_at": generated_at,
+        }
+    except Exception:  # noqa: BLE001 — AI must never break report rendering
+        logger.exception("[reports] AI context lookup failed — rendering without it")
+        return {}
+
+
 def _render_pdf(html: str) -> bytes:
     """Render report HTML to PDF bytes via WeasyPrint.
 
@@ -650,6 +687,8 @@ def export_scan_pdf(request, session_uuid):
         # Optional CTA — template renders the block only when both are truthy.
         "report_cta_url": getattr(settings, "REPORT_CTA_URL", "") or "",
         "report_cta_text": getattr(settings, "REPORT_CTA_TEXT", "") or "",
+        # Optional AI analyst summary — {} when absent, so the block never renders.
+        **_ai_context(session),
     })
 
     try:

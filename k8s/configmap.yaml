@@ -18,7 +18,15 @@ data:
   ALLOWED_HOSTS: "openeasd.example.com,openeasd.local,localhost"
   CSRF_TRUSTED_ORIGINS: "https://openeasd.example.com,http://openeasd.local"
   DEBUG: "False"
-  DB_NAME: "data/openeasd.db"
+  # PostgreSQL — the app + DBOS system tables live here (DBOS uses a `dbos`
+  # schema in the same database). DB_PASSWORD is in openeasd-secret and must
+  # match the Postgres StatefulSet's POSTGRES_PASSWORD.
+  DB_HOST: "openeasd-postgres"
+  DB_PORT: "5432"
+  DB_NAME: "openeasd"
+  DB_USER: "openeasd"
+  # DBOS scan concurrency (Postgres has no SQLite single-writer lock).
+  DBOS_SCAN_CONCURRENCY: "2"
   ALERT_SEVERITY_THRESHOLD: "high"
   SCAN_DAILY_HOUR: "2"
   SCAN_DAILY_MINUTE: "0"

@@ -33,8 +33,8 @@ class TestSubdomainModel:
     def test_same_subdomain_allowed_across_sessions(self):
         from apps.core.assets.models import Subdomain
         from apps.core.scans.models import ScanSession
-        s1 = ScanSession.objects.create(domain="example.com", scan_type="full")
-        s2 = ScanSession.objects.create(domain="example.com", scan_type="full")
+        s1 = ScanSession.objects.create(domain="example.com", scan_type="full", status="completed")
+        s2 = ScanSession.objects.create(domain="example.com", scan_type="full", status="completed")
         Subdomain.objects.create(session=s1, domain="example.com", subdomain="api.example.com", source="subfinder")
         # Different session — allowed
         Subdomain.objects.create(session=s2, domain="example.com", subdomain="api.example.com", source="subfinder")

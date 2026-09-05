@@ -23,6 +23,7 @@ class ScanSession(models.Model):
         ("recurring", "Recurring"),
         ("monitoring", "Monitoring"),
         ("subscan", "Subscan"),
+        ("agent", "Agent"),
     ]
 
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
@@ -52,6 +53,20 @@ class ScanSession(models.Model):
 
     class Meta:
         ordering = ["-start_time"]
+        constraints = [
+            # At most one in-flight scan per domain. On Postgres the guard in
+            # create_scan_session() (select_for_update on the not-yet-existing
+            # row) can't serialize two concurrent creators — this partial unique
+            # index does: the second insert raises IntegrityError, which
+            # create_scan_session catches and turns into "scan already active".
+            # Subscans are exempt (scan_type="subscan") — they run against a
+            # parent and legitimately overlap a domain's other work.
+            models.UniqueConstraint(
+                fields=["domain"],
+                condition=models.Q(status__in=["pending", "running"]) & ~models.Q(scan_type="subscan"),
+                name="uniq_active_scan_per_domain",
+            ),
+        ]
 
     def __str__(self):
         return f"[{self.id}] {self.domain} ({self.scan_type}) - {self.status}"
@@ -84,3 +99,29 @@ class ScanDelta(models.Model):
 
     def __str__(self):
         return f"{self.change_type} {self.change_category}: {self.item_identifier}"
+
+
+class ScheduledScan(models.Model):
+    """User-created one-time / recurring scan schedule (Postgres-native).
+
+    Replaces Django-Q Schedule rows: a DBOS sweep (scheduled_user_scans_sweep)
+    fires the due ones. `job_id` keeps the legacy public identifier shape
+    ("once_{domain}_{hex}" / "recurring_{domain}") the API already exposes.
+    """
+
+    KIND_CHOICES = [("once", "One-time"), ("recurring", "Recurring")]
+
+    job_id = models.CharField(max_length=255, unique=True)
+    domain = models.CharField(max_length=255, db_index=True)
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES)
+    cron = models.CharField(max_length=100, blank=True, default="")  # recurring only
+    frequency = models.CharField(max_length=50, blank=True, default="")  # display label
+    next_run = models.DateTimeField(db_index=True)
+    enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["kind", "next_run"]
+
+    def __str__(self):
+        return f"{self.kind} scan {self.domain} @ {self.next_run}"

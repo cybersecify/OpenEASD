@@ -725,3 +725,70 @@ def test_every_emitted_check_type_has_cwe_mapping():
         f"check_types with no CWE mapping in _CWE_BY_CHECK: {sorted(unmapped)}\n"
         "Add an entry in apps/core/reports/views.py for each."
     )
+
+
+# ---------------------------------------------------------------------------
+# AI Analyst Summary block (apps/core/ai integration)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestAnalystSummaryBlock:
+    def _capture_pdf_html(self, authed_client, session):
+        captured = {}
+
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert res.status_code == 200
+        return captured["html"]
+
+    def test_absent_without_ai_rows(self, authed_client, session, findings):
+        html = self._capture_pdf_html(authed_client, session)
+        assert "Analyst Summary" not in html
+        assert "Cloudflare Workers AI" not in html
+
+    def test_renders_summary_and_top_items(self, authed_client, session, findings):
+        from apps.core.ai.models import AISummary, AITriage
+        triage = AITriage.objects.create(
+            session=session, status="completed", model="@cf/meta/test-model",
+            overview="triage overview",
+        )
+        triage.items.create(
+            finding=findings[0], finding_key="tls_checker:tls_expiry:TLS expired",
+            rank=1, priority="fix_now", rationale="cert already expired",
+        )
+        AISummary.objects.create(
+            session=session, kind="report", text="Exec summary paragraph.",
+            model="@cf/meta/test-model",
+        )
+        html = self._capture_pdf_html(authed_client, session)
+        assert "Analyst Summary" in html
+        assert "Exec summary paragraph." in html
+        assert "TLS expired" in html
+        assert "cert already expired" in html
+        assert "@cf/meta/test-model" in html
+        assert "review before acting" in html
+
+    def test_triage_overview_fallback_when_no_report_summary(self, authed_client, session, findings):
+        from apps.core.ai.models import AITriage
+        AITriage.objects.create(
+            session=session, status="completed", model="m", overview="fallback overview",
+        )
+        html = self._capture_pdf_html(authed_client, session)
+        assert "Analyst Summary" in html
+        assert "fallback overview" in html
+
+    def test_failed_triage_renders_nothing(self, authed_client, session, findings):
+        from apps.core.ai.models import AITriage
+        AITriage.objects.create(session=session, status="failed", overview="stale")
+        html = self._capture_pdf_html(authed_client, session)
+        assert "Analyst Summary" not in html
+
+    def test_ai_context_helper_never_raises(self, session):
+        from apps.core.reports.views import _ai_context
+        with patch("apps.core.ai.models.AITriage.objects") as broken:
+            broken.filter.side_effect = RuntimeError("db broke")
+            assert _ai_context(session) == {}

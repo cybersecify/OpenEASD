@@ -187,9 +187,11 @@ Calling these out so contributors don't add them back without a discussion:
 
 - **No RBAC / SAML / multi-tenant.** Single admin user, JWT auth. Anyone needing
   multi-user belongs on a different tool.
-- **No Postgres / horizontal scaling.** SQLite + `replicas: 1`. The constraint is
-  intentional — keeps the install one `docker run`. Postgres support is fine
-  to add later but not the priority.
+- **No Postgres / horizontal scaling.** SQLite + `replicas: 1`. *(Revisited by
+  [D-016](#d-016--v2x-execution-re-platform-postgresql--dbos) (2026-09-05): a
+  PostgreSQL + DBOS variant now exists for durable, concurrent scans. The
+  SQLite single-container build remains supported for the simple case; Postgres
+  is the option for a service deployment.)*
 - **No hosted scan UI.** See [D-003](#d-003--distribution-docker-only).
 - **No A–F letter grades, typosquatting, or brand impersonation.** These are
   brand-monitoring, not external-attack-surface scanning — out of scope by focus.
@@ -203,7 +205,13 @@ Calling these out so contributors don't add them back without a discussion:
 ---
 
 ## D-009 — v2.0 direction: Agentic AI / LLM-triage
-**Status:** locked · **Decided:** 2026-05-31
+**Status:** locked · **Decided:** 2026-05-31 · *Amended by [D-015](#d-015--v20-shipped-scope-triage--adaptive-orchestration--summaries) (2026-09-05)*
+
+> **Amendment (D-015).** The direction stands; the scope widened. v2.0 ships
+> triage plus two of the candidate scopes this entry set aside — adaptive
+> orchestration (a bounded form of "multi-agent recon planning") and
+> report/alert summaries — because they turned out to be thin consumers of
+> triage's plumbing. See D-015 for the reasoning.
 
 **What.** v2.0 will add an LLM-powered finding triage layer to OpenEASD — turning the scanner's raw output (76 findings, 3 critical, 21 high…) into a ranked, contextualised "fix this first" list with reasoning. Direction chosen over 4 other candidate scopes (chat-over-findings, auto-generated tool integrations, multi-agent recon planning, remediation playbooks) — see PRD.md v2.0 section.
 
@@ -218,7 +226,14 @@ Calling these out so contributors don't add them back without a discussion:
 ---
 
 ## D-010 — LLM-triage privacy stance: hybrid local + cloud opt-in
-**Status:** locked · **Decided:** 2026-05-31
+**Status:** SUPERSEDED (2026-09-05) · **Decided:** 2026-05-31
+
+> **Superseded by [D-014](#d-014--v20-ai-backend-cloudflare-workers-ai-only-byok).**
+> v2.0 ships with Cloudflare Workers AI as the only backend (BYOK); there is no
+> local Ollama default and no separate cloud tier. The "results stay on your
+> machine" claim survives as the *default* (AI is off until explicitly enabled
+> with consent), which is the part of this decision D-014 keeps. The original
+> text is kept below for history.
 
 **What.** Local LLM (Ollama + Qwen 2.5 7B — see [D-011](#d-011--llm-triage-local-runtime--default-model)) is the default for everyone. Cloud API (Claude — see [D-012](#d-012--llm-triage-cloud-api-choice-claude-only-for-v20)) is a per-user opt-in with explicit consent (see [D-013](#d-013--llm-triage-consent-ux-shape)). Three other options were considered: local-only, cloud-only, and pluggable-from-day-one.
 
@@ -231,7 +246,12 @@ Calling these out so contributors don't add them back without a discussion:
 ---
 
 ## D-011 — LLM-triage local runtime + default model
-**Status:** locked · **Decided:** 2026-05-31
+**Status:** SUPERSEDED (2026-09-05) · **Decided:** 2026-05-31
+
+> **Superseded by [D-014](#d-014--v20-ai-backend-cloudflare-workers-ai-only-byok).**
+> There is no local runtime in v2.0 — no Ollama, no Qwen, no 8 GB hardware
+> floor. Analysis quality no longer depends on host RAM. Original text kept
+> below for history.
 
 **What.** Local LLM backend = **Ollama** as the runtime, **Qwen 2.5 7B-Instruct** as the default model. User can override via config (`OPENEASD_LOCAL_LLM_MODEL` env var). Hardware floor: 8 GB RAM (the model needs ~5 GB; the rest is OpenEASD's existing footprint).
 
@@ -244,7 +264,12 @@ Calling these out so contributors don't add them back without a discussion:
 ---
 
 ## D-012 — LLM-triage cloud API choice: Claude only for v2.0
-**Status:** locked · **Decided:** 2026-05-31
+**Status:** SUPERSEDED (2026-09-05) · **Decided:** 2026-05-31
+
+> **Superseded by [D-014](#d-014--v20-ai-backend-cloudflare-workers-ai-only-byok).**
+> The single-provider reasoning here survives — v2.0 still integrates exactly
+> one backend — but the provider is Cloudflare Workers AI (BYOK on the user's
+> own account), not Anthropic's Claude API. Original text kept below for history.
 
 **What.** Cloud-opt-in path uses **Anthropic's Claude API** as the only supported cloud backend in v2.0. Single integration. User configures via `ANTHROPIC_API_KEY` env var. Three alternatives were considered: OpenAI only, both Claude + OpenAI, and a multi-provider proxy framework (LiteLLM-style).
 
@@ -259,7 +284,16 @@ Calling these out so contributors don't add them back without a discussion:
 ---
 
 ## D-013 — LLM-triage consent UX shape
-**Status:** locked · **Decided:** 2026-05-31
+**Status:** locked · **Decided:** 2026-05-31 · *Amended by [D-014](#d-014--v20-ai-backend-cloudflare-workers-ai-only-byok) (2026-09-05)*
+
+> **Amendment (D-014).** The 4-axis shape stays locked; wording and one axis
+> adapt to the Cloudflare-only backend: consent names "Cloudflare Workers AI on
+> your own account" instead of "Anthropic's Claude API"; because every AI call
+> is a cloud call, consent gates *enabling AI at all* rather than choosing a
+> cloud tier (4a's local/cloud toggle collapses into a single enable switch, and
+> the per-scan override is replaced by a per-scan manual re-run); 4b–4d survive
+> unchanged, with the 4c audit log now also recording purpose
+> (triage / orchestration / summary) per call.
 
 **What.** Four sub-axes of the consent UX for cloud-backed LLM triage:
 
@@ -280,6 +314,57 @@ Calling these out so contributors don't add them back without a discussion:
 
 ---
 
+## D-014 — v2.0 AI backend: Cloudflare Workers AI only (BYOK)
+**Status:** locked · **Decided:** 2026-09-05 · *Amended 2026-09-05*
+
+> **Amendment (same day).** Credentials are no longer env-only: the operator
+> can save the account ID + API token on the /ai page (stored in `AISettings`,
+> write-only through the API — never serialized back out), with the
+> `CLOUDFLARE_*` env vars as fallback (DB wins — the NotificationConfig
+> webhook precedent). Trade-off accepted knowingly: the token now lives in
+> the SQLite file, in exchange for a working setup path that doesn't require
+> container restarts. Everything else in this decision stands.
+
+**What.** The v2.0 AI layer uses **Cloudflare Workers AI** as its only backend, called directly from Django over Cloudflare's REST API. Credentials are strictly bring-your-own-key via environment variables (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`) — never stored in the database, never returned by the API. With either variable unset, or the feature disabled, or consent not recorded, the subsystem is invisible: every scan runs exactly as if the AI code did not exist. Default model `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, overridable (`CLOUDFLARE_AI_MODEL`). The agent loop runs inside Django as Django-Q tasks — no Workers deployment, no AI Gateway. Supersedes [D-010](#d-010--llm-triage-privacy-stance-hybrid-local--cloud-opt-in), [D-011](#d-011--llm-triage-local-runtime--default-model), [D-012](#d-012--llm-triage-cloud-api-choice-claude-only-for-v20); amends [D-013](#d-013--llm-triage-consent-ux-shape) (wording + single enable switch).
+
+**Why.** One integration instead of two (Ollama runtime + Claude SDK) for what is still a prototype — D-012 itself estimated 1–2 weeks per additional backend. Dropping the local runtime removes D-011's 8 GB RAM hardware floor entirely: a 1 GB `low`-profile host gets the same analysis quality as a 32 GB one, instead of being excluded or OOM-killing nuclei to fit a 5 GB model alongside it. BYOK keeps cost, rate limits, and the data-processing agreement on the user's own Cloudflare account (serverless per-call pricing, no resident model weights). The cost is real and stated honestly: enabling AI sends finding data off-box, so the README's "results stay on your machine" hero claim gets an explicit qualifier — it remains true for the default (off) state, which D-010 identified as the load-bearing part.
+
+**Hypothesis.** BYOK-cloud-only with honest consent loses fewer users than it appears to: the privacy-sensitive majority keep the feature off and lose nothing, while users who enable it get hardware-independent quality and a per-call audit trail. Uniform quality also makes triage output testable against one model instead of a local-model matrix.
+
+**Evidence.** Data-oriented on integration cost (D-012's own estimate) and on the hardware floor (D-011 set 8 GB; the `low` profile targets ~1 GB hosts — the conflict was documented, not hypothetical). Speculative on adoption and on Workers AI open-weight models being good enough for structured triage — no eval against real OpenEASD scan output exists yet; the JSON-schema-constrained output design is the mitigation.
+
+**Follow-up trigger.** If schema-mismatch rates or triage quality complaints show the default model is not good enough, revisit model choice (config-only change) before revisiting backend choice.
+
+---
+
+## D-015 — v2.0 shipped scope: triage + adaptive orchestration + summaries
+**Status:** locked · **Decided:** 2026-09-05
+
+**What.** v2.0 ships three AI capabilities together on one framework: (1) **findings triage** — a ranked "fix these first" list with per-item rationale on the scan detail page; (2) **adaptive scan orchestration** — a bounded agent that may launch follow-up subscans based on results (hard caps on iterations and subscans; active tools still require `DomainAuthorization`, enforced again at the agent's own dispatch boundary); (3) **report and alert summaries** — a plain-language analyst paragraph in the PDF report and Slack/Teams alerts. Amends [D-009](#d-009--v20-direction-agentic-ai--llm-triage), which had narrowed v2.0 to triage only.
+
+**Why.** The three scopes share one client, one consent gate, one audit trail, and one prompt-context builder — triage alone builds ~80% of the plumbing, and the other two are thin consumers of it. Shipping them together turns the demo from "a sorting hat for findings" into "an analyst that prioritises, digs deeper, and writes the summary," which is the v2.0 differentiation D-009 was after. D-008 still applies: copy describes what each capability does, never "AI-powered."
+
+**Hypothesis.** The marginal cost of orchestration + summaries on top of triage is small enough (shared plumbing) that shipping all three beats sequencing them, and the combined demo is the stronger marketing artifact.
+
+**Evidence.** Speculative — prototype-phase decision, same epistemic status as D-009's original single-scope bet. The bounded-loop safety design (iteration/subscan caps, authorization re-check, fail-graceful hooks) is the hedge against orchestration being the risky third of the scope.
+
+---
+
+## D-016 — v2.x execution re-platform: PostgreSQL + DBOS
+**Status:** locked · **Decided:** 2026-09-05
+
+**What.** Re-platform the persistence and execution layers off SQLite + Django-Q onto **PostgreSQL + DBOS** (durable execution). Scans become durable DBOS workflows whose phases are checkpointed steps; all scheduling moves to DBOS `@scheduled` cron workflows; Django-Q2 is removed. Deployment goes from one container to **three** (Postgres + web + worker), and the image splits into a slim tool-free **web** image and an Ubuntu **worker** image. Revisits the "No Postgres" line in [D-008](#d-008--things-we-deliberately-dont-have-anti-features); the SQLite single-`docker run` build stays supported for the simple case.
+
+**Why.** SQLite's single-writer lock forced `workers: 1` and serial scans, and a crashed worker lost an in-flight scan (only the `reap_stuck_scans` watchdog cleaned up the DB status). DBOS's durable workflows make a scan crash-resumable (restart continues at the last completed phase, not from scratch), Postgres removes the single-writer limit so scans run concurrently, and DBOS folds queue + scheduler + retries + observability into one Postgres-backed engine. The image split additionally keeps offensive tooling out of the internet-facing web container.
+
+**Hypothesis.** For a *continuously running* deployment (monitoring many domains, long scans, needing scans to survive restarts) the reliability + concurrency win outweighs the added operational weight of running Postgres and two processes. For a *personal/occasional* user the SQLite single-container build is still the better fit — hence keeping both rather than forcing the migration.
+
+**Evidence.** Data-oriented on the mechanics (verified: durable scan resumes across worker restart; the duplicate-scan guard needed a real DB constraint on Postgres — `uniq_active_scan_per_domain` — because SQLite's serialization had masked the race; full test suite green on Postgres; both images build and the 3-service compose stack runs end-to-end). Speculative on adoption of the Postgres variant vs the SQLite default — no usage data yet.
+
+**Follow-up trigger.** If the Postgres variant sees real adoption, decide whether it becomes the default (and SQLite the "lite" option) or stays a parallel deployment mode.
+
+---
+
 ## Index
 
 | ID | Decision | Status | Decided |
@@ -292,11 +377,14 @@ Calling these out so contributors don't add them back without a discussion:
 | D-006 | Wording conventions per surface | locked | 2026-05-22 |
 | D-007 | Canonical 11 attack vectors | locked | 2026-05-20 |
 | D-008 | Anti-features (deliberate omissions) | locked | 2026-05-21 |
-| D-009 | v2.0 direction: Agentic AI / LLM-triage | locked | 2026-05-31 |
-| D-010 | LLM-triage privacy stance: hybrid local + cloud opt-in | locked | 2026-05-31 |
-| D-011 | LLM-triage local runtime + default model | locked | 2026-05-31 |
-| D-012 | LLM-triage cloud API choice: Claude only for v2.0 | locked | 2026-05-31 |
-| D-013 | LLM-triage consent UX shape | locked | 2026-05-31 |
+| D-009 | v2.0 direction: Agentic AI / LLM-triage | locked (amended by D-015) | 2026-05-31 |
+| D-010 | LLM-triage privacy stance: hybrid local + cloud opt-in | superseded | 2026-05-31 |
+| D-011 | LLM-triage local runtime + default model | superseded | 2026-05-31 |
+| D-012 | LLM-triage cloud API choice: Claude only for v2.0 | superseded | 2026-05-31 |
+| D-013 | LLM-triage consent UX shape | locked (amended by D-014) | 2026-05-31 |
+| D-014 | v2.0 AI backend: Cloudflare Workers AI only (BYOK) | locked | 2026-09-05 |
+| D-015 | v2.0 shipped scope: triage + orchestration + summaries | locked | 2026-09-05 |
+| D-016 | v2.x execution re-platform: PostgreSQL + DBOS | locked | 2026-09-05 |
 
 ---
 
