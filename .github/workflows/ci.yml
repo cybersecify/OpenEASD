@@ -68,7 +68,7 @@ jobs:
         # High-signal correctness rules (E/F/W, E501 deferred). Config in
         # pyproject.toml [tool.ruff]. Runs before tests so lint fails fast.
 
-      - name: Run tests (fast — exclude slow DNS tests)
+      - name: Run tests + coverage gate (fast — exclude slow DNS tests)
         env:
           SECRET_KEY: "ci-test-secret-key-not-used-in-prod"
           DEBUG: "True"
@@ -77,7 +77,12 @@ jobs:
           DB_NAME: openeasd
           DB_USER: openeasd
           DB_PASSWORD: openeasd
-        run: uv run pytest tests/ --ignore=tests/unit/test_domain_security.py -q
+        # --cov uses [tool.coverage.run] source/omit in pyproject.toml.
+        # Fail-under is set a few points below the current ~83% so the gate
+        # catches real regressions without flapping on minor fluctuation.
+        run: >-
+          uv run pytest tests/ --ignore=tests/unit/test_domain_security.py -q
+          --cov --cov-report=term-missing --cov-fail-under=80
 
       - name: SAST — bandit
         run: uv run bandit -r apps/ openeasd/ -ll -x tests/

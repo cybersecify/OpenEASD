@@ -90,7 +90,7 @@ git describe --tags --abbrev=0
 ## CI/CD (GitHub Actions)
 - Pipeline: `.github/workflows/ci.yml` — runs on every push to `main` and `v*` tags
 - **4 jobs:**
-  - `test` — ruff (lint), pytest (fast, excludes `test_domain_security.py`) against a **`postgres:17-alpine` service container** (DB_* env), bandit (SAST), pip-audit (CVE scan)
+  - `test` — ruff (lint), pytest (fast, excludes `test_domain_security.py`) against a **`postgres:17-alpine` service container** (DB_* env) with a **coverage gate** (`--cov-fail-under=80`; config in `[tool.coverage.run]`, ~83% currently), bandit (SAST), pip-audit (CVE scan)
   - `frontend` — `npm ci`, `npm run test:run` (Vitest + Testing Library, happy-dom env), `npm run build`
   - `docker` — matrix over the `web` + `worker` build targets, `docker buildx build` for `linux/amd64` (no push, cache check per target)
   - `publish` — matrix over `web` + `worker`; builds `linux/amd64` and pushes to `ghcr.io/cybersecify/openeasd-web` and `-worker`
