@@ -106,7 +106,9 @@ def _post_json(url: str, payload: dict) -> tuple[dict | None, str, int]:
 
     for attempt in range(_MAX_RETRIES + 1):
         try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=_timeout())
+            resp = requests.post(  # nosec B113 — timeout IS set (via _timeout(); bandit can't see through the call)
+                url, json=payload, headers=headers, timeout=_timeout()
+            )
         except requests.Timeout:
             logger.warning("ai: workers-ai call timed out after %ss", _timeout())
             return None, "timeout", _elapsed()
