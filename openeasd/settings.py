@@ -128,6 +128,7 @@ INSTALLED_APPS = [
     "apps.shodan",
     "apps.typosquat",
     "apps.github_secrets",
+    "apps.github_recon",
     "apps.cve_intel",
 ]
 
@@ -317,22 +318,24 @@ TOOL_GITLEAKS = config("TOOL_GITLEAKS", default="gitleaks")
 SHODAN_API_KEY = config("SHODAN_API_KEY", default="")
 SHODAN_MAX_IPS = config("SHODAN_MAX_IPS", default=50, cast=int)
 
-# GitHub public-secret tool (apps/github_secrets). BYOK is MANDATORY: GitHub's
-# code-search API requires auth, so with no GITHUB_TOKEN the tool is a logged
-# no-op (it never breaks a keyless Full Scan). The token is a PER-DEPLOYMENT
-# secret — NEVER bake it into the public image (that would leak the token and
-# spend the operator's own GitHub quota). A fine-grained/classic PAT with only
-# public read scope is sufficient. GITHUB_ORG pins the org to search (strongly
-# recommended — auto-derivation from the domain apex label is best-effort and
-# treated as lower confidence). GITHUB_SECRETS_GLOBAL_SEARCH enables a noisy
-# un-scoped bare-string search in addition to the org-scoped queries (off by
-# default). GitHub's API ToS applies: official API only, honour rate limits.
+# GitHub tools — both passive, BYO-token, sharing GITHUB_TOKEN/GITHUB_ORG.
+#   * apps/github_secrets — searches public GitHub code-search for the org's leaked
+#     secrets. BYOK MANDATORY (code-search needs auth; no token -> logged no-op).
+#   * apps/github_recon — enumerates the org's public repos + surfaces infra
+#     references. Works KEYLESS at 60 req/hr (capped by GITHUB_MAX_REPOS/REQUESTS);
+#     richer with a token at 5000 req/hr.
+# GITHUB_TOKEN is a PER-DEPLOYMENT secret — NEVER bake it into the public image
+# (that would leak the token + spend the operator's quota). A read-only/public-scope
+# PAT is sufficient. GITHUB_ORG pins the org (recommended; auto-derivation from the
+# domain apex label is best-effort). GitHub API ToS applies: official API only,
+# honour rate limits. GITHUB_SECRETS_GLOBAL_SEARCH adds a noisy un-scoped search
+# (github_secrets only, off by default).
 GITHUB_TOKEN = config("GITHUB_TOKEN", default="")
-GITHUB_API_BASE = config("GITHUB_API_BASE", default="https://api.github.com")
 GITHUB_ORG = config("GITHUB_ORG", default="")
-GITHUB_SECRETS_GLOBAL_SEARCH = config(
-    "GITHUB_SECRETS_GLOBAL_SEARCH", default=False, cast=bool
-)
+GITHUB_API_BASE = config("GITHUB_API_BASE", default="https://api.github.com")
+GITHUB_SECRETS_GLOBAL_SEARCH = config("GITHUB_SECRETS_GLOBAL_SEARCH", default=False, cast=bool)
+GITHUB_MAX_REPOS = config("GITHUB_MAX_REPOS", default=50, cast=int)
+GITHUB_MAX_REQUESTS = config("GITHUB_MAX_REQUESTS", default=100, cast=int)
 
 # Honest scanner identity. Sent as the User-Agent on the tools that probe the
 # target's web surface (httpx, katana, nuclei) so a customer can deliberately
