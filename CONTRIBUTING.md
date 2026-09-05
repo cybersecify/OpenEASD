@@ -142,7 +142,8 @@ See `tests/unit/test_ssh_checker.py` (33 tests) or
   go straight in; structural rewrites — open an issue first so we can
   agree on direction before you write.
 - **Frontend tweaks.** React 19 + Vite 8 + Tailwind + shadcn/ui in
-  `frontend/`. Run `npm run dev` against a Django backend on `:8000`.
+  `frontend/`. Run `npm run dev` against a Django backend on `:8000`, and
+  `npm run test:run` (Vitest) for the unit tests.
 - **Tests.** We're at ~1,600 tests excluding slow DNS; raising that
   number always helps. `tests/unit/test_<thing>.py` matches the app it
   tests.
@@ -235,13 +236,17 @@ plus `brew install nmap` and `go install github.com/owasp-amass/amass/v4/...@mas
 ## Tests before you push
 
 ```bash
-# Fast suite (excludes slow real-network DNS tests)
+# Backend — fast suite (excludes slow real-network DNS tests)
 uv run pytest tests/ --ignore=tests/unit/test_domain_security.py
+
+# Frontend — Vitest (jsdom-like env via happy-dom)
+cd frontend && npm run test:run
 ```
 
-CI runs the same. PR will block if anything fails. If your change
-touches a tool collector, add or update a unit test in
-`tests/unit/test_<tool>.py`.
+CI runs the same (plus `ruff check`). PR will block if anything fails. If
+your change touches a tool collector, add or update a unit test in
+`tests/unit/test_<tool>.py`. If it touches frontend logic (auth, API
+client, a component), add a `*.test.js`/`*.test.jsx` next to it.
 
 ## Commit messages
 

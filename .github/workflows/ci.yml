@@ -104,6 +104,9 @@ jobs:
       - name: Install dependencies
         run: cd frontend && npm ci
 
+      - name: Test — vitest
+        run: cd frontend && npm run test:run
+
       - name: Build
         run: cd frontend && npm run build
 
