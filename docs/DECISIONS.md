@@ -187,9 +187,11 @@ Calling these out so contributors don't add them back without a discussion:
 
 - **No RBAC / SAML / multi-tenant.** Single admin user, JWT auth. Anyone needing
   multi-user belongs on a different tool.
-- **No Postgres / horizontal scaling.** SQLite + `replicas: 1`. The constraint is
-  intentional — keeps the install one `docker run`. Postgres support is fine
-  to add later but not the priority.
+- **No Postgres / horizontal scaling.** SQLite + `replicas: 1`. *(Revisited by
+  [D-016](#d-016--v2x-execution-re-platform-postgresql--dbos) (2026-09-05): a
+  PostgreSQL + DBOS variant now exists for durable, concurrent scans. The
+  SQLite single-container build remains supported for the simple case; Postgres
+  is the option for a service deployment.)*
 - **No hosted scan UI.** See [D-003](#d-003--distribution-docker-only).
 - **No A–F letter grades, typosquatting, or brand impersonation.** These are
   brand-monitoring, not external-attack-surface scanning — out of scope by focus.
@@ -348,6 +350,21 @@ Calling these out so contributors don't add them back without a discussion:
 
 ---
 
+## D-016 — v2.x execution re-platform: PostgreSQL + DBOS
+**Status:** locked · **Decided:** 2026-09-05
+
+**What.** Re-platform the persistence and execution layers off SQLite + Django-Q onto **PostgreSQL + DBOS** (durable execution). Scans become durable DBOS workflows whose phases are checkpointed steps; all scheduling moves to DBOS `@scheduled` cron workflows; Django-Q2 is removed. Deployment goes from one container to **three** (Postgres + web + worker), and the image splits into a slim tool-free **web** image and an Ubuntu **worker** image. Revisits the "No Postgres" line in [D-008](#d-008--things-we-deliberately-dont-have-anti-features); the SQLite single-`docker run` build stays supported for the simple case.
+
+**Why.** SQLite's single-writer lock forced `workers: 1` and serial scans, and a crashed worker lost an in-flight scan (only the `reap_stuck_scans` watchdog cleaned up the DB status). DBOS's durable workflows make a scan crash-resumable (restart continues at the last completed phase, not from scratch), Postgres removes the single-writer limit so scans run concurrently, and DBOS folds queue + scheduler + retries + observability into one Postgres-backed engine. The image split additionally keeps offensive tooling out of the internet-facing web container.
+
+**Hypothesis.** For a *continuously running* deployment (monitoring many domains, long scans, needing scans to survive restarts) the reliability + concurrency win outweighs the added operational weight of running Postgres and two processes. For a *personal/occasional* user the SQLite single-container build is still the better fit — hence keeping both rather than forcing the migration.
+
+**Evidence.** Data-oriented on the mechanics (verified: durable scan resumes across worker restart; the duplicate-scan guard needed a real DB constraint on Postgres — `uniq_active_scan_per_domain` — because SQLite's serialization had masked the race; full test suite green on Postgres; both images build and the 3-service compose stack runs end-to-end). Speculative on adoption of the Postgres variant vs the SQLite default — no usage data yet.
+
+**Follow-up trigger.** If the Postgres variant sees real adoption, decide whether it becomes the default (and SQLite the "lite" option) or stays a parallel deployment mode.
+
+---
+
 ## Index
 
 | ID | Decision | Status | Decided |
@@ -367,6 +384,7 @@ Calling these out so contributors don't add them back without a discussion:
 | D-013 | LLM-triage consent UX shape | locked (amended by D-014) | 2026-05-31 |
 | D-014 | v2.0 AI backend: Cloudflare Workers AI only (BYOK) | locked | 2026-09-05 |
 | D-015 | v2.0 shipped scope: triage + orchestration + summaries | locked | 2026-09-05 |
+| D-016 | v2.x execution re-platform: PostgreSQL + DBOS | locked | 2026-09-05 |
 
 ---
 

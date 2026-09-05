@@ -94,7 +94,7 @@ A self-hosted web platform that automatically discovers and monitors an organiza
 - **First two outside contributors converted on the same day the community infra went live**: `@xiaoke949` shipped HSTS checks (PR #22); `@turfin-logic` shipped backport-aware CVE matching (PR #56). Validated the discovery-via-label hypothesis with hard data — both arrived via GitHub-internal surfaces, zero external referrers.
 - **HSTS checks in web_checker** — `missing_hsts` (medium) on HTTPS responses without `Strict-Transport-Security`; `weak_hsts` (low) when `max-age` < 6 months. Contributed by @xiaoke949.
 - **Backport-aware CVE matching in nmap analyzer** — distro-backported CVE fixes (Ubuntu USNs, Debian Security Tracker) are recognised and suppressed/demoted via a curated `backports.json`, so already-patched hosts no longer trigger false-positive CVE findings. Contributed by @turfin-logic.
-- **Continuous monitoring** — per-domain rescans at configurable intervals (6h/12h/24h/48h/weekly), managed via Django-Q2 schedules
+- **Continuous monitoring** — per-domain rescans at configurable intervals (6h/12h/24h/48h/weekly); on the PostgreSQL/DBOS build these are a DBOS scheduled sweep over scan history (see D-016)
 - **Subscan** — re-run specific tools (e.g. Nuclei + TLS Checker) on an existing completed scan's assets without repeating discovery
 - **Notifications UI** — Slack and Teams webhooks + severity threshold configurable in-app without restart; per-channel Test button and alert history with pagination
 - **Katana URL crawler** (Phase 9) — deep URL discovery on top of httpx's first-level probe
