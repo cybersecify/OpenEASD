@@ -76,3 +76,30 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+# Migrations are auto-generated; don't lint them.
+extend-exclude = ["**/migrations/**"]
+
+[tool.ruff.lint]
+# High-signal correctness rules only for now. E501 (line length) and import
+# ordering are left to a future formatter-adoption pass so this gate stays a
+# small, mechanical-diff-free correctness check rather than a 200-file reformat.
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line length — deferred to formatter adoption
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Intentional late/deferred imports: Django settings run import-time side
+# effects, AppConfig.ready() wiring, and the DBOS modules defer imports to
+# break registration cycles — E402 is a false positive in these.
+"openeasd/settings.py" = ["E402"]
+"**/apps.py" = ["E402"]
+"apps/core/durable/**" = ["E402"]
+"manage.py" = ["E402"]
+# Routers are imported AFTER the NinjaAPI instance is built, on purpose
+# (each router module imports back from here) — the ordering is load-bearing.
+"apps/core/api/ninja.py" = ["E402"]

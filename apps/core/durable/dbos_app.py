@@ -12,7 +12,7 @@ there is still just one database to run (no second service).
 
 from django.conf import settings
 
-from .constants import QUEUE_NAME, SYSTEM_SCHEMA as _SYSTEM_SCHEMA
+from .constants import SYSTEM_SCHEMA as _SYSTEM_SCHEMA
 
 _client = None
 

@@ -142,9 +142,9 @@ def analyze(session, xml_outputs: dict[str, str]) -> list[Finding]:
                             "port_number": port_num,
                             "address": ip,
                         }
-                        
+
                         severity = _severity_from_cvss(v["cvss"])
-                        
+
                         # Check backports
                         full_version_string = f"{version} {extrainfo}".strip()
                         backport_info = check_backport(product, full_version_string, v["id"])

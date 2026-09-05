@@ -151,7 +151,7 @@ def run_probe(probe: Probe) -> tuple[bool, str]:
     # either stream is fine.
     combined = (result.stdout or "") + (result.stderr or "")
     if probe.expect_in_stdout and probe.expect_in_stdout not in combined:
-        return False, f"empty/unexpected output (this is the silent-fail mode)"
+        return False, "empty/unexpected output (this is the silent-fail mode)"
 
     return True, "OK"
 

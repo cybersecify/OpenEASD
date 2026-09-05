@@ -10,7 +10,6 @@ from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
-import json as _json
 
 from ninja import Router, Schema, Status
 from ninja.errors import HttpError
@@ -24,7 +23,7 @@ from apps.core.scans.models import ScanSession
 logger = logging.getLogger(__name__)
 
 # RFC 1035 / RFC 1123 hostname validation (shared with domains/api.py)
-import re as _re
+import re as _re  # noqa: E402  (intentional: kept next to the pattern it compiles)
 _VALID_HOSTNAME = _re.compile(
     r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$"
 )

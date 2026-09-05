@@ -63,6 +63,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
+      - name: Lint — ruff
+        run: uv run ruff check apps/ openeasd/
+        # High-signal correctness rules (E/F/W, E501 deferred). Config in
+        # pyproject.toml [tool.ruff]. Runs before tests so lint fails fast.
+
       - name: Run tests (fast — exclude slow DNS tests)
         env:
           SECRET_KEY: "ci-test-secret-key-not-used-in-prod"
