@@ -145,8 +145,7 @@ class TestTermination:
                 _decide(_run_subscan(["httpx"])),
                 _decide(_run_subscan(["katana"])),
             ]
-            with patch("apps.core.ai.orchestrator.run_scan_task", create=True), \
-                 patch("apps.core.scans.tasks.run_scan_task"):
+            with patch("apps.core.scans.tasks.run_scan_task"):
                 while AgentRun.objects.filter(root_session=root, status="running").exists() or steps == 0:
                     run_agent_step(root.id)
                     steps += 1
@@ -182,7 +181,7 @@ class TestSubscanDispatch:
         root = _root()
         with patch("apps.core.ai.orchestrator.client.chat_json",
                    return_value=_decide(_run_subscan(["naabu"]))), \
-             patch("apps.core.scans.tasks.async_task") as enqueue:
+             patch("apps.core.scans.tasks.run_scan_task") as enqueue:
             run_agent_step(root.id)
         run = AgentRun.objects.get()
         assert run.status == "running"  # waiting on the subscan
@@ -198,7 +197,7 @@ class TestSubscanDispatch:
         root = _root()
         with patch("apps.core.ai.orchestrator.client.chat_json",
                    return_value=_decide(_run_subscan(["shodan"]))), \
-             patch("apps.core.scans.tasks.async_task"):
+             patch("apps.core.scans.tasks.run_scan_task"):
             run_agent_step(root.id)
         assert AgentRun.objects.get().subscans_launched == 1
 
@@ -223,7 +222,7 @@ class TestSubscanDispatch:
         with patch("apps.core.ai.orchestrator.client.chat_json",
                    return_value=_decide(_run_subscan(["shodan"]),
                                         _run_subscan(["subfinder"]))), \
-             patch("apps.core.scans.tasks.async_task"):
+             patch("apps.core.scans.tasks.run_scan_task"):
             run_agent_step(root.id)
         run = AgentRun.objects.get()
         assert run.subscans_launched == 1
@@ -287,9 +286,9 @@ class TestChainHooks:
         root = _root(status="running")
         _finding(root)
         with patch("apps.core.ai.client.chat_json", return_value=None), \
-             patch("apps.core.ai.tasks.async_task") as enqueue:
+             patch("apps.core.ai.tasks.enqueue_agent_step") as enqueue:
             _finalize_session(root)
-        enqueue.assert_any_call("apps.core.ai.tasks._run_agent_step", root.id)
+        enqueue.assert_any_call(root.id)
 
     def test_subscan_finalize_resumes_running_chain(self, active):
         from apps.core.scans.pipeline import _finalize_session
@@ -303,9 +302,9 @@ class TestChainHooks:
         AgentAction.objects.create(agent_run=run, iteration=1,
                                    action_type="run_subscan", status="executed",
                                    subscan_session=sub)
-        with patch("apps.core.ai.tasks.async_task") as enqueue:
+        with patch("apps.core.ai.tasks.enqueue_agent_step") as enqueue:
             _finalize_session(sub)
-        enqueue.assert_called_once_with("apps.core.ai.tasks._run_agent_step", root.id)
+        enqueue.assert_called_once_with(root.id)
 
     def test_unrelated_subscan_does_not_resume(self, active):
         from apps.core.scans.pipeline import _finalize_session
@@ -315,7 +314,7 @@ class TestChainHooks:
             domain="example.com", scan_type="subscan", parent_session=root,
             status="running",
         )
-        with patch("apps.core.ai.tasks.async_task") as enqueue:
+        with patch("apps.core.ai.tasks.enqueue_agent_step") as enqueue:
             _finalize_session(sub)
         enqueue.assert_not_called()
 
@@ -325,6 +324,6 @@ class TestChainHooks:
         sub = ScanSession.objects.create(
             domain="example.com", scan_type="subscan", status="completed",
         )
-        with patch("apps.core.ai.tasks.async_task") as enqueue:
+        with patch("apps.core.ai.tasks.enqueue_agent_step") as enqueue:
             maybe_start_agent(sub)
         enqueue.assert_not_called()

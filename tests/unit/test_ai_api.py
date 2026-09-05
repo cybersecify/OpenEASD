@@ -263,51 +263,51 @@ class TestTriageRun:
         from apps.core.ai.models import AITriage
         _activate(settings)
         sess = _finished_session()
-        with patch("apps.core.ai.tasks.async_task") as enqueue:
+        with patch("apps.core.ai.tasks.enqueue_triage") as enqueue:
             resp = _post(auth_client, f"/api/ai/triage/{sess.uuid}/run/", {})
         assert resp.status_code == 200
         assert resp.json()["status"] == "running"
-        enqueue.assert_called_once_with("apps.core.ai.tasks._run_triage_task", sess.id)
+        enqueue.assert_called_once_with(sess.id)
         assert AITriage.objects.get(session=sess).status == "running"
 
 
 @pytest.mark.django_db
 class TestTriageTask:
     def test_task_runs_triage_and_summaries(self, settings):
-        from apps.core.ai.tasks import _run_triage_task
+        from apps.core.ai.tasks import run_triage_and_summaries
         _activate(settings)
         sess = _finished_session()
         with patch("apps.core.ai.triage.run_triage", return_value=object()) as triage, \
              patch("apps.core.ai.summaries.run_summaries") as summaries:
-            _run_triage_task(sess.id)
+            run_triage_and_summaries(sess.id)
         triage.assert_called_once()
         summaries.assert_called_once()
 
     def test_task_clears_marker_when_nothing_to_triage(self, settings):
         from apps.core.ai.models import AITriage
-        from apps.core.ai.tasks import _run_triage_task
+        from apps.core.ai.tasks import run_triage_and_summaries
         _activate(settings)
         sess = _finished_session()
         AITriage.objects.create(session=sess, status="running")
         with patch("apps.core.ai.triage.run_triage", return_value=None), \
              patch("apps.core.ai.summaries.run_summaries"):
-            _run_triage_task(sess.id)
+            run_triage_and_summaries(sess.id)
         assert AITriage.objects.filter(session=sess).count() == 0
 
     def test_task_gate_closed_clears_marker(self, unconfigured):
         from apps.core.ai.models import AITriage
-        from apps.core.ai.tasks import _run_triage_task
+        from apps.core.ai.tasks import run_triage_and_summaries
         sess = _finished_session()
         AITriage.objects.create(session=sess, status="running")
-        _run_triage_task(sess.id)
+        run_triage_and_summaries(sess.id)
         assert AITriage.objects.filter(session=sess).count() == 0
 
     def test_task_swallows_exceptions(self, settings):
-        from apps.core.ai.tasks import _run_triage_task
+        from apps.core.ai.tasks import run_triage_and_summaries
         _activate(settings)
         sess = _finished_session()
         with patch("apps.core.ai.triage.run_triage", side_effect=RuntimeError("boom")):
-            _run_triage_task(sess.id)  # must not raise
+            run_triage_and_summaries(sess.id)  # must not raise
 
 
 @pytest.mark.django_db

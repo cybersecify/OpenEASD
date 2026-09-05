@@ -43,12 +43,24 @@ launches, applies its system schema, and registers the `scans` queue; a full
 
 ## What remains (not done on this branch yet)
 
-1. **Test suite Postgres-compat pass (~1600 tests).** Two classes of change:
-   (a) threaded runner tests need `transactional_db` (Postgres closes the
-   pytest transaction connection when phase-executor threads call
-   `close_old_connections()` — correct in prod, not under a single test
-   transaction); (b) tests that patch `django_q.tasks.async_task` must patch the
-   DBOS enqueue helpers instead. ~16/34 runner tests currently fail for reason (a).
+1. **Test suite Postgres-compat pass — DONE.** From 66 failing on the first
+   Postgres run to green. What changed:
+   - Threaded runner + concurrency tests → `transactional_db` (Postgres closes
+     the pytest transaction connection when phase-executor threads call
+     `close_old_connections()` — correct in prod, not under one test transaction).
+   - `async_task` mocks repointed to the stable seams (`run_scan_task`,
+     `enqueue_agent_step`, `enqueue_triage`); `_run_triage_task` →
+     `run_triage_and_summaries`.
+   - `test_qcluster_config` rewritten for the DBOS/`SCAN_TASK_TIMEOUT` invariants;
+     `test_monitoring` rewritten for the `run_due_monitoring_scans` sweep;
+     `test_scheduler` master-switch tests moved to the extracted
+     `run_*_if_enabled` helpers; `_parse_schedule`/domain-delete tests moved to
+     `ScheduledScan`.
+   - **Real fix, not just tests:** the duplicate-scan guard didn't hold under
+     concurrency on Postgres (SQLite's single-writer had masked it), so scan
+     creation added a partial unique constraint `uniq_active_scan_per_domain`
+     (one pending/running non-subscan per domain); the existing
+     `except DatabaseError` fallback turns the violation into "scan already active".
 2. **Scheduler migration — DONE; `django-q2` removed entirely.** All scheduling
    is now DBOS `@scheduled` workflows in `apps/core/durable/workflows.py`
    (5 pollers, all gated by `SCHEDULED_SCANS_ENABLED`, registered when

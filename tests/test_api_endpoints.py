@@ -425,23 +425,21 @@ class TestDomainsDelete:
 
     def test_removes_recurring_and_once_schedules(self, auth_client, domain):
         """Deleting a domain must not leave its scan schedules firing unattended."""
-        from django_q.models import Schedule
+        from django.utils import timezone
+        from apps.core.scans.models import ScheduledScan
 
-        Schedule.objects.create(
-            name=f"recurring_{domain.name}",
-            func="apps.core.scheduler.scheduler.run_scheduled_scan",
-            schedule_type=Schedule.CRON, cron="0 2 * * *", repeats=-1,
+        ScheduledScan.objects.create(
+            job_id=f"recurring_{domain.name}", domain=domain.name, kind="recurring",
+            cron="0 2 * * *", next_run=timezone.now(),
         )
-        Schedule.objects.create(
-            name=f"once_{domain.name}_" + "a" * 32,
-            func="apps.core.scheduler.scheduler.run_scheduled_scan",
-            schedule_type=Schedule.ONCE, repeats=1,
+        ScheduledScan.objects.create(
+            job_id=f"once_{domain.name}_" + "a" * 32, domain=domain.name, kind="once",
+            next_run=timezone.now(),
         )
 
         res = post_json(auth_client, f"/api/domains/{domain.pk}/delete/", {})
         assert res.status_code == 200
-        assert not Schedule.objects.filter(name=f"recurring_{domain.name}").exists()
-        assert not Schedule.objects.filter(name__startswith=f"once_{domain.name}_").exists()
+        assert not ScheduledScan.objects.filter(domain=domain.name).exists()
 
 
 # ---------------------------------------------------------------------------

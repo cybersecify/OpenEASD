@@ -1,7 +1,7 @@
 """Integration tests — the AI layer end-to-end through the real pipeline.
 
 Unlike the per-module unit suites, these mock ONLY the Cloudflare HTTP edge
-(requests.post) and the Django-Q queue (run tasks synchronously), so every
+(requests.post) and run the enqueued agent step synchronously, so every
 real seam is exercised: _finalize_session → hooks → triage/summaries →
 client envelope parsing + audit → orchestration chain → subscan creation →
 report context → alert payload.
@@ -70,14 +70,15 @@ def _fake_cloudflare(finding_ids, orchestration_script):
 
 
 def _run_ai_queue_inline():
-    """Patch the AI queue so enqueued tasks execute synchronously."""
+    """Run enqueued agent-step workflows synchronously instead of via DBOS, so
+    the orchestration chain completes within the test. (Triage/summaries already
+    run inline inside _finalize_session; only the agent step is enqueued.)"""
     from apps.core.ai import tasks
 
-    def inline(path, arg):
-        {"apps.core.ai.tasks._run_triage_task": tasks._run_triage_task,
-         "apps.core.ai.tasks._run_agent_step": tasks._run_agent_step}[path](arg)
-
-    return patch("apps.core.ai.tasks.async_task", side_effect=inline)
+    return patch(
+        "apps.core.ai.tasks.enqueue_agent_step",
+        side_effect=lambda session_id: tasks.run_agent_step_safe(session_id),
+    )
 
 
 def _activate(settings):
@@ -196,7 +197,7 @@ class TestAgentChainFlow:
 
         with patch("apps.core.ai.client.requests.post", side_effect=responder), \
              _run_ai_queue_inline(), \
-             patch("apps.core.scans.tasks.async_task"), \
+             patch("apps.core.scans.tasks.run_scan_task"), \
              patch("apps.core.scans.pipeline._dispatch_alerts"):
             _finalize_session(sess)
 

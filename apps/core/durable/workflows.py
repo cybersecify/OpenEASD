@@ -150,41 +150,58 @@ _WATCHDOG_CRON = getattr(settings, "WATCHDOG_CRON", "*/15 * * * *")
 _TOKEN_PURGE_CRON = getattr(settings, "TOKEN_PURGE_CRON", "0 3 * * *")
 
 
-@DBOS.scheduled(_DAILY_CRON)
-@DBOS.workflow(name="scheduled_daily_scan")
-def scheduled_daily_scan(scheduled_time, actual_time) -> None:
-    if not getattr(settings, "SCHEDULED_SCANS_ENABLED", True):
+def _scheduled_scans_enabled() -> bool:
+    return getattr(settings, "SCHEDULED_SCANS_ENABLED", True)
+
+
+# Plain guard+delegate helpers (unit-testable without a launched DBOS engine).
+# The @scheduled workflows below are thin cron glue over these.
+
+def run_daily_scan_if_enabled() -> None:
+    if not _scheduled_scans_enabled():
         return
     from apps.core.scheduler.scheduler import daily_scan
 
     daily_scan()
 
 
-@DBOS.scheduled(_MONITORING_SWEEP_CRON)
-@DBOS.workflow(name="scheduled_monitoring_sweep")
-def scheduled_monitoring_sweep(scheduled_time, actual_time) -> None:
-    """Enqueue a scan for each active, authorized, monitored domain that is due
-    (now - last scan >= its interval). Replaces per-domain Django-Q schedules
-    with one sweep — no schedule rows to sync on every domain edit."""
-    if not getattr(settings, "SCHEDULED_SCANS_ENABLED", True):
+def run_monitoring_sweep_if_enabled() -> None:
+    if not _scheduled_scans_enabled():
         return
     from apps.core.scheduler.scheduler import run_due_monitoring_scans
 
     run_due_monitoring_scans()
 
 
+def run_user_scans_sweep_if_enabled() -> None:
+    if not _scheduled_scans_enabled():
+        return
+    from apps.core.scheduler.scheduler import run_due_user_scans
+
+    run_due_user_scans()
+
+
 _USER_SCHED_SWEEP_CRON = getattr(settings, "USER_SCHEDULE_SWEEP_CRON", "* * * * *")
+
+
+@DBOS.scheduled(_DAILY_CRON)
+@DBOS.workflow(name="scheduled_daily_scan")
+def scheduled_daily_scan(scheduled_time, actual_time) -> None:
+    run_daily_scan_if_enabled()
+
+
+@DBOS.scheduled(_MONITORING_SWEEP_CRON)
+@DBOS.workflow(name="scheduled_monitoring_sweep")
+def scheduled_monitoring_sweep(scheduled_time, actual_time) -> None:
+    """Enqueue a scan for each active, authorized, monitored domain that is due."""
+    run_monitoring_sweep_if_enabled()
 
 
 @DBOS.scheduled(_USER_SCHED_SWEEP_CRON)
 @DBOS.workflow(name="scheduled_user_scans_sweep")
 def scheduled_user_scans_sweep(scheduled_time, actual_time) -> None:
     """Fire user-created one-time/recurring scans that are due (ScheduledScan)."""
-    if not getattr(settings, "SCHEDULED_SCANS_ENABLED", True):
-        return
-    from apps.core.scheduler.scheduler import run_due_user_scans
-
-    run_due_user_scans()
+    run_user_scans_sweep_if_enabled()
 
 
 @DBOS.scheduled(_WATCHDOG_CRON)

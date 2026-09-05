@@ -430,74 +430,40 @@ class TestRunScheduledScanConsentGate:
         mock_task.assert_not_called()
 
 
+
+
 # ---------------------------------------------------------------------------
-# setup_core_schedules master switch (SCHEDULED_SCANS_ENABLED)
+# SCHEDULED_SCANS_ENABLED master switch — enforced inside the DBOS scheduled
+# workflows at run time (Django-Q Schedule rows are gone). Calling the workflow
+# functions directly with dummy cron timestamps exercises the guard.
 # ---------------------------------------------------------------------------
 
-class TestSetupCoreSchedules:
-    def test_registers_daily_scan_when_enabled(self, db, settings):
-        from django_q.models import Schedule
-        from apps.core.scheduler.scheduler import setup_core_schedules
+class TestScheduledScanMasterSwitch:
+    def test_daily_scan_skips_when_disabled(self, db, settings):
+        from apps.core.durable.workflows import run_daily_scan_if_enabled
+        settings.SCHEDULED_SCANS_ENABLED = False
+        with patch("apps.core.scheduler.scheduler.daily_scan") as ds:
+            run_daily_scan_if_enabled()
+        ds.assert_not_called()
 
+    def test_daily_scan_runs_when_enabled(self, db, settings):
+        from apps.core.durable.workflows import run_daily_scan_if_enabled
         settings.SCHEDULED_SCANS_ENABLED = True
-        setup_core_schedules()
+        with patch("apps.core.scheduler.scheduler.daily_scan") as ds:
+            run_daily_scan_if_enabled()
+        ds.assert_called_once()
 
-        assert Schedule.objects.filter(name="daily_scan").exists()
-        # Hygiene schedules always present.
-        assert Schedule.objects.filter(name="watchdog_reap_stuck_scans").exists()
-        assert Schedule.objects.filter(name="purge_blacklisted_tokens").exists()
-
-    def test_no_daily_scan_when_disabled(self, db, settings):
-        from django_q.models import Schedule
-        from apps.core.scheduler.scheduler import setup_core_schedules
-
+    def test_monitoring_sweep_skips_when_disabled(self, db, settings):
+        from apps.core.durable.workflows import run_monitoring_sweep_if_enabled
         settings.SCHEDULED_SCANS_ENABLED = False
-        setup_core_schedules()
+        with patch("apps.core.scheduler.scheduler.run_due_monitoring_scans") as sweep:
+            run_monitoring_sweep_if_enabled()
+        sweep.assert_not_called()
 
-        assert not Schedule.objects.filter(name="daily_scan").exists()
-        # Hygiene schedules still registered in manual-only mode.
-        assert Schedule.objects.filter(name="watchdog_reap_stuck_scans").exists()
-        assert Schedule.objects.filter(name="purge_blacklisted_tokens").exists()
-
-    def test_disabled_removes_preexisting_auto_scan_schedules(self, db, settings):
-        """Flipping the switch off removes schedules a prior boot created."""
-        from django_q.models import Schedule
-        from apps.core.scheduler.scheduler import setup_core_schedules
-
-        Schedule.objects.create(
-            name="daily_scan", func="apps.core.scheduler.scheduler.daily_scan",
-            schedule_type=Schedule.CRON, cron="0 2 * * *", repeats=-1,
-        )
-        Schedule.objects.create(
-            name="monitor_example.com",
-            func="apps.core.scheduler.scheduler.run_monitoring_scan",
-            schedule_type=Schedule.MINUTES, minutes=60, repeats=-1,
-        )
-
+    def test_user_scan_sweep_skips_when_disabled(self, db, settings):
+        from apps.core.durable.workflows import run_user_scans_sweep_if_enabled
         settings.SCHEDULED_SCANS_ENABLED = False
-        setup_core_schedules()
+        with patch("apps.core.scheduler.scheduler.run_due_user_scans") as sweep:
+            run_user_scans_sweep_if_enabled()
+        sweep.assert_not_called()
 
-        assert not Schedule.objects.filter(name="daily_scan").exists()
-        assert not Schedule.objects.filter(name__startswith="monitor_").exists()
-
-    def test_disabled_removes_recurring_and_once_schedules(self, db, settings):
-        """Manual-only mode must also drop user-created recurring/one-time jobs."""
-        from django_q.models import Schedule
-        from apps.core.scheduler.scheduler import setup_core_schedules
-
-        Schedule.objects.create(
-            name="recurring_example.com",
-            func="apps.core.scheduler.scheduler.run_scheduled_scan",
-            schedule_type=Schedule.CRON, cron="0 2 * * *", repeats=-1,
-        )
-        Schedule.objects.create(
-            name="once_example.com_" + "a" * 32,
-            func="apps.core.scheduler.scheduler.run_scheduled_scan",
-            schedule_type=Schedule.ONCE, repeats=1,
-        )
-
-        settings.SCHEDULED_SCANS_ENABLED = False
-        setup_core_schedules()
-
-        assert not Schedule.objects.filter(name__startswith="recurring_").exists()
-        assert not Schedule.objects.filter(name__startswith="once_").exists()

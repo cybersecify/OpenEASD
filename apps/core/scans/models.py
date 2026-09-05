@@ -53,6 +53,20 @@ class ScanSession(models.Model):
 
     class Meta:
         ordering = ["-start_time"]
+        constraints = [
+            # At most one in-flight scan per domain. On Postgres the guard in
+            # create_scan_session() (select_for_update on the not-yet-existing
+            # row) can't serialize two concurrent creators — this partial unique
+            # index does: the second insert raises IntegrityError, which
+            # create_scan_session catches and turns into "scan already active".
+            # Subscans are exempt (scan_type="subscan") — they run against a
+            # parent and legitimately overlap a domain's other work.
+            models.UniqueConstraint(
+                fields=["domain"],
+                condition=models.Q(status__in=["pending", "running"]) & ~models.Q(scan_type="subscan"),
+                name="uniq_active_scan_per_domain",
+            ),
+        ]
 
     def __str__(self):
         return f"[{self.id}] {self.domain} ({self.scan_type}) - {self.status}"
