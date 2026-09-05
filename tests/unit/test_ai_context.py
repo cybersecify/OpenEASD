@@ -57,11 +57,20 @@ class TestFindingBrief:
     def test_extra_keys_only_when_set(self):
         sess = _session()
         with_cve = context.finding_brief(
-            _finding(sess, cve="CVE-2024-1234", cvss_score=9.8, kev=True))
+            _finding(sess, cve="CVE-2024-1234", cvss_score=9.8,
+                     epss_score=0.94, epss_percentile=0.99, cisa_kev=True))
         assert with_cve["cve"] == "CVE-2024-1234"
-        assert with_cve["kev"] is True
+        assert with_cve["cisa_kev"] is True
+        assert with_cve["epss_score"] == 0.94
+        assert with_cve["epss_percentile"] == 0.99
         without = context.finding_brief(_finding(sess, title="plain"))
-        assert "cve" not in without and "kev" not in without
+        assert "cve" not in without and "cisa_kev" not in without
+
+    def test_cisa_kev_false_is_omitted(self):
+        # Only KEV=true is worth prompt budget; the default False is noise.
+        sess = _session()
+        brief = context.finding_brief(_finding(sess, cve="CVE-2020-0001", cisa_kev=False))
+        assert "cisa_kev" not in brief
 
 
 @pytest.mark.django_db
@@ -73,10 +82,21 @@ class TestMessages:
         f = _finding(sess, "critical", "big one")
         msgs = context.build_triage_messages(sess, [f])
         assert msgs[0]["role"] == "system"
-        payload = json.loads(msgs[1]["content"].split("\n\n", 1)[1])
+        payload = json.loads(msgs[1]["content"].rsplit("\n\n", 1)[1])
         assert payload["scan"]["domain"] == "example.com"
         assert payload["scan"]["endpoints_blocked"] == 4
         assert payload["findings"][0]["id"] == f.id
+
+    def test_triage_prompt_weights_epss_kev(self):
+        sess = _session()
+        f = _finding(sess, "high", "cve one")
+        instructions = context.build_triage_messages(sess, [f])[1]["content"]
+        # The prompt must instruct exploitability-first ranking.
+        assert "cisa_kev" in instructions
+        assert "epss_score" in instructions
+        assert "EXPLOITABILITY, NOT SEVERITY LABEL" in instructions
+        # KEV must be stated to outrank raw CVSS.
+        assert "outranks" in instructions
 
     def test_summary_messages_kinds_differ(self):
         sess = _session()

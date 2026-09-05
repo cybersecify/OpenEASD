@@ -45,7 +45,13 @@ def select_findings(session, cap: int) -> list:
 
 
 def finding_brief(finding) -> dict:
-    """Compact, prompt-safe view of one Finding."""
+    """Compact, prompt-safe view of one Finding.
+
+    Includes the exploit-in-the-wild signals cve_intel enriches CVE findings
+    with — EPSS (probability of exploitation) and CISA KEV (known exploited) —
+    under the exact keys cve_intel writes: extra["epss_score"],
+    extra["epss_percentile"], extra["cisa_kev"].
+    """
     extra = finding.extra or {}
     brief = {
         "id": finding.id,
@@ -56,8 +62,9 @@ def finding_brief(finding) -> dict:
         "target": finding.target,
         "description": (finding.description or "")[:_MAX_DESCRIPTION_CHARS],
     }
-    for key in ("cve", "cvss_score", "epss_score", "kev", "service", "version", "port_number"):
-        if extra.get(key) not in (None, "", []):
+    for key in ("cve", "cvss_score", "epss_score", "epss_percentile",
+                "cisa_kev", "service", "version", "port_number"):
+        if extra.get(key) not in (None, "", [], False):
             brief[key] = extra[key]
     return brief
 
@@ -90,8 +97,26 @@ def build_triage_messages(session, findings: list) -> list[dict]:
         "- items: the findings re-ranked by real-world exploitability and impact "
         "(most urgent first). For each: its finding_id (must be one of the given "
         "ids), a priority of fix_now/plan/monitor/likely_noise, and a 1-2 sentence "
-        "rationale grounded in the finding's own data (CVE/EPSS/KEV, exposure, "
-        "service). Include every given finding exactly once."
+        "rationale grounded in the finding's own data. Include every given finding "
+        "exactly once.\n\n"
+        "RANK BY EXPLOITABILITY, NOT SEVERITY LABEL. Weight the signals in this "
+        "order:\n"
+        "1. cisa_kev=true — the flaw is on CISA's Known Exploited Vulnerabilities "
+        "list (attackers are USING it right now). This almost always means fix_now, "
+        "and it outranks a higher-CVSS finding that is not exploited. Say so in the "
+        "rationale.\n"
+        "2. epss_score — probability (0.0-1.0) the flaw is exploited in the next 30 "
+        "days. Treat >=0.5 as strong upward pressure and >=0.1 as notable; a low "
+        "epss_score (<0.01) on a high cvss_score is a sign it is likely NOT worth "
+        "fix_now. epss_percentile gives the same signal ranked against all CVEs.\n"
+        "3. cvss_score — theoretical severity. Use it only to break ties once the "
+        "exploitation signals above are accounted for; a high CVSS with no KEV and "
+        "near-zero EPSS is often plan/monitor, not fix_now.\n"
+        "4. Exposure and service context (internet-facing, auth-required, etc.).\n"
+        "When a finding carries no EPSS/KEV data (e.g. non-CVE findings, or CVEs "
+        "the feeds don't cover), fall back to cvss_score and context — do not "
+        "invent exploitation signals. Quote the actual cisa_kev/epss_score/"
+        "cvss_score values you relied on in each rationale."
     )
     return [
         {"role": "system", "content": _SYSTEM_PROMPT},
