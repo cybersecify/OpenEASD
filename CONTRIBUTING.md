@@ -293,8 +293,11 @@ Maintainers will ask you to add sign-offs before merging if they're missing.
 
 ## Code style
 
-- Python: follow what's there. We use Django 5+ idioms. No formatter
-  enforced in CI yet; please don't reformat unrelated lines in your PR.
+- Python: follow what's there. We use Django 5+ idioms. **`ruff check` runs
+  in CI** (config in `pyproject.toml [tool.ruff]`, rules E/F/W with line-length
+  deferred) — run `uv run ruff check apps/ openeasd/` before pushing, or
+  `uv run ruff check --fix` to auto-fix. No line-reflow formatter is enforced
+  yet, so please don't reformat unrelated lines in your PR.
 - JS: ES modules + JSX. Tailwind utility classes for styling.
 - Comments: only when the *why* is non-obvious. Don't restate the code.
 - Don't introduce new dependencies in a small PR — flag it in the

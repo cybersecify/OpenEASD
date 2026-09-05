@@ -48,10 +48,10 @@ def _parse_version(value):
 def is_update_available(current, latest):
     """True only when both versions parse AND latest is strictly newer."""
     c = _parse_version(current)
-    l = _parse_version(latest)
-    if c is None or l is None:
+    latest_v = _parse_version(latest)
+    if c is None or latest_v is None:
         return False
-    return l > c
+    return latest_v > c
 
 
 def get_latest_release(force=False):
