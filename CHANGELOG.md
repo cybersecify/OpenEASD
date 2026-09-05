@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.0.0] — 2026-09-06
+
 ### Added
 - **AI analysis layer (`apps/core/ai`) — triage, adaptive orchestration, and
   summaries via Cloudflare Workers AI (BYOK).** After each scan it ranks
