@@ -70,9 +70,23 @@ launches, applies its system schema, and registers the `scans` queue; a full
    **Verified on Postgres:** app checks clean with no `django_q`; 5 pollers
    register; the user-schedule sweep fires due once+recurring, cleans/advances
    correctly, and leaves not-due schedules untouched; reports/WeasyPrint intact.
-3. **Deployment.** `docker-entrypoint.sh` (add Postgres wait + `dbos_worker`
-   instead of `qcluster`), `docker-compose` / `k8s/` (add a Postgres service /
-   StatefulSet), CI (Postgres service container). None updated yet.
+3. **Deployment — DONE (compose verified; CI still pending).** Option B
+   topology (3 services): `docker-compose.yml` = `db` (postgres:17) + `web`
+   (gunicorn, enqueue-only) + `worker` (`dbos_worker`, `NET_RAW`).
+   `docker-entrypoint.sh` is role-aware (`OPENEASD_ROLE`): waits for Postgres;
+   the web/init role migrates + collectstatic + admin-setup, the worker role
+   waits for `migrate --check` then launches (no DDL race). Dockerfile CMD
+   `qcluster`→`dbos_worker`. `k8s/`: new `postgres.yaml` (StatefulSet + headless
+   Service + 10Gi PVC), `deployment.yaml` worker→`dbos_worker` and the SQLite
+   `data` PVC/mounts removed, `configmap.yaml` gains `DB_*`/`DBOS_SCAN_CONCURRENCY`
+   (DB_PASSWORD belongs in `openeasd-secret`), `pvc.yaml` drops the data PVC,
+   `kustomization.yaml` includes `postgres.yaml`.
+   **Verified:** `docker compose up` brings all 3 healthy; web migrates the app
+   schema + DBOS creates its `dbos` schema in the same Postgres; the worker
+   waits for migrations then launches and drains the `scans` queue; a scan
+   enqueued from web is picked up and run by the worker.
+   **Still pending:** CI (`.github/workflows/ci.yml`) needs a Postgres service
+   container for the test job.
 4. **AI orchestration chain** re-verification under DBOS (logic ported; the
    chain hooks now enqueue DBOS `agent_step` workflows).
 

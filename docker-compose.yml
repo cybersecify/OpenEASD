@@ -1,24 +1,43 @@
 services:
-  openeasd:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: openeasd
+      POSTGRES_USER: openeasd
+      POSTGRES_PASSWORD: "change-me-in-production"
+    volumes:
+      - openeasd_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openeasd -d openeasd"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  web:
     build: .
+    command: gunicorn openeasd.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120 --access-logfile - --error-logfile -
     ports:
       - "8000:8000"
     volumes:
-      - openeasd_data:/app/data
       - openeasd_logs:/app/logs
-    environment:
-      # Required in production — change these
+    environment: &app_env
+      OPENEASD_ROLE: "web"          # this container owns migrations/collectstatic/admin
       SECRET_KEY: "change-me-in-production"
       DEBUG: "false"
       ALLOWED_HOSTS: "localhost,127.0.0.1,0.0.0.0"
-      # Optional alert channels
-      # SLACK_WEBHOOK_URL: ""
-      # MS_TEAMS_WEBHOOK_URL: ""
-      # ALERT_SEVERITY_THRESHOLD: "high"
-      # Scan schedule (24h, UTC+5:30 by default)
-      # SCAN_DAILY_HOUR: "2"
-      # SCAN_DAILY_MINUTE: "0"
-      # Tool paths (defaults point to /usr/local/bin/pdtm-tools/)
+      # PostgreSQL (DBOS system tables share this DB in a `dbos` schema)
+      DB_HOST: "db"
+      DB_PORT: "5432"
+      DB_NAME: "openeasd"
+      DB_USER: "openeasd"
+      DB_PASSWORD: "change-me-in-production"
+      # DBOS scan concurrency (Postgres has no single-writer lock)
+      DBOS_SCAN_CONCURRENCY: "2"
+      # Cloudflare Workers AI (optional — off unless set; or enter in the UI)
+      # CLOUDFLARE_ACCOUNT_ID: ""
+      # CLOUDFLARE_API_TOKEN: ""
+      # Tool paths
       TOOL_SUBFINDER: "/usr/local/bin/pdtm-tools/subfinder"
       TOOL_DNSX: "/usr/local/bin/pdtm-tools/dnsx"
       TOOL_NAABU: "/usr/local/bin/pdtm-tools/naabu"
@@ -26,8 +45,28 @@ services:
       TOOL_NUCLEI: "/usr/local/bin/pdtm-tools/nuclei"
       TOOL_AMASS: "/usr/local/bin/amass"
       TOOL_NMAP: "nmap"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build: .
+    # DBOS durable-execution worker: executes scan/AI workflows + runs the
+    # @scheduled cron workflows. NET_RAW needed for nmap/naabu raw sockets.
+    command: python manage.py dbos_worker
+    cap_add:
+      - NET_RAW
+    volumes:
+      - openeasd_logs:/app/logs
+    environment:
+      <<: *app_env
+      OPENEASD_ROLE: "worker"       # skips migrations; waits for web to apply them
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
-  openeasd_data:
+  openeasd_pgdata:
   openeasd_logs:

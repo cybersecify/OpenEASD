@@ -202,13 +202,13 @@ EXPOSE 8000
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
 
-# Default: single-container production mode.
-#   - qcluster (Django-Q2 worker) backgrounded so async scans run.
-#   - gunicorn replaces bash as PID 1 via `exec`, so SIGTERM from
-#     `docker stop` reaches the web server directly for clean shutdown.
+# Default: single-container convenience mode (needs an external PostgreSQL —
+# see docker-compose.yml for the web + worker + db split).
+#   - dbos_worker (DBOS durable-execution worker) backgrounded so scans run.
+#   - gunicorn replaces bash as PID 1 via `exec`, so SIGTERM from `docker stop`
+#     reaches the web server directly for clean shutdown.
 #   - access/error logs go to stdout/stderr for `docker logs` to capture.
-# Do NOT switch this back to `python main.py` — that uses Django's
-# `runserver` (dev server), which Django explicitly warns against for
-# production. main.py remains the local-dev entry point with autoreload.
-# K8s uses its own command overrides per container (web + worker pods).
-CMD ["bash", "-c", "python manage.py qcluster & exec gunicorn openeasd.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120 --access-logfile - --error-logfile -"]
+# For a real deployment prefer separate web and worker containers (compose /
+# k8s) so each scales and restarts independently; both run from this image with
+# a command override, the worker with OPENEASD_ROLE=worker.
+CMD ["bash", "-c", "python manage.py dbos_worker & exec gunicorn openeasd.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120 --access-logfile - --error-logfile -"]
