@@ -230,11 +230,26 @@ Phase 11 JS Secrets        - Hardcoded secrets in JavaScript via gitleaks
 
 ── Prioritization ───────────────────────────────────────────────────────────
 Phase 12 CVE Intel         - Enrich CVE findings with EPSS + CISA KEV
+
+── AI analysis (optional; off by default, bring-your-own Cloudflare) ──────────
+Post-scan Triage          - Rank findings by exploitability (CISA KEV + EPSS
+                            outrank raw CVSS) with a per-finding rationale, plus
+                            plain-language report and alert summaries
+Post-scan Orchestration   - A bounded agent may schedule targeted follow-up
+                            subscans based on what was found (still gated by the
+                            same domain authorization as manual scans)
 ```
 
 Every scan probe also carries an honest `OpenEASD/1.0` user agent (so a target
 can allowlist it), and the report flags WAF/edge blocking so an empty result
 means "clean", never "silently blocked".
+
+The AI stage runs only when Cloudflare Workers AI credentials are provided
+(saved on the AI Analysis page, or `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN`
+env vars) **and** an operator enables it with explicit consent. With it off — the
+default — the pipeline ends at Phase 12 and nothing leaves your machine. Every AI
+call is recorded in an audit log (time, scan, purpose, model, token counts,
+finding IDs); prompt and response contents are never stored.
 
 ## Architecture
 
@@ -252,6 +267,7 @@ apps/core/              - Infrastructure (never changes)
   notifications/        - Slack/Teams alerts
   insights/             - Scan summaries, charts
   reports/              - CSV/PDF export
+  ai/                   - AI analysis (Cloudflare Workers AI, BYOK): triage, orchestration, summaries, consent + audit
   domains/              - Domain management
   dashboard/            - UI home
 

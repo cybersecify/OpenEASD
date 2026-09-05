@@ -521,11 +521,35 @@ an active probe.
 ### Scan flow
 ```
 create_scan_session(domain)          # auto-assigns default workflow
-  → run_scan_task(session_id)        # Huey async task
+  → run_scan_task(session_id)        # Django-Q async task
     → run_scan(session_id)           # sets status="running"
       → _run_via_workflow(session)   # creates WorkflowRun, calls run_workflow()
         → run_workflow(run_id)       # loops enabled tools, records StepResults
-      → _finalize_session(session)   # count findings, deltas, insights, alerts
+      → _finalize_session(session)   # count findings → coverage → status
+          → _detect_deltas / _check_coverage_regression / build_insights
+          → run_ai_post_scan(session)     # AI triage + summaries (no-op unless keys+consent)
+          → _dispatch_alerts(session)     # Slack/Teams (carries the AI alert summary)
+          → maybe_start_agent(session)    # queues the bounded orchestration agent
+```
+
+### AI layer flow (apps/core/ai — runs only when keys + enabled + consent)
+```
+_finalize_session
+  → run_ai_post_scan(session)              # INLINE in the scan task, before alerts
+      → run_triage(session)                # ranks findings by EXPLOITABILITY
+      │     context: CVSS + EPSS + CISA-KEV (cve_intel enrichment) + exposure
+      │     → AITriage + AITriageItem (priority: fix_now/plan/monitor/likely_noise)
+      → run_summaries(session)             # AISummary rows: report + alert kinds
+  → maybe_start_agent(session)             # CHAINED Django-Q tasks, after alerts
+      → _run_agent_step(root_session)      # ONE LLM decision per step:
+            run_subscan(tools) ─ gate_subscan_tools() re-checks DomainAuthorization
+              → create_subscan_session(triggered_by="agent") → run_scan_task()
+              → that subscan's _finalize_session → maybe_continue_agent() → next step
+            flag_finding(id)   ─ AgentAction marker only (never mutates Finding.status)
+            done(summary)      ─ AgentRun terminal
+      # bounded: ≤ max_agent_iterations, ≤ max_subscans_per_scan, per-scan call budget
+
+every Cloudflare call → AIInvocation audit row (metadata only, never prompt/response bodies)
 ```
 
 ### Key design rules
