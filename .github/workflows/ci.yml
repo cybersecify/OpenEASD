@@ -166,8 +166,13 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6
         with:
           images: ghcr.io/cybersecify/openeasd-${{ matrix.target }}
+          # type=ref,event=tag       → full version tag,  e.g. v2.0.0
+          # type=match (v-prefixed)  → major.minor tag,   e.g. v2.0 (floats to
+          #                            the latest patch of that minor line)
+          # type=raw latest          → :latest on default-branch pushes only
           tags: |
             type=ref,event=tag
+            type=match,pattern=v\d+\.\d+,group=0
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Compute build provenance
@@ -202,7 +207,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
           # Supply-chain transparency: SBOM + SLSA provenance baked into the
           # image manifest. Retrieve with:
-          #   docker buildx imagetools inspect ghcr.io/cybersecify/openeasd:vX.Y --format '{{ json . }}'
+          #   docker buildx imagetools inspect ghcr.io/cybersecify/openeasd-web:vX.Y --format '{{ json . }}'
           # SBOM lists every package in the image; provenance attests the build.
           sbom: true
           provenance: mode=max
