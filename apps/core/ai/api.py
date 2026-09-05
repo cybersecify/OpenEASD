@@ -23,19 +23,23 @@ router = Router(auth=JWTAuth())
 class ConfigIn(Schema):
     enabled: bool
     consent_accepted: bool = False
+    # Credentials are WRITE-ONLY: None = leave unchanged, "" = clear the
+    # saved value (falling back to env), anything else = save it.
+    cloudflare_account_id: str | None = None
+    cloudflare_api_token: str | None = None
 
 
 def _serialize_config() -> dict:
-    from django.conf import settings
-
     from . import client
     from .models import AISettings
 
     cfg = AISettings.get()
     return {
         "available": client.is_configured(),
-        "account_id_set": bool(getattr(settings, "CLOUDFLARE_ACCOUNT_ID", "")),
-        "api_token_set": bool(getattr(settings, "CLOUDFLARE_API_TOKEN", "")),
+        "account_id_set": bool(client.account_id()),
+        "api_token_set": bool(client.api_token()),
+        "account_id_saved": bool(cfg.cloudflare_account_id.strip()),
+        "api_token_saved": bool(cfg.cloudflare_api_token.strip()),
         "enabled": cfg.enabled,
         "consent_given": cfg.consent_given_at is not None,
         "consent_given_at": cfg.consent_given_at.isoformat() if cfg.consent_given_at else None,
@@ -62,12 +66,25 @@ def save_config(request, data: ConfigIn):
 
     cfg = AISettings.get()
 
+    # Save credentials first so "enter credentials + enable" works in one POST.
+    cred_fields = []
+    if data.cloudflare_account_id is not None:
+        cfg.cloudflare_account_id = data.cloudflare_account_id.strip()
+        cred_fields.append("cloudflare_account_id")
+    if data.cloudflare_api_token is not None:
+        cfg.cloudflare_api_token = data.cloudflare_api_token.strip()
+        cred_fields.append("cloudflare_api_token")
+    if cred_fields:
+        cfg.save(update_fields=cred_fields)
+        logger.info("[ai] credentials updated (%s) by %s",
+                    ", ".join(cred_fields), getattr(request.user, "username", "?"))
+
     if data.enabled:
         if not client.is_configured():
             raise HttpError(
                 400,
-                "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in the "
-                "environment first (they are never stored in the database).",
+                "Add your Cloudflare account ID and API token first (here, or "
+                "via CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN env vars).",
             )
         if not cfg.consent_current and not data.consent_accepted:
             raise HttpError(400, "CONSENT_REQUIRED")
@@ -99,7 +116,8 @@ def test_connection(request):
     if not client.is_configured():
         raise HttpError(
             400,
-            "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in the environment first.",
+            "Add your Cloudflare account ID and API token first (on this page, "
+            "or via CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN env vars).",
         )
 
     started = time.monotonic()

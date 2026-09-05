@@ -565,9 +565,10 @@ Core subsystem, deliberately **NOT a registry tool** (no `tool_meta`): it runs
 post-finalize over the whole session and has orchestration authority, so its
 gate is consent + keys, never workflow membership.
 
-- **Backend:** Cloudflare Workers AI only, called directly via REST. BYOK env
-  vars: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` (never stored in DB or
-  returned by API), `CLOUDFLARE_AI_MODEL` (default
+- **Backend:** Cloudflare Workers AI only, called directly via REST. BYOK
+  credentials: saved via the /ai page (stored in `AISettings`, write-only —
+  never serialized back out) or `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`
+  env vars as fallback (DB wins). `CLOUDFLARE_AI_MODEL` (default
   `@cf/meta/llama-3.3-70b-instruct-fp8-fast`), `CLOUDFLARE_AI_TIMEOUT` (60s),
   `CLOUDFLARE_AI_MAX_CALLS_PER_SCAN` (10 — hard per-scan budget enforced in
   `client.py`).
@@ -639,8 +640,8 @@ GET  /api/notifications/config/           — get Slack/Teams notification confi
 POST /api/notifications/config/           — update notification config
 POST /api/notifications/test/             — send a test alert
 GET  /api/notifications/alerts/           — alert history
-GET  /api/ai/config/                      — AI settings (credential presence booleans only — values never leave the env)
-POST /api/ai/config/                      — enable/disable; enabling requires current-version consent (consent_accepted stamps it)
+GET  /api/ai/config/                      — AI settings (credential presence booleans only — values are never returned)
+POST /api/ai/config/                      — enable/disable + save credentials (write-only; None=unchanged, ""=clear→env fallback); enabling requires current-version consent (consent_accepted stamps it)
 POST /api/ai/test/                        — Workers AI connectivity probe (fixed prompt, no scan data; allowed pre-consent)
 GET  /api/ai/triage/<uuid>/               — triage status + ranked items + agent decisions (disabled|absent|running|complete|failed)
 POST /api/ai/triage/<uuid>/run/           — manual (re-)run via Django-Q (409 while scan/triage in flight)

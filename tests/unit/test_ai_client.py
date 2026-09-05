@@ -52,6 +52,7 @@ def configured(settings):
 # Configuration
 # ---------------------------------------------------------------------------
 
+@pytest.mark.django_db
 class TestIsConfigured:
     def test_both_set(self, configured):
         assert client.is_configured() is True
@@ -65,6 +66,34 @@ class TestIsConfigured:
         settings.CLOUDFLARE_ACCOUNT_ID = ""
         settings.CLOUDFLARE_API_TOKEN = "tok"
         assert client.is_configured() is False
+
+    def test_db_saved_credentials_suffice_without_env(self, settings):
+        from apps.core.ai.models import AISettings
+        settings.CLOUDFLARE_ACCOUNT_ID = ""
+        settings.CLOUDFLARE_API_TOKEN = ""
+        cfg = AISettings.get()
+        cfg.cloudflare_account_id = "db-acct"
+        cfg.cloudflare_api_token = "db-tok"
+        cfg.save()
+        assert client.is_configured() is True
+        assert client.account_id() == "db-acct"
+        assert client.api_token() == "db-tok"
+
+    def test_db_wins_over_env(self, configured):
+        from apps.core.ai.models import AISettings
+        cfg = AISettings.get()
+        cfg.cloudflare_account_id = "db-acct"
+        cfg.cloudflare_api_token = "db-tok"
+        cfg.save()
+        assert client.account_id() == "db-acct"  # env "acct456" loses
+        assert client.api_token() == "db-tok"
+
+    def test_cleared_db_falls_back_to_env(self, configured):
+        from apps.core.ai.models import AISettings
+        cfg = AISettings.get()
+        cfg.cloudflare_account_id = "   "  # whitespace = effectively cleared
+        cfg.save()
+        assert client.account_id() == "acct123"
 
 
 @pytest.mark.django_db

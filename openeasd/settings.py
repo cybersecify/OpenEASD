@@ -336,15 +336,18 @@ GITHUB_SECRETS_GLOBAL_SEARCH = config(
 )
 
 # Agentic AI subsystem (apps/core/ai). BYOK: Cloudflare Workers AI, called
-# directly from Django (D-014). Entirely OFF unless BOTH credentials are set
-# AND the operator enables the feature AND records consent in the UI — with
-# any of those missing, every scan runs exactly as if this subsystem did not
-# exist. Credentials are PER-DEPLOYMENT secrets (never baked into the public
-# image, never stored in the DB, never returned by the API). Finding data is
-# sent to Cloudflare only on consented deployments; prompt and response
-# bodies are NEVER persisted (AIInvocation audit rows carry metadata only —
-# D-013 4c). CLOUDFLARE_AI_MAX_CALLS_PER_SCAN is a hard per-scan budget the
-# client enforces so no agent loop can run up the operator's bill.
+# directly from Django (D-014 as amended). Entirely OFF unless credentials
+# are available AND the operator enables the feature AND records consent in
+# the UI — with any of those missing, every scan runs exactly as if this
+# subsystem did not exist. Credentials are PER-DEPLOYMENT secrets (never
+# baked into the public image): the operator saves them on the /ai page
+# (stored in AISettings, write-only through the API — never serialized back
+# out), or supplies these env vars as fallback (DB wins, NotificationConfig
+# webhook precedent). Finding data is sent to Cloudflare only on consented
+# deployments; prompt and response bodies are NEVER persisted (AIInvocation
+# audit rows carry metadata only — D-013 4c). CLOUDFLARE_AI_MAX_CALLS_PER_SCAN
+# is a hard per-scan budget the client enforces so no agent loop can run up
+# the operator's bill.
 CLOUDFLARE_ACCOUNT_ID = config("CLOUDFLARE_ACCOUNT_ID", default="")
 CLOUDFLARE_API_TOKEN = config("CLOUDFLARE_API_TOKEN", default="")
 CLOUDFLARE_AI_MODEL = config(

@@ -8,10 +8,14 @@ CURRENT_CONSENT_VERSION = 1
 class AISettings(models.Model):
     """Singleton (pk=1) — operator-facing switches for the AI subsystem.
 
-    Credentials are deliberately NOT here: CLOUDFLARE_ACCOUNT_ID and
-    CLOUDFLARE_API_TOKEN live in the environment only (BYOK, D-014) and are
-    never stored in the database or returned by the API.
+    Credentials (D-014 as amended): the operator may save them here via the
+    /ai page, or supply CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN env vars
+    as fallback — DB wins, matching the NotificationConfig webhook precedent.
+    The token is WRITE-ONLY through the API: never serialized back out.
     """
+
+    cloudflare_account_id = models.CharField(max_length=64, blank=True, default="")
+    cloudflare_api_token = models.CharField(max_length=128, blank=True, default="")
 
     enabled = models.BooleanField(default=False)
     consent_given_at = models.DateTimeField(null=True, blank=True)

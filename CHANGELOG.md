@@ -16,7 +16,8 @@ commits to recover the reasoning.
   and subscans; active tools re-checked against `DomainAuthorization` at the
   agent's own dispatch boundary), and writes plain-language report/alert
   summaries (one extra Slack block / Teams fact when present). Entirely off
-  unless `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` are set AND the
+  unless Cloudflare credentials are provided (saved on the /ai page, or
+  `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` env vars as fallback) AND the
   operator enables it AND records consent (first-use dialog); with the gate
   closed every scan runs byte-identical to before. Every call is recorded in
   an audit log (time, scan, purpose, model, token counts, finding IDs — the

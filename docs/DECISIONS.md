@@ -313,7 +313,15 @@ Calling these out so contributors don't add them back without a discussion:
 ---
 
 ## D-014 — v2.0 AI backend: Cloudflare Workers AI only (BYOK)
-**Status:** locked · **Decided:** 2026-09-05
+**Status:** locked · **Decided:** 2026-09-05 · *Amended 2026-09-05*
+
+> **Amendment (same day).** Credentials are no longer env-only: the operator
+> can save the account ID + API token on the /ai page (stored in `AISettings`,
+> write-only through the API — never serialized back out), with the
+> `CLOUDFLARE_*` env vars as fallback (DB wins — the NotificationConfig
+> webhook precedent). Trade-off accepted knowingly: the token now lives in
+> the SQLite file, in exchange for a working setup path that doesn't require
+> container restarts. Everything else in this decision stands.
 
 **What.** The v2.0 AI layer uses **Cloudflare Workers AI** as its only backend, called directly from Django over Cloudflare's REST API. Credentials are strictly bring-your-own-key via environment variables (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`) — never stored in the database, never returned by the API. With either variable unset, or the feature disabled, or consent not recorded, the subsystem is invisible: every scan runs exactly as if the AI code did not exist. Default model `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, overridable (`CLOUDFLARE_AI_MODEL`). The agent loop runs inside Django as Django-Q tasks — no Workers deployment, no AI Gateway. Supersedes [D-010](#d-010--llm-triage-privacy-stance-hybrid-local--cloud-opt-in), [D-011](#d-011--llm-triage-local-runtime--default-model), [D-012](#d-012--llm-triage-cloud-api-choice-claude-only-for-v20); amends [D-013](#d-013--llm-triage-consent-ux-shape) (wording + single enable switch).
 

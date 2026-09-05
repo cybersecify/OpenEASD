@@ -99,6 +99,64 @@ class TestConfigEndpoint:
 
 
 @pytest.mark.django_db
+class TestCredentialSaving:
+    def test_save_credentials_via_ui(self, auth_client, unconfigured):
+        resp = _post(auth_client, "/api/ai/config/", {
+            "enabled": False,
+            "cloudflare_account_id": " ui-acct-77 ",
+            "cloudflare_api_token": "ui-tok-88",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["available"] is True
+        assert data["account_id_saved"] is True and data["api_token_saved"] is True
+        cfg = AISettings.get()
+        assert cfg.cloudflare_account_id == "ui-acct-77"  # stripped
+        assert cfg.cloudflare_api_token == "ui-tok-88"
+
+    def test_token_never_echoed_back(self, auth_client, unconfigured):
+        _post(auth_client, "/api/ai/config/", {
+            "enabled": False,
+            "cloudflare_account_id": "SECRET-UI-ACCT",
+            "cloudflare_api_token": "SECRET-UI-TOKEN",
+        })
+        body = auth_client.get("/api/ai/config/").content.decode()
+        assert "SECRET-UI-ACCT" not in body
+        assert "SECRET-UI-TOKEN" not in body
+
+    def test_omitted_fields_leave_saved_values_unchanged(self, auth_client, unconfigured):
+        cfg = AISettings.get()
+        cfg.cloudflare_account_id = "keep-acct"
+        cfg.cloudflare_api_token = "keep-tok"
+        cfg.save()
+        _post(auth_client, "/api/ai/config/", {"enabled": False})
+        cfg.refresh_from_db()
+        assert cfg.cloudflare_account_id == "keep-acct"
+        assert cfg.cloudflare_api_token == "keep-tok"
+
+    def test_empty_string_clears_and_falls_back_to_env(self, auth_client, configured):
+        cfg = AISettings.get()
+        cfg.cloudflare_api_token = "old-ui-tok"
+        cfg.save()
+        resp = _post(auth_client, "/api/ai/config/", {
+            "enabled": False, "cloudflare_api_token": "",
+        })
+        data = resp.json()
+        assert data["api_token_saved"] is False
+        assert data["api_token_set"] is True  # env fallback still covers it
+
+    def test_save_credentials_and_enable_in_one_call(self, auth_client, unconfigured):
+        resp = _post(auth_client, "/api/ai/config/", {
+            "enabled": True,
+            "consent_accepted": True,
+            "cloudflare_account_id": "a1",
+            "cloudflare_api_token": "t1",
+        })
+        assert resp.status_code == 200
+        assert AISettings.get().enabled is True
+
+
+@pytest.mark.django_db
 class TestTestEndpoint:
     def test_unconfigured_400(self, auth_client, unconfigured):
         assert _post(auth_client, "/api/ai/test/", {}).status_code == 400

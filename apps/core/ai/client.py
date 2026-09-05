@@ -42,12 +42,26 @@ def _user_agent() -> str:
     return getattr(settings, "OPENEASD_USER_AGENT", "OpenEASD/1.0")
 
 
+def account_id() -> str:
+    """Effective account id: DB-saved value wins, env var is fallback
+    (NotificationConfig webhook precedent)."""
+    from .models import AISettings
+
+    saved = AISettings.get().cloudflare_account_id.strip()
+    return saved or getattr(settings, "CLOUDFLARE_ACCOUNT_ID", "")
+
+
+def api_token() -> str:
+    """Effective API token: DB-saved value wins, env var is fallback."""
+    from .models import AISettings
+
+    saved = AISettings.get().cloudflare_api_token.strip()
+    return saved or getattr(settings, "CLOUDFLARE_API_TOKEN", "")
+
+
 def is_configured() -> bool:
-    """Both CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are non-empty."""
-    return bool(
-        getattr(settings, "CLOUDFLARE_ACCOUNT_ID", "")
-        and getattr(settings, "CLOUDFLARE_API_TOKEN", "")
-    )
+    """Both an account id and an API token are available (DB or env)."""
+    return bool(account_id() and api_token())
 
 
 def resolve_model() -> str:
@@ -95,7 +109,7 @@ def _post_json(url: str, payload: dict) -> tuple[dict | None, str, int]:
     status_label in {ok, timeout, http_error, rate_limited, bad_json}.
     """
     headers = {
-        "Authorization": f"Bearer {settings.CLOUDFLARE_API_TOKEN}",
+        "Authorization": f"Bearer {api_token()}",
         "Content-Type": "application/json",
         "User-Agent": _user_agent(),
     }
@@ -182,7 +196,7 @@ def chat_json(messages: list[dict], schema_model, *, purpose: str, session=None,
         return None
 
     model = resolve_model()
-    url = _API_BASE.format(account_id=settings.CLOUDFLARE_ACCOUNT_ID, model=model)
+    url = _API_BASE.format(account_id=account_id(), model=model)
     schema = json_schema_for(schema_model)
     attempt_messages = list(messages)
 

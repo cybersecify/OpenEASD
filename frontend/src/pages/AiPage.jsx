@@ -12,11 +12,14 @@ import { useNavigate } from 'react-router-dom';
 import { apiGet, apiPost } from '../api/client.js';
 import { useQuery } from '@tanstack/react-query';
 
-function CredPill({ set, label }) {
+function CredPill({ set, saved, label }) {
   return (
     <div className="flex items-center gap-2">
       <span className="font-mono text-xs text-body">{label}</span>
-      <Badge value={set ? 'active' : 'inactive'} label={set ? 'Set' : 'Not set'} />
+      <Badge
+        value={set ? 'active' : 'inactive'}
+        label={set ? (saved ? 'Set (saved)' : 'Set (env)') : 'Not set'}
+      />
     </div>
   );
 }
@@ -25,6 +28,30 @@ function SettingsCard({ config, onSaved }) {
   const [consentOpen, setConsentOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [acctInput, setAcctInput] = useState('');
+  const [tokenInput, setTokenInput] = useState('');
+
+  async function handleSaveCredentials() {
+    const body = { enabled: config.enabled };
+    if (acctInput.trim()) body.cloudflare_account_id = acctInput.trim();
+    if (tokenInput.trim()) body.cloudflare_api_token = tokenInput.trim();
+    if (!('cloudflare_account_id' in body) && !('cloudflare_api_token' in body)) {
+      toast.error('Enter an account ID and/or API token to save.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await apiPost('/ai/config/', body);
+      toast.success('Cloudflare credentials saved.');
+      setAcctInput('');
+      setTokenInput('');
+      onSaved();
+    } catch (err) {
+      toast.error(err.message || 'Failed to save credentials.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function post(body, okMessage) {
     setBusy(true);
@@ -72,13 +99,37 @@ function SettingsCard({ config, onSaved }) {
         <div className="space-y-1.5">
           <label className="text-xs font-semibold text-dim uppercase tracking-wider">Cloudflare credentials</label>
           <div className="flex gap-6">
-            <CredPill set={config.account_id_set} label="CLOUDFLARE_ACCOUNT_ID" />
-            <CredPill set={config.api_token_set} label="CLOUDFLARE_API_TOKEN" />
+            <CredPill set={config.account_id_set} saved={config.account_id_saved} label="Account ID" />
+            <CredPill set={config.api_token_set} saved={config.api_token_saved} label="API token" />
+          </div>
+          <div className="flex gap-2 max-w-xl pt-1">
+            <input
+              type="text"
+              value={acctInput}
+              onChange={e => setAcctInput(e.target.value)}
+              placeholder={config.account_id_saved ? 'Account ID (saved — enter to replace)' : 'Cloudflare account ID'}
+              autoComplete="off"
+              className="field flex-1"
+            />
+            <input
+              type="password"
+              value={tokenInput}
+              onChange={e => setTokenInput(e.target.value)}
+              placeholder={config.api_token_saved ? 'API token (saved — enter to replace)' : 'Workers AI API token'}
+              autoComplete="new-password"
+              className="field flex-1"
+            />
+            <Button type="button" variant="outline" size="sm" onClick={handleSaveCredentials}
+                    disabled={busy || (!acctInput.trim() && !tokenInput.trim())}>
+              Save
+            </Button>
           </div>
           <p className="text-xs text-dim">
-            Credentials are read from environment variables only. They are never stored
-            in the database or returned by the API. Set them in your <span className="font-mono">docker run -e</span> /
-            compose file and restart.
+            The token needs the <span className="font-mono">Workers AI: Read</span> permission
+            (Cloudflare dashboard → My Profile → API Tokens). Saved values are write-only —
+            never shown again or returned by the API. <span className="font-mono">CLOUDFLARE_ACCOUNT_ID</span> /
+            <span className="font-mono"> CLOUDFLARE_API_TOKEN</span> env vars work as fallback;
+            values saved here take precedence.
           </p>
         </div>
 
