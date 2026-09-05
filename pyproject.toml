@@ -77,6 +77,29 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 testpaths = ["tests"]
 
+[tool.coverage.run]
+source = ["apps", "openeasd"]
+branch = true
+omit = [
+    "*/migrations/*",  # auto-generated
+    "*/tests/*",
+    "manage.py",
+    "*/apps.py",       # trivial AppConfig registration (tool_meta only)
+    "*/admin.py",      # Django admin registration
+    "openeasd/wsgi.py",
+    "openeasd/asgi.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 88
