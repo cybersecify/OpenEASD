@@ -15,8 +15,9 @@ services:
     restart: unless-stopped
 
   web:
-    build: .
-    command: gunicorn openeasd.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120 --access-logfile - --error-logfile -
+    build:
+      context: .
+      target: web          # slim image, no scanner tools
     ports:
       - "8000:8000"
     volumes:
@@ -51,10 +52,11 @@ services:
     restart: unless-stopped
 
   worker:
-    build: .
+    build:
+      context: .
+      target: worker       # full image with nmap + scanner tools
     # DBOS durable-execution worker: executes scan/AI workflows + runs the
     # @scheduled cron workflows. NET_RAW needed for nmap/naabu raw sockets.
-    command: python manage.py dbos_worker
     cap_add:
       - NET_RAW
     volumes:

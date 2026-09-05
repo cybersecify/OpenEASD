@@ -25,7 +25,7 @@ spec:
     spec:
       initContainers:
         - name: init
-          image: ghcr.io/cybersecify/openeasd:latest
+          image: ghcr.io/cybersecify/openeasd-web:latest
           # Always re-pull: the :latest tag is mutable, so a deploy that doesn't
           # change the tag string must still fetch the new digest. Without this,
           # k8s defaults to IfNotPresent semantics against the cached image and
@@ -43,7 +43,7 @@ spec:
 
       containers:
         - name: web
-          image: ghcr.io/cybersecify/openeasd:latest
+          image: ghcr.io/cybersecify/openeasd-web:latest
           imagePullPolicy: Always
           command:
             - gunicorn
@@ -95,7 +95,7 @@ spec:
               memory: "512Mi"
 
         - name: worker
-          image: ghcr.io/cybersecify/openeasd:latest
+          image: ghcr.io/cybersecify/openeasd-worker:latest
           imagePullPolicy: Always
           # DBOS durable-execution worker: runs scan/AI workflows + the
           # @scheduled cron workflows. The init container has already applied

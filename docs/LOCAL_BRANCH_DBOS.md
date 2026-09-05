@@ -41,6 +41,24 @@ launches, applies its system schema, and registers the `scans` queue; a full
 `run_scan` workflow executes end-to-end on Postgres (26 tool steps → session
 `completed`, tools mocked for offline speed).
 
+## Image split (web slim / worker Ubuntu)
+
+Two runtime images instead of one, so the internet-facing web container carries
+no offensive tooling and stays small:
+
+- **`web`** — `python:3.12-slim`: Django UI/API + the frontend bundle + WeasyPrint
+  (PDF reports are a synchronous view served here). **No scanner tools.** Runs
+  gunicorn (`OPENEASD_ROLE=web`).
+- **`worker`** — `ubuntu:24.04`: DBOS worker + the full validated scanner matrix
+  (nmap NSE, naabu, amass, PD tools, gitleaks, nuclei templates). **No
+  frontend/WeasyPrint.** Runs `dbos_worker` (`OPENEASD_ROLE=worker`). Kept on
+  Ubuntu deliberately — the base the tool matrix was validated on.
+- **db** — `postgres:17-alpine` (unchanged).
+
+Each image builds its own venv (two different bases can't safely share one).
+Dockerfile has `web` + `worker` targets; compose builds each via `target:`;
+k8s uses `openeasd-web` (init + web) and `openeasd-worker` images.
+
 ## What remains (not done on this branch yet)
 
 1. **Test suite Postgres-compat pass — DONE.** From 66 failing on the first
