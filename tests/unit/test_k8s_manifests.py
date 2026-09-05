@@ -69,8 +69,9 @@ class TestConfigMap:
     def test_debug_is_false(self):
         assert self.data["DEBUG"] == "False"
 
-    def test_db_name_is_in_data_dir(self):
-        assert self.data["DB_NAME"].startswith("data/")
+    def test_db_points_at_postgres(self):
+        assert self.data["DB_HOST"] == "openeasd-postgres"
+        assert self.data["DB_NAME"] == "openeasd"
 
 
 # ---------------------------------------------------------------------------
@@ -107,8 +108,9 @@ class TestPVCs:
     def setup_method(self):
         self.docs = load("pvc.yaml")
 
-    def test_two_pvcs(self):
-        assert len(self.docs) == 2
+    def test_one_pvc(self):
+        # App data is in Postgres now; only the logs PVC remains.
+        assert len(self.docs) == 1
 
     def test_both_are_pvc_kind(self):
         for doc in self.docs:
@@ -120,17 +122,15 @@ class TestPVCs:
 
     def test_pvc_names(self):
         names = {doc["metadata"]["name"] for doc in self.docs}
-        assert "openeasd-data" in names
-        assert "openeasd-logs" in names
+        assert names == {"openeasd-logs"}
 
     def test_access_mode_is_rwo(self):
         for doc in self.docs:
             assert "ReadWriteOnce" in doc["spec"]["accessModes"]
 
-    def test_data_pvc_storage_request(self):
-        data_pvc = next(d for d in self.docs if d["metadata"]["name"] == "openeasd-data")
-        storage = data_pvc["spec"]["resources"]["requests"]["storage"]
-        # Should be at least 1Gi
+    def test_logs_pvc_storage_request(self):
+        logs_pvc = next(d for d in self.docs if d["metadata"]["name"] == "openeasd-logs")
+        storage = logs_pvc["spec"]["resources"]["requests"]["storage"]
         assert storage.endswith("Gi") or storage.endswith("Ti")
 
 
@@ -171,9 +171,9 @@ class TestDeployment:
         init = self.pod_spec["initContainers"][0]
         assert "ghcr.io/cybersecify/openeasd" in init["image"]
 
-    def test_init_container_mounts_data_volume(self):
+    def test_init_container_mounts_logs_volume(self):
         init = self.pod_spec["initContainers"][0]
-        find_volume_mount(init, "/app/data")
+        find_volume_mount(init, "/app/logs")
 
     # Web container
     def test_has_web_container(self):
@@ -200,9 +200,8 @@ class TestDeployment:
         assert probe["httpGet"]["path"] == "/health/"
         assert probe["httpGet"]["port"] == 8000
 
-    def test_web_mounts_data_and_logs(self):
+    def test_web_mounts_logs(self):
         web = find_container(self.pod_spec["containers"], "web")
-        find_volume_mount(web, "/app/data")
         find_volume_mount(web, "/app/logs")
 
     def test_web_loads_configmap(self):
@@ -239,9 +238,9 @@ class TestDeployment:
     def test_has_worker_container(self):
         find_container(self.pod_spec["containers"], "worker")
 
-    def test_worker_command_is_qcluster(self):
+    def test_worker_command_is_dbos_worker(self):
         worker = find_container(self.pod_spec["containers"], "worker")
-        assert "qcluster" in worker["command"]
+        assert "dbos_worker" in worker["command"]
 
     def test_worker_has_net_raw_capability(self):
         worker = find_container(self.pod_spec["containers"], "worker")
@@ -252,15 +251,15 @@ class TestDeployment:
         worker = find_container(self.pod_spec["containers"], "worker")
         assert not worker.get("ports"), "Worker should not expose ports"
 
-    def test_worker_mounts_data_and_logs(self):
+    def test_worker_mounts_logs(self):
         worker = find_container(self.pod_spec["containers"], "worker")
-        find_volume_mount(worker, "/app/data")
         find_volume_mount(worker, "/app/logs")
 
     # Volumes
-    def test_data_volume_references_correct_pvc(self):
-        volumes = {v["name"]: v for v in self.pod_spec["volumes"]}
-        assert volumes["data"]["persistentVolumeClaim"]["claimName"] == "openeasd-data"
+    def test_no_data_volume_only_logs(self):
+        volumes = {v["name"] for v in self.pod_spec["volumes"]}
+        assert "data" not in volumes  # app data is in Postgres
+        assert "logs" in volumes
 
     def test_logs_volume_references_correct_pvc(self):
         volumes = {v["name"]: v for v in self.pod_spec["volumes"]}

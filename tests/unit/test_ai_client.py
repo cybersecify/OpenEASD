@@ -13,9 +13,9 @@ from apps.core.ai.models import AIInvocation
 from apps.core.ai.schemas import SummaryOut
 
 
-def _session():
+def _session(domain="example.com"):
     from apps.core.scans.models import ScanSession
-    return ScanSession.objects.create(domain="example.com", scan_type="full")
+    return ScanSession.objects.create(domain=domain, scan_type="full")
 
 
 def _resp(status=200, json_body=None, headers=None):
@@ -256,7 +256,7 @@ class TestCallBudget:
 
     def test_budget_counts_only_this_session(self, configured):
         configured.CLOUDFLARE_AI_MAX_CALLS_PER_SCAN = 1
-        other = _session()
+        other = _session(domain="other.example.com")
         AIInvocation.objects.create(session=other, session_uuid=other.uuid,
                                     purpose="triage", model="m", status="ok")
         sess = _session()
