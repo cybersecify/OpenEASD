@@ -14,6 +14,7 @@ separate authorization decision — see collector.py / analyzer.py).
 import logging
 
 from apps.core.findings.models import Finding
+from apps.core.workflows.exceptions import ToolTimeout
 
 from .analyzer import analyze
 from .collector import collect
@@ -23,7 +24,14 @@ logger = logging.getLogger(__name__)
 
 def run_asn_discovery(session) -> list[Finding]:
     """Discover owned ASNs/CIDRs for the session domain and persist Findings."""
-    records = collect(session)
+    try:
+        records = collect(session)
+    except ToolTimeout:
+        logger.warning(
+            "[asn_discovery:%s] amass intel timed out — skipping ASN discovery",
+            session.id,
+        )
+        return []
     if not records:
         return []
 
