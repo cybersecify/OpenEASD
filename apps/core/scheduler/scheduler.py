@@ -1,6 +1,12 @@
-"""Django-Q2 scheduling for OpenEASD — replaces APScheduler."""
+"""Scan scheduling callables for OpenEASD.
 
-import json
+On the `local` branch the cron layer is DBOS @scheduled workflows
+(apps/core/durable/workflows.py); the functions here are the plain callables
+those workflows invoke (daily_scan, run_due_monitoring_scans, reap_stuck_scans,
+purge_expired_blacklisted_tokens). setup_core_schedules / sync_domain_monitoring_jobs
+are retained as no-ops for legacy callers.
+"""
+
 import logging
 
 from django.utils import timezone as django_tz
@@ -32,111 +38,26 @@ SCAN_PENDING_TIMEOUT_MINUTES = _config("SCAN_PENDING_TIMEOUT_MINUTES", default=6
 # ---------------------------------------------------------------------------
 
 def setup_core_schedules():
-    """Register/update the fixed system schedules in Django-Q2.
+    """No-op on the DBOS branch.
 
-    System-hygiene schedules (stuck-scan watchdog, token purge) always run.
-    Every unattended-scan schedule (daily scan, per-domain monitoring, and
-    user-created recurring/one-time jobs) is registered/kept only when
-    SCHEDULED_SCANS_ENABLED is True; when False they are all actively removed,
-    so flipping the flag on a running deployment takes effect on the next
-    startup even if the schedules were created by an earlier boot. This is what
-    makes the switch a durable, complete "manual-only" mode.
+    The unattended-scanning backbone (daily scan, monitoring sweep, watchdog,
+    token purge) is now a set of DBOS @scheduled workflows in
+    apps/core/durable/workflows.py, registered when the dbos_worker imports
+    that module — there is no Django-Q Schedule setup to perform. Kept as a
+    callable so any legacy caller (and the scheduler AppConfig) stays valid.
     """
-    from django.conf import settings
-    from django_q.models import Schedule
+    logger.info("[scheduler] setup_core_schedules is a no-op — schedules are DBOS @scheduled workflows")
 
-    # --- System-hygiene schedules (always on) ---
-    Schedule.objects.update_or_create(
-        name="watchdog_reap_stuck_scans",
-        defaults={
-            "func":          "apps.core.scheduler.scheduler.reap_stuck_scans",
-            "schedule_type": Schedule.MINUTES,
-            "minutes":       15,
-            "repeats":       -1,
-        },
-    )
-    Schedule.objects.update_or_create(
-        name="purge_blacklisted_tokens",
-        defaults={
-            "func":          "apps.core.scheduler.scheduler.purge_expired_blacklisted_tokens",
-            "schedule_type": Schedule.CRON,
-            "cron":          "0 3 * * *",
-            "repeats":       -1,
-        },
-    )
-
-    # --- Unattended-scan schedules (gated by the master switch) ---
-    if not settings.SCHEDULED_SCANS_ENABLED:
-        removed = Schedule.objects.filter(name="daily_scan").delete()[0]
-        removed += Schedule.objects.filter(name__startswith="monitor_").delete()[0]
-        # User-created recurring/one-time jobs are unattended scans too — remove
-        # them as well, or the switch wouldn't actually make the deployment
-        # manual-only (they would keep firing run_scheduled_scan).
-        removed += Schedule.objects.filter(name__startswith="recurring_").delete()[0]
-        removed += Schedule.objects.filter(name__startswith="once_").delete()[0]
-        logger.info(
-            "[scheduler] SCHEDULED_SCANS_ENABLED=False — manual-only mode; "
-            f"removed {removed} auto-scan schedule(s). Hygiene schedules registered."
-        )
-        return
-
-    hour   = settings.SCAN_DAILY_HOUR
-    minute = settings.SCAN_DAILY_MINUTE
-    Schedule.objects.update_or_create(
-        name="daily_scan",
-        defaults={
-            "func":          "apps.core.scheduler.scheduler.daily_scan",
-            "schedule_type": Schedule.CRON,
-            "cron":          f"{minute} {hour} * * *",
-            "repeats":       -1,
-        },
-    )
-    logger.info(
-        f"[scheduler] Core schedules registered — daily scan at {hour:02d}:{minute:02d}"
-    )
-    sync_domain_monitoring_jobs()
-
-
-# ---------------------------------------------------------------------------
-# Per-domain monitoring job sync
-# ---------------------------------------------------------------------------
 
 def sync_domain_monitoring_jobs():
-    """Sync Django-Q2 Schedule entries with Domain.monitoring_interval_hours."""
-    from apps.core.domains.models import Domain
-    from django_q.models import Schedule
+    """No-op on the DBOS branch.
 
-    wanted_names = set()
-    # Only monitor domains that are both active and authorized — an unauthorized
-    # domain must never be scanned unattended, mirroring the daily_scan gate.
-    monitored = Domain.objects.filter(
-        is_active=True,
-        monitoring_interval_hours__isnull=False,
-        authorization__isnull=False,
-    )
-    for domain in monitored:
-        name     = f"monitor_{domain.name}"
-        interval = domain.monitoring_interval_hours
-        wanted_names.add(name)
-
-        Schedule.objects.update_or_create(
-            name=name,
-            defaults={
-                "func":          "apps.core.scheduler.scheduler.run_monitoring_scan",
-                "args":          json.dumps([domain.name]),
-                "schedule_type": Schedule.MINUTES,
-                "minutes":       interval * 60,
-                "repeats":       -1,
-            },
-        )
-        logger.info(f"[monitoring] Registered schedule {name} every {interval}h")
-
-    # Remove schedules for domains that were deleted or deactivated
-    removed = Schedule.objects.filter(
-        name__startswith="monitor_"
-    ).exclude(name__in=wanted_names).delete()
-    if removed[0]:
-        logger.info(f"[monitoring] Removed {removed[0]} stale monitoring schedule(s)")
+    Per-domain monitoring is no longer one Django-Q timer per domain; the DBOS
+    `scheduled_monitoring_sweep` workflow computes due-ness from scan history
+    every sweep (see run_due_monitoring_scans). Domain add/edit/delete therefore
+    needs no schedule re-sync — this stays a callable so the domains API's
+    existing calls remain valid without change."""
+    return
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +92,36 @@ def run_monitoring_scan(domain: str):
         return
     run_scan_task(session.id)
     logger.info(f"[monitoring] Launched monitoring scan for {domain} (session {session.id})")
+
+
+def run_due_monitoring_scans():
+    """DBOS monitoring sweep: enqueue a scan for every active, authorized,
+    monitored domain whose last scan is older than its interval. Replaces the
+    per-domain Django-Q schedules — the sweep computes due-ness from scan
+    history instead of one timer per domain, so nothing needs re-syncing when a
+    domain's interval changes."""
+    from datetime import timedelta
+
+    from apps.core.domains.models import Domain
+    from apps.core.scans.models import ScanSession
+
+    now = django_tz.now()
+    monitored = Domain.objects.filter(
+        is_active=True,
+        monitoring_interval_hours__isnull=False,
+        authorization__isnull=False,
+    )
+    for domain in monitored:
+        last = (
+            ScanSession.objects.filter(domain=domain.name)
+            .exclude(scan_type="subscan")
+            .order_by("-start_time")
+            .values_list("start_time", flat=True)
+            .first()
+        )
+        due = last is None or (now - last) >= timedelta(hours=domain.monitoring_interval_hours)
+        if due:
+            run_monitoring_scan(domain.name)
 
 
 def run_scheduled_scan(domain: str, triggered_by: str = "scheduled"):

@@ -131,3 +131,59 @@ def enqueue_agent_step(root_session_id: int) -> str:
     }
     handle = get_client().enqueue(options, root_session_id)
     return handle.workflow_id
+
+
+# ---------------------------------------------------------------------------
+# Scheduled (cron) workflows — replace the Django-Q qcluster scheduler for the
+# unattended-scanning backbone. Registered when the worker imports this module;
+# they run only in the launched worker process. Each is a no-op unless
+# SCHEDULED_SCANS_ENABLED, so the master switch still makes a deployment
+# durably manual-only.
+# ---------------------------------------------------------------------------
+
+_DAILY_CRON = "{m} {h} * * *".format(
+    m=getattr(settings, "SCAN_DAILY_MINUTE", 0),
+    h=getattr(settings, "SCAN_DAILY_HOUR", 2),
+)
+_MONITORING_SWEEP_CRON = getattr(settings, "MONITORING_SWEEP_CRON", "*/15 * * * *")
+_WATCHDOG_CRON = getattr(settings, "WATCHDOG_CRON", "*/15 * * * *")
+_TOKEN_PURGE_CRON = getattr(settings, "TOKEN_PURGE_CRON", "0 3 * * *")
+
+
+@DBOS.scheduled(_DAILY_CRON)
+@DBOS.workflow(name="scheduled_daily_scan")
+def scheduled_daily_scan(scheduled_time, actual_time) -> None:
+    if not getattr(settings, "SCHEDULED_SCANS_ENABLED", True):
+        return
+    from apps.core.scheduler.scheduler import daily_scan
+
+    daily_scan()
+
+
+@DBOS.scheduled(_MONITORING_SWEEP_CRON)
+@DBOS.workflow(name="scheduled_monitoring_sweep")
+def scheduled_monitoring_sweep(scheduled_time, actual_time) -> None:
+    """Enqueue a scan for each active, authorized, monitored domain that is due
+    (now - last scan >= its interval). Replaces per-domain Django-Q schedules
+    with one sweep — no schedule rows to sync on every domain edit."""
+    if not getattr(settings, "SCHEDULED_SCANS_ENABLED", True):
+        return
+    from apps.core.scheduler.scheduler import run_due_monitoring_scans
+
+    run_due_monitoring_scans()
+
+
+@DBOS.scheduled(_WATCHDOG_CRON)
+@DBOS.workflow(name="scheduled_watchdog")
+def scheduled_watchdog(scheduled_time, actual_time) -> None:
+    from apps.core.scheduler.scheduler import reap_stuck_scans
+
+    reap_stuck_scans()
+
+
+@DBOS.scheduled(_TOKEN_PURGE_CRON)
+@DBOS.workflow(name="scheduled_token_purge")
+def scheduled_token_purge(scheduled_time, actual_time) -> None:
+    from apps.core.scheduler.scheduler import purge_expired_blacklisted_tokens
+
+    purge_expired_blacklisted_tokens()

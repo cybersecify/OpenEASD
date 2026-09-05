@@ -49,9 +49,19 @@ launches, applies its system schema, and registers the `scans` queue; a full
    `close_old_connections()` — correct in prod, not under a single test
    transaction); (b) tests that patch `django_q.tasks.async_task` must patch the
    DBOS enqueue helpers instead. ~16/34 runner tests currently fail for reason (a).
-2. **Scheduler migration.** Django-Q still brokers periodic scans (daily +
-   per-domain monitoring). Migrate to DBOS `@scheduled` workflows + a dynamic
-   monitoring sweep, then drop `django-q2` entirely. (See D-016.)
+2. **Scheduler migration — core jobs DONE.** The unattended-scanning backbone
+   is now DBOS `@scheduled` workflows in `apps/core/durable/workflows.py`:
+   `scheduled_daily_scan`, `scheduled_monitoring_sweep` (replaces per-domain
+   Django-Q timers with one due-ness sweep — `run_due_monitoring_scans`),
+   `scheduled_watchdog`, `scheduled_token_purge` — all gated by
+   `SCHEDULED_SCANS_ENABLED`, registered when `dbos_worker` imports the module
+   (verified: 4 pollers register; sweep scans only due domains).
+   `setup_core_schedules` / `sync_domain_monitoring_jobs` are now no-ops.
+   **Remaining Django-Q holdout:** the user-created one-time/recurring scan
+   endpoints (`_schedule_once` / `_schedule_recurring` / `list_scheduled` /
+   `cancel_scheduled` in `scans/api.py`, and the domain-delete schedule cleanup
+   in `domains/api.py`). Migrate these to DBOS `create_schedule` +
+   delayed-enqueue to drop `django-q2` entirely.
 3. **Deployment.** `docker-entrypoint.sh` (add Postgres wait + `dbos_worker`
    instead of `qcluster`), `docker-compose` / `k8s/` (add a Postgres service /
    StatefulSet), CI (Postgres service container). None updated yet.
