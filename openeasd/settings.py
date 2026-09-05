@@ -105,6 +105,7 @@ INSTALLED_APPS = [
     "ninja_jwt.token_blacklist",
     "apps.domain_security",
     "apps.hudson_rock",
+    "apps.breach_check",
     "apps.subfinder",
     "apps.amass",
     "apps.asn_discovery",
@@ -126,6 +127,7 @@ INSTALLED_APPS = [
     "apps.js_secrets",
     "apps.shodan",
     "apps.typosquat",
+    "apps.github_secrets",
     "apps.github_recon",
     "apps.cve_intel",
 ]
@@ -316,25 +318,22 @@ TOOL_GITLEAKS = config("TOOL_GITLEAKS", default="gitleaks")
 SHODAN_API_KEY = config("SHODAN_API_KEY", default="")
 SHODAN_MAX_IPS = config("SHODAN_MAX_IPS", default=50, cast=int)
 
-# GitHub Org Recon tool (apps/github_recon) — passive. Enumerates the target org's
-# PUBLIC GitHub repos via GitHub's official REST API and surfaces exposed infra
-# references (internal hostnames/subdomains, cloud-bucket URLs, API endpoints) in
-# that public code/config. Two-tier, BYO-token:
-#   * No token  -> unauthenticated API, 60 req/hr. We cap total requests
-#                  (GITHUB_MAX_REQUESTS) + repos (GITHUB_MAX_REPOS) to stay under it,
-#                  so the tool always adds value out of the box.
-#   * GITHUB_TOKEN set (per-deployment SECRET — NEVER bake into the public image,
-#     that would leak the token; a read-only/public_repo-scope classic or
-#     fine-grained token is plenty) -> authenticated API, 5000 req/hr, richer
-#     coverage within the same caps.
-# GITHUB_ORG overrides the domain-derived org guess (use it for orgs whose GitHub
-# login differs from the apex label, or multi-part TLDs like example.co.uk).
-# NOTE: honours GitHub's REST API rate limits and only uses the official API.
-# NOTE (concurrent PRs): GITHUB_TOKEN / GITHUB_ORG may also be introduced by the
-# github_secrets tool PR — at merge, keep ONE definition of each (reviewer reconciles).
+# GitHub tools — both passive, BYO-token, sharing GITHUB_TOKEN/GITHUB_ORG.
+#   * apps/github_secrets — searches public GitHub code-search for the org's leaked
+#     secrets. BYOK MANDATORY (code-search needs auth; no token -> logged no-op).
+#   * apps/github_recon — enumerates the org's public repos + surfaces infra
+#     references. Works KEYLESS at 60 req/hr (capped by GITHUB_MAX_REPOS/REQUESTS);
+#     richer with a token at 5000 req/hr.
+# GITHUB_TOKEN is a PER-DEPLOYMENT secret — NEVER bake it into the public image
+# (that would leak the token + spend the operator's quota). A read-only/public-scope
+# PAT is sufficient. GITHUB_ORG pins the org (recommended; auto-derivation from the
+# domain apex label is best-effort). GitHub API ToS applies: official API only,
+# honour rate limits. GITHUB_SECRETS_GLOBAL_SEARCH adds a noisy un-scoped search
+# (github_secrets only, off by default).
 GITHUB_TOKEN = config("GITHUB_TOKEN", default="")
 GITHUB_ORG = config("GITHUB_ORG", default="")
 GITHUB_API_BASE = config("GITHUB_API_BASE", default="https://api.github.com")
+GITHUB_SECRETS_GLOBAL_SEARCH = config("GITHUB_SECRETS_GLOBAL_SEARCH", default=False, cast=bool)
 GITHUB_MAX_REPOS = config("GITHUB_MAX_REPOS", default=50, cast=int)
 GITHUB_MAX_REQUESTS = config("GITHUB_MAX_REQUESTS", default=100, cast=int)
 
@@ -442,6 +441,20 @@ NUCLEI_GOMEMLIMIT = config("NUCLEI_GOMEMLIMIT", default=("600MiB" if LOW_MEMORY 
 HUDSON_ROCK_BASE_URL = config(
     "HUDSON_ROCK_BASE_URL",
     default="https://cavalier.hudsonrock.com/api/json/v2/osint-tools",
+)
+
+# Breach-exposure tool (apps/breach_check). Two-tier BYOK: with no key it uses
+# XposedOrNot's FREE keyless public breach catalog (which known breaches are tied
+# to the domain) — so the tool always adds value out of the box. Set HIBP_API_KEY
+# (a per-deployment secret, NEVER baked into the public image — that would leak
+# the operator's paid key) to switch to the authoritative Have I Been Pwned
+# breacheddomain endpoint, which also needs the operator to have verified domain
+# ownership with HIBP. Only aggregate counts + public breach metadata are ever
+# stored — never email aliases or credentials. Base URLs overridable for testing.
+HIBP_API_KEY = config("HIBP_API_KEY", default="")
+HIBP_BASE_URL = config("HIBP_BASE_URL", default="https://haveibeenpwned.com/api/v3")
+BREACH_CHECK_XON_BASE_URL = config(
+    "BREACH_CHECK_XON_BASE_URL", default="https://api.xposedornot.com/v1"
 )
 
 # Build provenance — baked into the image at build time (see Dockerfile ARG/ENV

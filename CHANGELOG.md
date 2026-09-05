@@ -57,6 +57,76 @@ commits to recover the reasoning.
   also covering Common Crawl, AlienVault OTX, and URLScan. Zero coverage loss.
 
 ### Added
+- **GitHub public-secret tool (`apps/github_secrets`) — tool #24.** Searches
+  **public GitHub** for the target org's leaked secrets: confirms the org via
+  `GET /orgs/{org}`, runs org-scoped `GET /search/code` queries (`.env`,
+  `.npmrc`, `credentials`, `id_rsa`, `.pem`, and an `org:{org} "{domain}"` string
+  search), fetches the matching blobs (capped by count + bytes), and runs
+  **gitleaks** over them — the same detection engine `js_secrets` points at
+  fetched JavaScript, aimed here at the org's public GitHub footprint. Findings
+  share `check_type="exposed_secret"` with js_secrets so both secret sources
+  group together in the report. **Passive** (`active=False`): every request goes
+  to GitHub's own API, **never to the target** — no `DomainAuthorization`. In
+  default Full Scan + Passive Scan (migration `0026`). 32 tests.
+  - **BYOK is mandatory** (`GITHUB_TOKEN`): GitHub's code-search API requires
+    auth, so with no token the tool is a **logged no-op** — a keyless Full Scan
+    is never broken. `GITHUB_ORG` pins the org (recommended; auto-derivation from
+    the domain apex label is best-effort and flagged lower-confidence).
+    `GITHUB_SECRETS_GLOBAL_SEARCH` (default off) enables an extra noisy un-scoped
+    bare-string search; default is **org-scoped only**.
+  - **Redaction is enforced** (reused verbatim from js_secrets): only a redacted
+    `secret_preview` + scrubbed `match_preview` are stored — the full secret
+    never lands in the DB or report (asserted at the DB level in tests).
+  - **Fail-graceful + bounded:** any GitHub API timeout / non-200 / exhausted
+    rate-limit (429, 403 + zero remaining, secondary limit) / JSON error is
+    logged and skipped, never raised (only a missing/timed-out gitleaks binary
+    raises, like js_secrets); GitHub rate limits are honoured with capped backoff
+    (`Retry-After` / `X-RateLimit-Reset`); queries, files, and bytes are all
+    capped per session.
+
+  **Why:** credentials committed to public GitHub are one of the most common and
+  most damaging real-world leaks, and they are harvested by automated scanners
+  within minutes of a push — this surfaces them in the same passive, no-auth
+  recon pass that already runs before any target contact, closing a gap that the
+  on-site `js_secrets` (which only sees the target's own served JS) cannot cover.
+  **Key never ships in the image** (that would leak the token + spend the
+  operator's own GitHub quota + breach GitHub's API ToS): the token is a
+  per-deployment secret and the operator uses their own quota. Uses GitHub's
+  official API only and honours its rate limits.
+- **Data-breach exposure tool (`apps/breach_check`) — tool #24.** A passive,
+  Phase-1 (Domain Intelligence) tool that reports which of the org's accounts /
+  how many known breaches are tied to the target domain, using third-party breach
+  datasets. Sends **no packet to the target** (`active=False`, no
+  `DomainAuthorization`) and joins both the default **Full Scan** and the no-auth
+  **Passive Scan**. Two-tier, bring-your-own-key:
+  - **Free tier (default, zero config):** **XposedOrNot** public breach catalog
+    (`GET /v1/breaches?domain=<domain>`) — keyless, no credits. Returns the known
+    breaches whose breached organisation matches the domain (breach name, year,
+    record total). Every Docker deployment gets it.
+  - **Authoritative tier:** set `HIBP_API_KEY` → **Have I Been Pwned**
+    `GET /api/v3/breacheddomain/<domain>` (requires the operator's paid HIBP
+    subscription **and** HIBP-verified domain ownership; honest `user-agent` +
+    `hibp-api-key` headers sent). Yields the number of affected accounts + the set
+    of breach names.
+
+  Emits **one aggregate Finding** (`check_type="breach_exposure"`, CWE-359) when
+  exposure is found — `high` severity on a large affected-account count (≥100) or
+  a breach within the last 3 years (reused credentials are a live
+  credential-stuffing risk), else `medium`; no exposure → no Finding. Fail-graceful
+  throughout (timeout / 500 / exhausted 429 / bad-JSON / HIBP 404·403 never raise;
+  429/Retry-After honoured with capped backoff).
+  **PRIVACY (hard requirement, mirrors `hudson_rock`):** only aggregate COUNTS +
+  PUBLIC breach metadata (names/years/record totals) are ever stored. The HIBP
+  response is keyed by email alias (PII); the collector reads only the alias
+  *count* and the breach-name union and **discards the alias keys** — no email
+  address or credential ever reaches a Finding. Enforced by
+  `test_breach_check.py` at the collector, analyzer, and end-to-end layers.
+  **Why:** breach exposure is a high-value external signal a defender can act on
+  immediately (force resets, MFA, block breached passwords) yet most EASD tools
+  omit it; shipping a free keyless source out of the box means it always adds
+  value, while HIBP BYO-key gives operators the authoritative per-account data
+  when they have it. `HIBP_API_KEY` is a per-deployment secret, never baked into
+  the public image.
 - **Lookalike / typosquat domain tool (`apps/typosquat`) — tool #24.** Generates
   lookalike candidates for the apex domain algorithmically — homoglyph, adjacent-key
   substitution/insertion, omission, repetition, transposition, hyphenation, and
