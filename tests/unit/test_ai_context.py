@@ -26,7 +26,7 @@ def _finding(session, severity="high", title="t", **extra):
 class TestSelectFindings:
     def test_severity_ranked_and_capped(self):
         sess = _session()
-        low = _finding(sess, "low", "low1")
+        _finding(sess, "low", "low1")
         crit = _finding(sess, "critical", "crit1")
         med = _finding(sess, "medium", "med1")
         high = _finding(sess, "high", "high1")

@@ -5,7 +5,7 @@ AI failure must be swallowed by the hook boundary.
 """
 
 import pytest
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 from apps.core.ai.models import (
     AIInvocation,

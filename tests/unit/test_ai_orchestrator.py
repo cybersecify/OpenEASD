@@ -136,7 +136,6 @@ class TestTermination:
         the iteration/subscan caps."""
         _authorize()
         root = _root()
-        decision = _decide(_run_subscan(["naabu"]), )
         steps = 0
         with patch("apps.core.ai.orchestrator.client.chat_json") as call:
             # Fresh tools each step so the dedupe never short-circuits first.

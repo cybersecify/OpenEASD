@@ -11,7 +11,6 @@ call and only runs when CLOUDFLARE_ACCOUNT_ID/CLOUDFLARE_API_TOKEN are in
 the process environment (never in CI).
 """
 
-import json
 import os
 
 import pytest
