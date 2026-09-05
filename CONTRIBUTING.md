@@ -42,7 +42,7 @@ package marker). `apps/subfinder/` is a good asset-producing example
 
 ### Phase numbers
 
-Phases are sequential integers 1–11 matching the pipeline order in `CLAUDE.md`. Pick the phase that correctly places your tool relative to its dependencies. Tools with the same phase number run in parallel. Do **not** use fractional phases (e.g. `3.5`) — use the next integer and renumber if needed.
+Phases are sequential integers 1–12 matching the pipeline order in `CLAUDE.md`. Pick the phase that correctly places your tool relative to its dependencies. Tools with the same phase number run in parallel. Do **not** use fractional phases (e.g. `3.5`) — use the next integer and renumber if needed.
 
 The `requires` list is advisory — it documents which earlier-phase tools
 your tool depends on (e.g. `["subfinder"]` if you read `Subdomain`
@@ -143,7 +143,7 @@ See `tests/unit/test_ssh_checker.py` (33 tests) or
   agree on direction before you write.
 - **Frontend tweaks.** React 19 + Vite 8 + Tailwind + shadcn/ui in
   `frontend/`. Run `npm run dev` against a Django backend on `:8000`.
-- **Tests.** We're at ~910 tests excluding slow DNS; raising that
+- **Tests.** We're at ~1,600 tests excluding slow DNS; raising that
   number always helps. `tests/unit/test_<thing>.py` matches the app it
   tests.
 
@@ -188,6 +188,18 @@ branch naming rules apply.
 
 ## Development setup
 
+OpenEASD runs on **PostgreSQL** (SQLite is no longer supported — the DBOS
+durable-execution engine keeps its checkpoint tables in a `dbos` schema in
+the same database). Start a local Postgres first, e.g.:
+
+```bash
+docker run -d --name openeasd-db -p 5432:5432 \
+  -e POSTGRES_DB=openeasd -e POSTGRES_USER=openeasd -e POSTGRES_PASSWORD=openeasd \
+  postgres:17-alpine
+# then point the app at it (or set DATABASE_URL):
+export DB_HOST=localhost DB_PORT=5432 DB_NAME=openeasd DB_USER=openeasd DB_PASSWORD=openeasd
+```
+
 ```bash
 # Install Python deps (uv handles the lockfile)
 uv sync --group dev
@@ -198,7 +210,7 @@ cd frontend && npm install && cd ..
 # Run migrations
 uv run manage.py migrate
 
-# Quickest: starts Django (:8001) + Vite dev server + qcluster worker together
+# Quickest: starts Django (:8001) + Vite dev server + DBOS worker together
 make dev
 
 # Or manually in three terminals:
@@ -208,16 +220,16 @@ uv run manage.py runserver 8001
 # Terminal 2 — Vite dev server (proxies /api/ to Django at :8001)
 cd frontend && npm run dev
 
-# Terminal 3 — Background worker (required for scans to execute)
-uv run manage.py qcluster
+# Terminal 3 — DBOS worker (required for scans to execute; needs PostgreSQL running)
+uv run manage.py dbos_worker
 ```
 
 App runs at `http://localhost:5173` in dev. Default login on a fresh DB
 is `admin` / `admin`, force-change-password kicks in.
 
-External tools (`subfinder`, `dnsx`, `naabu`, `httpx`, `nuclei`,
+External tools (`subfinder`, `dnsx`, `naabu`, `httpx`, `katana`, `nuclei`,
 `amass`, `nmap`) need to be on `PATH`. Easiest install is the
-ProjectDiscovery `pdtm` (`pdtm -i subfinder,dnsx,naabu,httpx,nuclei`)
+ProjectDiscovery `pdtm` (`pdtm -i subfinder,dnsx,naabu,httpx,katana,nuclei`)
 plus `brew install nmap` and `go install github.com/owasp-amass/amass/v4/...@master`.
 
 ## Tests before you push
