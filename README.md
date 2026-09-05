@@ -72,8 +72,9 @@ public source; the published image carries:
   elsewhere
 
 ```bash
-docker buildx imagetools inspect ghcr.io/cybersecify/openeasd:v0.8.0 --format '{{ json .SBOM }}'
-docker buildx imagetools inspect ghcr.io/cybersecify/openeasd:v0.8.0 --format '{{ json .Provenance }}'
+# Both images carry their own SBOM + provenance; inspect either target:
+docker buildx imagetools inspect ghcr.io/cybersecify/openeasd-web:v2.0.0    --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/cybersecify/openeasd-worker:v2.0.0 --format '{{ json .Provenance }}'
 ```
 
 ### What we don't do
@@ -322,9 +323,8 @@ Open http://localhost:8000, then log in with `admin` / `admin`. You will be forc
 #### Update to latest
 
 ```bash
-docker pull ghcr.io/cybersecify/openeasd:latest
-docker stop openeasd && docker rm openeasd
-# re-run the docker run command above, volumes preserve all data
+docker compose pull        # pulls fresh openeasd-web + openeasd-worker
+docker compose up -d       # recreates changed containers; the db volume persists all data
 ```
 
 #### Environment variables

@@ -49,9 +49,10 @@ engineers spend time on findings, not on pipeline plumbing.
 
 ## Where / Distribution
 
-- **Delivery:** `ghcr.io/cybersecify/openeasd:latest` (Docker) and `k8s/`
-  Kubernetes manifests. One `docker run` command is the load-bearing install
-  experience.
+- **Delivery:** `ghcr.io/cybersecify/openeasd-web` + `ghcr.io/cybersecify/openeasd-worker`
+  (Docker, published `:latest` and `:vX.Y.Z`) run via `docker compose` alongside
+  PostgreSQL, plus `k8s/` Kubernetes manifests. `docker compose up -d` is the
+  load-bearing install experience.
 - **No hosted scan UI.** Domain-ownership verification for a public scanner
   is a hard prerequisite; it isn't built yet.
   See [D-003](DECISIONS.md#d-003--distribution-docker-only).
