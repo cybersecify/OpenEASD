@@ -353,7 +353,7 @@ CLOUDFLARE_API_TOKEN = config("CLOUDFLARE_API_TOKEN", default="")
 CLOUDFLARE_AI_MODEL = config(
     "CLOUDFLARE_AI_MODEL", default="@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 )
-CLOUDFLARE_AI_TIMEOUT = config("CLOUDFLARE_AI_TIMEOUT", default=60, cast=int)
+CLOUDFLARE_AI_TIMEOUT = config("CLOUDFLARE_AI_TIMEOUT", default=120, cast=int)
 CLOUDFLARE_AI_MAX_CALLS_PER_SCAN = config(
     "CLOUDFLARE_AI_MAX_CALLS_PER_SCAN", default=10, cast=int
 )
