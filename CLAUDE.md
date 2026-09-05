@@ -93,7 +93,7 @@ git describe --tags --abbrev=0
   - `test` — pytest (fast, excludes `test_domain_security.py`) against a **`postgres:17-alpine` service container** (DB_* env), bandit (SAST), pip-audit (CVE scan)
   - `frontend` — `npm ci && npm run build`
   - `docker` — matrix over the `web` + `worker` build targets, `docker buildx build` for `linux/amd64` (no push, cache check per target)
-  - `publish` — matrix over `web` + `worker`; builds `linux/amd64` + `linux/arm64` and pushes to `ghcr.io/cybersecify/openeasd-web` and `-worker`
+  - `publish` — matrix over `web` + `worker`; builds `linux/amd64` and pushes to `ghcr.io/cybersecify/openeasd-web` and `-worker`
 - **Publish triggers:** every push to `main` (`:latest` tag) and `v*` tags (`:vX.Y` tag)
 - Runner: `ubuntu-24.04`, Python 3.12, `uv sync --group dev` for deps, `libcairo2-dev gcc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0` system deps required (WeasyPrint PDF rendering)
 - `pip-audit --ignore-vuln PYSEC-2025-183` — disputed PyJWT weak-key-length CVE, no fix available
