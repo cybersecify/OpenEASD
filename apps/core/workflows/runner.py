@@ -103,6 +103,58 @@ def _run_single_step(run, session, tool: str, order: int) -> None:
         step_result.save(update_fields=["status", "findings_count", "error", "finished_at"])
 
 
+def resolve_phase_groups(workflow, only_tools: list | None = None) -> list:
+    """The ordered list of phase groups a run will execute: enabled tools,
+    filtered by only_tools, with service_detection auto-injected after naabu
+    (full scans only), grouped by phase. Pure — no DB writes. Shared by
+    run_workflow and the DBOS per-phase steps so both compute the same plan.
+    """
+    tools = workflow.enabled_tools()
+    if only_tools is not None:
+        tools = [t for t in tools if t in only_tools]
+        for t in only_tools:
+            if t not in tools:
+                tools.append(t)
+
+    if "service_detection" not in tools and "naabu" in tools and only_tools is None:
+        insert_at = 0
+        for i, t in enumerate(tools):
+            if t == "naabu":
+                insert_at = i + 1
+                break
+        tools.insert(insert_at, "service_detection")
+
+    return _group_tools_by_phase(tools)
+
+
+def run_one_phase_group(run, session, group: list, base_order: int) -> None:
+    """Execute a single phase group (sequential for one-tool groups or under
+    LOW_MEMORY, else concurrent). Extracted so the DBOS scan workflow can run
+    one checkpointed group at a time."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from django.conf import settings
+
+    if len(group) == 1 or getattr(settings, "LOW_MEMORY", False):
+        for i, tool in enumerate(group):
+            _run_single_step(run, session, tool, base_order + i)
+        return
+
+    step_orders = {tool: base_order + i for i, tool in enumerate(group)}
+    with ThreadPoolExecutor(max_workers=len(group)) as executor:
+        futures = {
+            executor.submit(_run_single_step, run, session, tool, step_orders[tool]): tool
+            for tool in group
+        }
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as exc:
+                logger.error(
+                    f"[workflow:{run.id}] Unexpected error in parallel step future: {exc}",
+                    exc_info=True,
+                )
+
+
 def run_workflow(workflow_run_id: int, only_tools: list | None = None):
     """Execute all steps of a WorkflowRun, running same-phase tools concurrently.
 
@@ -113,9 +165,6 @@ def run_workflow(workflow_run_id: int, only_tools: list | None = None):
 
     only_tools: if provided, restrict execution to these tool keys (subscan use-case).
     """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    from django.conf import settings
-
     run = WorkflowRun.objects.select_related("workflow", "session").get(id=workflow_run_id)
     session = run.session
 
@@ -123,29 +172,7 @@ def run_workflow(workflow_run_id: int, only_tools: list | None = None):
     run.started_at = django_tz.now()
     run.save(update_fields=["status", "started_at"])
 
-    tools = run.workflow.enabled_tools()
-    if only_tools is not None:
-        tools = [t for t in tools if t in only_tools]
-        for t in only_tools:
-            if t not in tools:
-                tools.append(t)
-
-    # service_detection runs after naabu (core infrastructure) to classify the
-    # ports naabu found. It is auto-injected ONLY when naabu is in the run:
-    #   - no naabu → no new ports to enrich, so the nmap -sV probe would be a
-    #     pointless (and, crucially, ACTIVE) hit on the target.
-    #   - a passive-only workflow has no naabu, so this guarantees a passive scan
-    #     never triggers service_detection's active probe.
-    # Skipped for subscans (assets already classified from the parent scan).
-    if "service_detection" not in tools and "naabu" in tools and only_tools is None:
-        insert_at = 0
-        for i, t in enumerate(tools):
-            if t == "naabu":
-                insert_at = i + 1
-                break
-        tools.insert(insert_at, "service_detection")
-
-    phase_groups = _group_tools_by_phase(tools)
+    phase_groups = resolve_phase_groups(run.workflow, only_tools)
     cancelled = False
     order = 1
 
@@ -166,30 +193,8 @@ def run_workflow(workflow_run_id: int, only_tools: list | None = None):
                 break
 
             logger.info(f"[workflow:{run.id}] Starting phase group: {group}")
-
-            if len(group) == 1 or getattr(settings, "LOW_MEMORY", False):
-                # Sequential: one tool at a time. For a single-tool group this is
-                # the normal path; under LOW_MEMORY it also serialises multi-tool
-                # phases so peak memory stays at one tool (no OOM on ~1 GB hosts).
-                for i, tool in enumerate(group):
-                    _run_single_step(run, session, tool, order + i)
-                order += len(group)
-            else:
-                step_orders = {tool: order + i for i, tool in enumerate(group)}
-                with ThreadPoolExecutor(max_workers=len(group)) as executor:
-                    futures = {
-                        executor.submit(_run_single_step, run, session, tool, step_orders[tool]): tool
-                        for tool in group
-                    }
-                    for future in as_completed(futures):
-                        try:
-                            future.result()
-                        except Exception as exc:
-                            logger.error(
-                                f"[workflow:{run.id}] Unexpected error in parallel step future: {exc}",
-                                exc_info=True,
-                            )
-                order += len(group)
+            run_one_phase_group(run, session, group, order)
+            order += len(group)
 
         if cancelled:
             run.status = "cancelled"

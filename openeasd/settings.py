@@ -102,6 +102,7 @@ INSTALLED_APPS = [
     "apps.core.insights",
     "apps.core.reports",
     "apps.core.ai",
+    "apps.core.durable",
     "ninja_jwt",
     "ninja_jwt.token_blacklist",
     "apps.domain_security",
@@ -165,15 +166,33 @@ WSGI_APPLICATION = "openeasd.wsgi.application"
 ASGI_APPLICATION = "openeasd.asgi.application"
 
 # Database
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / config("DB_NAME", default="data/openeasd.db"),
-        "OPTIONS": {
-            "timeout": 30,  # seconds to wait for write lock under concurrent phase execution
-        },
+# PostgreSQL — the `local` branch re-platforms off SQLite so DBOS can back
+# durable scan execution and so scans can run with real concurrency (no more
+# single-writer lock). Configure via DB_* env vars; DATABASE_URL wins if set.
+_DATABASE_URL = config("DATABASE_URL", default="")
+if _DATABASE_URL:
+    import dj_database_url  # type: ignore
+
+    DATABASES = {"default": dj_database_url.parse(_DATABASE_URL, conn_max_age=600)}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": config("DB_NAME", default="openeasd"),
+            "USER": config("DB_USER", default="openeasd"),
+            "PASSWORD": config("DB_PASSWORD", default="openeasd"),
+            "HOST": config("DB_HOST", default="127.0.0.1"),
+            "PORT": config("DB_PORT", default="5432"),
+            "CONN_MAX_AGE": config("DB_CONN_MAX_AGE", default=600, cast=int),
+        }
     }
-}
+
+# DBOS durable-execution system database. Checkpoints scan workflows/steps so a
+# crashed or restarted worker RESUMES a scan instead of losing it (retiring the
+# reap_stuck_scans watchdog). By default it shares the app's Postgres via a
+# dedicated `dbos` schema; the SQLAlchemy URL is derived from DATABASES in
+# apps/core/durable/dbos_app.py. Override with DBOS_DATABASE_URL to isolate it.
+DBOS_DATABASE_URL = config("DBOS_DATABASE_URL", default="")
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -256,15 +275,29 @@ Q_TASK_RETRY = config("Q_TASK_RETRY", default=Q_TASK_TIMEOUT + 1200, cast=int)
 if Q_TASK_RETRY <= Q_TASK_TIMEOUT:
     Q_TASK_RETRY = Q_TASK_TIMEOUT + 1200
 
+# DBOS replaces Django-Q as the SCAN EXECUTION layer on this branch (durable,
+# resumable, Postgres-backed). Django-Q remains only as the lightweight cron
+# broker for periodic scheduling until the scheduler is migrated to DBOS
+# @scheduled workflows (see docs/DECISIONS.md D-016). This minimal cluster
+# config keeps retry > timeout so django_q stops warning; no qcluster runs in
+# the DBOS deployment.
 Q_CLUSTER = {
     "name": "openeasd",
-    "workers": 1,       # SQLite is single-writer; >1 workers causes race conditions on task pickup
-    "orm": "default",   # uses Django DB — no Redis needed
+    "workers": 1,
+    "orm": "default",
     "timeout": Q_TASK_TIMEOUT,
     "retry": Q_TASK_RETRY,
-    "max_attempts": 1,  # a killed scan is dead, not retried — never re-queue it
-    "catch_up": False,  # skip missed tasks on worker restart
+    "max_attempts": 1,
+    "catch_up": False,
 }
+
+# DBOS scan-execution tuning (consumed in apps/core/durable).
+DBOS_APP_NAME = config("DBOS_APP_NAME", default="openeasd")
+# Max scans executing concurrently across all workers. Postgres (unlike SQLite)
+# handles concurrent writers, so this can be >1 — bounded here to protect target
+# politeness and host RAM (nuclei/amass are memory-hungry).
+DBOS_SCAN_CONCURRENCY = config("DBOS_SCAN_CONCURRENCY", default=2, cast=int)
+SCAN_STEP_TIMEOUT = config("SCAN_STEP_TIMEOUT", default=Q_TASK_TIMEOUT, cast=int)
 
 # Scanner timeouts (seconds) — override in .env if needed
 SCANNER_DNS_TIMEOUT = config("SCANNER_DNS_TIMEOUT", default=5, cast=int)
