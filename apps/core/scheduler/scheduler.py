@@ -18,7 +18,7 @@ from decouple import config as _config  # noqa: E402
 # DB status of scans whose worker died without finalizing; it must not fire while
 # a healthy scan is still legitimately running, or it flips a live scan to
 # "partial" mid-run. Keep this at/above the worker hard-kill (240m).
-SCAN_TIMEOUT_MINUTES = _config("SCAN_TIMEOUT_MINUTES", default=1440, cast=int)  # 24h; >= Q_TASK_TIMEOUT
+SCAN_TIMEOUT_MINUTES = _config("SCAN_TIMEOUT_MINUTES", default=1440, cast=int)  # 24h; >= SCAN_TASK_TIMEOUT
 
 # A scan stuck in "pending" never started running — its enqueued Django-Q task was
 # lost (e.g. the qcluster worker restarted between enqueue and pickup), so it sits
@@ -122,6 +122,26 @@ def run_due_monitoring_scans():
         due = last is None or (now - last) >= timedelta(hours=domain.monitoring_interval_hours)
         if due:
             run_monitoring_scan(domain.name)
+
+
+def run_due_user_scans():
+    """DBOS sweep for user-created one-time/recurring schedules (ScheduledScan
+    rows). Fires each due schedule via run_scheduled_scan; advances recurring
+    schedules to their next cron time and deletes one-time schedules after they
+    fire. Replaces the Django-Q ONCE/CRON Schedule rows."""
+    from croniter import croniter
+
+    from apps.core.scans.models import ScheduledScan
+
+    now = django_tz.now()
+    for sched in ScheduledScan.objects.filter(enabled=True, next_run__lte=now):
+        triggered_by = "recurring" if sched.kind == "recurring" else "scheduled"
+        run_scheduled_scan(sched.domain, triggered_by=triggered_by)
+        if sched.kind == "recurring" and sched.cron:
+            sched.next_run = croniter(sched.cron, now).get_next(type(now))
+            sched.save(update_fields=["next_run"])
+        else:
+            sched.delete()  # one-time: fired once, gone
 
 
 def run_scheduled_scan(domain: str, triggered_by: str = "scheduled"):

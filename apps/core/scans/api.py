@@ -29,72 +29,48 @@ _VALID_HOSTNAME = _re.compile(
     r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$"
 )
 
-BUILTIN_SCHEDULE_NAMES = {"daily_scan", "watchdog_reap_stuck_scans", "purge_blacklisted_tokens"}
-
-
-def _parse_schedule(schedule):
-    """Convert a Django-Q2 Schedule → API dict. Returns None for built-in schedules."""
-
-    name = schedule.name
-    if name in BUILTIN_SCHEDULE_NAMES or name.startswith("monitor_"):
-        return None
-
-    if name.startswith("recurring_"):
-        domain = name[len("recurring_"):]
-        job_type = "recurring"
-        # Infer frequency from cron expression: "MM HH * * 1" = weekly, "MM HH * * *" = daily
-        cron = getattr(schedule, "cron", "") or ""
-        frequency = "Weekly (Mondays)" if cron.endswith(" 1") else "Daily"
-    elif name.startswith("once_"):
-        suffix = name[len("once_"):]
-        # strip trailing _{32 hex chars}
-        domain = suffix[:-33] if len(suffix) > 33 else suffix
-        job_type = "one-time"
-        frequency = "—"
-    else:
-        return None
-
+def _parse_schedule(sched):
+    """Convert a ScheduledScan → API dict."""
     return {
-        "job_id":        name,
-        "domain":        domain,
-        "job_type":      job_type,
-        "next_run_time": schedule.next_run,
-        "frequency":     frequency,
+        "job_id":        sched.job_id,
+        "domain":        sched.domain,
+        "job_type":      "recurring" if sched.kind == "recurring" else "one-time",
+        "next_run_time": sched.next_run,
+        "frequency":     sched.frequency or "—",
     }
 
 
 def _schedule_once(domain, scheduled_at):
-    """Schedule a one-time scan via Django-Q2."""
-    from django_q.models import Schedule
+    """Schedule a one-time scan (ScheduledScan row; fired by the DBOS sweep)."""
+    from apps.core.scans.models import ScheduledScan
 
     job_id = f"once_{domain}_{uuid.uuid4().hex}"
-    Schedule.objects.create(
-        name=          job_id,
-        func=          "apps.core.scheduler.scheduler.run_scheduled_scan",
-        args=          _json.dumps([domain, "scheduled"]),
-        schedule_type= Schedule.ONCE,
-        next_run=      scheduled_at,
-        repeats=       1,
+    ScheduledScan.objects.create(
+        job_id=job_id, domain=domain, kind="once", frequency="—",
+        next_run=scheduled_at,
     )
     logger.info(f"One-time scan scheduled: domain={domain} at={scheduled_at}")
 
 
 def _schedule_recurring(domain, recurrence, recurrence_time):
-    """Add or replace a recurring scan job via Django-Q2."""
-    from django_q.models import Schedule
+    """Add or replace a recurring scan schedule (ScheduledScan row)."""
+    from croniter import croniter
+    from django.utils import timezone as _tz
 
-    h, m   = recurrence_time.hour, recurrence_time.minute
-    cron   = f"{m} {h} * * 1" if recurrence == "weekly" else f"{m} {h} * * *"
+    from apps.core.scans.models import ScheduledScan
+
+    h, m = recurrence_time.hour, recurrence_time.minute
+    cron = f"{m} {h} * * 1" if recurrence == "weekly" else f"{m} {h} * * *"
     job_id = f"recurring_{domain}"
+    now = _tz.now()
+    next_run = croniter(cron, now).get_next(type(now))
 
-    Schedule.objects.update_or_create(
-        name=job_id,
+    ScheduledScan.objects.update_or_create(
+        job_id=job_id,
         defaults={
-            "func":          "apps.core.scheduler.scheduler.run_scheduled_scan",
-            "args":          _json.dumps([domain, "recurring"]),
-            "schedule_type": Schedule.CRON,
-            "cron":          cron,
-            "repeats":       -1,
+            "domain": domain, "kind": "recurring", "cron": cron,
+            "frequency": "Weekly (Mondays)" if recurrence == "weekly" else "Daily",
+            "next_run": next_run, "enabled": True,
         },
     )
     logger.info(f"Recurring scan scheduled: domain={domain} recurrence={recurrence} time={recurrence_time}")
@@ -665,14 +641,12 @@ def start_subscan(request, session_uuid: uuid.UUID, data: SubScanRequest):
 
 @scheduled_router.get("/")
 def list_scheduled(request):
-    from django_q.models import Schedule
+    from apps.core.scans.models import ScheduledScan
 
     jobs = []
     try:
-        schedules = Schedule.objects.exclude(name__in=BUILTIN_SCHEDULE_NAMES).exclude(
-            name__startswith="monitor_"
-        )
-        jobs = [p for s in schedules if (p := _parse_schedule(s)) is not None]
+        schedules = ScheduledScan.objects.filter(enabled=True)
+        jobs = [_parse_schedule(s) for s in schedules]
         jobs.sort(
             key=lambda j: (
                 0 if j["job_type"] == "recurring" else 1,
@@ -699,9 +673,9 @@ def cancel_scheduled(request, job_id: str):
     if not (job_id.startswith("once_") or job_id.startswith("recurring_")):
         raise HttpError(400, "job_id must start with 'once_' or 'recurring_'")
 
-    from django_q.models import Schedule
+    from apps.core.scans.models import ScheduledScan
 
-    deleted, _ = Schedule.objects.filter(name=job_id).delete()
+    deleted, _ = ScheduledScan.objects.filter(job_id=job_id).delete()
     if deleted:
         logger.info(f"Scheduled job cancelled via API: {job_id}")
         note = None

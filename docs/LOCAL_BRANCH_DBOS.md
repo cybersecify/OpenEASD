@@ -49,19 +49,27 @@ launches, applies its system schema, and registers the `scans` queue; a full
    `close_old_connections()` — correct in prod, not under a single test
    transaction); (b) tests that patch `django_q.tasks.async_task` must patch the
    DBOS enqueue helpers instead. ~16/34 runner tests currently fail for reason (a).
-2. **Scheduler migration — core jobs DONE.** The unattended-scanning backbone
-   is now DBOS `@scheduled` workflows in `apps/core/durable/workflows.py`:
-   `scheduled_daily_scan`, `scheduled_monitoring_sweep` (replaces per-domain
-   Django-Q timers with one due-ness sweep — `run_due_monitoring_scans`),
-   `scheduled_watchdog`, `scheduled_token_purge` — all gated by
-   `SCHEDULED_SCANS_ENABLED`, registered when `dbos_worker` imports the module
-   (verified: 4 pollers register; sweep scans only due domains).
-   `setup_core_schedules` / `sync_domain_monitoring_jobs` are now no-ops.
-   **Remaining Django-Q holdout:** the user-created one-time/recurring scan
-   endpoints (`_schedule_once` / `_schedule_recurring` / `list_scheduled` /
-   `cancel_scheduled` in `scans/api.py`, and the domain-delete schedule cleanup
-   in `domains/api.py`). Migrate these to DBOS `create_schedule` +
-   delayed-enqueue to drop `django-q2` entirely.
+2. **Scheduler migration — DONE; `django-q2` removed entirely.** All scheduling
+   is now DBOS `@scheduled` workflows in `apps/core/durable/workflows.py`
+   (5 pollers, all gated by `SCHEDULED_SCANS_ENABLED`, registered when
+   `dbos_worker` imports the module):
+   - `scheduled_daily_scan` (cron from `SCAN_DAILY_HOUR/MINUTE`)
+   - `scheduled_monitoring_sweep` → `run_due_monitoring_scans` (one sweep vs a
+     Django-Q timer per domain; due-ness from scan history)
+   - `scheduled_user_scans_sweep` → `run_due_user_scans` — fires user-created
+     one-time/recurring scans stored in the new **`ScheduledScan`** model
+     (Postgres-native): one-time deleted after firing, recurring advanced via
+     `croniter`. Replaces the Django-Q ONCE/CRON `Schedule` rows.
+   - `scheduled_watchdog` + `scheduled_token_purge`
+
+   `scans/api.py` (`_schedule_once`/`_schedule_recurring`/`list_scheduled`/
+   `cancel_scheduled`/`_parse_schedule`) and `domains/api.py` (delete cleanup)
+   now use `ScheduledScan`. `setup_core_schedules`/`sync_domain_monitoring_jobs`
+   are no-ops. `django-q2` is removed from deps, `INSTALLED_APPS`, `Q_CLUSTER`,
+   and logging; `qcluster` → `dbos_worker` in the Makefile.
+   **Verified on Postgres:** app checks clean with no `django_q`; 5 pollers
+   register; the user-schedule sweep fires due once+recurring, cleans/advances
+   correctly, and leaves not-due schedules untouched; reports/WeasyPrint intact.
 3. **Deployment.** `docker-entrypoint.sh` (add Postgres wait + `dbos_worker`
    instead of `qcluster`), `docker-compose` / `k8s/` (add a Postgres service /
    StatefulSet), CI (Postgres service container). None updated yet.

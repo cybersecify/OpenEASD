@@ -173,6 +173,20 @@ def scheduled_monitoring_sweep(scheduled_time, actual_time) -> None:
     run_due_monitoring_scans()
 
 
+_USER_SCHED_SWEEP_CRON = getattr(settings, "USER_SCHEDULE_SWEEP_CRON", "* * * * *")
+
+
+@DBOS.scheduled(_USER_SCHED_SWEEP_CRON)
+@DBOS.workflow(name="scheduled_user_scans_sweep")
+def scheduled_user_scans_sweep(scheduled_time, actual_time) -> None:
+    """Fire user-created one-time/recurring scans that are due (ScheduledScan)."""
+    if not getattr(settings, "SCHEDULED_SCANS_ENABLED", True):
+        return
+    from apps.core.scheduler.scheduler import run_due_user_scans
+
+    run_due_user_scans()
+
+
 @DBOS.scheduled(_WATCHDOG_CRON)
 @DBOS.workflow(name="scheduled_watchdog")
 def scheduled_watchdog(scheduled_time, actual_time) -> None:

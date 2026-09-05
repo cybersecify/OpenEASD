@@ -85,3 +85,29 @@ class ScanDelta(models.Model):
 
     def __str__(self):
         return f"{self.change_type} {self.change_category}: {self.item_identifier}"
+
+
+class ScheduledScan(models.Model):
+    """User-created one-time / recurring scan schedule (Postgres-native).
+
+    Replaces Django-Q Schedule rows: a DBOS sweep (scheduled_user_scans_sweep)
+    fires the due ones. `job_id` keeps the legacy public identifier shape
+    ("once_{domain}_{hex}" / "recurring_{domain}") the API already exposes.
+    """
+
+    KIND_CHOICES = [("once", "One-time"), ("recurring", "Recurring")]
+
+    job_id = models.CharField(max_length=255, unique=True)
+    domain = models.CharField(max_length=255, db_index=True)
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES)
+    cron = models.CharField(max_length=100, blank=True, default="")  # recurring only
+    frequency = models.CharField(max_length=50, blank=True, default="")  # display label
+    next_run = models.DateTimeField(db_index=True)
+    enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["kind", "next_run"]
+
+    def __str__(self):
+        return f"{self.kind} scan {self.domain} @ {self.next_run}"
