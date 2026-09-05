@@ -61,7 +61,7 @@ from the upstream URL; it should byte-match what ships in the image.
 
 Every push to `main` and every `vX.Y` tag triggers
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml), which builds
-`linux/amd64` + `linux/arm64` images and publishes to
+`linux/amd64` images and publishes to
 `ghcr.io/cybersecify/openeasd`. The build is reproducible from the
 public source; the published image carries:
 
@@ -452,7 +452,7 @@ GitHub Actions runs on every push to `main` and `v*` tags:
 - **pip-audit**: dependency CVE scan
 - **Frontend build**: `npm ci && npm run build`
 - **Docker build**: amd64 smoke-build on every push
-- **Publish to GHCR**: multi-arch (`amd64` + `arm64`) image published on every `main` push and version tags
+- **Publish to GHCR**: `amd64` images published on every `main` push and version tags
 
 ## API
 
