@@ -396,7 +396,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (26 registered tools)
+### Tool apps (27 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
@@ -409,6 +409,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/amass/` | 2 | Surface Enumeration | No | Active subdomain enumeration |
 | `apps/asn_discovery/` | 2 | Surface Enumeration | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
 | `apps/alterx/` | 2 | Surface Enumeration | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
+| `apps/github_recon/` | 2 | Surface Enumeration | Yes | GitHub Org Recon — enumerates the target org's PUBLIC GitHub repos via GitHub's official REST API and surfaces exposed infra references (internal hostnames/subdomains, cloud-bucket URLs, API endpoints) in that public code/config. Two-tier BYO-token: keyless unauthenticated API (60 req/hr, request-capped) works out of the box, `GITHUB_TOKEN` raises to 5000 req/hr. Complements `js_secrets`/`github_secrets` (secrets) — this finds infra exposure. Passive (queries GitHub, never the target), fail-graceful |
 | `apps/dnsx/` | 3 | Surface Enumeration | No | DNS resolution, public IP filtering |
 | `apps/takeover_check/` | 4 | Surface Enumeration | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
 | `apps/cloud_assets/` | 4 | Surface Enumeration | Yes | Public cloud bucket enumeration via cloud_enum (AWS S3 / Azure Blob / GCP Storage) |
@@ -456,6 +457,7 @@ Phase 2  subfinder          → Subdomain (passive enumeration)
 Phase 2  amass              → Subdomain (active enumeration)
 Phase 2  asn_discovery      → Finding (owned ASN/CIDR ranges via amass intel — informational)
 Phase 2  alterx             → Subdomain (permutation candidates from existing subdomains)
+Phase 2  github_recon       → Finding (infra refs in the org's PUBLIC GitHub repos — passive)
 Phase 3  dnsx               → IPAddress (public-only filter)
 Phase 4  takeover_check     → Finding (subzy — dangling DNS → unclaimed cloud)
 Phase 4  cloud_assets       → Finding (open S3/Azure/GCP buckets — cloud_enum)
@@ -486,7 +488,7 @@ the registry via `get_tool_active()` and `is_passive_tool_set(tools)`.
   `DomainAuthorization`**.
   Passive tools: `subfinder`, `alterx`, `dnsx`, `historical_urls`,
   `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`, `shodan`,
-  `typosquat`, `breach_check`, `github_secrets`.
+  `typosquat`, `breach_check`, `github_secrets`, `github_recon`.
 - **Active** (`active=True`): probes the target directly (port scans, HTTP/TLS/SSH
   connections, crawling, vuln templates, AXFR/SMTP/mta-sts probes). **Requires
   `DomainAuthorization`.**
@@ -696,6 +698,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_domains.py` | 13 | Domain CRUD |
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
 | `tests/unit/test_httpx.py` | 16 | JSON parser, Port lookup, Subdomain link, honest UA, tech-detect flag + technology storage/dedup |
+| `tests/unit/test_github_recon.py` | 39 | Org resolution (domain-derived + `GITHUB_ORG` override), collector (org/user confirm + fallback, repo enumeration/pagination, fork skip, `GITHUB_MAX_REPOS`/`GITHUB_MAX_REQUESTS` caps, config-file base64 decode + size cap, BYO-token auth header + honest UA), fail-graceful (timeout/500/rate-limit-backoff/hard-403/bad-JSON never raise), infra-reference extraction (hostname/api-endpoint/cloud-bucket, apex excluded), analyzer (summary + per-ref low Findings, dedup), scanner never-raises |
 | `tests/unit/test_hudson_rock.py` | 17 | collector (both endpoints keyless + honest UA, fail-graceful on timeout/500/429/bad-JSON, 429 retry), analyzer (severity, counts/families/URLs/attribution, no-finding-when-zero, **no plaintext/email persisted**, URL cap), scanner |
 | `tests/unit/test_breach_check.py` | 29 | Two-tier BYOK — free XposedOrNot parse (keyless + honest UA) + HIBP `breacheddomain` path (key set → HIBP used, `hibp-api-key` header sent, 404/403 = no-data), fail-graceful (timeout/500/429/bad-JSON never raise), 429 backoff, analyzer (severity high on large-account/recent, counts + attribution, no-finding-when-zero, breach-name cap), **PRIVACY: alias keys/emails/credentials never persisted (collector + analyzer + end-to-end)**, scanner |
 | `tests/unit/test_shodan.py` | 20 | collector tier selection (free InternetDB vs paid host API, BYO-key), `SHODAN_MAX_IPS` cap on paid path only, fail-graceful (404/timeout/500/429/bad-JSON never raise), analyzer (exposure + CVE findings, `extra["cve_ids"]` for cve_intel enrichment, invalid-CVE filter), scanner |
@@ -751,4 +754,4 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/integration/test_ai_flow.py` | 6 | AI end-to-end (only the Cloudflare HTTP edge + queue mocked): finalize → triage/summaries/agent/audit, report + alert carry output, subscan chain roundtrip, AI-off zero traces, Cloudflare-down scan still completes; plus an opt-in LIVE smoke test (runs only with real `CLOUDFLARE_*` env: `pytest tests/integration/test_ai_flow.py -k live`) |
 | `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
 
-**Total: 1639 tests** (1587 fast + 52 slow domain_security)
+**Total: 1677 tests** (1625 fast + 52 slow domain_security)

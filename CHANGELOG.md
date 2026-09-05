@@ -27,6 +27,32 @@ commits to recover the reasoning.
   the differentiation is being smarter about scanner output than the tools we
   wrap; scanner-grade output is commodity, analyst-grade output is not.
   Supersedes the Ollama/Claude design of D-010–D-012 (see DECISIONS.md).
+- **GitHub Org Recon tool (`github_recon`, tool #25) — passive.** Enumerates the
+  target org's PUBLIC GitHub repos via GitHub's official REST API and surfaces
+  exposed infrastructure references in that public code/config: internal
+  hostnames/subdomains of the target domain, cloud-storage bucket URLs
+  (S3/Azure/GCP), and API endpoints. Emits one `info` summary Finding ("N public
+  repos discovered for org X") plus one `low` `github_infra_exposure` Finding per
+  unique reference (deduped, capped at 200), naming the repo + file it came from.
+  Two-tier BYO-token: unauthenticated works keyless at GitHub's 60 req/hr public
+  limit (we cap total requests + repos to stay under it), a `GITHUB_TOKEN` raises
+  the ceiling to 5000 req/hr. Passive (`active=False`) — it queries GitHub, never
+  the target, so it needs no `DomainAuthorization` and joins both the Full Scan and
+  the no-auth Passive Scan (migration 0027). Fail-graceful throughout: any
+  API/network/JSON error or rate-limit returns empty and never fails a scan.
+  - **Why:** an org's public source is part of its external attack surface, and
+    developers routinely commit internal hostnames, bucket names, and API base URLs
+    into public repos, READMEs, and CI config — recon an attacker would otherwise
+    have to earn. This widens the discovered surface *from source*, complementing
+    the secret-focused `js_secrets`/`github_secrets` tools (this one finds infra
+    exposure, not secrets — and never stores secrets).
+  - **Hypothesis (user-driven):** the highest-signal, lowest-noise GitHub recon for
+    a defender is "which of our own infrastructure did we accidentally publish,"
+    surfaced as aggregate low/info findings rather than a raw grep dump.
+  - **Provenance/ToS:** uses ONLY GitHub's official REST API (no scraping), sends
+    the honest OpenEASD User-Agent, and honours GitHub's documented rate limits
+    (403/429 + `X-RateLimit-*`) with capped backoff. `GITHUB_TOKEN`/`GITHUB_ORG` are
+    per-deployment secrets, never baked into the image.
 
 ### Changed
 - **Third-party licensing hygiene (attribution + notices).** Added a
