@@ -213,7 +213,7 @@ Calling these out so contributors don't add them back without a discussion:
 > report/alert summaries — because they turned out to be thin consumers of
 > triage's plumbing. See D-015 for the reasoning.
 
-**What.** v2.0 will add an LLM-powered finding triage layer to OpenEASD — turning the scanner's raw output (76 findings, 3 critical, 21 high…) into a ranked, contextualised "fix this first" list with reasoning. Direction chosen over 4 other candidate scopes (chat-over-findings, auto-generated tool integrations, multi-agent recon planning, remediation playbooks) — see PRD.md v2.0 section.
+**What.** v2.0 will add an LLM-powered finding triage layer to OpenEASD — turning the scanner's raw output (76 findings, 3 critical, 21 high…) into a ranked, contextualised "fix this first" list with reasoning. Direction chosen over 4 other candidate scopes (chat-over-findings, auto-generated tool integrations, multi-agent recon planning, remediation playbooks) — see D-014/D-015.
 
 **Why.** The OSS recon-tool wrapper space is saturated. Analyst-grade output is genuinely scarce. Backport-aware CVE matching (PR #56, [@turfin-logic](https://github.com/turfin-logic)) made the gap concrete: scanner output emits the same false-positive noise the underlying tools do, and the differentiation we can offer is *being smarter about the output than the tool we wrap*. LLM-triage extends that exact play from "filter out one class of false positive" to "rank everything by what actually matters."
 
