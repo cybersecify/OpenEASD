@@ -7,6 +7,13 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Fixed
+- **k8s deploy pointed at a non-existent image tag.** `k8s/kustomization.yaml`
+  pinned `openeasd-web`/`-worker` to `v0.4` — a pre-split tag that was never
+  published for the split images (those start at v2.0.0), so a fresh
+  `kubectl apply -k k8s/` would `ImagePullBackOff`. Pinned to the current release
+  (`v2.1.0`).
+
 ### Removed
 - **Dead SQLite WAL signal handler** in settings — a leftover `connection_created`
   hook that only fired for the SQLite backend, which no longer exists (Postgres
