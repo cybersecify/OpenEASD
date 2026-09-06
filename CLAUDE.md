@@ -162,7 +162,13 @@ uv run manage.py dbos_worker
 
 ### Docker (production) — 3 services
 
-The stack is **PostgreSQL + web + worker** (Option B). Use Docker Compose:
+The stack is **PostgreSQL + web + worker** (Option B) — the **recommended
+architecture**: it keeps offensive tooling + `NET_RAW` off the internet-facing
+`web` tier (privilege separation), isolates OOM-prone tool crashes to a worker
+(the UI stays up), and lets workers scale independently of web. Collapsing
+web+worker into one container is only for a small trusted single-user eval (it
+puts tools + raw sockets on the exposed process); keep `db` separate regardless.
+Use Docker Compose:
 
 ```bash
 # Set real secrets in docker-compose.yml (SECRET_KEY, DB_PASSWORD, ALLOWED_HOSTS), then:

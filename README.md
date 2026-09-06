@@ -316,6 +316,23 @@ docker compose up -d --build
 - `web` — the slim `openeasd-web` image (UI/API + PDF reports; no scanner tools)
 - `worker` — the `openeasd-worker` image (DBOS worker + the full scanner matrix, `NET_RAW`)
 
+> **Run all three tiers — this is the recommended architecture.** Keeping
+> `web`, `worker`, and `db` as separate containers is deliberate:
+> - **Privilege separation** — the internet-facing `web` image carries **no
+>   scanner tools and no `NET_RAW`**, so a compromised web surface doesn't
+>   inherit the offensive toolkit or raw-socket access (those live only on the
+>   worker, which isn't exposed).
+> - **Fault isolation** — nuclei/amass are memory-hungry; if one is OOM-killed
+>   it takes down only a worker, not the UI/API.
+> - **Independent scaling** — Postgres has no single-writer lock, so you can run
+>   multiple `worker` replicas pulling the same DBOS queue for scan throughput
+>   while the `web` tier scales separately for HTTP load.
+>
+> Collapsing `web` + `worker` into one container is possible for a small,
+> trusted, single-user evaluation, but it puts the scanner tools and `NET_RAW`
+> on the exposed process — **not recommended for internet-facing deployments.**
+> Keep `db` as its own container either way so app replacement never risks data.
+
 Open http://localhost:8000, then log in with `admin` / `admin`. You will be forced to set a new password before accessing the app.
 
 > **Production note:** `ALLOWED_HOSTS="*"` is fine for evaluation on a private network. For internet-facing deployments, narrow it to your actual hostname or IP (e.g. `ALLOWED_HOSTS="scanner.example.com,127.0.0.1"`) and set `CSRF_TRUSTED_ORIGINS` if accessing over a domain.
