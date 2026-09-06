@@ -7,12 +7,21 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.1.1] — 2026-09-06
+
 ### Fixed
 - **k8s deploy pointed at a non-existent image tag.** `k8s/kustomization.yaml`
   pinned `openeasd-web`/`-worker` to `v0.4` — a pre-split tag that was never
   published for the split images (those start at v2.0.0), so a fresh
-  `kubectl apply -k k8s/` would `ImagePullBackOff`. Pinned to the current release
-  (`v2.1.0`).
+  `kubectl apply -k k8s/` would `ImagePullBackOff`. Pinned to `v2.1.1`. (The
+  v2.1.0 release tag shipped the broken `v0.4` pin because this fix landed on
+  `main` just after that tag was cut — v2.1.1 is the corrected release.)
+- **k8s probe host dropped from the secret's `ALLOWED_HOSTS`.** The kubelet
+  readiness/liveness probes send `Host: openeasd.local`, and the secret's
+  `ALLOWED_HOSTS` overrides the configmap's — so a `secret.yaml` filled in with
+  only the real host made Django 400 the probes and the pod never went Ready.
+  The `secret.yaml` template now keeps `openeasd.local` in `ALLOWED_HOSTS`, and
+  CLAUDE.md spells out the override + probe-host requirement.
 
 ### Removed
 - **Dead SQLite WAL signal handler** in settings — a leftover `connection_created`
