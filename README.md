@@ -295,7 +295,7 @@ frontend/               - React 19 + Vite 8 SPA
   src/pages/            - Page components
   src/components/       - Shared UI primitives (Badge, Spinner, Pagination, ConfirmButton)
   src/components/ui/    - shadcn/ui primitives (Button, Card, Table, AlertDialog, …)
-  src/hooks/            - useFetch, usePolling
+  src/lib/              - queryClient, utils
   src/api/client.js     - JWT apiFetch wrapper
   src/auth.js           - localStorage token helpers
 ```
@@ -429,21 +429,11 @@ uv run manage.py dbos_worker   # second terminal (needs PostgreSQL running)
 ### Development Mode
 
 ```bash
-# Terminal 1: Django + DBOS worker (needs PostgreSQL running)
-uv run python main.py
+# Starts Django (:8001) + the Vite dev server + the DBOS worker together
+# (needs PostgreSQL running). See the Makefile for the individual commands.
+make dev
 
-# Terminal 2: Vite dev server (proxies /api/ to Django on port 8000)
-cd frontend && npm run dev
 # React app at http://localhost:5173
-```
-
-### main.py flags
-
-```bash
-uv run python main.py --build          # npm build then start
-uv run python main.py --build-only     # npm build only
-uv run python main.py --port 9000      # custom port
-uv run python main.py --no-worker      # web server only (no worker)
 ```
 
 ## CI/CD

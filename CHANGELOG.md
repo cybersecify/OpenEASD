@@ -7,6 +7,13 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Removed
+- **Dead `main.py` dev-runner.** It launched `manage.py qcluster` (Django-Q2,
+  removed in the v2.0 DBOS re-platform) and was only `COPY`d into the image, never
+  executed (the entrypoint is `docker-entrypoint.sh`). The canonical dev runner is
+  `make dev`; README updated to point there. Also dropped a stale README reference
+  to a non-existent `src/hooks/` directory and an unused test import.
+
 ### Security
 - **Login brute-force rate limiting.** After `LOGIN_RATELIMIT_MAX_FAILURES`
   (default 5) failed logins from an IP within a window, that IP is locked out of

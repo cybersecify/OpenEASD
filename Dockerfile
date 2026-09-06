@@ -107,7 +107,7 @@ COPY pyproject.toml ./
 COPY apps/ apps/
 COPY openeasd/ openeasd/
 RUN uv pip install -e ".[prod]" && uv pip install git+https://github.com/initstring/cloud_enum.git
-COPY manage.py main.py ./
+COPY manage.py ./
 COPY templates/ templates/
 COPY config/ config/
 COPY docker-entrypoint.sh ./
@@ -153,7 +153,7 @@ COPY pyproject.toml ./
 COPY apps/ apps/
 COPY openeasd/ openeasd/
 RUN uv pip install -e ".[prod]" && uv pip install git+https://github.com/initstring/cloud_enum.git
-COPY manage.py main.py ./
+COPY manage.py ./
 COPY templates/ templates/
 COPY config/ config/
 COPY docker-entrypoint.sh ./
