@@ -2,32 +2,39 @@
 
 > **Audience:** engineers. For product requirements see [PRD.md](PRD.md).
 > For engineering decisions see [DECISIONS.md](DECISIONS.md).
+> **`CLAUDE.md` (repo root) is the authoritative, exhaustive reference** —
+> full tool/endpoint/test tables live there. This doc is the standalone
+> architecture overview; where it abbreviates, CLAUDE.md is the source of truth.
 
 ---
 
 ## System Overview
 
 ```
-Browser (React SPA)
-       │  JWT Bearer / apiFetch
+Browser (React 19 SPA)
+       │  JWT Bearer (Authorization: Bearer …)
        ▼
-Django (gunicorn)
-  ├── Django Ninja REST API  (/api/)
+web tier — gunicorn (python:3.12-slim image, no scanner tools)
+  ├── Django Ninja REST API  (/api/)   + login rate-limit middleware
   ├── WhiteNoise             (frontend/dist/, static/)
-  └── Django Admin           (/admin/)
-       │  ORM
-       ▼
-SQLite (openeasd-data volume)
-       ▲
-Django-Q2 worker (qcluster)
-  ├── Scan pipeline          (run_scan_task)
-  ├── Daily/monitoring scans (django_q.Schedule)
-  └── Stuck-scan watchdog    (reap_stuck_scans)
+  ├── Django Admin           (/admin/)
+  └── enqueue-only: durably enqueues scans onto the DBOS queue
+       │  Django ORM                         │  DBOSClient.enqueue
+       ▼                                     ▼
+PostgreSQL 17  ◄──────────────────  worker tier — dbos_worker (ubuntu:24.04 image,
+  app rows (ORM) + DBOS checkpoints        full scanner matrix, NET_RAW)
+  (a `dbos` schema in the same DB)     ├── run_scan_workflow   (@DBOS.workflow; phases = checkpointed @DBOS.step)
+                                       ├── ai_triage / agent_step workflows
+                                       └── @DBOS.scheduled crons (daily scan, sweeps, watchdog, JWT purge)
 ```
 
-Web and worker run as two containers in the same pod (K8s) or as a single
-container in Docker. SQLite is the only shared state; the worker writes to
-it via the Django ORM.
+Three tiers, each its own container/workload: **db** (`postgres:17-alpine`),
+**web** (UI/API + synchronous CSV/PDF reports; no tools, no `NET_RAW`), **worker**
+(DBOS durable execution + the scanner binaries; `NET_RAW`). The web tier only
+*enqueues* scans; the worker *executes* them. Scans are **durable DBOS workflows**
+whose phase groups are checkpointed steps, so a crashed/restarted worker
+**resumes** a scan instead of losing it. PostgreSQL holds all shared state (app
+data + DBOS checkpoints); there is no SQLite and no Django-Q/APScheduler.
 
 ---
 
@@ -35,61 +42,60 @@ it via the Django ORM.
 
 | App | Django label | Responsibility |
 |---|---|---|
-| `dashboard/` | `core` | Dashboard KPIs; `UserProfile` (`must_change_password` flag) |
-| `domains/` | `domains` | Domain model, CRUD, activate/deactivate, monitoring config |
+| `dashboard/` | `core` | Dashboard KPIs; `UserProfile` (`must_change_password`); `LoginThrottle` (brute-force limiter) |
+| `domains/` | `domains` | `Domain`, CRUD, activate/deactivate, monitoring config, `DomainAuthorization` |
 | `assets/` | `assets` | Network assets: `Subdomain`, `IPAddress`, `Port` |
 | `web_assets/` | `web_assets` | Web assets: `URL` |
 | `service_detection/` | `service_detection` | Enriches `Port.service` + `Port.is_web` via nmap -sV |
-| `findings/` | `findings` | Unified `Finding` model — all tools write here |
-| `scans/` | `scans` | `ScanSession`, `ScanDelta`, pipeline orchestrator |
+| `findings/` | `findings` | Unified `Finding` model — all finding-producing tools write here |
+| `scans/` | `scans` | `ScanSession`, `ScanDelta`, `ScheduledScan`, pipeline orchestrator |
 | `workflows/` | `workflow` | Workflow CRUD, dynamic runner, tool registry |
-| `scheduler/` | `scheduler` | Django-Q2 schedule setup: daily scan, monitoring jobs, watchdog, JWT purge |
+| `scheduler/` | `scheduler` | Scan callables (daily/monitoring/user sweeps, watchdog, JWT purge) invoked by the DBOS `@scheduled` workflows |
+| `durable/` | `durable` | DBOS app config + `@DBOS.workflow`/`@DBOS.step`/`@DBOS.scheduled` definitions; `dbos_worker` command |
 | `notifications/` | `alerts` | `NotificationConfig` singleton, Slack/Teams dispatcher, alert history |
-| `insights/` | `insights` | `ScanSummary`, `FindingTypeSummary`, trend charts |
-| `reports/` | `reports` | CSV + PDF export |
-| `api/` | — | `NinjaAPI` instance, JWT routes, router registration, error handlers |
+| `insights/` | `insights` | `ScanSummary` (incl. Exposure Score + grade), `FindingTypeSummary`, trend charts |
+| `reports/` | `reports` | CSV + PDF export (synchronous Django views, on the web tier) |
+| `ai/` | `ai` | AI triage / adaptive orchestration / summaries (Cloudflare Workers AI, BYOK) — a core subsystem, **not** a registry tool |
+| `api/` | — | `NinjaAPI` instance, JWT routes, router registration, error handlers, rate-limit middleware |
+
+Secrets at rest (`apps/core/crypto.py` + `fields.py`): BYOK API keys and webhook
+URLs stored in the DB are Fernet-encrypted via `EncryptedCharField`/`EncryptedTextField`.
 
 ---
 
 ## Tool Apps — `apps/<tool>/`
 
-Tools are **self-registering**: each `AppConfig` declares `tool_meta` and
-the registry in `apps/core/workflows/registry.py` auto-discovers them at
-startup. Adding a new tool requires only an entry in `INSTALLED_APPS` — no
-core files change.
-
-### Tool app structure
+Tools are **self-registering**: each `AppConfig` declares `tool_meta` and the
+registry (`apps/core/workflows/registry.py`) auto-discovers them at startup.
+Adding a tool needs only an `INSTALLED_APPS` entry + a data migration to join the
+default Full Scan — no core files change.
 
 ```
 apps/<tool>/
-    apps.py       — AppConfig with tool_meta (phase, phase_group, runner, requires, produces_findings)
-    models.py     — empty (all data goes to apps/core/assets/ or apps/core/findings/)
+    apps.py       — AppConfig with tool_meta (label, runner, phase, phase_group, requires, produces_findings, active)
+    models.py     — empty (data goes to apps/core/assets|web_assets|findings)
     scanner.py    — thin orchestrator: collect → analyze → save
     collector.py  — runs binary / probes; returns raw data (no DB writes)
     analyzer.py   — parses raw data; builds Asset / Finding objects
 ```
 
-### Registered tools
+**27 registered tools.** Each carries an `active` flag: **passive** tools use only
+public/third-party data (no packets to the target → no authorization needed);
+**active** tools probe the target directly (require a `DomainAuthorization`). The
+full per-tool table is in [CLAUDE.md](../CLAUDE.md); by phase group:
 
-| App | Phase | Phase Group | Produces findings | Description |
-|---|---|---|---|---|
-| `apps/domain_security/` | 1 | Domain Intelligence | Yes | DNS, email (SPF/DMARC/DKIM/MTA-STS), RDAP |
-| `apps/subfinder/` | 2 | Surface Enumeration | No | Passive subdomain enumeration |
-| `apps/amass/` | 2 | Surface Enumeration | No | Active subdomain enumeration |
-| `apps/alterx/` | 2 | Surface Enumeration | No | Subdomain permutation from discovered subdomains |
-| `apps/dnsx/` | 3 | Surface Enumeration | No | DNS resolution; filters to public IPs |
-| `apps/takeover_check/` | 4 | Surface Enumeration | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
-| `apps/naabu/` | 5 | Port Discovery | No | Port scan (top-100 TCP) |
-| `apps/core/service_detection/` | 6 | Port Discovery | No | nmap -sV → `Port.service` + `Port.is_web` |
-| `apps/nmap/` | 7 | Network Exposure | Yes | NSE vulners CVE scan (non-web ports) |
-| `apps/tls_checker/` | 7 | Network Exposure | Yes | TLS ciphers, protocol versions, cert analysis |
-| `apps/ssh_checker/` | 7 | Network Exposure | Yes | SSH config (root login, weak kex/cipher/MAC, SSHv1) |
-| `apps/nuclei_network/` | 7 | Network Exposure | Yes | Nuclei network protocol templates (non-web ports) |
-| `apps/httpx/` | 8 | Web Exposure | No | Web probing, URL discovery (CDN-aware via SNI) |
-| `apps/historical_urls/` | 9 | Web Exposure | No | Historical URL discovery via gau + waybackurls |
-| `apps/katana/` | 10 | Web Exposure | No | Deep URL crawl on top of httpx |
-| `apps/nuclei/` | 11 | Web Exposure | Yes | Nuclei community web vuln scan |
-| `apps/web_checker/` | 11 | Web Exposure | Yes | HTTP security headers, cookies, CORS |
+| Phase group | Phases | Tools |
+|---|---|---|
+| Domain Intelligence | 1 | domain_security, hudson_rock, github_secrets, typosquat, breach_check |
+| Surface Enumeration | 2–4 | subfinder, amass, asn_discovery, alterx, github_recon, dnsx, takeover_check, cloud_assets |
+| Port Discovery | 5–6 | naabu, shodan, service_detection |
+| Network Exposure | 7 | nmap, tls_checker, ssh_checker, nuclei_network |
+| Web Exposure | 8–11 | httpx, historical_urls, katana, nuclei, web_checker, js_secrets |
+| Prioritization | 12 | cve_intel (enriches CVEs with EPSS + CISA-KEV in place) |
+
+Binaries: ProjectDiscovery tools (`subfinder`/`dnsx`/`naabu`/`httpx`/`katana`/
+`nuclei`) + `amass`, `gitleaks`, `subzy`, `gau` are pinned static binaries;
+`nmap` is the one distro package. All live only in the **worker** image.
 
 ---
 
@@ -100,7 +106,7 @@ apps/<tool>/
 ```
 Domain
   └── Subdomain  (source: seed | subfinder | amass | alterx | dnsx)
-        └── IPAddress  (public only; private/loopback/AWS metadata filtered)
+        └── IPAddress  (public only; private/loopback/link-local/AWS-metadata filtered)
               └── Port  (is_web=True|False set by service_detection)
                     └── URL  (from httpx; SNI-matched)
 ```
@@ -110,78 +116,72 @@ Deletion cascades top-down: deleting a Domain wipes all session data.
 ### Pipeline phases
 
 ```
-── Domain Intelligence ──────────────────────────────────────
-Phase 1  domain_security    → Finding (DNS / email / RDAP checks)
-
-── Surface Enumeration ─────────────────────────────────────
-Phase 2  subfinder          → Subdomain (passive)
-Phase 2  amass              → Subdomain (active)
-Phase 2  alterx             → Subdomain (permutation candidates)
-Phase 3  dnsx               → IPAddress (public-IP filter)
-Phase 4  takeover_check     → Finding (dangling DNS → unclaimed cloud)
-
-── Port Discovery ───────────────────────────────────────────
-Phase 5  naabu              → Port (top-100 TCP)
-Phase 6  service_detection  → enriches Port.service + Port.is_web
-
-── Network Exposure ─────────────────────────────────────────
-Phase 7  nmap               → Finding (CVEs on is_web=False ports)
-Phase 7  tls_checker        → Finding (ciphers / cert / protocol on all ports)
-Phase 7  ssh_checker        → Finding (SSH config on service="ssh" ports)
-Phase 7  nuclei_network     → Finding (network protocol vulns, non-web ports)
-
-── Web Exposure ─────────────────────────────────────────────
-Phase 8  httpx              → URL (web probing)
-Phase 9  historical_urls    → URL (archived URLs via gau + waybackurls)
-Phase 10 katana             → URL (deep crawl)
-Phase 11 nuclei             → Finding (web vulns via community templates)
-Phase 11 web_checker        → Finding (headers / cookies / CORS)
+Phase 1   Domain Intelligence  → Finding (DNS/email/RDAP, breach, typosquat, infostealer, public-secret)
+Phase 2   Surface Enumeration  → Subdomain (subfinder/amass/alterx) + Finding (asn_discovery, github_recon)
+Phase 3   dnsx                 → IPAddress (public-IP filter)
+Phase 4   takeover / cloud     → Finding (dangling DNS, open buckets)
+Phase 5   naabu / shodan       → Port + Finding (passive exposure)
+Phase 6   service_detection    → enriches Port.service + Port.is_web
+Phase 7   Network Exposure     → Finding (nmap CVE / tls / ssh / nuclei_network — non-web; run in parallel)
+Phase 8-10 httpx → historical_urls → katana → URL (web probing / archived / crawl)
+Phase 11  Web Exposure         → Finding (nuclei web, web_checker headers, js_secrets)
+Phase 12  cve_intel            → enriches CVE findings with EPSS + CISA-KEV (no new findings)
 ```
 
 ### Scan flow (call chain)
 
 ```
-POST /api/scans/start/
-  → create_scan_session(domain)        # auto-assigns default workflow
-    → run_scan_task(session_id)        # Django-Q2 async task
-      → run_scan(session_id)           # sets status="running"
-        → _seed_apex_into_assets()     # Python-side DNS resolution of apex
-        → _run_via_workflow(session)   # creates WorkflowRun, calls run_workflow()
-          → run_workflow(run_id)       # loops enabled tools in phase order
-        → _finalize_session(session)   # findings count, deltas, insights, alerts
+POST /api/scans/start/  (authorization gate: active tools need DomainAuthorization;
+  │                       a "now" scan of ONLY passive tools may bypass it)
+  → create_scan_session(domain)        # ScanSession; auto-assigns the default Full Scan workflow
+    → run_scan_task(session_id)        # DURABLY ENQUEUES onto the DBOS "scans" queue (DBOSClient)
+        (worker picks it up)
+    → run_scan_workflow(session_id)    # @DBOS.workflow
+        → mark_session_running
+        → prepare_session_assets       # Python-side DNS resolution of the apex
+        → for group in phase_groups:   #   each phase group = a checkpointed @DBOS.step (→ resumable)
+              run_phase_group_for_session
+        → finalize_session_by_id       # count findings → deltas → coverage → insights → AI → alerts → status
 ```
+
+`_finalize_session` order: build deltas → coverage/WAF regression → `build_insights`
+(Exposure Score) → `run_ai_post_scan` (triage + summaries, inline) → `_dispatch_alerts`
+(Slack/Teams) → `maybe_start_agent` (queues the bounded AI orchestration chain).
 
 ### Scan statuses
 
 | Status | Meaning |
 |---|---|
-| `queued` | Enqueued in Django-Q2, not yet started |
-| `running` | Pipeline is executing |
+| `pending` | Durably enqueued on the DBOS queue, not yet picked up |
+| `running` | The DBOS workflow is executing (resumes across worker restarts) |
 | `completed` | All steps finished normally |
-| `partial` | Watchdog reaped the scan; ≥1 step completed before timeout |
-| `failed` | No steps completed before timeout, or unrecoverable error |
+| `partial` | Watchdog reaped it, or a tool failed; ≥1 step completed |
+| `failed` | No steps completed, or unrecoverable error |
 | `cancelled` | Stopped by user via `POST /api/scans/<uuid>/stop/` |
 
 ### Key design rules
 
 1. **Tools never import from each other.** Shared data flows through the core
-   asset and finding models only.
+   asset/finding models only.
 2. **`Port.is_web`** is the classification gate — set by `service_detection`
-   (Phase 5); used by nmap (skip web), tls_checker (branch behavior),
-   nuclei_network (skip web).
-3. **httpx uses subdomain:port pairs, not IP:port pairs** — necessary for
-   CDN/Cloudflare-fronted hosts where SNI must match.
-4. **dnsx filters to public IPs** — private, loopback, link-local, and AWS
-   metadata IPs are dropped before any port scanning.
-5. **Delta detection** compares all findings from the current completed scan
-   against the previous completed scan for the same domain. Subscans are
-   excluded from the "previous scan" lookup to avoid spurious delta noise.
+   (Phase 6); nmap skips web ports, nuclei_network targets non-web, tls_checker
+   probes all.
+3. **httpx feeds subdomain:port pairs, not IP:port** — needed so SNI matches on
+   CDN/Cloudflare-fronted hosts.
+4. **dnsx filters to public IPs** — private/loopback/link-local/AWS-metadata IPs
+   dropped before any port scanning.
+5. **Delta detection** compares all findings of the current completed scan against
+   the previous completed scan for the same domain; subscans are excluded from the
+   "previous scan" lookup.
+6. **Duplicate-scan protection** is the `uniq_active_scan_per_domain` partial unique
+   constraint + an if-active check (Postgres); `service_detection` (active nmap -sV)
+   is auto-injected only when `naabu` is in the run.
 
 ---
 
 ## Unified Finding Model
 
-All 8 finding-producing tools write to `apps/core/findings/Finding`:
+Finding-producing tools write to `apps/core/findings/Finding`:
 
 ```python
 Finding
@@ -195,11 +195,13 @@ Finding
   target       str   # hostname or "ip:port"
   port         FK → Port (nullable)
   url          FK → URL (nullable)
-  extra        JSON  # tool-specific: cvss_score, cipher_name, cert_expiry, …
+  extra        JSON  # tool-specific: cvss_score, epss_score, cisa_kev, cipher_name, …
 ```
 
-> **SQLite note:** avoid `Max()` / aggregate functions on JSON-extracted fields
-> (`extra__cvss_score`). Group and sort in Python instead.
+> **Portability note:** the codebase groups JSON-extracted fields
+> (`extra__cvss_score`) in Python rather than via DB `Max(...)` aggregation — a
+> habit from the former SQLite backend. PostgreSQL supports these natively; the
+> Python-side grouping is kept for portability and needn't be "fixed".
 
 ---
 
@@ -210,13 +212,15 @@ Base path: `/api/`. Auth: JWT Bearer via `ninja-jwt` (simplejwt).
 ### Auth flow
 
 ```
-POST /api/token/pair      → {access, refresh}   # login
+POST /api/token/pair      → {access, refresh}   # login (per-IP brute-force rate-limited)
 POST /api/token/refresh   → {access}             # renew
 POST /api/token/blacklist                         # logout (blacklists refresh token)
 ```
 
-Access token sent as `Authorization: Bearer <token>` on every request.
-Tokens stored in `localStorage` via `auth.js`.
+Access token sent as `Authorization: Bearer <token>` on every request; the React
+axios interceptor silently refreshes on 401. Tokens live in `localStorage`
+(`auth.js`). Login is rate-limited by `LoginRateLimitMiddleware` (per-IP,
+DB-backed `LoginThrottle`).
 
 ### Response format
 
@@ -225,20 +229,37 @@ Tokens stored in `localStorage` via `auth.js`.
 {"error": {"code": "NOT_FOUND", "message": "..."}}   // error
 ```
 
-### Key endpoints (abbreviated)
+### Key endpoints (abbreviated — full list in CLAUDE.md)
 
 ```
-GET  /api/dashboard/                  KPIs, domain status, urgent findings
-GET  /api/domains/                    domain list
+GET  /api/dashboard/                  KPIs, domain status (incl. exposure_score/grade), urgent findings
+POST /api/domains/<pk>/authorize/     grant DomainAuthorization (attestation)
 POST /api/scans/start/                start or schedule a scan
-GET  /api/scans/<uuid>/status/        lightweight status (React polls every 3s)
-GET  /api/scans/findings/             paginated findings (?severity= &domain= &session_uuid=)
-GET  /api/workflows/                  workflow list
-GET  /api/insights/                   trend charts, top hosts, asset growth
-GET  /api/docs                        OpenAPI / Swagger UI (always enabled)
+GET  /api/scans/<uuid>/status/        lightweight status (React polls every 3s while running)
+POST /api/scans/<uuid>/subscan/       re-run a subset of tools against an existing scan
+GET  /api/scans/findings/             paginated findings (?severity= &domain= &status= &source=)
+GET  /api/insights/                   trends, top hosts, asset growth, Exposure Score
+GET  /api/ai/triage/<uuid>/           AI triage status + ranked items + agent decisions
+GET  /api/version/  /health/          build provenance (unauthenticated)
+GET  /api/docs                        OpenAPI / Swagger UI
 ```
 
-Full URL layout is in [CLAUDE.md](../CLAUDE.md#url-layout).
+Full URL layout: [CLAUDE.md](../CLAUDE.md#url-layout). CSV/PDF reports are
+synchronous Django views under `/reports/<uuid>/` served by the web tier.
+
+---
+
+## AI subsystem — `apps/core/ai/`
+
+A core subsystem (not a registry tool) that runs post-finalize over the whole
+session. Gated by consent + Cloudflare Workers AI keys (BYOK) — **entirely off
+unless configured**, and with the gate closed scans are byte-identical to pre-AI.
+As DBOS workflows: **triage** (ranks findings by exploitability — CVSS + EPSS +
+CISA-KEV), **summaries** (report/alert text), and a **bounded agent** (one LLM
+decision per chained `agent_step` workflow; can launch follow-up subscans,
+re-checked against `DomainAuthorization` at its dispatch boundary; hard caps on
+iterations/subscans). Every call writes an `AIInvocation` audit row — metadata
+only (the model has no text field, so prompt/response bodies are unpersistable).
 
 ---
 
@@ -247,68 +268,74 @@ Full URL layout is in [CLAUDE.md](../CLAUDE.md#url-layout).
 ```
 frontend/
   src/
-    api/client.js        apiFetch wrapper — injects Bearer token, handles 401
-    auth.js              localStorage helpers (getToken, setTokens, clear, isLoggedIn)
-    App.jsx              vanilla popstate router (no react-router)
-    main.jsx             React root + <Toaster> mount
-    pages/               one file per route
+    api/client.js          apiGet(path) / apiPost(path, body) over axiosInstance.js
+    api/axiosInstance.js    request interceptor adds Bearer; response interceptor refreshes on 401
+    auth.js                localStorage helpers (getToken, setTokens, clear, isLoggedIn)
+    router.jsx             react-router-dom createBrowserRouter tree; ProtectedRoute gate
+    main.jsx               <RouterProvider> + <QueryClientProvider> + <Toaster>
+    lib/queryClient.js     @tanstack/react-query client
+    pages/                 one file per route
     components/
-      ui/                shadcn primitives (Button, Card, Table, Badge, …)
-      Badge.jsx          cva severity/status variants
-      Spinner.jsx
-      Pagination.jsx
-      ConfirmButton.jsx  wraps AlertDialog
-      Notification.jsx   re-exports sonner toast
+      ui/                  shadcn primitives (Button, Card, Table, Badge, …)
+      Badge.jsx / Spinner.jsx / Pagination.jsx / ConfirmButton.jsx / Notification.jsx
+      BuildInfo.jsx        sidebar build/version footer + "update available" check
+      ai/                  ConsentDialog.jsx, TriagePanel.jsx
 ```
 
-**Tech:** React 19, Vite 8, shadcn/ui, Tailwind CSS 3, Radix UI.
+**Tech:** React 19, Vite 8, react-router-dom, @tanstack/react-query, shadcn/ui,
+Tailwind CSS 3, Radix UI. Data fetching is `useQuery({queryKey:[path,…]})` +
+`apiGet`; live scan status polls at 3s. Tests: Vitest + Testing Library.
 
 **Theme:** dark — `bg #0d1117`, card `#161b22`, border `#30363d`, accent `#30c074`.
 
-**Dev:** Vite proxy forwards `/api/` → Django `:8000`. No CORS config needed.
-
-**Prod:** `npm run build` → `frontend/dist/` → served by WhiteNoise. Django
-catch-all serves `index.html` for all non-API paths.
+**Dev:** Vite proxy forwards `/api/` → Django `:8001` (no CORS). **Prod:**
+`npm run build` → `frontend/dist/` → served by WhiteNoise; Django catch-all serves
+`index.html` for non-API paths.
 
 ---
 
 ## Deployment Topologies
 
-### Docker (single container)
+The recommended topology is **3 tiers** — the web image carries no offensive
+tooling or `NET_RAW`, tool OOMs isolate to the worker, and the worker scales
+independently. See CLAUDE.md for the full rationale + pros/cons.
+
+### Docker Compose (recommended)
 
 ```
-docker run
-  initContainer (entrypoint): migrate → collectstatic → admin user setup
-  web:    gunicorn openeasd.wsgi --bind 0.0.0.0:8000 --workers 2
-  worker: manage.py qcluster   (same container, second process)
+db      postgres:17-alpine          — app data + the DBOS `dbos` schema
+web     openeasd-web (slim)         — gunicorn; UI/API + PDF reports; enqueue-only; no tools
+worker  openeasd-worker (ubuntu)    — dbos_worker + full scanner matrix; --cap-add NET_RAW
 ```
 
-### Kubernetes (split pod)
+The entrypoint is role-aware (`OPENEASD_ROLE`): both roles wait for Postgres; the
+web/init role migrates + collectstatic + admin-setup, the worker role waits for
+`migrate --check` then launches (no DDL race).
 
-```
-Pod: openeasd
-  initContainer: init   → migrate + collectstatic + admin setup
-  container: web        → gunicorn (no NET_RAW needed)
-  container: worker     → manage.py qcluster (NET_RAW capability for nmap)
-```
+### Kubernetes
 
-Volumes: `openeasd-data` (SQLite) + `openeasd-logs` — RWO, `replicas: 1`.
-
-Service: ClusterIP `:80 → :8000`. Ingress: nginx (TLS-ready annotations).
-
-Readiness/liveness probe: `GET /health/` (unauthenticated).
+Separate Deployments per tier (`kubectl apply -k k8s/`): **`openeasd-web`**
+(init migrates → gunicorn; `tier: web`; no `NET_RAW`; the Service targets
+`tier: web`), **`openeasd-worker`** (`dbos_worker`; `tier: worker`; `NET_RAW`; no
+Service; scale with `kubectl scale deploy/openeasd-worker --replicas=N` on the
+same DBOS queue), and a **PostgreSQL StatefulSet**. A default deploy is 3 pods.
+Logs go to stdout (no PVC). Readiness/liveness: `GET /health/` (unauthenticated) —
+the probe `Host` header must be an entry in `openeasd-secret`'s `ALLOWED_HOSTS`.
 
 ---
 
 ## Scheduler
 
-`apps/core/scheduler/scheduler.py` — `setup_core_schedules()` called from
-`SchedulerConfig.ready()`, but **only when `qcluster` is in `sys.argv`**
-(never runs in gunicorn workers).
+Unattended scanning is a set of DBOS `@scheduled` cron workflows registered when
+the `dbos_worker` process imports `apps/core/durable/workflows` (never in gunicorn
+workers). They call the thin callables in `apps/core/scheduler/scheduler.py`.
+`SCHEDULED_SCANS_ENABLED` (default True) is the master switch; the
+consent/`DomainAuthorization` gate applies to scheduled scans too.
 
 | Schedule | Default | Description |
 |---|---|---|
-| Daily scan | `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (02:00) | Full scan of all active domains |
-| Per-domain monitoring | 6h / 12h / 24h / 48h / weekly | Configurable per domain; managed by `sync_domain_monitoring_jobs()` |
-| Stuck-scan watchdog | Every 15 min | Reaps `running` scans stalled past `SCAN_TIMEOUT_MINUTES` (default 240) and orphaned `pending` scans past `SCAN_PENDING_TIMEOUT_MINUTES` (default 60) as `partial` or `failed` |
+| Daily scan | `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (02:00) | Full scan of all authorized active domains |
+| Per-domain monitoring | 6h / 12h / 24h / 48h / weekly | Configurable per domain; a DBOS sweep computes due-ness |
+| User-schedule sweep | — | Fires `once`/`recurring` user-scheduled scans (`ScheduledScan` rows) |
+| Stuck-scan watchdog | Every 15 min | Reaps `running` scans past `SCAN_TIMEOUT_MINUTES` and orphaned `pending` scans past `SCAN_PENDING_TIMEOUT_MINUTES` as `partial`/`failed` |
 | JWT token purge | Daily | Clears expired simplejwt `OutstandingToken` rows |
