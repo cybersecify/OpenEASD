@@ -333,7 +333,8 @@ docker compose up -d       # recreates changed containers; the db volume persist
 |---|---|---|
 | `SECRET_KEY` | insecure default | Django secret key; **set this in production** |
 | `FIELD_ENCRYPTION_KEY` | *(derived from `SECRET_KEY`)* | Optional Fernet key (urlsafe-base64, 32 bytes) encrypting BYOK API keys/webhooks at rest. Set it to decouple secret encryption from `SECRET_KEY` rotation; changing the effective key makes stored secrets unreadable (re-enter them) |
-| `LOGIN_RATELIMIT_ENABLED` / `LOGIN_RATELIMIT_MAX_FAILURES` / `LOGIN_RATELIMIT_WINDOW_SECONDS` / `LOGIN_RATELIMIT_LOCKOUT_SECONDS` | `True` / `5` / `900` / `900` | Brute-force protection on the login endpoint: after N failed logins from an IP within the window, that IP is locked out (429) for the lockout period. Requires the reverse proxy to set `X-Forwarded-For` |
+| `LOGIN_RATELIMIT_ENABLED` / `LOGIN_RATELIMIT_MAX_FAILURES` / `LOGIN_RATELIMIT_WINDOW_SECONDS` / `LOGIN_RATELIMIT_LOCKOUT_SECONDS` | `True` / `5` / `900` / `900` | Brute-force protection on the login endpoint: after N failed logins from an IP within the window, that IP is locked out (429) for the lockout period |
+| `LOGIN_RATELIMIT_TRUST_FORWARDED_FOR` | `True` | Key the limiter on the client's `X-Forwarded-For` (correct behind the mandated TLS proxy). Set `False` only if running without a trusted proxy — then XFF is ignored (it would be attacker-spoofable) and the raw `REMOTE_ADDR` is used |
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated hostnames (add your server IP/domain) |
 | `CSRF_TRUSTED_ORIGINS` | *(none)* | Required if accessing via a domain, e.g. `https://openeasd.example.com` |
 | `DEBUG` | `False` | Set `True` only for local development |
