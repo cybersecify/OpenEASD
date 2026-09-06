@@ -208,35 +208,44 @@ docker compose up -d --build
 ### Kubernetes
 Manifests in `k8s/`. Deploy with `kubectl apply -k k8s/`.
 
-**Layout — a PostgreSQL StatefulSet + an app Deployment (one Pod, two containers):**
+**Layout — 3 tiers, each its own workload (matches the docker-compose 3-tier):**
 ```
-initContainer: init    → waits for Postgres, then migrate + collectstatic + admin setup (docker-entrypoint.sh)
-container: web         → gunicorn openeasd.wsgi:application --bind 0.0.0.0:8000 --workers 2
-container: worker      → python manage.py dbos_worker  (NET_RAW capability for nmap/naabu)
-(+ a PostgreSQL StatefulSet alongside — see k8s/postgres.yaml)
+Deployment openeasd-web     → initContainer init (migrate + collectstatic + admin, docker-entrypoint.sh),
+                              then gunicorn openeasd.wsgi:application --bind 0.0.0.0:8000 --workers 2
+                              (no NET_RAW; logs to stdout; the Service targets tier: web)
+Deployment openeasd-worker  → ./docker-entrypoint.sh python manage.py dbos_worker with OPENEASD_ROLE=worker
+                              (waits for `migrate --check`, then runs scan/AI/@scheduled workflows; NET_RAW)
+StatefulSet openeasd-postgres → PostgreSQL (see k8s/postgres.yaml)
 ```
+So a default deploy is **3 pods** (web, worker, postgres). web and worker are
+separate Deployments so they scale, roll, and get resources independently; only
+the worker needs `NET_RAW`, and the internet-facing web tier carries no
+raw-socket capability. Migrations run only in the web Deployment's initContainer;
+the worker waits for them via the role-aware entrypoint (no DDL race).
 
 **Files:**
 ```
 k8s/
-  configmap.yaml        — non-secret env vars; ALLOWED_HOSTS/CSRF are PLACEHOLDERS only
-  secret.yaml           — template for SECRET_KEY + real ALLOWED_HOSTS/CSRF (apply out-of-band)
-  pvc.yaml              — openeasd-logs (2Gi), RWO (app data is in Postgres)
-  postgres.yaml         — PostgreSQL StatefulSet + headless Service + 10Gi PVC
-  deployment.yaml       — single pod with init + web + worker containers
-  service.yaml          — ClusterIP, port 80 → 8000
-  ingress.yaml          — nginx Ingress; TLS annotations ready to uncomment
-  kustomization.yaml    — kubectl apply -k k8s/ (does NOT include secret.yaml)
+  configmap.yaml         — non-secret env vars; ALLOWED_HOSTS/CSRF are PLACEHOLDERS only
+  secret.yaml            — template for SECRET_KEY + real ALLOWED_HOSTS/CSRF (apply out-of-band)
+  postgres.yaml          — PostgreSQL StatefulSet + headless Service + 10Gi PVC
+  web-deployment.yaml    — openeasd-web: init + web (tier: web, no NET_RAW, stdout logs)
+  worker-deployment.yaml — openeasd-worker: DBOS worker (tier: worker, NET_RAW, no Service)
+  service.yaml           — NodePort 30808 → 8000, selector tier: web ONLY
+  ingress.yaml           — nginx Ingress; TLS annotations ready to uncomment
+  kustomization.yaml     — kubectl apply -k k8s/ (does NOT include secret.yaml)
 ```
 
 **Key constraints:**
-- `replicas: 1` on the app Deployment (one web + one worker container); Postgres removes the SQLite single-writer limit, so the worker can scale to multiple replicas pulling the same DBOS queue if split into its own Deployment
-- Only `worker` container gets `NET_RAW`; `web` does not need it
+- `replicas: 1` on each Deployment by default. Postgres removes the SQLite single-writer limit, so `openeasd-worker` can scale to multiple replicas pulling the same DBOS queue (`kubectl scale deploy/openeasd-worker --replicas=N`) independently of `openeasd-web`
+- Only `openeasd-worker` gets `NET_RAW`; `openeasd-web` does not need it
+- Logs go to **stdout** (`kubectl logs`) — no logs PVC (so nothing blocks a rolling update)
+- The Service selector is `app: openeasd, tier: web` — it must NOT match the worker (which shares `app: openeasd` but has no :8000 listener)
 - `GET /health/` — unauthenticated endpoint used by K8s readiness/liveness probes; JSON body is `{status, version, git_sha (short 8), build_date}` (build provenance)
 - **Real `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` live in `openeasd-secret`, never in
   the committed configmap.** `configmap.yaml` carries only placeholders; the real
   hostname is set in the secret, which is applied out-of-band and is intentionally
-  omitted from the kustomize base. Because the deployment's `envFrom` lists
+  omitted from the kustomize base. Because each deployment's `envFrom` lists
   `secretRef` after `configMapRef` (last source wins), the secret's values override
   the configmap placeholders at runtime. This is deliberate: it keeps the real host
   out of the public repo AND makes `kubectl apply -k k8s/` safe — a re-apply can
@@ -245,7 +254,7 @@ k8s/
 
 **Update running deployment:**
 ```bash
-kubectl rollout restart deployment/openeasd -n default
+kubectl rollout restart deployment/openeasd-web deployment/openeasd-worker -n default
 ```
 
 ### docker-entrypoint.sh
@@ -267,7 +276,7 @@ If the host IP changes, microk8s certs and kubeconfigs reference the old IP and 
 5. Backups from `microk8s refresh-certs` land in `/var/snap/microk8s/<rev>/certs-backup/`; manual kubelet regen leaves `kubelet.crt.bak.<epoch>` next to the new cert.
 
 ### microk8s + host Caddy
-Don't enable the `ingress` addon if the host already runs Caddy on :80/:443 — the nginx-ingress DaemonSet uses `hostPort` 80/443, and CNI portmap iptables intercept all traffic in PREROUTING before it reaches Caddy, silently breaking every Caddy site. Instead: expose the service as `NodePort` (e.g. 30808) and have Caddy `reverse_proxy localhost:<nodeport>`. The probe still needs `httpHeaders: [{name: Host, value: <ALLOWED_HOSTS-entry>}]` because kubelet sends the pod IP as Host by default and Django rejects it with 400. **That probe Host (`openeasd.local` in `deployment.yaml`) must be present in `openeasd-secret`'s `ALLOWED_HOSTS`, not just the configmap** — the secret's `ALLOWED_HOSTS` overrides the configmap's (`secretRef` is last in `envFrom`), so a secret listing only the real host drops `openeasd.local` and the probes 400 → the pod never goes Ready. Keep it in the secret (see `k8s/secret.yaml`).
+Don't enable the `ingress` addon if the host already runs Caddy on :80/:443 — the nginx-ingress DaemonSet uses `hostPort` 80/443, and CNI portmap iptables intercept all traffic in PREROUTING before it reaches Caddy, silently breaking every Caddy site. Instead: expose the service as `NodePort` (e.g. 30808) and have Caddy `reverse_proxy localhost:<nodeport>`. The probe still needs `httpHeaders: [{name: Host, value: <ALLOWED_HOSTS-entry>}]` because kubelet sends the pod IP as Host by default and Django rejects it with 400. **That probe Host (`openeasd.local` in `web-deployment.yaml`) must be present in `openeasd-secret`'s `ALLOWED_HOSTS`, not just the configmap** — the secret's `ALLOWED_HOSTS` overrides the configmap's (`secretRef` is last in `envFrom`), so a secret listing only the real host drops `openeasd.local` and the probes 400 → the pod never goes Ready. Keep it in the secret (see `k8s/secret.yaml`).
 
 ### Scheduler
 - Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (uses `TIME_ZONE` in settings, default 02:00)
@@ -729,7 +738,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_shodan.py` | 20 | collector tier selection (free InternetDB vs paid host API, BYO-key), `SHODAN_MAX_IPS` cap on paid path only, fail-graceful (404/timeout/500/429/bad-JSON never raise), analyzer (exposure + CVE findings, `extra["cve_ids"]` for cve_intel enrichment, invalid-CVE filter), scanner |
 | `tests/unit/test_js_secrets.py` | 26 | `.js` URL filter + cap, fetch-error handling, gitleaks JSON parser, analyzer Findings + dedup + secret redaction (full secret never stored), scanner, binary-missing/timeout |
 | `tests/unit/test_github_secrets.py` | 32 | no-token skip (BYOK gate), org resolution (override high-confidence / apex-label low-confidence), org-scoped query building + global-search opt-in, rate-limit helpers (429/403-zero-remaining/secondary + capped backoff), collector fail-graceful (network/500/429-exhausted/bad-JSON never raise) + 429-then-success backoff, search→fetch→gitleaks happy path, gitleaks binary-missing/timeout raise, redaction (full secret never persisted — asserted at DB level), analyzer Finding shape + dedup, scanner |
-| `tests/unit/test_k8s_manifests.py` | 59 | k8s manifest structure, envFrom order, probes, secret/configmap split |
+| `tests/unit/test_k8s_manifests.py` | 66 | k8s manifest structure — split web/worker Deployments, tier labels, Service→web-only selector, envFrom order, probes + probe-host, worker NET_RAW/role/entrypoint, no-PVC, kustomization |
 | `tests/unit/test_katana.py` | 19 | JSONL parser, Port/Subdomain FK links, scanner orchestrator, honest UA |
 | `tests/unit/test_management_commands.py` | 11 | `verify_tools` + other management commands |
 | `tests/unit/test_monitoring.py` | 17 | sync_domain_monitoring_jobs, per-domain monitoring, authorization gate |
@@ -781,6 +790,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_crypto.py` | 16 | At-rest secret encryption — Fernet roundtrip/non-determinism/legacy-plaintext tolerance, key derivation/override/rotation, DB-holds-ciphertext + ORM-returns-plaintext for AI/notifications/amass/subfinder |
 | `tests/unit/test_login_ratelimit.py` | 13 | Login brute-force limiter — threshold lockout, window reset, success clears, X-Forwarded-For keying (+ untrusted-XFF fallback / spoof-evasion), middleware integration (per-IP isolation, disabled bypass, refresh endpoint unaffected) |
 
-**Total: 1706 tests** (1654 fast + 52 slow domain_security)
+**Total: 1713 tests** (1661 fast + 52 slow domain_security)
 
 Frontend: **15 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, and the axios 401-refresh interceptor. Run with `cd frontend && npm run test:run`.

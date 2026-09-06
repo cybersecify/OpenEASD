@@ -7,6 +7,19 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **k8s: web and worker are now separate Deployments** (`web-deployment.yaml` +
+  `worker-deployment.yaml`) instead of one pod with two containers — a default
+  deploy is now 3 pods (web, worker, postgres). This lets the DBOS worker scale
+  independently (`kubectl scale deploy/openeasd-worker --replicas=N`, all draining
+  the same queue), keeps `NET_RAW` off the internet-facing web tier, and allows
+  independent rollouts. The web Deployment's initContainer runs migrations; the
+  worker waits via the role-aware entrypoint (`OPENEASD_ROLE=worker`). Logs go to
+  **stdout** (the `ReadWriteOnce` logs PVC is removed, so nothing blocks a rolling
+  update), and the Service selector pins `tier: web`. **Why:** matches the
+  recommended 3-tier topology and delivers the independent-scaling benefit the
+  single-pod layout couldn't.
+
 ## [v2.1.1] — 2026-09-06
 
 ### Fixed

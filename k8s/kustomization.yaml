@@ -6,14 +6,14 @@ images:
   # switch to the floating :v2.1 major.minor tag + imagePullPolicy: Always to
   # auto-pick-up patch releases).
   - name: ghcr.io/cybersecify/openeasd-web
-    newTag: v2.1.0
+    newTag: v2.1.1
   - name: ghcr.io/cybersecify/openeasd-worker
-    newTag: v2.1.0
+    newTag: v2.1.1
 resources:
   - configmap.yaml
-  - pvc.yaml
   - postgres.yaml
-  - deployment.yaml
+  - web-deployment.yaml
+  - worker-deployment.yaml
   - service.yaml
 # ingress.yaml is omitted — Caddy on the host terminates TLS and proxies to the
 # NodePort (service.yaml). Re-add the ingress + a controller (e.g. nginx-ingress)

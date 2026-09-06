@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openeasd-web
+  namespace: default
+  labels:
+    app: openeasd
+    tier: web
+spec:
+  # Stateless UI/API tier (app data is in PostgreSQL). Scale for HTTP load
+  # independently of the worker. Logs go to stdout (kubectl logs), so there is
+  # no RWO volume — a rolling update is safe.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openeasd
+      tier: web
+  template:
+    metadata:
+      labels:
+        app: openeasd
+        tier: web
+    spec:
+      initContainers:
+        # web role (default) applies migrations + collectstatic + admin setup,
+        # then exits — so the schema is ready before gunicorn (and the worker)
+        # start. Only the web tier runs migrations; the worker waits for them.
+        - name: init
+          image: ghcr.io/cybersecify/openeasd-web:latest
+          # Always re-pull: the :latest tag is mutable, so a deploy that doesn't
+          # change the tag string must still fetch the new digest.
+          imagePullPolicy: Always
+          command: ["./docker-entrypoint.sh", "true"]
+          envFrom:
+            - configMapRef:
+                name: openeasd-config
+            - secretRef:
+                name: openeasd-secret
+      containers:
+        - name: web
+          image: ghcr.io/cybersecify/openeasd-web:latest
+          imagePullPolicy: Always
+          command:
+            - gunicorn
+            - openeasd.wsgi:application
+            - --bind
+            - "0.0.0.0:8000"
+            - --workers
+            - "2"
+            - --timeout
+            - "120"
+            - --access-logfile
+            - "-"
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: openeasd-config
+            - secretRef:
+                name: openeasd-secret
+          readinessProbe:
+            httpGet:
+              path: /health/
+              port: 8000
+              # kubelet sends the pod IP as Host by default; Django 400s it. This
+              # value MUST be in openeasd-secret's ALLOWED_HOSTS (the secret
+              # overrides the configmap) or the probe fails and the pod never
+              # goes Ready.
+              httpHeaders:
+                - name: Host
+                  value: openeasd.local
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health/
+              port: 8000
+              httpHeaders:
+                - name: Host
+                  value: openeasd.local
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
