@@ -1,7 +1,5 @@
 # Cloud Assets Tool — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Add `apps/cloud_assets/` — a Phase 4 tool that runs `cloud_enum` to find publicly accessible AWS S3, Azure Blob, and GCP Storage buckets associated with a domain, and saves each as a `Finding`.
 
 **Architecture:** Standard 5-file tool app following the `collector → analyzer → scanner` pattern used by every other tool in the repo. `cloud_enum` (Python CLI, `pip install cloud-enum`) generates keyword permutations and probes all three cloud providers. Keywords come from the apex domain label + leftmost subdomain labels already in the session. Findings go straight to `apps/core/findings/Finding` — no new models, no migrations. 20 unit tests: TestCollect (7), TestAnalyze (6), TestDeriveKeywords (4), TestScanner (3).
