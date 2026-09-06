@@ -10,6 +10,7 @@ Tunables (settings, with defaults):
   LOGIN_RATELIMIT_MAX_FAILURES      5      failures within the window -> lock
   LOGIN_RATELIMIT_WINDOW_SECONDS    900    rolling window for counting failures
   LOGIN_RATELIMIT_LOCKOUT_SECONDS   900    how long a locked IP stays locked
+  LOGIN_RATELIMIT_TRUST_FORWARDED_FOR True key on X-Forwarded-For vs REMOTE_ADDR
 """
 
 from datetime import timedelta
@@ -26,14 +27,18 @@ def _cfg(name, default):
 
 
 def client_ip(request) -> str:
-    """Best-effort client IP.
+    """Client IP the limiter keys on.
 
     Behind the documented TLS reverse proxy, REMOTE_ADDR is the proxy, so the
-    leftmost X-Forwarded-For entry (set by that proxy) identifies the client.
+    leftmost X-Forwarded-For entry (set by that proxy) identifies the client —
+    used when LOGIN_RATELIMIT_TRUST_FORWARDED_FOR is on (the default). When it is
+    off (no trusted proxy), XFF is ignored and the unspoofable REMOTE_ADDR is
+    used, so an attacker cannot rotate the header to evade the limit.
     """
-    xff = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    if xff:
-        return xff.split(",")[0].strip()
+    if _cfg("LOGIN_RATELIMIT_TRUST_FORWARDED_FOR", True):
+        xff = request.META.get("HTTP_X_FORWARDED_FOR", "")
+        if xff:
+            return xff.split(",")[0].strip()
     return request.META.get("REMOTE_ADDR") or "unknown"
 
 

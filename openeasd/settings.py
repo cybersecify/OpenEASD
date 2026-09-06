@@ -154,6 +154,15 @@ MIDDLEWARE = [
 
 # Brute-force rate limiting for POST /api/token/pair (see apps/core/api/ratelimit.py).
 LOGIN_RATELIMIT_ENABLED = config("LOGIN_RATELIMIT_ENABLED", default=True, cast=bool)
+# Whether to key the limiter on the leftmost X-Forwarded-For entry (the client,
+# behind the mandated TLS reverse proxy) vs the raw REMOTE_ADDR. Keep True for the
+# standard proxied deployment. Set False ONLY if OpenEASD is somehow exposed
+# without a trusted proxy — then XFF is attacker-controllable and would let a
+# brute-forcer rotate the header to evade the per-IP limit; REMOTE_ADDR (the TCP
+# peer) is unspoofable but, behind a proxy, is the proxy itself (one shared IP).
+LOGIN_RATELIMIT_TRUST_FORWARDED_FOR = config(
+    "LOGIN_RATELIMIT_TRUST_FORWARDED_FOR", default=True, cast=bool
+)
 LOGIN_RATELIMIT_MAX_FAILURES = config("LOGIN_RATELIMIT_MAX_FAILURES", default=5, cast=int)
 LOGIN_RATELIMIT_WINDOW_SECONDS = config("LOGIN_RATELIMIT_WINDOW_SECONDS", default=900, cast=int)
 LOGIN_RATELIMIT_LOCKOUT_SECONDS = config("LOGIN_RATELIMIT_LOCKOUT_SECONDS", default=900, cast=int)

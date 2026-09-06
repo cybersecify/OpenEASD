@@ -64,6 +64,39 @@ class TestHelpers:
         req = type("R", (), {"META": {"REMOTE_ADDR": "6.6.6.6"}})()
         assert ratelimit.client_ip(req) == "6.6.6.6"
 
+    def test_client_ip_ignores_forwarded_for_when_untrusted(self, settings):
+        # No trusted proxy -> XFF is attacker-controllable, so ignore it and key
+        # on the unspoofable REMOTE_ADDR instead.
+        settings.LOGIN_RATELIMIT_TRUST_FORWARDED_FOR = False
+        req = type("R", (), {"META": {
+            "HTTP_X_FORWARDED_FOR": "1.2.3.4", "REMOTE_ADDR": "10.0.0.1"}})()
+        assert ratelimit.client_ip(req) == "10.0.0.1"
+
+    def test_spoofed_forwarded_for_cannot_evade_limit_when_untrusted(self, settings):
+        # With XFF untrusted, rotating the header per request no longer resets
+        # the counter — all requests key on the same REMOTE_ADDR and lock out.
+        settings.LOGIN_RATELIMIT_TRUST_FORWARDED_FOR = False
+        settings.LOGIN_RATELIMIT_MAX_FAILURES = 3
+        get_user_model().objects.create_user(username="rluser", password="correct-pass")
+        c = Client()
+        for i in range(3):
+            r = c.post(
+                "/api/token/pair",
+                data=json.dumps({"username": "rluser", "password": "wrong"}),
+                content_type="application/json",
+                HTTP_X_FORWARDED_FOR=f"9.9.9.{i}",  # rotating spoofed IP
+                REMOTE_ADDR="203.0.113.7",
+            )
+            assert r.status_code == 401
+        r = c.post(
+            "/api/token/pair",
+            data=json.dumps({"username": "rluser", "password": "correct-pass"}),
+            content_type="application/json",
+            HTTP_X_FORWARDED_FOR="9.9.9.99",
+            REMOTE_ADDR="203.0.113.7",
+        )
+        assert r.status_code == 429  # locked despite the rotating XFF
+
 
 class TestMiddleware:
     def _user(self):
