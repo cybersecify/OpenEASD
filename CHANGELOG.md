@@ -26,10 +26,16 @@ commits to recover the reasoning.
   (default 5) failed logins from an IP within a window, that IP is locked out of
   `POST /api/token/pair` (429 + `Retry-After`) for the lockout period. Backed by
   a `LoginThrottle` DB model so the limit holds across gunicorn workers; only the
-  credential endpoint is limited (not refresh), a successful login resets the
-  counter, and it keys off `X-Forwarded-For`. Tunable via `LOGIN_RATELIMIT_*`
-  env. **Why:** a single-admin app exposes exactly one login to guess — an
-  unthrottled one is a standing brute-force target.
+  credential endpoint is limited (not refresh), and a successful login resets the
+  counter. Per-IP keying is **per-IP, not per-username** (per-username would let
+  an attacker lock the admin out — an account-lockout DoS). The client IP comes
+  from `X-Forwarded-For` when `LOGIN_RATELIMIT_TRUST_FORWARDED_FOR` is on (the
+  default, correct behind the mandated TLS reverse proxy); set it `False` for a
+  bare deployment, where XFF is attacker-spoofable and the unspoofable
+  `REMOTE_ADDR` is used instead so the limit can't be evaded by rotating the
+  header. All thresholds are tunable via `LOGIN_RATELIMIT_*` env. **Why:** a
+  single-admin app exposes exactly one login to guess — an unthrottled one is a
+  standing brute-force target.
 - **BYOK secrets encrypted at rest.** API keys, tokens, and webhook URLs stored
   in the database — the Cloudflare AI token, Slack/Teams webhook URLs, and every
   provider key on the amass/subfinder config models — are now Fernet-encrypted
