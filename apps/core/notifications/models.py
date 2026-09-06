@@ -1,5 +1,7 @@
 from django.db import models
 
+from apps.core.fields import EncryptedTextField
+
 
 class NotificationConfig(models.Model):
     """Singleton (pk=1) — stores webhook URLs and alert threshold in the DB."""
@@ -10,8 +12,8 @@ class NotificationConfig(models.Model):
         ("low",      "Low and above"),
     ]
 
-    slack_webhook_url  = models.TextField(blank=True, default="")
-    teams_webhook_url  = models.TextField(blank=True, default="")
+    slack_webhook_url  = EncryptedTextField(blank=True, default="")
+    teams_webhook_url  = EncryptedTextField(blank=True, default="")
     severity_threshold = models.CharField(max_length=20, choices=THRESHOLD_CHOICES, default="high")
 
     class Meta:

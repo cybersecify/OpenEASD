@@ -2,16 +2,18 @@
 
 from django.db import models
 
+from apps.core.fields import EncryptedCharField
+
 
 class SubfinderConfig(models.Model):
     # ProjectDiscovery
-    chaos_key = models.CharField(
+    chaos_key = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="ProjectDiscovery Chaos API key.",
         verbose_name="Chaos Key",
     )
     # Shodan
-    shodan_key = models.CharField(
+    shodan_key = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="Shodan API key.",
         verbose_name="Shodan Key",
@@ -22,49 +24,49 @@ class SubfinderConfig(models.Model):
         help_text="Censys API ID.",
         verbose_name="Censys API ID",
     )
-    censys_secret = models.CharField(
+    censys_secret = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="Censys API Secret.",
         verbose_name="Censys API Secret",
     )
     # SecurityTrails
-    securitytrails_key = models.CharField(
+    securitytrails_key = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="SecurityTrails API key.",
         verbose_name="SecurityTrails Key",
     )
     # VirusTotal
-    virustotal_key = models.CharField(
+    virustotal_key = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="VirusTotal API key.",
         verbose_name="VirusTotal Key",
     )
     # GitHub (improves certificate transparency results)
-    github_token = models.CharField(
+    github_token = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="GitHub personal access token (improves cert transparency results).",
         verbose_name="GitHub Token",
     )
     # BeVigil
-    bevigil_key = models.CharField(
+    bevigil_key = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="BeVigil API key.",
         verbose_name="BeVigil Key",
     )
     # BinaryEdge
-    binaryedge_key = models.CharField(
+    binaryedge_key = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="BinaryEdge API key.",
         verbose_name="BinaryEdge Key",
     )
     # FullHunt
-    fullhunt_key = models.CharField(
+    fullhunt_key = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="FullHunt API key.",
         verbose_name="FullHunt Key",
     )
     # Hunter.io
-    hunter_key = models.CharField(
+    hunter_key = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="Hunter.io API key.",
         verbose_name="Hunter Key",

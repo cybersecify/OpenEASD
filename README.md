@@ -332,6 +332,7 @@ docker compose up -d       # recreates changed containers; the db volume persist
 | Variable | Default | Description |
 |---|---|---|
 | `SECRET_KEY` | insecure default | Django secret key; **set this in production** |
+| `FIELD_ENCRYPTION_KEY` | *(derived from `SECRET_KEY`)* | Optional Fernet key (urlsafe-base64, 32 bytes) encrypting BYOK API keys/webhooks at rest. Set it to decouple secret encryption from `SECRET_KEY` rotation; changing the effective key makes stored secrets unreadable (re-enter them) |
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated hostnames (add your server IP/domain) |
 | `CSRF_TRUSTED_ORIGINS` | *(none)* | Required if accessing via a domain, e.g. `https://openeasd.example.com` |
 | `DEBUG` | `False` | Set `True` only for local development |
