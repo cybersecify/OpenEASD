@@ -239,6 +239,7 @@ GET  /api/scans/<uuid>/status/        lightweight status (React polls every 3s w
 POST /api/scans/<uuid>/subscan/       re-run a subset of tools against an existing scan
 GET  /api/scans/findings/             paginated findings (?severity= &domain= &status= &source=)
 GET  /api/insights/                   trends, top hosts, asset growth, Exposure Score
+GET  /api/assets/                     persistent asset inventory (?domain= &kind= &status= &q=)
 GET  /api/ai/triage/<uuid>/           AI triage status + ranked items + agent decisions
 GET  /api/version/  /health/          build provenance (unauthenticated)
 GET  /api/docs                        OpenAPI / Swagger UI
