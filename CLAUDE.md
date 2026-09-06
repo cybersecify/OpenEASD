@@ -803,4 +803,4 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 
 **Total: 1752 tests** (1700 fast + 52 slow domain_security)
 
-Frontend: **15 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, and the axios 401-refresh interceptor. Run with `cd frontend && npm run test:run`.
+Frontend: **18 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, and the Assets `SeverityChips`. Run with `cd frontend && npm run test:run`.
