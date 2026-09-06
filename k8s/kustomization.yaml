@@ -2,10 +2,13 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: default
 images:
+  # Pin to a released version for reproducible rollouts. Bump per release (or
+  # switch to the floating :v2.1 major.minor tag + imagePullPolicy: Always to
+  # auto-pick-up patch releases).
   - name: ghcr.io/cybersecify/openeasd-web
-    newTag: v0.4
+    newTag: v2.1.0
   - name: ghcr.io/cybersecify/openeasd-worker
-    newTag: v0.4
+    newTag: v2.1.0
 resources:
   - configmap.yaml
   - pvc.yaml
