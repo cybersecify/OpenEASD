@@ -1,7 +1,7 @@
 """Adaptive scan orchestration — the bounded agent loop.
 
 One step = exactly one LLM decision call plus bookkeeping. Steps are chained
-through Django-Q: a step that launches a subscan returns immediately, and the
+through DBOS: a step that launches a subscan returns immediately, and the
 subscan's finalize re-enqueues the next step (hooks.maybe_continue_agent).
 Nothing ever waits on another task, so the single worker cannot deadlock.
 
