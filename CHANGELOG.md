@@ -8,6 +8,16 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Added
+- **Asset inventory — backend foundation (PR1).** A new `apps/core/asset_inventory`
+  layer builds a persistent, deduplicated `Asset` record per unique
+  (domain, kind, key) — subdomains/IPs/ports/URLs — with `first_seen`/`last_seen`/
+  `status`, populated by a fail-graceful rollup at scan finalize (honest
+  `gone`-marking: only on completed scans, only for kinds actually observed).
+  `Finding.asset` links findings to the inventory. A backfill migration seeds it
+  from existing scan history. No user-facing surface yet — the `/api/assets/`
+  endpoints and Assets UI are later PRs (see
+  `docs/specs/2026-09-06-asset-centric-inventory.md`). Additive: with the
+  inventory unused, scans behave exactly as before.
 - **Historical DNS Records tool (`dns_history`, tool #28) — passive.** Queries a
   passive-DNS dataset for a domain's historical A/AAAA/MX records and surfaces
   each as an informational finding (past hosting / stale records → recon and
