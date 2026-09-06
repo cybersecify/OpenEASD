@@ -611,15 +611,3 @@ NINJA_JWT = {
     "BLACKLIST_AFTER_ROTATION": False,
     "UPDATE_LAST_LOGIN": False,
 }
-
-# Enable WAL journal mode for SQLite so parallel phase-7 tool threads
-# can write concurrently without hitting "database is locked" errors.
-from django.db.backends.signals import connection_created  # noqa: E402
-
-
-def _set_sqlite_wal(sender, connection, **kwargs):
-    if connection.vendor == "sqlite":
-        connection.cursor().execute("PRAGMA journal_mode=WAL;")
-
-
-connection_created.connect(_set_sqlite_wal)
