@@ -1,5 +1,7 @@
 from django.db import models
 
+from apps.core.fields import EncryptedCharField
+
 # Bump when the consent wording changes materially — a mismatch with
 # AISettings.consent_version re-gates the consent dialog (D-013/D-014).
 CURRENT_CONSENT_VERSION = 1
@@ -15,7 +17,7 @@ class AISettings(models.Model):
     """
 
     cloudflare_account_id = models.CharField(max_length=64, blank=True, default="")
-    cloudflare_api_token = models.CharField(max_length=128, blank=True, default="")
+    cloudflare_api_token = EncryptedCharField(max_length=128, blank=True, default="")
 
     enabled = models.BooleanField(default=False)
     consent_given_at = models.DateTimeField(null=True, blank=True)

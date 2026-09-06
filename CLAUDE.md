@@ -587,6 +587,21 @@ class Finding(models.Model):
 
 **JSON-field aggregation:** the codebase groups JSON-extracted fields (e.g. `extra__cvss_score`) in Python rather than via `Max(...)` DB aggregation — a habit from the former SQLite backend. PostgreSQL supports these aggregations natively, but the Python-side grouping is kept for portability; no need to "fix" it.
 
+## Secrets at rest — `apps/core/crypto.py` + `apps/core/fields.py`
+
+BYOK credentials stored in the DB are **encrypted at rest** via
+`EncryptedCharField`/`EncryptedTextField` (transparent Fernet encrypt-on-write /
+decrypt-on-read; TEXT column; blank stays blank; legacy plaintext rows decrypt
+tolerantly and re-encrypt on next save). Covered fields: `AISettings`
+cloudflare token; `NotificationConfig` Slack/Teams webhook URLs; every
+`*_key`/`*_secret`/`*_token` on `AmassConfig` + `SubfinderConfig` (Censys IDs /
+PassiveTotal usernames stay plaintext — identifiers, not secrets). The key comes
+from `FIELD_ENCRYPTION_KEY` (a urlsafe-base64 Fernet key) when set, else derived
+from `SECRET_KEY`; changing the effective key makes stored secrets unreadable
+(re-enter them). Fernet is non-deterministic → these fields can't be used in
+equality `.filter()` lookups (only ever read via singleton `.get()` + attribute
+access). Tests: `tests/unit/test_crypto.py`.
+
 ## AI subsystem — `apps/core/ai/` (D-014/D-015)
 
 Core subsystem, deliberately **NOT a registry tool** (no `tool_meta`): it runs
@@ -595,7 +610,8 @@ gate is consent + keys, never workflow membership.
 
 - **Backend:** Cloudflare Workers AI only, called directly via REST. BYOK
   credentials: saved via the /ai page (stored in `AISettings`, write-only —
-  never serialized back out) or `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`
+  never serialized back out, **encrypted at rest** — see Secrets at rest below)
+  or `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`
   env vars as fallback (DB wins). `CLOUDFLARE_AI_MODEL` (default
   `@cf/meta/llama-3.3-70b-instruct-fp8-fast`), `CLOUDFLARE_AI_TIMEOUT` (60s),
   `CLOUDFLARE_AI_MAX_CALLS_PER_SCAN` (10 — hard per-scan budget enforced in

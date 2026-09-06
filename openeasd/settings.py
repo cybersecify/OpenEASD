@@ -17,6 +17,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = config("SECRET_KEY", default="django-insecure-change-me-in-production")
 
+# Encrypts secrets stored at rest (BYOK API keys, webhook URLs) via
+# apps.core.fields.EncryptedField. Optional: when unset, a key is derived from
+# SECRET_KEY. Set it (a urlsafe-base64 32-byte Fernet key, e.g.
+# `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`)
+# to decouple secret encryption from SECRET_KEY rotation. Changing whichever key
+# is in effect makes already-stored secrets unreadable (re-enter them).
+FIELD_ENCRYPTION_KEY = config("FIELD_ENCRYPTION_KEY", default="")
+
 DEBUG = config("DEBUG", default=False, cast=bool)
 
 

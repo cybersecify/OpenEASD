@@ -7,6 +7,23 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Security
+- **BYOK secrets encrypted at rest.** API keys, tokens, and webhook URLs stored
+  in the database — the Cloudflare AI token, Slack/Teams webhook URLs, and every
+  provider key on the amass/subfinder config models — are now Fernet-encrypted
+  via a transparent `EncryptedField` (`apps/core/crypto.py` + `fields.py`). The
+  key is derived from `SECRET_KEY` by default, or set `FIELD_ENCRYPTION_KEY` to
+  decouple it. Existing plaintext rows are migrated in place and read
+  tolerantly. **Why:** a database dump or backup previously exposed the
+  operator's third-party credentials in cleartext.
+
+### Developer experience
+- **CI now enforces `ruff` lint, a frontend test suite (Vitest + Testing
+  Library), and an 80% backend coverage floor** — all three were previously
+  uncovered (ruff/black/isort and pytest-cov were installed but never run; the
+  React SPA had no tests). **Why:** catch regressions mechanically instead of in
+  review.
+
 ## [v2.0.0] — 2026-09-06
 
 ### Added

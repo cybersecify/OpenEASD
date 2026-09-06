@@ -2,6 +2,8 @@
 
 from django.db import models
 
+from apps.core.fields import EncryptedCharField
+
 
 class AmassConfig(models.Model):
     # Kill switch — checked before running the binary
@@ -28,13 +30,13 @@ class AmassConfig(models.Model):
 
     # --- API Keys ---
     # ProjectDiscovery Chaos
-    chaos_key = models.CharField(
+    chaos_key = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="ProjectDiscovery Chaos API key.",
         verbose_name="Chaos Key",
     )
     # Shodan
-    shodan_key = models.CharField(
+    shodan_key = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="Shodan API key.",
         verbose_name="Shodan Key",
@@ -45,19 +47,19 @@ class AmassConfig(models.Model):
         help_text="Censys API ID.",
         verbose_name="Censys API ID",
     )
-    censys_secret = models.CharField(
+    censys_secret = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="Censys API Secret.",
         verbose_name="Censys API Secret",
     )
     # SecurityTrails
-    securitytrails_key = models.CharField(
+    securitytrails_key = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="SecurityTrails API key.",
         verbose_name="SecurityTrails Key",
     )
     # VirusTotal
-    virustotal_key = models.CharField(
+    virustotal_key = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="VirusTotal API key.",
         verbose_name="VirusTotal Key",
@@ -68,19 +70,19 @@ class AmassConfig(models.Model):
         help_text="PassiveTotal (RiskIQ) account username.",
         verbose_name="PassiveTotal Username",
     )
-    passivetotal_key = models.CharField(
+    passivetotal_key = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="PassiveTotal (RiskIQ) API key.",
         verbose_name="PassiveTotal Key",
     )
     # WhoisXMLAPI — unique to amass
-    whoisxmlapi_key = models.CharField(
+    whoisxmlapi_key = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="WhoisXMLAPI key.",
         verbose_name="WhoisXMLAPI Key",
     )
     # GitHub
-    github_token = models.CharField(
+    github_token = EncryptedCharField(
         max_length=200, blank=True, default="",
         help_text="GitHub personal access token (improves cert transparency results).",
         verbose_name="GitHub Token",
