@@ -46,6 +46,12 @@ commits to recover the reasoning.
   CLAUDE.md spells out the override + probe-host requirement.
 
 ### Removed
+- **Duplicate/stale docs.** Dropped the root `PRD.md` — a diverged duplicate of
+  the canonical `docs/PRD.md` whose "Delivered" section duplicated the CHANGELOG
+  and whose "Planned" roadmap was mostly shipped or now contradicts the
+  single-user design. Also removed `docs/LOCAL_BRANCH_DBOS.md`, an unreferenced
+  status doc for the long-since-merged DBOS branch. `docs/PRD.md` is the single
+  canonical PRD.
 - **Dead SQLite WAL signal handler** in settings — a leftover `connection_created`
   hook that only fired for the SQLite backend, which no longer exists (Postgres
   since v2.0). No behavior change.
