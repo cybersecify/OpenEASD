@@ -7,6 +7,15 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **Historical DNS Records tool (`dns_history`, tool #28) — passive.** Queries a
+  passive-DNS dataset for a domain's historical A/AAAA/MX records and surfaces
+  each as an informational finding (past hosting / stale records → recon and
+  occasional takeover leads). Passive (queries a third-party dataset, never the
+  target → no authorization needed); BYO endpoint via `DNS_HISTORY_API_URL`
+  (no-op when unset); fail-graceful (never fails a scan). Joins the default Full
+  Scan and the Passive Scan workflow.
+
 ### Changed
 - **k8s: web and worker are now separate Deployments** (`web-deployment.yaml` +
   `worker-deployment.yaml`) instead of one pod with two containers — a default

@@ -79,14 +79,14 @@ apps/<tool>/
     analyzer.py   — parses raw data; builds Asset / Finding objects
 ```
 
-**27 registered tools.** Each carries an `active` flag: **passive** tools use only
+**28 registered tools.** Each carries an `active` flag: **passive** tools use only
 public/third-party data (no packets to the target → no authorization needed);
 **active** tools probe the target directly (require a `DomainAuthorization`). The
 full per-tool table is in [CLAUDE.md](../CLAUDE.md); by phase group:
 
 | Phase group | Phases | Tools |
 |---|---|---|
-| Domain Intelligence | 1 | domain_security, hudson_rock, github_secrets, typosquat, breach_check |
+| Domain Intelligence | 1 | domain_security, hudson_rock, dns_history, github_secrets, typosquat, breach_check |
 | Surface Enumeration | 2–4 | subfinder, amass, asn_discovery, alterx, github_recon, dnsx, takeover_check, cloud_assets |
 | Port Discovery | 5–6 | naabu, shodan, service_detection |
 | Network Exposure | 7 | nmap, tls_checker, ssh_checker, nuclei_network |
