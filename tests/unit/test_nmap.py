@@ -302,14 +302,14 @@ class TestBackportMatching:
     def test_backport_applied_demotes_to_info(self):
         sess = self._make_session()
         findings = analyze(sess, {"1.2.3.4": self.SAMPLE_XML_UBUNTU})
-        
+
         by_cve = {f.cve: f for f in findings}
-        
+
         # CVE-2024-6387 is patched in 3ubuntu13.3, and we are running 3ubuntu13.4 -> info
         f1 = by_cve["CVE-2024-6387"]
         assert f1.severity == "info"
         assert f1.extra.get("backport_applied") is True
-        
+
         # CVE-2024-39894 is not in our mock BACKPORTS -> original severity
         f2 = by_cve["CVE-2024-39894"]
         assert f2.severity == "medium"

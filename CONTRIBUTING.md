@@ -300,7 +300,7 @@ Maintainers will ask you to add sign-offs before merging if they're missing.
 
 - Python: follow what's there. We use Django 5+ idioms. **`ruff check` runs
   in CI** (config in `pyproject.toml [tool.ruff]`, rules E/F/W with line-length
-  deferred) — run `uv run ruff check apps/ openeasd/` before pushing, or
+  deferred) — run `uv run ruff check apps/ openeasd/ tests/` before pushing, or
   `uv run ruff check --fix` to auto-fix. No line-reflow formatter is enforced
   yet, so please don't reformat unrelated lines in your PR.
 - JS: ES modules + JSX. Tailwind utility classes for styling.
