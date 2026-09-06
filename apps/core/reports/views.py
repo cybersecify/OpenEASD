@@ -109,6 +109,8 @@ _CWE_BY_CHECK = {
     "exposed_secret": "CWE-540: Inclusion of Sensitive Information in Source Code",
     "infostealer_exposure": "CWE-522: Insufficiently Protected Credentials",
     "asn": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
+    # dns_history — historical A/AAAA/MX records reveal past hosting/mail infra
+    "dns_history": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
     "coverage_regression": "CWE-693: Protection Mechanism Failure",
     "shodan_exposure": "CWE-668: Exposure of Resource to Wrong Sphere",
     # A registered lookalike domain is infrastructure built to be visually
