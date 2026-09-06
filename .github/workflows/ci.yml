@@ -64,9 +64,10 @@ jobs:
         run: uv sync --group dev
 
       - name: Lint — ruff
-        run: uv run ruff check apps/ openeasd/
+        run: uv run ruff check apps/ openeasd/ tests/
         # High-signal correctness rules (E/F/W, E501 deferred). Config in
-        # pyproject.toml [tool.ruff]. Runs before tests so lint fails fast.
+        # pyproject.toml [tool.ruff]. Includes tests/ (per-file-ignores relax
+        # E402/E702 there). Runs before tests so lint fails fast.
 
       - name: Run tests + coverage gate (fast — exclude slow DNS tests)
         env:

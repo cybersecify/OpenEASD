@@ -126,3 +126,6 @@ ignore = [
 # Routers are imported AFTER the NinjaAPI instance is built, on purpose
 # (each router module imports back from here) — the ordering is load-bearing.
 "apps/core/api/ninja.py" = ["E402"]
+# Tests legitimately import mid-file (near the case that uses them) and use
+# compact semicolon setup lines; keep the correctness rules (F/W) on them.
+"tests/**" = ["E402", "E702"]
