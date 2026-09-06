@@ -50,8 +50,10 @@ commits to recover the reasoning.
   the canonical `docs/PRD.md` whose "Delivered" section duplicated the CHANGELOG
   and whose "Planned" roadmap was mostly shipped or now contradicts the
   single-user design. Also removed `docs/LOCAL_BRANCH_DBOS.md`, an unreferenced
-  status doc for the long-since-merged DBOS branch. `docs/PRD.md` is the single
-  canonical PRD.
+  status doc for the long-since-merged DBOS branch, and the two historical
+  `docs/specs/2026-06-01-cloud-assets-*.md` implementation specs for a shipped
+  feature (unreferenced). `docs/PRD.md` is the single canonical PRD; the WAF
+  coverage spec (still referenced from CLAUDE.md + settings) stays.
 - **Dead SQLite WAL signal handler** in settings — a leftover `connection_created`
   hook that only fired for the SQLite backend, which no longer exists (Postgres
   since v2.0). No behavior change.
