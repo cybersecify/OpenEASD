@@ -320,7 +320,7 @@ request-counting proxy C4 is deferred).
 | `scheduler/` | `scheduler` | Scan callables (daily_scan, run_due_monitoring_scans, run_due_user_scans, reap_stuck_scans, token purge) invoked by the DBOS `@scheduled` workflows in `apps/core/durable` |
 | `notifications/` | `alerts` | Slack/Teams alerts, NotificationConfig model, alert history |
 | `insights/` | `insights` | ScanSummary (incl. per-scan Exposure Score + grade, `scoring.py`), FindingTypeSummary, charts |
-| `reports/` | `reports` | CSV + PDF export |
+| `reports/` | `reports` | CSV + PDF export (synchronous, served by the web tier) |
 | `ai/` | `ai` | AI analysis (Cloudflare Workers AI, BYOK): finding triage, bounded adaptive orchestration, report/alert summaries, consent + per-call audit log |
 | `api/` | — | Django Ninja API — routers, JWT auth, error handlers |
 
@@ -700,8 +700,8 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 ```
 
 ### Other routes
-- `/reports/<uuid>/csv/` → CSV export (Django view, `_report_auth_required` — accepts session auth or `?token=<access_token>`)
-- `/reports/<uuid>/pdf/` → PDF export (Django view, `_report_auth_required` — accepts session auth or `?token=<access_token>`)
+- `/reports/<uuid>/csv/` → CSV export (**synchronous** Django view on the web tier, `_report_auth_required` — accepts session auth or `?token=<access_token>`)
+- `/reports/<uuid>/pdf/` → PDF export (**synchronous** Django view on the web tier, rendered with WeasyPrint, `_report_auth_required` — accepts session auth or `?token=<access_token>`)
 - `/admin/` → Django admin
 - `/api/docs` → Django Ninja auto-generated OpenAPI docs
 - `/*` → React SPA catch-all (`frontend/dist/index.html`)

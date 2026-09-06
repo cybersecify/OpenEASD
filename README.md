@@ -313,7 +313,7 @@ docker compose up -d --build
 ```
 
 - `db` — PostgreSQL 17 (app data + the DBOS durable-execution schema)
-- `web` — the slim `openeasd-web` image (UI/API + PDF reports; no scanner tools)
+- `web` — the slim `openeasd-web` image (UI/API + synchronous CSV/PDF reports; no scanner tools)
 - `worker` — the `openeasd-worker` image (DBOS worker + the full scanner matrix, `NET_RAW`)
 
 > **Run all three tiers — this is the recommended architecture.** Keeping
