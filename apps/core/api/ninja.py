@@ -171,3 +171,6 @@ api.add_router("/notifications", notifications_router)
 
 from apps.core.ai.api import router as ai_router
 api.add_router("/ai", ai_router)
+
+from apps.core.asset_inventory.api import router as assets_router
+api.add_router("/assets", assets_router)

@@ -14,10 +14,12 @@ commits to recover the reasoning.
   `status`, populated by a fail-graceful rollup at scan finalize (honest
   `gone`-marking: only on completed scans, only for kinds actually observed).
   `Finding.asset` links findings to the inventory. A backfill migration seeds it
-  from existing scan history. No user-facing surface yet — the `/api/assets/`
-  endpoints and Assets UI are later PRs (see
-  `docs/specs/2026-09-06-asset-centric-inventory.md`). Additive: with the
-  inventory unused, scans behave exactly as before.
+  from existing scan history. **Read API (PR2):** `GET /api/assets/` (paginated,
+  filterable by domain/kind/status/search, each row with per-severity open-finding
+  counts), `GET /api/assets/summary/` (totals by kind + active/gone), and
+  `GET /api/assets/<id>/` (metadata + findings + scan timeline). The Assets UI is
+  the next PR (see `docs/specs/2026-09-06-asset-centric-inventory.md`). Additive:
+  with the inventory unused, scans behave exactly as before.
 - **Historical DNS Records tool (`dns_history`, tool #28) — passive.** Queries a
   passive-DNS dataset for a domain's historical A/AAAA/MX records and surfaces
   each as an informational finding (past hosting / stale records → recon and

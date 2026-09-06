@@ -349,6 +349,7 @@ Per-module routers (each file exports a `router = Router(auth=JWTAuth())`):
     apps/core/workflows/api.py   — /api/workflows/ CRUD + /tools/
     apps/core/insights/api.py    — /api/insights/
     apps/core/notifications/api.py — /api/notifications/ config + test + alerts
+    apps/core/asset_inventory/api.py — /api/assets/ list + summary + detail
     (scheduled router in scans/api.py) — /api/scheduled/
 ```
 
@@ -698,6 +699,9 @@ POST /api/workflows/<pk>/update/          — update workflow name/tools
 POST /api/workflows/<pk>/rename/          — rename workflow
 POST /api/workflows/<pk>/delete/          — delete workflow
 POST /api/workflows/<pk>/steps/<tool>/toggle/ — toggle single tool step
+GET  /api/assets/                         — persistent asset inventory (paginated; ?domain=&kind=&status=&q=), each row with per-severity open-finding counts
+GET  /api/assets/summary/                 — inventory totals by kind + active/gone
+GET  /api/assets/<id>/                     — asset detail: metadata + extra, findings, scan timeline (seen_in_scans)
 GET  /api/insights/                       — trends, top hosts, asset growth, KPIs, Exposure Score + trend (per-scan exposure_score/grade + top-level exposure block)
 GET  /api/notifications/config/           — get Slack/Teams notification config
 POST /api/notifications/config/           — update notification config
@@ -795,7 +799,8 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_login_ratelimit.py` | 13 | Login brute-force limiter — threshold lockout, window reset, success clears, X-Forwarded-For keying (+ untrusted-XFF fallback / spoof-evasion), middleware integration (per-IP isolation, disabled bypass, refresh endpoint unaffected) |
 
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
+| `tests/unit/test_asset_inventory_api.py` | 11 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404) |
 
-**Total: 1741 tests** (1689 fast + 52 slow domain_security)
+**Total: 1752 tests** (1700 fast + 52 slow domain_security)
 
 Frontend: **15 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, and the axios 401-refresh interceptor. Run with `cd frontend && npm run test:run`.
