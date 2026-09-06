@@ -114,6 +114,7 @@ INSTALLED_APPS = [
     "apps.domain_security",
     "apps.hudson_rock",
     "apps.breach_check",
+    "apps.dns_history",
     "apps.subfinder",
     "apps.amass",
     "apps.asn_discovery",
@@ -389,6 +390,10 @@ OPENEASD_USER_AGENT = config(
     "OPENEASD_USER_AGENT",
     default="OpenEASD/1.0 (+https://cybersecify.com/openeasd)",
 )
+
+# dns_history (passive): BYO passive-DNS JSON endpoint returning historical
+# A/AAAA/MX records for `?domain=<domain>`. Unset → the tool no-ops.
+DNS_HISTORY_API_URL = config("DNS_HISTORY_API_URL", default="")
 
 # Resource profile — adapts scan behaviour to the host's specs.
 #   low      : same-phase tools run sequentially, nuclei throttled, amass skips

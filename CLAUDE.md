@@ -414,12 +414,13 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (27 registered tools)
+### Tool apps (28 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
 | `apps/domain_security/` | 1 | Domain Intelligence | Yes | DNS, email, RDAP checks |
 | `apps/hudson_rock/` | 1 | Domain Intelligence | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
+| `apps/dns_history/` | 1 | Domain Intelligence | Yes | Historical A/AAAA/MX records via a passive-DNS dataset — surfaces past hosting / stale records (info findings). Passive, BYO `DNS_HISTORY_API_URL` (no-op if unset), fail-graceful |
 | `apps/github_secrets/` | 1 | Domain Intelligence | Yes | Leaked secrets in PUBLIC GitHub — searches GitHub's code-search API (org-scoped by default) for the target org's committed credentials, fetches the hits, runs gitleaks over them (same engine as `js_secrets`), REDACTS before storage (`check_type="exposed_secret"`, shared with js_secrets). Passive (queries GitHub, not the target); BYOK MANDATORY (`GITHUB_TOKEN` — code-search needs auth; no token → logged no-op); fail-graceful |
 | `apps/typosquat/` | 1 | Domain Intelligence | Yes | Lookalike / typosquat domain detection — generates lookalike candidates algorithmically (homoglyph/typo/omission/insertion/repetition/transposition/hyphenation/TLD-swap) then checks which are registered via public DNS (A/MX → medium/weaponizable, NS-only → low). Passive (queries candidate domains' DNS, never the target), no key, fail-graceful |
 | `apps/breach_check/` | 1 | Domain Intelligence | Yes | Data-breach exposure for the domain. BYOK: free keyless XposedOrNot catalog by default, authoritative Have I Been Pwned `breacheddomain` when `HIBP_API_KEY` set. Aggregate COUNTS + public breach metadata only — never email aliases/credentials. Passive, fail-graceful |
@@ -468,6 +469,7 @@ but not yet in the default set.)
 ```
 Phase 1  domain_security    → Finding (DNS/email/RDAP)
 Phase 1  hudson_rock         → Finding (infostealer exposure via Hudson Rock — passive)
+Phase 1  dns_history         → Finding (historical A/AAAA/MX records via passive DNS — passive)
 Phase 1  github_secrets      → Finding (leaked secrets in public GitHub via gitleaks — passive, BYO token)
 Phase 1  typosquat           → Finding (registered lookalike/typosquat domains via public DNS — passive)
 Phase 1  breach_check        → Finding (data-breach exposure: XposedOrNot free / HIBP BYO-key — passive, counts only)
@@ -506,7 +508,7 @@ the registry via `get_tool_active()` and `is_passive_tool_set(tools)`.
   `DomainAuthorization`**.
   Passive tools: `subfinder`, `alterx`, `dnsx`, `historical_urls`,
   `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`, `shodan`,
-  `typosquat`, `breach_check`, `github_secrets`, `github_recon`.
+  `typosquat`, `breach_check`, `github_secrets`, `github_recon`, `dns_history`.
 - **Active** (`active=True`): probes the target directly (port scans, HTTP/TLS/SSH
   connections, crawling, vuln templates, AXFR/SMTP/mta-sts probes). **Requires
   `DomainAuthorization`.**
@@ -734,6 +736,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_httpx.py` | 16 | JSON parser, Port lookup, Subdomain link, honest UA, tech-detect flag + technology storage/dedup |
 | `tests/unit/test_github_recon.py` | 39 | Org resolution (domain-derived + `GITHUB_ORG` override), collector (org/user confirm + fallback, repo enumeration/pagination, fork skip, `GITHUB_MAX_REPOS`/`GITHUB_MAX_REQUESTS` caps, config-file base64 decode + size cap, BYO-token auth header + honest UA), fail-graceful (timeout/500/rate-limit-backoff/hard-403/bad-JSON never raise), infra-reference extraction (hostname/api-endpoint/cloud-bucket, apex excluded), analyzer (summary + per-ref low Findings, dedup), scanner never-raises |
 | `tests/unit/test_hudson_rock.py` | 17 | collector (both endpoints keyless + honest UA, fail-graceful on timeout/500/429/bad-JSON, 429 retry), analyzer (severity, counts/families/URLs/attribution, no-finding-when-zero, **no plaintext/email persisted**, URL cap), scanner |
+| `tests/unit/test_dns_history.py` | 17 | Historical-DNS passive tool — collector (no-URL no-op, fail-graceful on request-error/non-200/bad-JSON, honest UA, type filter, dedup, cap, wrapped-dict), analyzer (info Finding per record, skip empty), scanner (no-domain/no-records skip, saves, never-raises) |
 | `tests/unit/test_breach_check.py` | 29 | Two-tier BYOK — free XposedOrNot parse (keyless + honest UA) + HIBP `breacheddomain` path (key set → HIBP used, `hibp-api-key` header sent, 404/403 = no-data), fail-graceful (timeout/500/429/bad-JSON never raise), 429 backoff, analyzer (severity high on large-account/recent, counts + attribution, no-finding-when-zero, breach-name cap), **PRIVACY: alias keys/emails/credentials never persisted (collector + analyzer + end-to-end)**, scanner |
 | `tests/unit/test_shodan.py` | 20 | collector tier selection (free InternetDB vs paid host API, BYO-key), `SHODAN_MAX_IPS` cap on paid path only, fail-graceful (404/timeout/500/429/bad-JSON never raise), analyzer (exposure + CVE findings, `extra["cve_ids"]` for cve_intel enrichment, invalid-CVE filter), scanner |
 | `tests/unit/test_js_secrets.py` | 26 | `.js` URL filter + cap, fetch-error handling, gitleaks JSON parser, analyzer Findings + dedup + secret redaction (full secret never stored), scanner, binary-missing/timeout |
@@ -790,6 +793,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_crypto.py` | 16 | At-rest secret encryption — Fernet roundtrip/non-determinism/legacy-plaintext tolerance, key derivation/override/rotation, DB-holds-ciphertext + ORM-returns-plaintext for AI/notifications/amass/subfinder |
 | `tests/unit/test_login_ratelimit.py` | 13 | Login brute-force limiter — threshold lockout, window reset, success clears, X-Forwarded-For keying (+ untrusted-XFF fallback / spoof-evasion), middleware integration (per-IP isolation, disabled bypass, refresh endpoint unaffected) |
 
-**Total: 1713 tests** (1661 fast + 52 slow domain_security)
+**Total: 1730 tests** (1678 fast + 52 slow domain_security)
 
 Frontend: **15 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, and the axios 401-refresh interceptor. Run with `cd frontend && npm run test:run`.
