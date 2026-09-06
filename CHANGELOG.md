@@ -21,8 +21,12 @@ commits to recover the reasoning.
   a new **Assets** nav item + inventory page (filter by kind/status/domain, search,
   per-asset severity chips) and an **AssetDetail** page (metadata, findings across
   scans, and the scan-seen timeline) — the asset-centric view of the attack
-  surface. See `docs/specs/2026-09-06-asset-centric-inventory.md`. Additive: with
-  the inventory unused, scans behave exactly as before.
+  surface. **Polish (PR4):** a dashboard "Asset inventory" KPI (active/gone,
+  linking to the Assets page), a Finding→Asset cross-link (the findings API now
+  carries `asset_id`/`asset_key`/`asset_kind`, and the Findings page links each
+  finding to its asset), and README/DESIGN notes. See
+  `docs/specs/2026-09-06-asset-centric-inventory.md`. Additive: with the
+  inventory unused, scans behave exactly as before.
 - **Historical DNS Records tool (`dns_history`, tool #28) — passive.** Queries a
   passive-DNS dataset for a domain's historical A/AAAA/MX records and surfaces
   each as an informational finding (past hosting / stale records → recon and

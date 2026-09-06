@@ -164,7 +164,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ## Features
 
-- **Automated pipeline**: 27-tool scan workflow from domain to findings
+- **Automated pipeline**: 28-tool scan workflow from domain to findings
 - **Network attack surface scanning**: CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
 - **CVE prioritisation**: EPSS exploit-probability scores + CISA KEV (known-exploited-in-the-wild) flags enrich CVE findings in place, so you triage by real-world risk rather than severity alone
 - **Dynamic workflows**: Create custom scan configurations, enable/disable tools per workflow
@@ -172,6 +172,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 - **Live scan progress**: Real-time pipeline status with per-tool step tracking
 - **Scan stop/cancel**: Graceful cancellation between tool steps
 - **Unified findings**: All tools write to a single Finding model with lifecycle tracking
+- **Asset inventory**: A persistent, deduplicated view of your attack surface across scans — every subdomain/IP/port/URL with first-seen / last-seen / active-or-gone status; pivot from any asset to its findings and scan history (Assets page + `/api/assets/`)
 - **Continuous monitoring**: Per-domain rescans on a configurable schedule (6h / 12h / 24h / 48h / weekly)
 - **Subscan**: Re-run specific tools on existing scan assets without full rediscovery
 - **Reports**: CSV and PDF export

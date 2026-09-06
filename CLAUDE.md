@@ -799,8 +799,8 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_login_ratelimit.py` | 13 | Login brute-force limiter — threshold lockout, window reset, success clears, X-Forwarded-For keying (+ untrusted-XFF fallback / spoof-evasion), middleware integration (per-IP isolation, disabled bypass, refresh endpoint unaffected) |
 
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
-| `tests/unit/test_asset_inventory_api.py` | 11 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404) |
+| `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1752 tests** (1700 fast + 52 slow domain_security)
+**Total: 1755 tests** (1703 fast + 52 slow domain_security)
 
 Frontend: **18 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, and the Assets `SeverityChips`. Run with `cd frontend && npm run test:run`.

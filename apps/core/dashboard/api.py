@@ -11,6 +11,7 @@ from apps.core.domains.models import Domain
 from apps.core.insights.models import ScanSummary
 from apps.core.assets.models import Subdomain, IPAddress, Port
 from apps.core.web_assets.models import URL
+from apps.core.asset_inventory.models import Asset
 
 router = Router(auth=JWTAuth())
 
@@ -95,9 +96,17 @@ def api_dashboard(request):
         "urls": URL.objects.filter(session_id__in=latest_completed_ids).count(),
     }
 
+    # Persistent asset-inventory KPI (spans scan history, not just the latest
+    # scan): total tracked assets that are currently live vs. gone.
+    inventory = Asset.objects.filter(domain__in=active_domains)
+    assets_active = inventory.filter(status="active").count()
+    assets_gone = inventory.filter(status="gone").count()
+
     return {
         "kpi_domains": len(active_domains),
         "kpi_active_scans": running_count,
+        "kpi_assets_active": assets_active,
+        "kpi_assets_gone": assets_gone,
         "kpi_critical": current_critical,
         "kpi_high": current_high,
         "kpi_subdomains": asset_counts["subdomains"],

@@ -41,6 +41,7 @@ export default function DashboardPage() {
   const {
     kpi_domains = 0, kpi_active_scans = 0, kpi_critical = 0, kpi_high = 0,
     kpi_subdomains = 0, kpi_ips = 0, kpi_ports = 0, kpi_urls = 0,
+    kpi_assets_active = 0, kpi_assets_gone = 0,
     domain_status = [], urgent_findings = [],
   } = data;
 
@@ -65,6 +66,18 @@ export default function DashboardPage() {
           <AssetCard label="Ports"      value={kpi_ports} />
           <AssetCard label="URLs"       value={kpi_urls} />
         </div>
+
+        <button onClick={() => navigate('/assets')}
+          className="w-full text-left bg-card border border-rim rounded-xl p-4 hover:bg-hover transition-colors flex items-center justify-between">
+          <div>
+            <div className="text-xs text-dim uppercase tracking-wider">Asset inventory</div>
+            <div className="text-body text-sm mt-0.5">
+              <span className="text-green-400 font-semibold">{kpi_assets_active}</span> active
+              <span className="text-dim"> · {kpi_assets_gone} gone</span>
+            </div>
+          </div>
+          <span className="text-dim text-xs">View all →</span>
+        </button>
 
         <Card className="overflow-hidden">
           <CardHeader className="border-b border-border px-4 py-3">
