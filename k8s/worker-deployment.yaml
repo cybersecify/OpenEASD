@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openeasd-worker
+  namespace: default
+  labels:
+    app: openeasd
+    tier: worker
+spec:
+  # DBOS durable-execution worker: runs scan/AI workflows + the @scheduled cron
+  # workflows, pulling from the Postgres-backed DBOS queue. Postgres has no
+  # single-writer lock, so this can scale to multiple replicas all draining the
+  # same queue for scan throughput (the @scheduled crons dedupe by design).
+  # No Service — it takes no inbound traffic.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openeasd
+      tier: worker
+  template:
+    metadata:
+      labels:
+        app: openeasd
+        tier: worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/cybersecify/openeasd-worker:latest
+          imagePullPolicy: Always
+          # Go through the role-aware entrypoint so the worker WAITS for the web
+          # tier's migrations (migrate --check) before launching dbos_worker —
+          # this replaces the shared-pod initContainer ordering now that web and
+          # worker are separate Deployments (no DDL race).
+          command:
+            - ./docker-entrypoint.sh
+            - python
+            - manage.py
+            - dbos_worker
+          env:
+            - name: OPENEASD_ROLE
+              value: worker
+          envFrom:
+            - configMapRef:
+                name: openeasd-config
+            - secretRef:
+                name: openeasd-secret
+          securityContext:
+            capabilities:
+              add:
+                - NET_RAW   # required for nmap and naabu port scanning
+          # nuclei loads ~10k community templates into memory at scan time,
+          # spiking past 1Gi; at a 1Gi limit the kernel OOM-killed the worker
+          # mid-scan. 4Gi lets the template load fit and full scans complete.
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"

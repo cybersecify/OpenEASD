@@ -396,16 +396,17 @@ kubectl rollout restart deployment/openeasd-web deployment/openeasd-worker -n de
 
 #### Architecture
 
-Single pod, two containers, one `ReadWriteOnce` PVC:
+Three tiers, each its own workload — a default deploy is **3 pods** (logs → stdout, no PVC):
 
-| Container | Command | Resources |
+| Workload | Command | Resources |
 |---|---|---|
-| `web` | `gunicorn` (2 workers) | 256Mi–512Mi |
-| `worker` | `manage.py dbos_worker` | 512Mi–4Gi, `NET_RAW` capability |
+| `openeasd-web` Deployment | init (migrations/admin) → `gunicorn` (2 workers) | 256Mi–512Mi, no `NET_RAW`, Service → :8000 |
+| `openeasd-worker` Deployment | `manage.py dbos_worker` | 512Mi–4Gi, `NET_RAW` for nmap/naabu, no Service |
+| `openeasd-postgres` StatefulSet | PostgreSQL 17 | 10Gi PVC |
 
-An init container runs migrations and admin user setup before the main containers start. The `worker` container gets `NET_RAW` capability for nmap/naabu port scanning.
+Only the `openeasd-web` Deployment runs migrations (its initContainer); the `openeasd-worker` Deployment waits for them via the role-aware entrypoint (`OPENEASD_ROLE=worker` → `migrate --check`), so there's no DDL race.
 
-> **Scaling:** the app Deployment is `replicas: 1` (one web + one worker container) alongside a PostgreSQL StatefulSet (`k8s/postgres.yaml`). Postgres removes the old single-writer limit, so the worker can be split into its own Deployment and scaled to multiple replicas pulling the same DBOS queue.
+> **Scaling:** each Deployment is `replicas: 1` by default. Postgres removes the old single-writer limit, so `openeasd-worker` scales independently — `kubectl scale deploy/openeasd-worker --replicas=N` adds workers all draining the same DBOS queue, without touching the web tier.
 
 #### Health check
 
