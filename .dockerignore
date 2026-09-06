@@ -17,7 +17,6 @@ frontend/node_modules/
 tests/
 docs/
 *.md
-PRD.md
 
 # Build artifacts already copied via multi-stage
 frontend/dist/
