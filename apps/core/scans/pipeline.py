@@ -244,6 +244,14 @@ def _finalize_session(session):
     from apps.core.insights.builder import build_insights
     build_insights(session)
 
+    # Roll this scan's assets into the persistent inventory (fail-graceful —
+    # a rollup error must never fail a scan). See apps/core/asset_inventory.
+    try:
+        from apps.core.asset_inventory.rollup import rollup_session
+        rollup_session(session)
+    except Exception:  # noqa: BLE001
+        logger.exception("[%s] asset-inventory rollup failed — scan unaffected", session.id)
+
     # AI triage + summaries (no-op unless keys + consent — apps/core/ai/hooks
     # is fail-graceful). Must precede _dispatch_alerts so alerts can carry the
     # summary.

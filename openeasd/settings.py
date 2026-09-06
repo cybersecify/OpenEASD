@@ -100,6 +100,7 @@ INSTALLED_APPS = [
     "apps.core.web_assets",
     "apps.core.service_detection",
     "apps.core.findings",
+    "apps.core.asset_inventory",
     "apps.core.scans",
     "apps.core.domains",
     "apps.core.workflows",

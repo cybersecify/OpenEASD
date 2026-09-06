@@ -67,6 +67,16 @@ class Finding(models.Model):
         blank=True,
         related_name="findings",
     )
+    # Persistent-inventory asset this finding applies to (apps/core/asset_inventory).
+    # Nullable + best-effort: resolved by the inventory rollup at finalize; an
+    # unresolvable target leaves it null and the finding behaves exactly as before.
+    asset = models.ForeignKey(
+        "asset_inventory.Asset",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="findings",
+    )
 
     # Where the finding applies (string for top-level apex findings)
     target = models.CharField(max_length=255, blank=True, db_index=True)
