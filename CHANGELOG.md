@@ -8,6 +8,14 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Security
+- **Login brute-force rate limiting.** After `LOGIN_RATELIMIT_MAX_FAILURES`
+  (default 5) failed logins from an IP within a window, that IP is locked out of
+  `POST /api/token/pair` (429 + `Retry-After`) for the lockout period. Backed by
+  a `LoginThrottle` DB model so the limit holds across gunicorn workers; only the
+  credential endpoint is limited (not refresh), a successful login resets the
+  counter, and it keys off `X-Forwarded-For`. Tunable via `LOGIN_RATELIMIT_*`
+  env. **Why:** a single-admin app exposes exactly one login to guess — an
+  unthrottled one is a standing brute-force target.
 - **BYOK secrets encrypted at rest.** API keys, tokens, and webhook URLs stored
   in the database — the Cloudflare AI token, Slack/Teams webhook URLs, and every
   provider key on the amass/subfinder config models — are now Fernet-encrypted

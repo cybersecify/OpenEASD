@@ -149,7 +149,14 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "apps.core.api.ratelimit.LoginRateLimitMiddleware",
 ]
+
+# Brute-force rate limiting for POST /api/token/pair (see apps/core/api/ratelimit.py).
+LOGIN_RATELIMIT_ENABLED = config("LOGIN_RATELIMIT_ENABLED", default=True, cast=bool)
+LOGIN_RATELIMIT_MAX_FAILURES = config("LOGIN_RATELIMIT_MAX_FAILURES", default=5, cast=int)
+LOGIN_RATELIMIT_WINDOW_SECONDS = config("LOGIN_RATELIMIT_WINDOW_SECONDS", default=900, cast=int)
+LOGIN_RATELIMIT_LOCKOUT_SECONDS = config("LOGIN_RATELIMIT_LOCKOUT_SECONDS", default=900, cast=int)
 
 ROOT_URLCONF = "openeasd.urls"
 
