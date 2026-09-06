@@ -131,3 +131,35 @@ class TestDetail:
 
     def test_detail_404(self, auth_client):
         assert auth_client.get("/api/assets/99999/").status_code == 404
+
+
+class TestCrossLinks:
+    def test_findings_api_carries_asset_link(self, auth_client):
+        d = _domain()
+        a = _asset(d, "port", "1.2.3.4:443/tcp")
+        s = _session()
+        f = _finding(s, a, "high")
+        body = auth_client.get(f"/api/scans/findings/?session_uuid={s.uuid}").json()
+        row = next(x for x in body["findings"] if x["id"] == f.id)
+        assert row["asset_id"] == a.id
+        assert row["asset_key"] == "1.2.3.4:443/tcp"
+        assert row["asset_kind"] == "port"
+
+    def test_findings_api_null_asset_when_unlinked(self, auth_client):
+        _domain()
+        s = _session()
+        f = _finding(s, asset=None, severity="low")
+        body = auth_client.get(f"/api/scans/findings/?session_uuid={s.uuid}").json()
+        row = next(x for x in body["findings"] if x["id"] == f.id)
+        assert row["asset_id"] is None and row["asset_key"] is None
+
+
+class TestDashboardKpi:
+    def test_dashboard_reports_inventory_counts(self, auth_client):
+        d = _domain()
+        _asset(d, "subdomain", "a.example.com", status="active")
+        _asset(d, "ip", "1.2.3.4", status="active")
+        _asset(d, "subdomain", "old.example.com", status="gone")
+        body = auth_client.get("/api/dashboard/").json()
+        assert body["kpi_assets_active"] == 2
+        assert body["kpi_assets_gone"] == 1

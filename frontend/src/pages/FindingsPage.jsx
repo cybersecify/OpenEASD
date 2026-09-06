@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout.jsx';
 import { Badge } from '../components/Badge.jsx';
 import { Spinner } from '../components/Spinner.jsx';
@@ -46,6 +47,7 @@ function StatusEditor({ findingId, current, onUpdated }) {
 }
 
 export default function FindingsPage() {
+  const navigate = useNavigate();
   const params = new URLSearchParams(window.location.search);
   const [severity, setSeverity] = useState(params.get('severity') || '');
   const [status,   setStatus]   = useState('open');
@@ -96,19 +98,25 @@ export default function FindingsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      {['Severity', 'Title', 'Target', 'Source', 'Status', 'Found'].map(h => (
+                      {['Severity', 'Title', 'Target', 'Asset', 'Source', 'Status', 'Found'].map(h => (
                         <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>
                       ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {findings.length === 0 ? (
-                      <TableRow><TableCell colSpan={6} className="px-4 py-10 text-center text-dim">No findings.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={7} className="px-4 py-10 text-center text-dim">No findings.</TableCell></TableRow>
                     ) : findings.map(f => (
                       <TableRow key={f.id} className="hover:bg-hover transition-colors">
                         <TableCell className="px-4 py-3"><Badge value={f.severity} /></TableCell>
                         <TableCell className="px-4 py-3 text-body font-medium max-w-xs truncate">{f.title}</TableCell>
                         <TableCell className="px-4 py-3 font-mono text-dim text-xs">{f.target}</TableCell>
+                        <TableCell className="px-4 py-3 text-xs">
+                          {f.asset_id
+                            ? <button onClick={() => navigate(`/assets/${f.asset_id}`)}
+                                className="text-green-400 hover:underline font-mono truncate max-w-[12rem] inline-block align-bottom">{f.asset_key}</button>
+                            : <span className="text-dim">—</span>}
+                        </TableCell>
                         <TableCell className="px-4 py-3 text-dim text-xs">{f.source}</TableCell>
                         <TableCell className="px-4 py-3">
                           <StatusEditor findingId={f.id} current={f.status || 'open'}

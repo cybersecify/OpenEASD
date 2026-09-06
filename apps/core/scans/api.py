@@ -127,6 +127,9 @@ def _serialize_finding(finding) -> dict:
         "description": finding.description,
         "remediation": finding.remediation,
         "target": finding.target,
+        "asset_id": finding.asset_id,
+        "asset_key": finding.asset.key if finding.asset_id else None,
+        "asset_kind": finding.asset.kind if finding.asset_id else None,
         "extra": finding.extra,
         "discovered_at": finding.discovered_at.isoformat(),
         "status": finding.status,
@@ -354,7 +357,7 @@ def list_findings(
         session_id = session.id
 
     latest_ids = latest_session_ids()
-    base_qs = Finding.objects.select_related("session")
+    base_qs = Finding.objects.select_related("session", "asset")
     if not session_id:
         base_qs = base_qs.filter(session_id__in=latest_ids)
 
@@ -500,18 +503,18 @@ def scan_detail(request, session_uuid: uuid.UUID):
     # which would otherwise fire one query per finding (N+1) on this detail load.
     nmap_findings = list(
         Finding.objects.filter(session=session, source="nmap")
-        .select_related("port", "session")
+        .select_related("port", "session", "asset")
         .order_by("-discovered_at")
     )
     domain_findings = list(
         Finding.objects.filter(session=session, source="domain_security")
-        .select_related("subdomain", "session")
+        .select_related("subdomain", "session", "asset")
         .order_by("-severity", "-discovered_at")
     )
     other_findings = list(
         Finding.objects.filter(session=session)
         .exclude(source__in=["nmap", "domain_security"])
-        .select_related("port", "url", "session")
+        .select_related("port", "url", "session", "asset")
         .order_by("-discovered_at")
     )
 
