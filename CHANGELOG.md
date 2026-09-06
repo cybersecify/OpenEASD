@@ -7,6 +7,11 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Removed
+- **Dead SQLite WAL signal handler** in settings — a leftover `connection_created`
+  hook that only fired for the SQLite backend, which no longer exists (Postgres
+  since v2.0). No behavior change.
+
 ## [v2.1.0] — 2026-09-06
 
 ### Removed
