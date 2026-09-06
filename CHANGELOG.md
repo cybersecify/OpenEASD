@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.1.0] — 2026-09-06
+
 ### Removed
 - **Dead `main.py` dev-runner.** It launched `manage.py qcluster` (Django-Q2,
   removed in the v2.0 DBOS re-platform) and was only `COPY`d into the image, never
