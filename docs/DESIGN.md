@@ -48,6 +48,7 @@ data + DBOS checkpoints); there is no SQLite and no Django-Q/APScheduler.
 | `web_assets/` | `web_assets` | Web assets: `URL` |
 | `service_detection/` | `service_detection` | Enriches `Port.service` + `Port.is_web` via nmap -sV |
 | `findings/` | `findings` | Unified `Finding` model — all finding-producing tools write here |
+| `asset_inventory/` | `asset_inventory` | Persistent, deduplicated `Asset` inventory (domain-scoped, first/last-seen + status); populated by a fail-graceful rollup at finalize; `Finding.asset` links findings to it; `/api/assets/` + the Assets UI |
 | `scans/` | `scans` | `ScanSession`, `ScanDelta`, `ScheduledScan`, pipeline orchestrator |
 | `workflows/` | `workflow` | Workflow CRUD, dynamic runner, tool registry |
 | `scheduler/` | `scheduler` | Scan callables (daily/monitoring/user sweeps, watchdog, JWT purge) invoked by the DBOS `@scheduled` workflows |
@@ -145,7 +146,8 @@ POST /api/scans/start/  (authorization gate: active tools need DomainAuthorizati
 ```
 
 `_finalize_session` order: build deltas → coverage/WAF regression → `build_insights`
-(Exposure Score) → `run_ai_post_scan` (triage + summaries, inline) → `_dispatch_alerts`
+(Exposure Score) → asset-inventory rollup (`rollup_session`, fail-graceful) →
+`run_ai_post_scan` (triage + summaries, inline) → `_dispatch_alerts`
 (Slack/Teams) → `maybe_start_agent` (queues the bounded AI orchestration chain).
 
 ### Scan statuses

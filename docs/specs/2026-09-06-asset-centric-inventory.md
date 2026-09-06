@@ -1,8 +1,12 @@
 # Asset-Centric Inventory — Design Spec
 
-> **Status:** Draft for review. Execution belongs to a dedicated session, not the
-> session that authored this. This document is the design contract; an
-> implementation plan (`writing-plans`) should be derived from it before coding.
+> **Status:** ✅ Implemented — PR1 model + finalize rollup + `Finding.asset` +
+> backfill (#337), PR2 `/api/assets/` (#338), PR3 Assets + AssetDetail UI (#339),
+> PR4 dashboard KPI + Finding→asset cross-links (#340). Kept as the design
+> contract it was built to; the shipped architecture is described in DESIGN.md
+> and CLAUDE.md. One deviation from the draft: `Asset.domain` is an
+> `FK(Domain, CASCADE)` (resolved by name at rollup, skipped if no Domain row),
+> not left open — for automatic cleanup on domain delete.
 
 **Goal:** Give OpenEASD a persistent, deduplicated **asset inventory** — every
 subdomain / IP / port / URL a domain has ever exposed, with `first_seen` /
