@@ -772,5 +772,9 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_ai_invariants.py` | 3 | Grep-style: AI layer only Finding.objects.filter, audit writer has no body params, client creates only AIInvocation |
 | `tests/integration/test_ai_flow.py` | 6 | AI end-to-end (only the Cloudflare HTTP edge + queue mocked): finalize → triage/summaries/agent/audit, report + alert carry output, subscan chain roundtrip, AI-off zero traces, Cloudflare-down scan still completes; plus an opt-in LIVE smoke test (runs only with real `CLOUDFLARE_*` env: `pytest tests/integration/test_ai_flow.py -k live`) |
 | `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
+| `tests/unit/test_crypto.py` | 16 | At-rest secret encryption — Fernet roundtrip/non-determinism/legacy-plaintext tolerance, key derivation/override/rotation, DB-holds-ciphertext + ORM-returns-plaintext for AI/notifications/amass/subfinder |
+| `tests/unit/test_login_ratelimit.py` | 11 | Login brute-force limiter — threshold lockout, window reset, success clears, X-Forwarded-For keying, middleware integration (per-IP isolation, disabled bypass, refresh endpoint unaffected) |
 
-**Total: 1677 tests** (1625 fast + 52 slow domain_security)
+**Total: 1704 tests** (1652 fast + 52 slow domain_security)
+
+Frontend: **15 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, and the axios 401-refresh interceptor. Run with `cd frontend && npm run test:run`.
