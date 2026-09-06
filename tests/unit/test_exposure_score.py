@@ -19,7 +19,6 @@ from apps.core.insights.scoring import (
     WEIGHT_CRITICAL,
     WEIGHT_HIGH,
     WEIGHT_MEDIUM,
-    WEIGHT_LOW,
     SCORE_MAX,
     compute_exposure_score,
     grade_for_score,
