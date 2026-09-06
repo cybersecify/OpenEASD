@@ -17,9 +17,12 @@ commits to recover the reasoning.
   from existing scan history. **Read API (PR2):** `GET /api/assets/` (paginated,
   filterable by domain/kind/status/search, each row with per-severity open-finding
   counts), `GET /api/assets/summary/` (totals by kind + active/gone), and
-  `GET /api/assets/<id>/` (metadata + findings + scan timeline). The Assets UI is
-  the next PR (see `docs/specs/2026-09-06-asset-centric-inventory.md`). Additive:
-  with the inventory unused, scans behave exactly as before.
+  `GET /api/assets/<id>/` (metadata + findings + scan timeline). **Assets UI (PR3):**
+  a new **Assets** nav item + inventory page (filter by kind/status/domain, search,
+  per-asset severity chips) and an **AssetDetail** page (metadata, findings across
+  scans, and the scan-seen timeline) — the asset-centric view of the attack
+  surface. See `docs/specs/2026-09-06-asset-centric-inventory.md`. Additive: with
+  the inventory unused, scans behave exactly as before.
 - **Historical DNS Records tool (`dns_history`, tool #28) — passive.** Queries a
   passive-DNS dataset for a domain's historical A/AAAA/MX records and surfaces
   each as an informational finding (past hosting / stale records → recon and

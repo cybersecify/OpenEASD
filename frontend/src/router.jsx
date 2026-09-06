@@ -11,6 +11,8 @@ import ScansPage from './pages/ScansPage.jsx';
 import ScanStartPage from './pages/ScanStartPage.jsx';
 import ScanDetailPage from './pages/ScanDetailPage.jsx';
 import FindingsPage from './pages/FindingsPage.jsx';
+import AssetsPage from './pages/AssetsPage.jsx';
+import AssetDetailPage from './pages/AssetDetailPage.jsx';
 import WorkflowsPage from './pages/WorkflowsPage.jsx';
 import WorkflowDetailPage from './pages/WorkflowDetailPage.jsx';
 import InsightsPage from './pages/InsightsPage.jsx';
@@ -38,6 +40,8 @@ export const router = createBrowserRouter([
       { path: '/scans', element: <ScansPage /> },
       { path: '/scans/start', element: <ScanStartPage /> },
       { path: '/scans/:uuid', element: <ScanDetailPage /> },
+      { path: '/assets', element: <AssetsPage /> },
+      { path: '/assets/:id', element: <AssetDetailPage /> },
       { path: '/findings', element: <FindingsPage /> },
       { path: '/workflows', element: <WorkflowsPage /> },
       { path: '/workflows/:id', element: <WorkflowDetailPage /> },
