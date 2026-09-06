@@ -14,14 +14,14 @@ from django.utils import timezone as django_tz
 logger = logging.getLogger(__name__)
 
 from decouple import config as _config  # noqa: E402
-# Must be >= Q_CLUSTER["timeout"] (4h / 14400s). The watchdog only cleans up the
-# DB status of scans whose worker died without finalizing; it must not fire while
-# a healthy scan is still legitimately running, or it flips a live scan to
-# "partial" mid-run. Keep this at/above the worker hard-kill (240m).
+# Must be >= the worker's scan hard-kill (SCAN_TASK_TIMEOUT). The watchdog only
+# cleans up the DB status of scans whose worker died without finalizing; it must
+# not fire while a healthy scan is still legitimately running, or it flips a live
+# scan to "partial" mid-run. Keep this at/above the worker hard-kill (240m).
 SCAN_TIMEOUT_MINUTES = _config("SCAN_TIMEOUT_MINUTES", default=1440, cast=int)  # 24h; >= SCAN_TASK_TIMEOUT
 
-# A scan stuck in "pending" never started running — its enqueued Django-Q task was
-# lost (e.g. the qcluster worker restarted between enqueue and pickup), so it sits
+# A scan stuck in "pending" never started running — its enqueued workflow never
+# got picked up (e.g. the worker was down between enqueue and pickup), so it sits
 # in "pending" forever. Because the per-domain concurrency guard counts pending
 # scans as active, one orphaned pending scan blocks every new scan for that domain
 # indefinitely (observed in prod: a scan sat pending ~6h and blocked the domain).
@@ -34,7 +34,7 @@ SCAN_PENDING_TIMEOUT_MINUTES = _config("SCAN_PENDING_TIMEOUT_MINUTES", default=6
 
 
 # ---------------------------------------------------------------------------
-# Core schedule setup (called once on qcluster startup)
+# Core schedule setup (legacy no-op — schedules are DBOS @scheduled workflows)
 # ---------------------------------------------------------------------------
 
 def setup_core_schedules():
@@ -61,7 +61,7 @@ def sync_domain_monitoring_jobs():
 
 
 # ---------------------------------------------------------------------------
-# Callable functions (must be importable module-level paths for Django-Q2)
+# Callable functions (invoked by the DBOS @scheduled sweeps in apps/core/durable)
 # ---------------------------------------------------------------------------
 
 def _is_authorized(domain: str) -> bool:
@@ -145,7 +145,7 @@ def run_due_user_scans():
 
 
 def run_scheduled_scan(domain: str, triggered_by: str = "scheduled"):
-    """Top-level callable for Django-Q2 one-time and recurring scan jobs.
+    """Top-level callable for one-time and recurring scan jobs (invoked by the DBOS user-schedule sweep).
 
     Re-checks consent at run time, mirroring daily_scan/run_monitoring_scan.
     A user-created recurring/one-time schedule is authorization-checked only
@@ -211,8 +211,8 @@ def reap_stuck_scans():
       worker hard-kill so a healthy long scan is never flipped mid-run).
     - `pending` scans are reaped after SCAN_PENDING_TIMEOUT_MINUTES, which is far
       shorter: a pending scan never started, so it doesn't need the running budget.
-      This is what stops an orphaned pending scan (lost Django-Q task after a worker
-      restart) from blocking a domain for hours via the pending-counting guard.
+      This is what stops an orphaned pending scan (the worker was down between
+      enqueue and pickup) from blocking a domain for hours via the pending-counting guard.
 
     A scan that had at least one step complete before the timeout is reaped as
     `partial` (its findings are kept and shown). A scan with no completed steps

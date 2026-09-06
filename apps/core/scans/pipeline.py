@@ -282,9 +282,9 @@ def create_scan_session(domain: str, triggered_by: str = "manual", workflow=None
 
     try:
         with transaction.atomic():
-            # NOTE: select_for_update(nowait=True) is a no-op on SQLite — Django silently
-            # ignores it. Real duplicate-session protection comes from workers=1 in
-            # Q_CLUSTER and the if-active check below, not from DB-level locking.
+            # Real duplicate-session protection comes from the partial unique
+            # constraint (uniq_active_scan_per_domain) plus the if-active check
+            # below; on Postgres select_for_update(nowait=True) also narrows the race.
             active = (
                 ScanSession.objects
                 .select_for_update(nowait=True)
@@ -331,7 +331,7 @@ def _seed_apex_into_assets(session) -> None:
 
     The Subdomain insert alone isn't enough — dnsx has been observed silently
     returning 0 records for a single-host input list when invoked from the
-    Django-Q worker (works fine in a bare subprocess). Resolving here with
+    worker process (works fine in a bare subprocess). Resolving here with
     dnspython sidesteps that and guarantees the apex flows downstream into
     naabu / service_detection / nmap / tls / ssh / nuclei_network.
     """
