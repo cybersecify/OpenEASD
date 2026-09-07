@@ -24,7 +24,7 @@ RUN npm run build
 # ---------------------------------------------------------------------------
 # Stage 2: download pre-built security tool binaries (static Go)
 # ---------------------------------------------------------------------------
-FROM debian:12-slim AS tools-builder
+FROM debian:13-slim AS tools-builder
 
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends \
