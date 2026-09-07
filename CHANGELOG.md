@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.2.0] — 2026-09-07
+
 ### Added
 - **Asset inventory — backend foundation (PR1).** A new `apps/core/asset_inventory`
   layer builds a persistent, deduplicated `Asset` record per unique
