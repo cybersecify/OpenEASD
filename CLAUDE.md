@@ -314,7 +314,7 @@ request-counting proxy C4 is deferred).
 
 ## Architecture
 
-### Core infrastructure — `apps/core/` (16 sub-apps)
+### Core infrastructure — `apps/core/` (15 sub-apps)
 
 | App | Label | Purpose |
 |---|---|---|
