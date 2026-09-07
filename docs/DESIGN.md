@@ -38,6 +38,70 @@ data + DBOS checkpoints); there is no SQLite and no Django-Q/APScheduler.
 
 ---
 
+## Layers vs. Tiers — two orthogonal axes
+
+OpenEASD is best understood as **4 logical layers** deployed as a **3-tier
+topology**. These are *different axes* — code is organized by layer, runtime is
+organized by process — and they deliberately do **not** map 1:1. Keep them
+separate: a folder can't "live in the web container," because both containers
+import the same codebase and differ only by entrypoint.
+
+### Axis 1 — logical layers (how the CODE is organized, by responsibility)
+
+```
+┌─ CONSOLE   presentation: Ninja API + React SPA + reports/insights/notifications/ai
+│               apps/core/{dashboard, api, insights, reports, notifications, ai}
+├─ ENGINE    orchestration: durable scan execution + dynamic workflow runner
+│               apps/core/{scans, workflows, durable, scheduler}
+├─ TOOLS     plugins: the 27 self-registering scanner tools
+│               apps/<tool>/  (subfinder, nmap, nuclei, …)
+└─ DATA      models: the dataflow substrate every layer reads/writes
+                apps/core/{domains, assets, web_assets, findings, asset_inventory}
+
+Dependency direction — everything points DOWN to DATA (which depends on nothing):
+      console ─┐
+      engine  ─┼──►  data
+      tools   ─┘
+```
+
+The current folders don't *nest* these layers (it's `apps/core/*` + flat
+`apps/<tool>/*`), but every app maps cleanly to exactly one layer — see the
+Core Infrastructure and Tool Apps tables below.
+
+### Axis 2 — deployment tiers (how the RUNTIME is organized, by process)
+
+```
+   client ──HTTPS──►  web (gunicorn)  ──enqueue via DBOS queue──►  worker (dbos_worker)
+                      python:slim                                   ubuntu:24.04
+                      console code paths                            engine + tools code paths
+                      no tools, no NET_RAW                          full scanner matrix, NET_RAW
+                              └──────────────► db (postgres:17-alpine) ◄──────────────┘
+                                               app data + DBOS checkpoints
+```
+
+### The map between them (layer → container)
+
+| Logical layer | Runs in | Note |
+|---|---|---|
+| **Console** | `web` | gunicorn serves the API + React bundle |
+| **Engine** | `worker` | `dbos_worker` runs the durable scan workflows |
+| **Tools** | `worker` | the scanner binaries live only in the worker image |
+| **Data** | `db` | Postgres; accessed by **both** web & worker via the Django ORM |
+
+**Why the mismatch is correct:** it's **one codebase, two entrypoints** — the
+`web` and `worker` images ship the same Python code and differ only in which
+process they start (`gunicorn` vs `dbos_worker`). So folders are grouped by
+*layer* (responsibility), never by *container* (process). This keeps deployment
+flexible — a layer can be re-mapped to a different container without moving any
+code — and keeps the internet-facing `web` image tool-free regardless of how the
+code is organized. **Decision:** the 4-layer model lives here as documentation;
+the folders stay a standard `apps/core/*` + flat `apps/<tool>/*` Django layout and
+are **not** reorganized to mirror the layers — a reorg would be pure churn (every
+import path, the 27 `tool_meta` runner strings, tests) with no functional gain.
+Reorganize only if the flat layout starts causing real friction.
+
+---
+
 ## Core Infrastructure — `apps/core/`
 
 | App | Django label | Responsibility |
