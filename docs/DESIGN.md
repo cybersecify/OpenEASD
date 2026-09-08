@@ -123,6 +123,31 @@ Reorganize only if the flat layout starts causing real friction.
 | `ai/` | `ai` | AI triage / adaptive orchestration / summaries (Cloudflare Workers AI, BYOK) — a core subsystem, **not** a registry tool |
 | `api/` | — | `NinjaAPI` instance, JWT routes, router registration, error handlers, rate-limit middleware |
 
+### By layer — console / engine / data
+
+The 15 core apps map cleanly to three of the four logical layers (see
+[Layers vs. Tiers](#layers-vs-tiers--two-orthogonal-axes)):
+
+| Layer | Apps | Count |
+|---|---|---|
+| **Console** (presentation) | `dashboard`, `insights`, `reports`, `notifications`, `ai` | **5** |
+| **Engine** (orchestration) | `scans`, `workflows`, `durable`, `scheduler` | **4** |
+| **Data** (dataflow models) | `domains`, `assets`, `web_assets`, `findings`, `asset_inventory` | **5** |
+| *(core + registry tool)* | `service_detection` — a core app that is *also* a phase-6 scan tool | **1** |
+
+**Total: 15 core apps.** The `api/` module is part of the console tier but is
+**not** a registered app (no models — it only mounts routers), so it's not in the
+15. The fourth logical layer, **Tools**, is the 27 `apps/<tool>/` plugins (next
+section) — bringing the first-party total to 42 apps / 28 registered tools
+(`service_detection` is the one app counted in both core and the tool registry).
+
+Notes on the mapping's soft edges:
+- **`scheduler`** sits in *engine* as its **automated-operations** sub-part (cron
+  triggers + hygiene). Under the producer→queue→consumer lens it's a *producer*,
+  not the execution core — the one app where the two lenses disagree on placement.
+- **`service_detection`** is the only app that is both core infrastructure and a
+  registry tool (nmap -sV, phase 6).
+
 Secrets at rest (`apps/core/crypto.py` + `fields.py`): BYOK API keys and webhook
 URLs stored in the DB are Fernet-encrypted via `EncryptedCharField`/`EncryptedTextField`.
 
