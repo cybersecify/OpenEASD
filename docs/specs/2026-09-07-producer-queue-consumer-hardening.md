@@ -72,9 +72,15 @@ nothing; a first call with no prior `Alert` rows still sends.
   `openeasd_scans_total{status}`, `openeasd_scan_duration_seconds`,
   `openeasd_tool_runs_total{tool,status}`, `openeasd_tool_duration_seconds{tool}`,
   `openeasd_findings_total{severity}`, `openeasd_scan_queue_depth` (gauge).
+- **Measure the whole journey, not just each run** (pipeline principle #13):
+  add `openeasd_scan_journey_seconds` = time from the *trigger* (enqueue) to the
+  *final delivered output* (finalize complete, or alert dispatched) — not just
+  per-phase durations. "The run succeeded" ≠ "the alert went out"; log the
+  end-to-end latency so a slow queue or a stuck alert path is visible.
 - Instrument at the points that already record timings: `workflows/runner.py`
   (`_run_single_step`) for per-tool metrics, `scans/pipeline.py` (`_finalize_session`)
-  for scan-level metrics + final status.
+  for scan-level metrics + final status; capture the enqueue timestamp (on the
+  `ScanSession`) so journey time = finalize_time − enqueue_time.
 - Expose `GET /metrics` (Prometheus text format) — unauthenticated like `/health/`,
   or `?token=`-gated.
 - **Deeper `/health/`** (optional): add a DB-connectivity check to the JSON body.
@@ -150,6 +156,36 @@ terminal/absent DBOS workflow past cutoff is reaped as today.
 
 **Effort:** ~1 PR. **Priority:** low (narrow race, high timeout) — do after H2/H3.
 
+## 5c. Phase H5 — idempotent phase-group steps (pipeline principle #4)
+
+**Problem:** `_run_phase_group` is a `@DBOS.step` that runs *all* tools in a phase.
+DBOS skips a step that **completed**, but a step that **crashes mid-run** re-runs
+the whole group on resume — so a tool that already wrote its rows before the crash
+writes them **again** → duplicate `Finding`/asset rows. The pipeline principle is
+*"make every workflow idempotent: re-running with the same input leaves the DB in
+the same state — delete-then-insert or update-or-create, never append."* Today the
+tool save paths mostly **append**, so a replayed phase group is not idempotent.
+
+**Change (options):**
+- **(A) Per-session delete-then-insert at the phase-group boundary** — before a
+  phase group runs (or on its retry), clear that group's prior rows for the session
+  (by `source`), so a re-run converges to the same state. Cleanest, matches the
+  principle directly.
+- **(B) Per-tool upsert** — give each tool's save path an `update_or_create` keyed
+  by `(session, source, check_type, target[, port/url])` so re-writes dedupe.
+  More work spread across tools, but no destructive delete.
+- **(C) Finer step granularity** — one `@DBOS.step` per *tool* instead of per
+  *phase group*, so a crash only re-runs the one tool (still needs A or B for that
+  tool's own partial write).
+Recommend **(A)** as the smallest correctness fix; **(C)** is a larger change that
+also improves retry granularity (relates to principle #3).
+
+**Tests:** run a phase group, simulate a mid-group crash + resume, assert no
+duplicate findings/assets; a clean re-run of a completed scan is a no-op.
+
+**Effort:** ~1 PR (A). **Priority:** medium — it's the one *correctness* gap in the
+"durable" claim after H1 (alerts). Do after H2/H3, before or with H4.
+
 ## 6. Non-goals / explicitly out of scope
 
 - **Do NOT make the pattern "textbook pure."** The multi-producer (API +
@@ -161,19 +197,36 @@ terminal/absent DBOS workflow past cutoff is reaped as today.
 
 ## 7. Sequencing (each independently shippable)
 
-1. **H1 — alert idempotency** (½ PR, no migration) — closes the one *correctness*
+1. **H1 — alert idempotency** (½ PR, no migration) — closes the *alert* correctness
    gap; highest leverage, lowest cost. **✅ Shipped (#355).**
-2. **H3 — retention** (1 PR, opt-in) — prevents slow-motion DB growth.
-3. **H2 — `/metrics`** (1 PR) — highest operational value; needs the multiprocess
-   decision above, so worth reviewing this section before coding.
-4. **H4 — watchdog ↔ DBOS-resume reconcile** (1 PR) — closes the recovery-path
+2. **H5 — idempotent phase-group steps** (1 PR) — the remaining *correctness* gap
+   in the "durable" claim (principle #4); a replayed phase must not double-write.
+3. **H3 — retention** (1 PR, opt-in) — prevents slow-motion DB growth.
+4. **H2 — `/metrics` + journey timing** (1 PR) — highest operational value
+   (principle #13); needs the multiprocess decision above, so review that section
+   before coding.
+5. **H4 — watchdog ↔ DBOS-resume reconcile** (1 PR) — closes the recovery-path
    overlap. Lowest priority (narrow race, high timeout); do last.
+
+**Framework alignment:** H5 and H2's journey-timing addition come from an audit
+against a 14-point pipeline-design checklist — H5 = principle #4 (idempotent,
+delete-then-insert not append), H2 = principle #13 (measure the whole journey,
+not each run). H4 = principle #12 (per-stage safety net + alarm). The checklist's
+#3/#6/#9 (many small workflows, write-triggered stages, per-resource queues) are a
+*choreography* pattern OpenEASD deliberately does not adopt — it is an
+*orchestrated* single-workflow-per-scan pipeline (valid for a fixed dataflow); see
+DESIGN.md "Workflow vs. Pipeline". Those are not tracked as gaps.
 
 ## 8. Verification
 
 - H1: dispatch alerts twice → second is a no-op; alert-history unchanged.
-- H2: run a scan → counters move; `/metrics` scrapeable on web AND worker.
+- H5: crash a phase group mid-run + resume → no duplicate findings/assets; a
+  re-run of a completed scan is a no-op (idempotent, principle #4).
 - H3 (enabled): after N+1 scans of a domain, only N retained; latest always kept;
   disabled → nothing deleted.
-- Whole: with all three merged and features unused/disabled, a scan is
-  byte-identical to today (additive-safety check).
+- H2: run a scan → counters move; `/metrics` scrapeable on web AND worker;
+  `openeasd_scan_journey_seconds` reflects enqueue→final-output latency (#13).
+- H4: a `running` session with a live DBOS workflow is not reaped; a `pending`
+  orphan past cutoff still is.
+- Whole: with every feature unused/disabled, a scan is byte-identical to today
+  (additive-safety check).
