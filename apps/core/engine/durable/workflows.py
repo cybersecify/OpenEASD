@@ -84,7 +84,7 @@ def enqueue_scan(session_id: int) -> str:
     can never start two runs of the same scan."""
     from dbos import EnqueueOptions
 
-    from .dbos_app import get_client
+    from .client import get_client
 
     options: EnqueueOptions = {
         "workflow_name": "run_scan",

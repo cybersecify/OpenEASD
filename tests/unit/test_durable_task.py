@@ -35,7 +35,7 @@ def test_delay_enqueues_with_name_and_queue():
 
     fake_client = MagicMock()
     fake_client.enqueue.return_value = MagicMock(workflow_id="wf-1")
-    with patch("apps.core.engine.durable.dbos_app.get_client", return_value=fake_client):
+    with patch("apps.core.engine.durable.client.get_client", return_value=fake_client):
         wid = t.delay(7)
 
     assert wid == "wf-1"
@@ -53,7 +53,7 @@ def test_delay_uses_dedupe_template():
 
     fake_client = MagicMock()
     fake_client.enqueue.return_value = MagicMock(workflow_id="wf-2")
-    with patch("apps.core.engine.durable.dbos_app.get_client", return_value=fake_client):
+    with patch("apps.core.engine.durable.client.get_client", return_value=fake_client):
         t.delay(99)
 
     opts = fake_client.enqueue.call_args[0][0]
@@ -68,7 +68,7 @@ def test_delay_dedupe_id_override_wins():
 
     fake_client = MagicMock()
     fake_client.enqueue.return_value = MagicMock(workflow_id="w")
-    with patch("apps.core.engine.durable.dbos_app.get_client", return_value=fake_client):
+    with patch("apps.core.engine.durable.client.get_client", return_value=fake_client):
         t.delay(1, dedupe_id="custom-id")
 
     assert fake_client.enqueue.call_args[0][0]["deduplication_id"] == "custom-id"

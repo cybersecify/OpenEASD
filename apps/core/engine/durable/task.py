@@ -83,7 +83,7 @@ class DurableTask:
         """Durably enqueue this task's DBOS workflow; returns the workflow id."""
         from dbos import EnqueueOptions
 
-        from .dbos_app import get_client
+        from .client import get_client
 
         options: EnqueueOptions = {
             "workflow_name": self.name,

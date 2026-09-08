@@ -1,10 +1,14 @@
-"""DBOS wiring — one place that knows how to reach the system database.
+"""DBOS engine wiring for the worker.
 
-Two entry points share the config:
-  * `get_client()` — a lightweight DBOSClient used by the web process (and any
-    caller that only needs to ENQUEUE work, never execute it).
-  * `configure_dbos()` — builds the full DBOS engine for the worker process
-    (`manage.py dbos_worker`), which executes and recovers workflows.
+`configure_dbos()` builds the full DBOS engine for the worker process
+(`manage.py dbos_worker`), which executes and recovers workflows. Importing the
+workflow module registers the `@DBOS.workflow`/`@DBOS.step`/`@durable_task`
+definitions.
+
+The enqueue-only client + system-database URL live in `client.py` (a leaf), so
+`task.py`/`workflows.py` can enqueue without forming an import cycle through this
+module (which imports `workflows`). `get_client`/`system_database_url` are
+re-exported here for backward compatibility.
 
 The system database is the app's own Postgres, isolated in a `dbos` schema, so
 there is still just one database to run (no second service).
@@ -12,30 +16,13 @@ there is still just one database to run (no second service).
 
 from django.conf import settings
 
+from .client import get_client, system_database_url  # noqa: F401 (re-exported)
 from .constants import SYSTEM_SCHEMA as _SYSTEM_SCHEMA
-
-_client = None
-
-
-def system_database_url() -> str:
-    """SQLAlchemy URL for DBOS, derived from Django's default DATABASES entry
-    (psycopg3 driver), unless DBOS_DATABASE_URL overrides it."""
-    override = getattr(settings, "DBOS_DATABASE_URL", "")
-    if override:
-        return override
-    db = settings.DATABASES["default"]
-    return "postgresql+psycopg://{user}:{password}@{host}:{port}/{name}".format(
-        user=db["USER"],
-        password=db["PASSWORD"],
-        host=db["HOST"],
-        port=db["PORT"] or "5432",
-        name=db["NAME"],
-    )
 
 
 def configure_dbos():
     """Construct (but do not launch) the DBOS engine for the worker. Importing
-    the workflow module registers @DBOS.workflow/@DBOS.step definitions."""
+    the workflow module registers @DBOS.workflow/@DBOS.step/@durable_task defs."""
     from dbos import DBOS, DBOSConfig
 
     config: DBOSConfig = {
@@ -44,20 +31,6 @@ def configure_dbos():
         "dbos_system_schema": _SYSTEM_SCHEMA,
     }
     dbos = DBOS(config=config)
-    # Registers the scan queue + workflow/step decorators with the engine.
+    # Registers the scan queue + workflow/step/task decorators with the engine.
     from apps.core.engine.durable import workflows  # noqa: F401
     return dbos
-
-
-def get_client():
-    """Process-wide DBOSClient for enqueue-only callers (web/gunicorn)."""
-    global _client
-    if _client is None:
-        from dbos import DBOSClient
-
-        _client = DBOSClient(
-            system_database_url=system_database_url(),
-            dbos_system_schema=_SYSTEM_SCHEMA,
-            application_name=getattr(settings, "DBOS_APP_NAME", "openeasd"),
-        )
-    return _client
