@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.3.0] — 2026-09-08
+
 ### Changed
 - **`@durable_task` engine adapter (PQC hardening H6, slice 1).** New
   `apps/core/engine/durable/task.py` — a thin decorator over DBOS so task bodies
