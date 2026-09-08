@@ -104,6 +104,11 @@ Reorganize only if the flat layout starts causing real friction.
 
 ## Core Infrastructure — `apps/core/`
 
+The core apps are physically grouped into **layer subpackages** —
+`apps/core/console/`, `apps/core/engine/`, `apps/core/data/` — matching the
+logical layers (see the *By layer* table below). Django labels are unchanged, so
+the folder move is purely organisational; the table lists each app by name.
+
 | App | Django label | Responsibility |
 |---|---|---|
 | `dashboard/` | `core` | Dashboard KPIs; `UserProfile` (`must_change_password`); `LoginThrottle` (brute-force limiter) |
@@ -156,14 +161,14 @@ URLs stored in the DB are Fernet-encrypted via `EncryptedCharField`/`EncryptedTe
 ## Tool Apps — `apps/<tool>/`
 
 Tools are **self-registering**: each `AppConfig` declares `tool_meta` and the
-registry (`apps/core/workflows/registry.py`) auto-discovers them at startup.
+registry (`apps/core/engine/workflows/registry.py`) auto-discovers them at startup.
 Adding a tool needs only an `INSTALLED_APPS` entry + a data migration to join the
 default Full Scan — no core files change.
 
 ```
 apps/<tool>/
     apps.py       — AppConfig with tool_meta (label, runner, phase, phase_group, requires, produces_findings, active)
-    models.py     — empty (data goes to apps/core/assets|web_assets|findings)
+    models.py     — empty (data goes to apps/core/data/assets|web_assets|findings)
     scanner.py    — thin orchestrator: collect → analyze → save
     collector.py  — runs binary / probes; returns raw data (no DB writes)
     analyzer.py   — parses raw data; builds Asset / Finding objects
@@ -275,7 +280,7 @@ POST /api/scans/start/  (authorization gate: active tools need DomainAuthorizati
 A scan uses **both**: it runs a **workflow** (which tools) **through the pipeline**
 (what order + how data flows). They are two paradigms operating at two layers, and
 they meet in exactly one function — `resolve_phase_groups()` in
-`apps/core/workflows/runner.py`, which takes the workflow's tool *set* and imposes
+`apps/core/engine/workflows/runner.py`, which takes the workflow's tool *set* and imposes
 the pipeline's phase *order*.
 
 | | **Workflow-centric** | **Pipeline-centric** |
@@ -283,7 +288,7 @@ the pipeline's phase *order*.
 | Controls | *which* tools run | *what order* + *how data flows* |
 | The unit | `Workflow` + `WorkflowStep` (DB rows) | fixed 12 phases + dataflow models |
 | Mutable? | ✅ dynamic — user-configurable | ❌ fixed — hardcoded `tool_meta["phase"]` |
-| Lives in | `apps/core/workflows/` (models, api, runner, registry) | `tool_meta` phases + `apps/core/scans/pipeline.py` |
+| Lives in | `apps/core/engine/workflows/` (models, api, runner, registry) | `tool_meta` phases + `apps/core/engine/scans/pipeline.py` |
 | Example control | enable/disable tools; Full / Passive / custom workflows | `dnsx`(3)→`naabu`(5)→`httpx`(8): IPs before ports before web probing |
 
 A workflow can enable/disable tools and set their *intra-phase* `order`, but can
@@ -329,7 +334,7 @@ by a `"default_scan"` flag in `tool_meta` (optional; see the hardening backlog).
 
 ## Unified Finding Model
 
-Finding-producing tools write to `apps/core/findings/Finding`:
+Finding-producing tools write to `apps/core/data/findings/Finding`:
 
 ```python
 Finding
@@ -398,7 +403,7 @@ synchronous Django views under `/reports/<uuid>/` served by the web tier.
 
 ---
 
-## AI subsystem — `apps/core/ai/`
+## AI subsystem — `apps/core/console/ai/`
 
 A core subsystem (not a registry tool) that runs post-finalize over the whole
 session. Gated by consent + Cloudflare Workers AI keys (BYOK) — **entirely off
@@ -476,8 +481,8 @@ the probe `Host` header must be an entry in `openeasd-secret`'s `ALLOWED_HOSTS`.
 ## Scheduler
 
 Unattended scanning is a set of DBOS `@scheduled` cron workflows registered when
-the `dbos_worker` process imports `apps/core/durable/workflows` (never in gunicorn
-workers). They call the thin callables in `apps/core/scheduler/scheduler.py`.
+the `dbos_worker` process imports `apps/core/engine/durable/workflows` (never in gunicorn
+workers). They call the thin callables in `apps/core/engine/scheduler/scheduler.py`.
 `SCHEDULED_SCANS_ENABLED` (default True) is the master switch; the
 consent/`DomainAuthorization` gate applies to scheduled scans too.
 

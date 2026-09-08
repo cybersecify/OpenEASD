@@ -20,19 +20,19 @@ def auth_client(client, user):
 
 @pytest.fixture
 def domain(db):
-    from apps.core.domains.models import Domain
+    from apps.core.data.domains.models import Domain
     return Domain.objects.create(name="example.com", is_primary=True, is_active=True)
 
 
 @pytest.fixture
 def scan_session(db):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
 
 
 @pytest.fixture
 def completed_session(db):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     session = ScanSession.objects.create(
         domain="example.com",
         scan_type="full",
@@ -45,7 +45,7 @@ def completed_session(db):
 
 @pytest.fixture
 def domain_finding(db, completed_session):
-    from apps.core.findings.models import Finding
+    from apps.core.data.findings.models import Finding
     return Finding.objects.create(
         session=completed_session,
         source="domain_security",
@@ -60,7 +60,7 @@ def domain_finding(db, completed_session):
 
 @pytest.fixture
 def scan_summary(db, completed_session):
-    from apps.core.insights.models import ScanSummary
+    from apps.core.console.insights.models import ScanSummary
     return ScanSummary.objects.create(
         session=completed_session,
         domain="example.com",

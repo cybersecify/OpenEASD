@@ -185,7 +185,7 @@ class TestCollectHIBP:
 @pytest.mark.django_db
 class TestAnalyze:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_no_finding_when_zero(self):
@@ -278,12 +278,12 @@ class TestAnalyze:
 @pytest.mark.django_db
 class TestScanner:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_saves_finding(self):
         from apps.breach_check.scanner import run_breach_check
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         s = self._session()
         data = {"tier": "xposedornot", "accounts": 0, "breach_count": 2,
                 "breaches": [{"name": "Adobe", "year": "2013", "records": 1}]}
@@ -294,7 +294,7 @@ class TestScanner:
 
     def test_no_exposure_saves_nothing(self):
         from apps.breach_check.scanner import run_breach_check
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         s = self._session()
         with patch("apps.breach_check.scanner.collect",
                    return_value={"tier": "xposedornot", "breach_count": 0, "breaches": []}):
@@ -311,7 +311,7 @@ class TestScanner:
 
     def test_no_domain_skips(self):
         from apps.breach_check.scanner import run_breach_check
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         s = ScanSession.objects.create(domain="", scan_type="full")
         assert run_breach_check(s) == []
 
@@ -325,13 +325,13 @@ class TestScanner:
 @pytest.mark.django_db
 class TestCollectAnalyzeContract:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     @override_settings(HIBP_API_KEY="secret-key-123")
     def test_hibp_body_end_to_end_no_pii_persisted(self):
         from apps.breach_check.scanner import run_breach_check
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
 
         s = self._session()
         with patch.object(collector.requests, "get", return_value=_resp(json_data=_HIBP_BODY)):

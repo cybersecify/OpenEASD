@@ -13,7 +13,7 @@ separate authorization decision — see collector.py / analyzer.py).
 
 import logging
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 
 from .analyzer import analyze
 from .collector import collect

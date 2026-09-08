@@ -103,7 +103,7 @@ class TestIsCdnIp:
 @pytest.mark.django_db
 class TestDnsxCollector:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def _fake(self, stdout, returncode=0):
@@ -166,7 +166,7 @@ class TestDnsxCollector:
         assert records[0]["host"] == "ok.example.com"
 
     def test_binary_missing_raises(self):
-        from apps.core.workflows.exceptions import ToolBinaryMissing
+        from apps.core.engine.workflows.exceptions import ToolBinaryMissing
         sess = self._session()
         with patch("apps.dnsx.collector.subprocess.run", side_effect=FileNotFoundError):
             with pytest.raises(ToolBinaryMissing):
@@ -174,7 +174,7 @@ class TestDnsxCollector:
 
     def test_timeout_raises(self):
         import subprocess as sp
-        from apps.core.workflows.exceptions import ToolTimeout
+        from apps.core.engine.workflows.exceptions import ToolTimeout
         sess = self._session()
         with patch("apps.dnsx.collector.subprocess.run",
                    side_effect=sp.TimeoutExpired(cmd="dnsx", timeout=300)):
@@ -189,8 +189,8 @@ class TestDnsxCollector:
 @pytest.mark.django_db
 class TestDnsxAnalyzer:
     def _make_session_with_subdomains(self, hosts: list[str]):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         index = {}
         for host in hosts:
@@ -292,14 +292,14 @@ class TestDnsxAnalyzer:
 @pytest.mark.django_db
 class TestDnsxScanner:
     def test_run_dnsx_returns_empty_when_no_subdomains(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
         result = run_dnsx(sess)
         assert result == []
 
     def test_run_dnsx_marks_active_and_creates_ips(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, IPAddress
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain, IPAddress
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         Subdomain.objects.create(
@@ -321,8 +321,8 @@ class TestDnsxScanner:
         # alterx invents names; a candidate that doesn't resolve must be pruned so
         # it can't inflate the subdomain count. Discovery-tool names (subfinder)
         # are kept even when unresolved — those are real observed names.
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         Subdomain.objects.create(session=sess, domain="example.com",
@@ -348,8 +348,8 @@ class TestDnsxScanner:
         assert Subdomain.objects.filter(session=sess).count() == 3
 
     def test_run_dnsx_does_not_activate_subdomain_with_only_private_ips(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         Subdomain.objects.create(

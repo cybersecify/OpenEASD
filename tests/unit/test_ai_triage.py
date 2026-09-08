@@ -1,19 +1,19 @@
-"""Unit tests for apps/core/ai/triage.py."""
+"""Unit tests for apps/core/console/ai/triage.py."""
 
 import pytest
 from unittest.mock import patch
 
-from apps.core.ai.models import AITriage, AITriageItem
-from apps.core.ai.triage import run_triage
+from apps.core.console.ai.models import AITriage, AITriageItem
+from apps.core.console.ai.triage import run_triage
 
 
 def _session():
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain="example.com", scan_type="full")
 
 
 def _finding(session, severity="high", title="t"):
-    from apps.core.findings.models import Finding
+    from apps.core.data.findings.models import Finding
     return Finding.objects.create(
         session=session, source="nmap", check_type="cve", severity=severity,
         title=title, target="example.com",
@@ -28,7 +28,7 @@ def _out(*items, overview="overview"):
 class TestRunTriage:
     def test_no_findings_returns_none(self):
         sess = _session()
-        with patch("apps.core.ai.triage.client.chat_json") as call:
+        with patch("apps.core.console.ai.triage.client.chat_json") as call:
             assert run_triage(sess) is None
         call.assert_not_called()
         assert AITriage.objects.count() == 0
@@ -40,7 +40,7 @@ class TestRunTriage:
             {"finding_id": f2.id, "priority": "fix_now", "rationale": "worse in practice"},
             {"finding_id": f1.id, "priority": "plan", "rationale": "mitigated"},
         )
-        with patch("apps.core.ai.triage.client.chat_json", return_value=out):
+        with patch("apps.core.console.ai.triage.client.chat_json", return_value=out):
             triage = run_triage(sess)
         assert triage.status == "completed"
         assert triage.overview == "overview"
@@ -58,7 +58,7 @@ class TestRunTriage:
             {"finding_id": f1.id, "priority": "plan", "rationale": "ok"},
             {"finding_id": f1.id, "priority": "monitor", "rationale": "again"},
         )
-        with patch("apps.core.ai.triage.client.chat_json", return_value=out):
+        with patch("apps.core.console.ai.triage.client.chat_json", return_value=out):
             triage = run_triage(sess)
         items = list(triage.items.all())
         assert len(items) == 1
@@ -67,7 +67,7 @@ class TestRunTriage:
     def test_llm_failure_records_failed_triage(self):
         sess = _session()
         _finding(sess)
-        with patch("apps.core.ai.triage.client.chat_json", return_value=None):
+        with patch("apps.core.console.ai.triage.client.chat_json", return_value=None):
             triage = run_triage(sess)
         assert triage.status == "failed"
         assert triage.items.count() == 0
@@ -77,9 +77,9 @@ class TestRunTriage:
         f1 = _finding(sess, "high", "one")
         out1 = _out({"finding_id": f1.id, "priority": "fix_now", "rationale": "r"})
         out2 = _out({"finding_id": f1.id, "priority": "monitor", "rationale": "calmer"})
-        with patch("apps.core.ai.triage.client.chat_json", return_value=out1):
+        with patch("apps.core.console.ai.triage.client.chat_json", return_value=out1):
             run_triage(sess)
-        with patch("apps.core.ai.triage.client.chat_json", return_value=out2):
+        with patch("apps.core.console.ai.triage.client.chat_json", return_value=out2):
             triage = run_triage(sess)
         assert AITriage.objects.count() == 1
         assert AITriageItem.objects.count() == 1
@@ -89,9 +89,9 @@ class TestRunTriage:
         sess = _session()
         f1 = _finding(sess)
         out = _out({"finding_id": f1.id, "priority": "fix_now", "rationale": "r"})
-        with patch("apps.core.ai.triage.client.chat_json", return_value=out):
+        with patch("apps.core.console.ai.triage.client.chat_json", return_value=out):
             run_triage(sess)
-        with patch("apps.core.ai.triage.client.chat_json", return_value=None):
+        with patch("apps.core.console.ai.triage.client.chat_json", return_value=None):
             triage = run_triage(sess)
         assert triage.status == "failed"
         assert AITriageItem.objects.count() == 0

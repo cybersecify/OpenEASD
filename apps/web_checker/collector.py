@@ -89,7 +89,7 @@ def collect(session) -> list[dict]:
         error: str | None,
       }
     """
-    from apps.core.web_assets.models import URL
+    from apps.core.data.web_assets.models import URL
 
     # Deduplicate to one representative URL per (host, port_number).
     # Security headers and cookies are server-wide — checking 50 katana-crawled

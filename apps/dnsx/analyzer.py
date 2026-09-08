@@ -3,7 +3,7 @@
 import ipaddress
 import logging
 
-from apps.core.assets.models import IPAddress
+from apps.core.data.assets.models import IPAddress
 
 logger = logging.getLogger(__name__)
 

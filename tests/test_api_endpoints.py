@@ -48,13 +48,13 @@ def auth_client(client, user):
 
 @pytest.fixture
 def domain(db):
-    from apps.core.domains.models import Domain
+    from apps.core.data.domains.models import Domain
     return Domain.objects.create(name="smoke.example.com", is_active=True)
 
 
 @pytest.fixture
 def scan(db):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(
         domain="smoke.example.com", scan_type="full", status="completed",
         end_time=timezone.now(), total_findings=0,
@@ -63,7 +63,7 @@ def scan(db):
 
 @pytest.fixture
 def finding(db, scan):
-    from apps.core.findings.models import Finding
+    from apps.core.data.findings.models import Finding
     return Finding.objects.create(
         session=scan,
         source="domain_security",
@@ -78,7 +78,7 @@ def finding(db, scan):
 
 @pytest.fixture
 def workflow(db):
-    from apps.core.workflows.models import Workflow
+    from apps.core.engine.workflows.models import Workflow
     return Workflow.objects.create(name="Smoke Workflow")
 
 
@@ -163,7 +163,7 @@ class TestAuthUser:
         assert res.json()["must_change_password"] is False
 
     def test_must_change_password_true_when_flagged(self, auth_client, user):
-        from apps.core.dashboard.models import UserProfile
+        from apps.core.console.dashboard.models import UserProfile
         profile, _ = UserProfile.objects.get_or_create(user=user)
         profile.must_change_password = True
         profile.save()
@@ -215,7 +215,7 @@ class TestChangePassword:
         assert "differ" in res.json()["error"]["message"].lower()
 
     def test_clears_must_change_password_flag(self, auth_client, user):
-        from apps.core.dashboard.models import UserProfile
+        from apps.core.console.dashboard.models import UserProfile
         profile, _ = UserProfile.objects.get_or_create(user=user)
         profile.must_change_password = True
         profile.save()
@@ -243,7 +243,7 @@ class TestMustChangePasswordGate:
     """
 
     def _flag(self, user):
-        from apps.core.dashboard.models import UserProfile
+        from apps.core.console.dashboard.models import UserProfile
         profile, _ = UserProfile.objects.get_or_create(user=user)
         profile.must_change_password = True
         profile.save()
@@ -272,7 +272,7 @@ class TestMustChangePasswordGate:
         # Guard the exemption suffix logic directly: only /user/ and
         # /user/change-password/ are exempt; a look-alike path is not.
         from types import SimpleNamespace
-        from apps.core.api.auth import _is_exempt
+        from apps.core.console.api.auth import _is_exempt
         assert _is_exempt(SimpleNamespace(path="/api/user/")) is True
         assert _is_exempt(SimpleNamespace(path="/api/user/change-password/")) is True
         assert _is_exempt(SimpleNamespace(path="/api/domains/")) is False
@@ -369,7 +369,7 @@ class TestDomainsToggle:
 
 class TestDomainsAuthorize:
     def test_creates_authorization_record(self, auth_client, domain):
-        from apps.core.domains.models import DomainAuthorization
+        from apps.core.data.domains.models import DomainAuthorization
         res = post_json(
             auth_client, f"/api/domains/{domain.pk}/authorize/", {"attestation": True}
         )
@@ -381,7 +381,7 @@ class TestDomainsAuthorize:
         assert auth.authorized_by == "apitest"  # from the `user` fixture
 
     def test_attestation_required(self, auth_client, domain):
-        from apps.core.domains.models import DomainAuthorization
+        from apps.core.data.domains.models import DomainAuthorization
         res = post_json(
             auth_client, f"/api/domains/{domain.pk}/authorize/", {"attestation": False}
         )
@@ -389,7 +389,7 @@ class TestDomainsAuthorize:
         assert not DomainAuthorization.objects.filter(domain=domain).exists()
 
     def test_idempotent_when_already_authorized(self, auth_client, domain):
-        from apps.core.domains.models import DomainAuthorization
+        from apps.core.data.domains.models import DomainAuthorization
         from django.utils import timezone
         DomainAuthorization.objects.create(
             domain=domain, auth_type="owner",
@@ -426,7 +426,7 @@ class TestDomainsDelete:
     def test_removes_recurring_and_once_schedules(self, auth_client, domain):
         """Deleting a domain must not leave its scan schedules firing unattended."""
         from django.utils import timezone
-        from apps.core.scans.models import ScheduledScan
+        from apps.core.engine.scans.models import ScheduledScan
 
         ScheduledScan.objects.create(
             job_id=f"recurring_{domain.name}", domain=domain.name, kind="recurring",
@@ -473,7 +473,7 @@ class TestScansStart:
     def test_start_scan_now(self, auth_client, domain):
         from unittest.mock import patch
         import datetime
-        from apps.core.domains.models import DomainAuthorization
+        from apps.core.data.domains.models import DomainAuthorization
         DomainAuthorization.objects.create(
             domain=domain,
             auth_type="owner",
@@ -481,8 +481,8 @@ class TestScansStart:
             authorized_by="Alice Smith",
         )
         fake_session = type("S", (), {"uuid": "test-uuid-1234", "id": 1})()
-        with patch("apps.core.scans.tasks.run_scan_task"), \
-             patch("apps.core.scans.pipeline.create_scan_session", return_value=fake_session):
+        with patch("apps.core.engine.scans.tasks.run_scan_task"), \
+             patch("apps.core.engine.scans.pipeline.create_scan_session", return_value=fake_session):
             res = post_json(auth_client, "/api/scans/start/", {"domain": "smoke.example.com", "schedule_type": "now"})
         assert res.status_code == 201
         assert "uuid" in res.json()
@@ -509,7 +509,7 @@ class TestScanDetail:
 
     def test_no_n_plus_one_on_findings(self, auth_client, django_assert_max_num_queries, scan):
         """scan_detail must not issue one query per finding to resolve session.uuid."""
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
 
         for i in range(25):
             Finding.objects.create(
@@ -544,7 +544,7 @@ class TestScanStatus:
 
 class TestScanStop:
     def test_cancels_running_scan(self, auth_client, db):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         running = ScanSession.objects.create(
             domain="smoke.example.com", scan_type="full", status="running"
         )
@@ -586,8 +586,8 @@ class TestFindingsList:
 
     def test_filter_by_session_uuid(self, auth_client, finding):
         """Closes the silent-ignore UX trap — session_uuid should actually filter."""
-        from apps.core.findings.models import Finding
-        from apps.core.scans.models import ScanSession
+        from apps.core.data.findings.models import Finding
+        from apps.core.engine.scans.models import ScanSession
 
         # A second session + finding so we can prove the filter narrows
         other = ScanSession.objects.create(
@@ -831,7 +831,7 @@ class TestInsights:
 
 @pytest.fixture
 def scan_summary(db, scan):
-    from apps.core.insights.models import ScanSummary
+    from apps.core.console.insights.models import ScanSummary
     return ScanSummary.objects.create(
         session=scan,
         domain="smoke.example.com",
@@ -900,7 +900,7 @@ class TestBuildProvenance:
     def test_version_latest_shape(self, auth_client, settings):
         from unittest.mock import patch
         settings.OPENEASD_VERSION = "0.10.0"
-        with patch("apps.core.api.update_check.get_latest_release",
+        with patch("apps.core.console.api.update_check.get_latest_release",
                    return_value={"version": "9.9.9", "url": "https://gh/rel"}):
             res = auth_client.get("/api/version/latest/")
         assert res.status_code == 200
@@ -913,7 +913,7 @@ class TestBuildProvenance:
 
     def test_version_latest_graceful_when_github_down(self, auth_client):
         from unittest.mock import patch
-        with patch("apps.core.api.update_check.get_latest_release", return_value=None):
+        with patch("apps.core.console.api.update_check.get_latest_release", return_value=None):
             res = auth_client.get("/api/version/latest/")
         assert res.status_code == 200
         assert res.json()["update_available"] is False

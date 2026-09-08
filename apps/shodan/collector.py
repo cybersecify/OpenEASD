@@ -89,7 +89,7 @@ def _get_json(url: str, params: dict | None = None):
 def _session_ips(session) -> list[str]:
     """Distinct resolved public IPs for the session (dnsx already filtered these
     to public-only). Sorted for deterministic ordering / capping."""
-    from apps.core.assets.models import IPAddress
+    from apps.core.data.assets.models import IPAddress
 
     ips = IPAddress.objects.filter(session=session).values_list("address", flat=True)
     return sorted({ip for ip in ips if ip})

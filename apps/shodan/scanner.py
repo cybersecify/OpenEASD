@@ -6,7 +6,7 @@ and the scan continues with zero findings — this tool must never fail a scan.
 
 import logging
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 
 from .analyzer import analyze
 from .collector import collect

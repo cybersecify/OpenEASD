@@ -8,7 +8,7 @@ longer be under the owner's control (old hosting, decommissioned mail servers)
 
 import logging
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 
 logger = logging.getLogger(__name__)
 

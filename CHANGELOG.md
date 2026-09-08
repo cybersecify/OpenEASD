@@ -8,6 +8,14 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Changed
+- **Reorganised the core apps into layer subpackages.** The 15 `apps/core/*` apps
+  now live under **`apps/core/console/`** (dashboard, insights, reports,
+  notifications, ai, api), **`apps/core/engine/`** (scans, workflows, durable,
+  scheduler, service_detection), and **`apps/core/data/`** (domains, assets,
+  web_assets, findings, asset_inventory), matching the logical layer model.
+  Import paths are now `apps.core.<layer>.<app>`. **Django labels are unchanged**,
+  so the database and migrations are untouched (no schema change, no data
+  migration). Purely organisational; full test suite green.
 - **Removed a vestigial SQLite write-lock from the workflow runner.** `runner.py`
   serialised parallel `WorkflowStepResult` writes behind a `threading.Lock` left
   over from the SQLite era. **Why:** on PostgreSQL concurrent writers are fine
