@@ -13,6 +13,7 @@ from dbos import DBOS, Queue
 from django.conf import settings
 
 from .constants import QUEUE_NAME
+from .task import durable_task
 
 logger = logging.getLogger(__name__)
 
@@ -59,31 +60,21 @@ def run_scan_workflow(session_id: int) -> None:
     logger.info("[dbos] scan workflow complete for session %s", session_id)
 
 
-@DBOS.step()
-def _run_ai_triage(session_id: int) -> None:
+@durable_task("ai_triage", dedupe="triage-{0}")
+def ai_triage(session_id: int) -> None:
+    """Manual (re-)triage of a finished scan, durably (one-step task)."""
     from apps.core.console.ai.tasks import run_triage_and_summaries
 
     run_triage_and_summaries(session_id)
 
 
-@DBOS.workflow(name="ai_triage")
-def ai_triage_workflow(session_id: int) -> None:
-    """Manual (re-)triage of a finished scan, durably."""
-    _run_ai_triage(session_id)
-
-
-@DBOS.step()
-def _run_agent_step(root_session_id: int) -> None:
+@durable_task("agent_step")
+def agent_step(root_session_id: int) -> None:
+    """One adaptive-orchestration decision step (one-step task). The chain
+    continues when a launched subscan's finalize enqueues the next agent_step."""
     from apps.core.console.ai.tasks import run_agent_step_safe
 
     run_agent_step_safe(root_session_id)
-
-
-@DBOS.workflow(name="agent_step")
-def agent_step_workflow(root_session_id: int) -> None:
-    """One adaptive-orchestration decision step. The chain continues when a
-    launched subscan's finalize enqueues the next agent_step."""
-    _run_agent_step(root_session_id)
 
 
 # --- Enqueue helpers (called from the web process via the client) -----------
@@ -93,7 +84,7 @@ def enqueue_scan(session_id: int) -> str:
     can never start two runs of the same scan."""
     from dbos import EnqueueOptions
 
-    from .dbos_app import get_client
+    from .client import get_client
 
     options: EnqueueOptions = {
         "workflow_name": "run_scan",
@@ -106,31 +97,13 @@ def enqueue_scan(session_id: int) -> str:
 
 
 def enqueue_ai_triage(session_id: int) -> str:
-    from dbos import EnqueueOptions
-
-    from .dbos_app import get_client
-
-    options: EnqueueOptions = {
-        "workflow_name": "ai_triage",
-        "queue_name": QUEUE_NAME,
-        "deduplication_id": f"triage-{session_id}",
-        "duplication_policy": "return-existing",
-    }
-    handle = get_client().enqueue(options, session_id)
-    return handle.workflow_id
+    """Thin wrapper kept for callers; delegates to the durable task's .delay()."""
+    return ai_triage.delay(session_id)
 
 
 def enqueue_agent_step(root_session_id: int) -> str:
-    from dbos import EnqueueOptions
-
-    from .dbos_app import get_client
-
-    options: EnqueueOptions = {
-        "workflow_name": "agent_step",
-        "queue_name": QUEUE_NAME,
-    }
-    handle = get_client().enqueue(options, root_session_id)
-    return handle.workflow_id
+    """Thin wrapper kept for callers; delegates to the durable task's .delay()."""
+    return agent_step.delay(root_session_id)
 
 
 # ---------------------------------------------------------------------------

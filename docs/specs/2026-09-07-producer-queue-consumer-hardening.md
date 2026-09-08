@@ -186,7 +186,17 @@ duplicate findings/assets; a clean re-run of a completed scan is a no-op.
 **Effort:** ~1 PR (A). **Priority:** medium — it's the one *correctness* gap in the
 "durable" claim after H1 (alerts). Do after H2/H3, before or with H4.
 
-## 5d. Phase H6 — `@durable_task` engine adapter (pipeline principle #11)
+## 5d. Phase H6 — `@durable_task` engine adapter (pipeline principle #11) — ✅ SHIPPED (slice 1)
+
+> **Status:** ✅ Slice 1 shipped — `apps/core/engine/durable/task.py` (`@durable_task`
+> with in-process `task()`, `task.delay()`, `dedupe` template). The two **one-step**
+> tasks `ai_triage` + `agent_step` are converted; `enqueue_ai_triage`/`enqueue_agent_step`
+> now delegate to `.delay()`. `run_scan` stays an explicit **multi-step** workflow
+> (per-phase checkpointing) — by design, not converted. The `@scheduled` hygiene crons
+> are left for **H7** (they fit the `ScheduledJob` model better than a one-step task).
+> Verified: `configure_dbos()` builds the engine and registers the adapter workflows;
+> 7 adapter tests + 97 enqueue/integration tests green. Tests:
+> `tests/unit/test_durable_task.py`.
 
 **Problem:** workflow bodies use `@DBOS.workflow`/`@DBOS.step` **directly**, so the
 engine leaks into every task: tasks can't run without a DBOS engine (harder to
