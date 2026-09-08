@@ -21,7 +21,7 @@ from apps.github_recon.scanner import run_github_recon
 
 
 def _session(domain="example.com"):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain=domain, scan_type="full")
 
 
@@ -410,7 +410,7 @@ class TestAnalyzer:
 @pytest.mark.django_db
 class TestScanner:
     def test_saves_findings(self):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         sess = _session()
         data = {"org": "example", "org_confirmed": True, "kind": "org",
                 "org_url": "https://github.com/example",

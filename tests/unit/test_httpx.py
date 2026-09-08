@@ -12,7 +12,7 @@ from apps.httpx.scanner import run_httpx
 @pytest.mark.django_db
 class TestHttpxCollector:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_parses_jsonline_output(self):
@@ -53,7 +53,7 @@ class TestHttpxCollector:
         assert "-tech-detect" in cmd
 
     def test_raises_on_binary_not_found(self):
-        from apps.core.workflows.exceptions import ToolBinaryMissing
+        from apps.core.engine.workflows.exceptions import ToolBinaryMissing
         sess = self._session()
         with patch("apps.httpx.collector.subprocess.run", side_effect=FileNotFoundError):
             with pytest.raises(ToolBinaryMissing):
@@ -61,7 +61,7 @@ class TestHttpxCollector:
 
     def test_raises_on_timeout(self):
         import subprocess
-        from apps.core.workflows.exceptions import ToolTimeout
+        from apps.core.engine.workflows.exceptions import ToolTimeout
         sess = self._session()
         with patch("apps.httpx.collector.subprocess.run",
                    side_effect=subprocess.TimeoutExpired("httpx", 600)):
@@ -84,8 +84,8 @@ class TestHttpxCollector:
 @pytest.mark.django_db
 class TestHttpxAnalyzer:
     def _setup_session_with_assets(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain, IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         sub = Subdomain.objects.create(session=sess, domain="example.com", subdomain="www.example.com", source="subfinder")
         ip = IPAddress.objects.create(session=sess, subdomain=sub, address="1.2.3.4", version=4, source="dnsx")
@@ -188,7 +188,7 @@ class TestHttpxAnalyzer:
         assert len(objs) == 1
 
     def test_handles_missing_port_record(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         records = [{
             "url": "https://orphan.example.com:443",
@@ -235,8 +235,8 @@ class TestHttpxAnalyzer:
 class TestHttpxScanner:
     def test_run_httpx_uses_subdomain_hostname_in_targets(self):
         """Regression test: httpx must probe via hostname, not raw IP, so CDNs work."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain, IPAddress, Port
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         sub = Subdomain.objects.create(session=sess, domain="example.com", subdomain="cdn.example.com", source="subfinder")
@@ -256,8 +256,8 @@ class TestHttpxScanner:
         assert "104.21.38.252:443" not in captured["targets"]
 
     def test_run_httpx_falls_back_to_ip_when_no_subdomain(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Port
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         Port.objects.create(session=sess, ip_address=None, address="9.9.9.9", port=80, protocol="tcp", state="open", source="naabu")

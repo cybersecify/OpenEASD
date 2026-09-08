@@ -66,8 +66,8 @@ class TestDomainSecurityScanFlow:
 
     def test_clean_domain_produces_only_dnssec_finding(self, db):
         """A well-configured domain should only flag DNSSEC (mocked as missing)."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.findings.models import Finding
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.findings.models import Finding
 
         session = ScanSession.objects.create(domain="secure.com", scan_type="full", status="pending")
         findings = self._run_mocked_scan(session)
@@ -81,7 +81,7 @@ class TestDomainSecurityScanFlow:
         assert Finding.objects.filter(session=session).count() == len(findings)
 
     def test_missing_email_records_creates_findings(self, db):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
 
         session = ScanSession.objects.create(domain="insecure.com", scan_type="full", status="pending")
         findings = self._run_mocked_scan(
@@ -97,7 +97,7 @@ class TestDomainSecurityScanFlow:
         assert len(high_findings) >= 2
 
     def test_expiring_domain_creates_critical_finding(self, db):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
 
         session = ScanSession.objects.create(domain="expiring.com", scan_type="full", status="pending")
         findings = self._run_mocked_scan(session, rdap_days=3)
@@ -107,8 +107,8 @@ class TestDomainSecurityScanFlow:
         assert expiry.severity == "critical"
 
     def test_findings_saved_to_db(self, db):
-        from apps.core.scans.models import ScanSession
-        from apps.core.findings.models import Finding
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.findings.models import Finding
 
         session = ScanSession.objects.create(domain="dbtest.com", scan_type="full", status="pending")
         findings = self._run_mocked_scan(session, spf=None, dmarc=None)
@@ -120,12 +120,12 @@ class TestDomainSecurityScanFlow:
 
 def _ensure_default_workflow():
     """Create the default Full Scan workflow (data migration doesn't run in test DBs)."""
-    from apps.core.workflows.models import Workflow, WorkflowStep
+    from apps.core.engine.workflows.models import Workflow, WorkflowStep
     wf, created = Workflow.objects.get_or_create(
         name="Full Scan", defaults={"is_default": True, "description": "Test default workflow"},
     )
     if created:
-        from apps.core.workflows.registry import get_registry
+        from apps.core.engine.workflows.registry import get_registry
         all_tools = list(get_registry().keys())
         tools = [
             t for t in [
@@ -146,7 +146,7 @@ def _patch_all_tool_collectors():
     stack.enter_context(patch("apps.subfinder.scanner.collect", return_value=[]))
     stack.enter_context(patch("apps.dnsx.scanner.collect", return_value=[]))
     stack.enter_context(patch("apps.naabu.scanner.collect", return_value=[]))
-    stack.enter_context(patch("apps.core.service_detection.detector._probe_http", return_value=False))
+    stack.enter_context(patch("apps.core.engine.service_detection.detector._probe_http", return_value=False))
     stack.enter_context(patch("apps.httpx.scanner.collect", return_value=[]))
     stack.enter_context(patch("apps.nmap.scanner.collect", return_value={}))
     stack.enter_context(patch("apps.tls_checker.scanner.collect", return_value=[]))
@@ -162,8 +162,8 @@ class TestFullScanPipeline:
     """Tests run_scan orchestration → domain_security → insights."""
 
     def test_run_scan_completes_session(self, transactional_db):
-        from apps.core.scans.models import ScanSession
-        from apps.core.scans.pipeline import run_scan
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.engine.scans.pipeline import run_scan
 
         wf = _ensure_default_workflow()
         session = ScanSession.objects.create(domain="pipeline.com", scan_type="full", status="pending", workflow=wf)
@@ -201,9 +201,9 @@ class TestFullScanPipeline:
         assert session.end_time is not None
 
     def test_run_scan_builds_insights(self, transactional_db):
-        from apps.core.scans.models import ScanSession
-        from apps.core.scans.pipeline import run_scan
-        from apps.core.insights.models import ScanSummary
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.engine.scans.pipeline import run_scan
+        from apps.core.console.insights.models import ScanSummary
 
         wf = _ensure_default_workflow()
         session = ScanSession.objects.create(domain="insights-test.com", scan_type="full", status="pending", workflow=wf)
@@ -237,8 +237,8 @@ class TestFullScanPipeline:
         assert summary.total_findings > 0
 
     def test_run_scan_detects_deltas_on_second_scan(self, transactional_db):
-        from apps.core.scans.models import ScanSession, ScanDelta
-        from apps.core.scans.pipeline import run_scan
+        from apps.core.engine.scans.models import ScanSession, ScanDelta
+        from apps.core.engine.scans.pipeline import run_scan
 
         def make_mocks(spf=None, dmarc=None):
             def mock_resolve(domain, record_type):
@@ -303,10 +303,10 @@ class TestDomainDeleteCascade:
     """Integration test: deleting a domain wipes all related data."""
 
     def test_delete_domain_cascades_all_data(self, auth_client, db):
-        from apps.core.domains.models import Domain
-        from apps.core.scans.models import ScanSession
-        from apps.core.findings.models import Finding
-        from apps.core.insights.models import ScanSummary
+        from apps.core.data.domains.models import Domain
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.findings.models import Finding
+        from apps.core.console.insights.models import ScanSummary
 
         domain = Domain.objects.create(name="cascade.com", is_primary=True)
         session = ScanSession.objects.create(
@@ -330,11 +330,11 @@ class TestDomainDeleteCascade:
 
     def test_delete_domain_cascades_all_assets(self, auth_client, db):
         """Regression test: deleting a domain must clean up subdomains, IPs, ports, URLs, NmapFindings."""
-        from apps.core.domains.models import Domain
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, IPAddress, Port
-        from apps.core.web_assets.models import URL
-        from apps.core.findings.models import Finding
+        from apps.core.data.domains.models import Domain
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain, IPAddress, Port
+        from apps.core.data.web_assets.models import URL
+        from apps.core.data.findings.models import Finding
 
         domain = Domain.objects.create(name="cascade.com", is_primary=True)
         session = ScanSession.objects.create(
@@ -420,10 +420,10 @@ class TestFullPipelineMocked:
         reason="Web tools disabled"
     )
     def test_full_pipeline_produces_correct_asset_graph(self, transactional_db):
-        from apps.core.scans.models import ScanSession
-        from apps.core.scans.pipeline import run_scan
-        from apps.core.assets.models import Subdomain, IPAddress, Port
-        from apps.core.web_assets.models import URL
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.engine.scans.pipeline import run_scan
+        from apps.core.data.assets.models import Subdomain, IPAddress, Port
+        from apps.core.data.web_assets.models import URL
 
         wf = _ensure_default_workflow()
         session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending", workflow=wf)
@@ -438,7 +438,7 @@ class TestFullPipelineMocked:
              patch("apps.subfinder.scanner.collect", return_value=m["subfinder"]), \
              patch("apps.dnsx.scanner.collect", return_value=m["dnsx"]), \
              patch("apps.naabu.scanner.collect", return_value=m["naabu"]), \
-             patch("apps.core.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.engine.service_detection.detector._probe_http", return_value=False), \
              patch("apps.httpx.scanner.collect", return_value=m["httpx"]), \
              patch("apps.nmap.scanner.collect", return_value={}), \
              patch("apps.tls_checker.scanner.collect", return_value=[]), \
@@ -469,9 +469,9 @@ class TestFullPipelineMocked:
         reason="Web tools disabled"
     )
     def test_full_pipeline_classifies_web_vs_non_web_correctly(self, transactional_db):
-        from apps.core.scans.models import ScanSession
-        from apps.core.scans.pipeline import run_scan
-        from apps.core.assets.models import Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.engine.scans.pipeline import run_scan
+        from apps.core.data.assets.models import Port
 
         def mock_http(ip, port, scheme):
             return port in (80, 443)
@@ -489,7 +489,7 @@ class TestFullPipelineMocked:
              patch("apps.subfinder.scanner.collect", return_value=m["subfinder"]), \
              patch("apps.dnsx.scanner.collect", return_value=m["dnsx"]), \
              patch("apps.naabu.scanner.collect", return_value=m["naabu"]), \
-             patch("apps.core.service_detection.detector._probe_http", side_effect=mock_http), \
+             patch("apps.core.engine.service_detection.detector._probe_http", side_effect=mock_http), \
              patch("apps.httpx.scanner.collect", return_value=m["httpx"]), \
              patch("apps.nmap.scanner.collect", return_value={}), \
              patch("apps.tls_checker.scanner.collect", return_value=[]), \
@@ -512,9 +512,9 @@ class TestFullPipelineMocked:
         reason="Web tools disabled"
     )
     def test_full_pipeline_total_findings_includes_all_tools(self, transactional_db):
-        from apps.core.scans.models import ScanSession
-        from apps.core.scans.pipeline import run_scan
-        from apps.core.insights.models import ScanSummary
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.engine.scans.pipeline import run_scan
+        from apps.core.console.insights.models import ScanSummary
 
         wf = _ensure_default_workflow()
         session = ScanSession.objects.create(domain="pipeline.test", scan_type="full", status="pending", workflow=wf)
@@ -529,7 +529,7 @@ class TestFullPipelineMocked:
              patch("apps.subfinder.scanner.collect", return_value=m["subfinder"]), \
              patch("apps.dnsx.scanner.collect", return_value=m["dnsx"]), \
              patch("apps.naabu.scanner.collect", return_value=m["naabu"]), \
-             patch("apps.core.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.engine.service_detection.detector._probe_http", return_value=False), \
              patch("apps.httpx.scanner.collect", return_value=m["httpx"]), \
              patch("apps.nmap.scanner.collect", return_value={}), \
              patch("apps.tls_checker.scanner.collect", return_value=[]), \

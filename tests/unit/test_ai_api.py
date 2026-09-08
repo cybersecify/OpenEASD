@@ -1,4 +1,4 @@
-"""Unit tests for apps/core/ai/api.py — config/consent, connection test,
+"""Unit tests for apps/core/console/ai/api.py — config/consent, connection test,
 audit log endpoints."""
 
 import json
@@ -6,7 +6,7 @@ import json
 import pytest
 from unittest.mock import patch
 
-from apps.core.ai.models import AIInvocation, AISettings
+from apps.core.console.ai.models import AIInvocation, AISettings
 
 
 def _post(client, path, body):
@@ -88,7 +88,7 @@ class TestConfigEndpoint:
         assert cfg.consent_given_at is not None  # revocation != consent erasure
 
     def test_stale_consent_version_regates(self, auth_client, configured):
-        from apps.core.ai.models import CURRENT_CONSENT_VERSION
+        from apps.core.console.ai.models import CURRENT_CONSENT_VERSION
         cfg = AISettings.get()
         cfg.record_consent("admin")
         cfg.consent_version = CURRENT_CONSENT_VERSION - 1
@@ -162,7 +162,7 @@ class TestTestEndpoint:
         assert _post(auth_client, "/api/ai/test/", {}).status_code == 400
 
     def test_success(self, auth_client, configured):
-        with patch("apps.core.ai.client.chat_json", return_value={"text": "OK"}):
+        with patch("apps.core.console.ai.client.chat_json", return_value={"text": "OK"}):
             resp = _post(auth_client, "/api/ai/test/", {})
         assert resp.status_code == 200
         data = resp.json()
@@ -170,13 +170,13 @@ class TestTestEndpoint:
         assert "latency_ms" in data and "model" in data
 
     def test_failure_502(self, auth_client, configured):
-        with patch("apps.core.ai.client.chat_json", return_value=None):
+        with patch("apps.core.console.ai.client.chat_json", return_value=None):
             resp = _post(auth_client, "/api/ai/test/", {})
         assert resp.status_code == 502
 
     def test_allowed_before_consent(self, auth_client, configured):
         assert AISettings.get().consent_given_at is None
-        with patch("apps.core.ai.client.chat_json", return_value={"text": "OK"}):
+        with patch("apps.core.console.ai.client.chat_json", return_value={"text": "OK"}):
             assert _post(auth_client, "/api/ai/test/", {}).status_code == 200
 
 
@@ -190,7 +190,7 @@ def _activate(settings):
 
 
 def _finished_session(status="completed"):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain="example.com", scan_type="full", status=status)
 
 
@@ -213,8 +213,8 @@ class TestTriageGet:
         assert data["decisions"] == []
 
     def test_complete_with_items(self, auth_client, settings):
-        from apps.core.ai.models import AITriage
-        from apps.core.findings.models import Finding
+        from apps.core.console.ai.models import AITriage
+        from apps.core.data.findings.models import Finding
         _activate(settings)
         sess = _finished_session()
         f = Finding.objects.create(session=sess, source="nmap", check_type="cve",
@@ -232,7 +232,7 @@ class TestTriageGet:
         assert item["priority"] == "fix_now"
 
     def test_failed_and_running(self, auth_client, settings):
-        from apps.core.ai.models import AITriage
+        from apps.core.console.ai.models import AITriage
         _activate(settings)
         sess = _finished_session()
         AITriage.objects.create(session=sess, status="failed")
@@ -253,17 +253,17 @@ class TestTriageRun:
         assert _post(auth_client, f"/api/ai/triage/{sess.uuid}/run/", {}).status_code == 409
 
     def test_in_flight_409(self, auth_client, settings):
-        from apps.core.ai.models import AITriage
+        from apps.core.console.ai.models import AITriage
         _activate(settings)
         sess = _finished_session()
         AITriage.objects.create(session=sess, status="running")
         assert _post(auth_client, f"/api/ai/triage/{sess.uuid}/run/", {}).status_code == 409
 
     def test_enqueues_and_marks_running(self, auth_client, settings):
-        from apps.core.ai.models import AITriage
+        from apps.core.console.ai.models import AITriage
         _activate(settings)
         sess = _finished_session()
-        with patch("apps.core.ai.tasks.enqueue_triage") as enqueue:
+        with patch("apps.core.console.ai.tasks.enqueue_triage") as enqueue:
             resp = _post(auth_client, f"/api/ai/triage/{sess.uuid}/run/", {})
         assert resp.status_code == 200
         assert resp.json()["status"] == "running"
@@ -274,39 +274,39 @@ class TestTriageRun:
 @pytest.mark.django_db
 class TestTriageTask:
     def test_task_runs_triage_and_summaries(self, settings):
-        from apps.core.ai.tasks import run_triage_and_summaries
+        from apps.core.console.ai.tasks import run_triage_and_summaries
         _activate(settings)
         sess = _finished_session()
-        with patch("apps.core.ai.triage.run_triage", return_value=object()) as triage, \
-             patch("apps.core.ai.summaries.run_summaries") as summaries:
+        with patch("apps.core.console.ai.triage.run_triage", return_value=object()) as triage, \
+             patch("apps.core.console.ai.summaries.run_summaries") as summaries:
             run_triage_and_summaries(sess.id)
         triage.assert_called_once()
         summaries.assert_called_once()
 
     def test_task_clears_marker_when_nothing_to_triage(self, settings):
-        from apps.core.ai.models import AITriage
-        from apps.core.ai.tasks import run_triage_and_summaries
+        from apps.core.console.ai.models import AITriage
+        from apps.core.console.ai.tasks import run_triage_and_summaries
         _activate(settings)
         sess = _finished_session()
         AITriage.objects.create(session=sess, status="running")
-        with patch("apps.core.ai.triage.run_triage", return_value=None), \
-             patch("apps.core.ai.summaries.run_summaries"):
+        with patch("apps.core.console.ai.triage.run_triage", return_value=None), \
+             patch("apps.core.console.ai.summaries.run_summaries"):
             run_triage_and_summaries(sess.id)
         assert AITriage.objects.filter(session=sess).count() == 0
 
     def test_task_gate_closed_clears_marker(self, unconfigured):
-        from apps.core.ai.models import AITriage
-        from apps.core.ai.tasks import run_triage_and_summaries
+        from apps.core.console.ai.models import AITriage
+        from apps.core.console.ai.tasks import run_triage_and_summaries
         sess = _finished_session()
         AITriage.objects.create(session=sess, status="running")
         run_triage_and_summaries(sess.id)
         assert AITriage.objects.filter(session=sess).count() == 0
 
     def test_task_swallows_exceptions(self, settings):
-        from apps.core.ai.tasks import run_triage_and_summaries
+        from apps.core.console.ai.tasks import run_triage_and_summaries
         _activate(settings)
         sess = _finished_session()
-        with patch("apps.core.ai.triage.run_triage", side_effect=RuntimeError("boom")):
+        with patch("apps.core.console.ai.triage.run_triage", side_effect=RuntimeError("boom")):
             run_triage_and_summaries(sess.id)  # must not raise
 
 

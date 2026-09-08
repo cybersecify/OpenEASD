@@ -17,7 +17,7 @@ report. We store only a redacted preview of the secret and a scrubbed match.
 
 import logging
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ def analyze(session, records: list[dict]) -> list[Finding]:
     firing on the same file more than once. Links to the URL asset when the
     JS URL is a known URL row for this session.
     """
-    from apps.core.web_assets.models import URL
+    from apps.core.data.web_assets.models import URL
 
     if not records:
         return []

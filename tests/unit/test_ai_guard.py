@@ -1,15 +1,15 @@
-"""Unit tests for apps/core/ai/guard.py — feature gate + the agent's
+"""Unit tests for apps/core/console/ai/guard.py — feature gate + the agent's
 authorization boundary (safety invariant 2)."""
 
 import pytest
 
-from apps.core.ai.guard import gate_subscan_tools, is_ai_active
-from apps.core.ai.models import AISettings
+from apps.core.console.ai.guard import gate_subscan_tools, is_ai_active
+from apps.core.console.ai.models import AISettings
 
 
 def _authorize(domain_name="example.com"):
     from django.utils import timezone
-    from apps.core.domains.models import Domain, DomainAuthorization
+    from apps.core.data.domains.models import Domain, DomainAuthorization
     dom, _ = Domain.objects.get_or_create(name=domain_name, defaults={"is_active": True})
     DomainAuthorization.objects.get_or_create(
         domain=dom,
@@ -56,7 +56,7 @@ class TestIsAiActive:
         assert is_ai_active() is True
 
     def test_stale_consent_version_is_inactive(self, configured):
-        from apps.core.ai.models import CURRENT_CONSENT_VERSION
+        from apps.core.console.ai.models import CURRENT_CONSENT_VERSION
         cfg = AISettings.get()
         cfg.enabled = True
         cfg.save()

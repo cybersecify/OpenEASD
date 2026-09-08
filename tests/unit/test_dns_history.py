@@ -103,7 +103,7 @@ class TestCollector:
 @pytest.mark.django_db
 class TestAnalyzer:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_empty_records_returns_empty(self):
@@ -139,7 +139,7 @@ class TestAnalyzer:
 @pytest.mark.django_db
 class TestScanner:
     def _session(self, domain="example.com"):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain=domain, scan_type="full")
 
     def test_no_domain_skips(self):
@@ -147,14 +147,14 @@ class TestScanner:
         assert run_dns_history(sess) == []
 
     def test_no_records_saves_nothing(self):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         sess = self._session()
         with patch("apps.dns_history.scanner.collect", return_value=[]):
             assert run_dns_history(sess) == []
         assert not Finding.objects.filter(session=sess).exists()
 
     def test_happy_path_saves_and_returns(self):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         sess = self._session()
         records = [{"type": "A", "value": "1.2.3.4", "first_seen": "", "last_seen": ""}]
         with patch("apps.dns_history.scanner.collect", return_value=records):

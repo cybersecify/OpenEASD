@@ -1,1 +1,1 @@
-# No models — all URL rows written to apps.core.web_assets.URL
+# No models — all URL rows written to apps.core.data.web_assets.URL

@@ -7,8 +7,8 @@ a vulnerable subdomain + an identifiable service fingerprint.
 
 import logging
 
-from apps.core.assets.models import Subdomain
-from apps.core.findings.models import Finding
+from apps.core.data.assets.models import Subdomain
+from apps.core.data.findings.models import Finding
 
 logger = logging.getLogger(__name__)
 

@@ -1,5 +1,5 @@
 """
-Unit tests for apps/core/scheduler/scheduler.py
+Unit tests for apps/core/engine/scheduler/scheduler.py
 
 Tests reap_stuck_scans, purge_expired_blacklisted_tokens, and daily_scan.
 """
@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from django.utils import timezone
 
-from apps.core.scheduler.scheduler import (
+from apps.core.engine.scheduler.scheduler import (
     SCAN_PENDING_TIMEOUT_MINUTES,
     SCAN_TIMEOUT_MINUTES,
     purge_expired_blacklisted_tokens,
@@ -24,7 +24,7 @@ from apps.core.scheduler.scheduler import (
 
 class TestReapStuckScans:
     def _make_session(self, status, age_minutes, domain="example.com"):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         session = ScanSession.objects.create(
             domain=domain, scan_type="full", status=status,
         )
@@ -111,7 +111,7 @@ class TestReapStuckScans:
 
     def _attach_run(self, session, completed_tools=(), in_flight_tools=()):
         """Create a WorkflowRun + StepResults for the session."""
-        from apps.core.workflows.models import Workflow, WorkflowRun, WorkflowStepResult
+        from apps.core.engine.workflows.models import Workflow, WorkflowRun, WorkflowStepResult
         wf = Workflow.objects.create(name=f"wf-{session.id}")
         run = WorkflowRun.objects.create(workflow=wf, session=session, status="running")
         order = 1
@@ -128,7 +128,7 @@ class TestReapStuckScans:
         return run
 
     def test_partial_when_at_least_one_step_completed(self, db):
-        from apps.core.workflows.models import WorkflowStepResult
+        from apps.core.engine.workflows.models import WorkflowStepResult
         session = self._make_session("running", SCAN_TIMEOUT_MINUTES + 1, "p.example.com")
         run = self._attach_run(
             session,
@@ -153,7 +153,7 @@ class TestReapStuckScans:
     def test_partial_reap_recomputes_total_findings(self, db):
         """A reaped partial scan must report the findings its completed steps
         wrote, not 0 — _finalize_session never ran to tally them."""
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         session = self._make_session("running", SCAN_TIMEOUT_MINUTES + 1, "count.example.com")
         self._attach_run(session, completed_tools=["nmap"], in_flight_tools=["nuclei"])
         for i in range(3):
@@ -244,7 +244,7 @@ class TestPurgeExpiredBlacklistedTokens:
 
 def _authorize(domain):
     """Attach a DomainAuthorization so `domain` counts as authorized to scan."""
-    from apps.core.domains.models import DomainAuthorization
+    from apps.core.data.domains.models import DomainAuthorization
     return DomainAuthorization.objects.create(
         domain=domain,
         auth_type="owner",
@@ -259,14 +259,14 @@ def _authorize(domain):
 
 class TestDailyScan:
     def test_launches_scan_for_each_active_authorized_domain(self, db):
-        from apps.core.domains.models import Domain
-        from apps.core.scheduler.scheduler import daily_scan
+        from apps.core.data.domains.models import Domain
+        from apps.core.engine.scheduler.scheduler import daily_scan
 
         _authorize(Domain.objects.create(name="a.example.com", is_active=True))
         _authorize(Domain.objects.create(name="b.example.com", is_active=True))
 
-        with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
-             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+        with patch("apps.core.engine.scans.tasks.run_scan_task") as mock_task, \
+             patch("apps.core.engine.scans.pipeline.create_scan_session") as mock_create:
             fake_session = MagicMock()
             fake_session.id = 1
             fake_session.uuid = uuid.uuid4()
@@ -279,14 +279,14 @@ class TestDailyScan:
 
     def test_skips_unauthorized_domains(self, db):
         """An active domain with no authorization record is never auto-scanned."""
-        from apps.core.domains.models import Domain
-        from apps.core.scheduler.scheduler import daily_scan
+        from apps.core.data.domains.models import Domain
+        from apps.core.engine.scheduler.scheduler import daily_scan
 
         _authorize(Domain.objects.create(name="authorized.example.com", is_active=True))
         Domain.objects.create(name="unauthorized.example.com", is_active=True)  # no auth
 
-        with patch("apps.core.scans.tasks.run_scan_task"), \
-             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+        with patch("apps.core.engine.scans.tasks.run_scan_task"), \
+             patch("apps.core.engine.scans.pipeline.create_scan_session") as mock_create:
             fake_session = MagicMock()
             fake_session.id = 1
             mock_create.return_value = fake_session
@@ -296,14 +296,14 @@ class TestDailyScan:
         assert mock_create.call_args[0][0] == "authorized.example.com"
 
     def test_skips_inactive_domains(self, db):
-        from apps.core.domains.models import Domain
-        from apps.core.scheduler.scheduler import daily_scan
+        from apps.core.data.domains.models import Domain
+        from apps.core.engine.scheduler.scheduler import daily_scan
 
         _authorize(Domain.objects.create(name="active.example.com", is_active=True))
         _authorize(Domain.objects.create(name="inactive.example.com", is_active=False))
 
-        with patch("apps.core.scans.tasks.run_scan_task"), \
-             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+        with patch("apps.core.engine.scans.tasks.run_scan_task"), \
+             patch("apps.core.engine.scans.pipeline.create_scan_session") as mock_create:
             fake_session = MagicMock()
             fake_session.id = 1
             mock_create.return_value = fake_session
@@ -314,22 +314,22 @@ class TestDailyScan:
         assert call_domain == "active.example.com"
 
     def test_skips_domain_when_scan_already_active(self, db):
-        from apps.core.domains.models import Domain
-        from apps.core.scheduler.scheduler import daily_scan
+        from apps.core.data.domains.models import Domain
+        from apps.core.engine.scheduler.scheduler import daily_scan
 
         _authorize(Domain.objects.create(name="busy.example.com", is_active=True))
 
-        with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
-             patch("apps.core.scans.pipeline.create_scan_session", return_value=None):
+        with patch("apps.core.engine.scans.tasks.run_scan_task") as mock_task, \
+             patch("apps.core.engine.scans.pipeline.create_scan_session", return_value=None):
             daily_scan()
 
         mock_task.assert_not_called()
 
     def test_no_active_domains_does_nothing(self, db):
-        from apps.core.scheduler.scheduler import daily_scan
+        from apps.core.engine.scheduler.scheduler import daily_scan
 
-        with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
-             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+        with patch("apps.core.engine.scans.tasks.run_scan_task") as mock_task, \
+             patch("apps.core.engine.scans.pipeline.create_scan_session") as mock_create:
             daily_scan()
 
         mock_create.assert_not_called()
@@ -342,13 +342,13 @@ class TestDailyScan:
 
 class TestRunMonitoringScanAuthorization:
     def test_runs_for_authorized_domain(self, db):
-        from apps.core.domains.models import Domain
-        from apps.core.scheduler.scheduler import run_monitoring_scan
+        from apps.core.data.domains.models import Domain
+        from apps.core.engine.scheduler.scheduler import run_monitoring_scan
 
         _authorize(Domain.objects.create(name="mon-ok.example.com", is_active=True))
 
-        with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
-             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+        with patch("apps.core.engine.scans.tasks.run_scan_task") as mock_task, \
+             patch("apps.core.engine.scans.pipeline.create_scan_session") as mock_create:
             fake_session = MagicMock()
             fake_session.id = 1
             mock_create.return_value = fake_session
@@ -358,13 +358,13 @@ class TestRunMonitoringScanAuthorization:
         mock_task.assert_called_once()
 
     def test_skips_unauthorized_domain(self, db):
-        from apps.core.domains.models import Domain
-        from apps.core.scheduler.scheduler import run_monitoring_scan
+        from apps.core.data.domains.models import Domain
+        from apps.core.engine.scheduler.scheduler import run_monitoring_scan
 
         Domain.objects.create(name="mon-bad.example.com", is_active=True)  # no auth
 
-        with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
-             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+        with patch("apps.core.engine.scans.tasks.run_scan_task") as mock_task, \
+             patch("apps.core.engine.scans.pipeline.create_scan_session") as mock_create:
             run_monitoring_scan("mon-bad.example.com")
 
         mock_create.assert_not_called()
@@ -377,13 +377,13 @@ class TestRunMonitoringScanAuthorization:
 
 class TestRunScheduledScanConsentGate:
     def test_runs_for_active_authorized_domain(self, db):
-        from apps.core.domains.models import Domain
-        from apps.core.scheduler.scheduler import run_scheduled_scan
+        from apps.core.data.domains.models import Domain
+        from apps.core.engine.scheduler.scheduler import run_scheduled_scan
 
         _authorize(Domain.objects.create(name="sched-ok.example.com", is_active=True))
 
-        with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
-             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+        with patch("apps.core.engine.scans.tasks.run_scan_task") as mock_task, \
+             patch("apps.core.engine.scans.pipeline.create_scan_session") as mock_create:
             fake_session = MagicMock()
             fake_session.id = 1
             mock_create.return_value = fake_session
@@ -393,26 +393,26 @@ class TestRunScheduledScanConsentGate:
         mock_task.assert_called_once()
 
     def test_skips_unauthorized_domain(self, db):
-        from apps.core.domains.models import Domain
-        from apps.core.scheduler.scheduler import run_scheduled_scan
+        from apps.core.data.domains.models import Domain
+        from apps.core.engine.scheduler.scheduler import run_scheduled_scan
 
         Domain.objects.create(name="sched-noauth.example.com", is_active=True)  # no auth
 
-        with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
-             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+        with patch("apps.core.engine.scans.tasks.run_scan_task") as mock_task, \
+             patch("apps.core.engine.scans.pipeline.create_scan_session") as mock_create:
             run_scheduled_scan("sched-noauth.example.com", "recurring")
 
         mock_create.assert_not_called()
         mock_task.assert_not_called()
 
     def test_skips_inactive_domain(self, db):
-        from apps.core.domains.models import Domain
-        from apps.core.scheduler.scheduler import run_scheduled_scan
+        from apps.core.data.domains.models import Domain
+        from apps.core.engine.scheduler.scheduler import run_scheduled_scan
 
         _authorize(Domain.objects.create(name="sched-inactive.example.com", is_active=False))
 
-        with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
-             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+        with patch("apps.core.engine.scans.tasks.run_scan_task") as mock_task, \
+             patch("apps.core.engine.scans.pipeline.create_scan_session") as mock_create:
             run_scheduled_scan("sched-inactive.example.com", "recurring")
 
         mock_create.assert_not_called()
@@ -420,10 +420,10 @@ class TestRunScheduledScanConsentGate:
 
     def test_skips_deleted_domain(self, db):
         """A recurring schedule left behind by a deleted domain must not scan."""
-        from apps.core.scheduler.scheduler import run_scheduled_scan
+        from apps.core.engine.scheduler.scheduler import run_scheduled_scan
 
-        with patch("apps.core.scans.tasks.run_scan_task") as mock_task, \
-             patch("apps.core.scans.pipeline.create_scan_session") as mock_create:
+        with patch("apps.core.engine.scans.tasks.run_scan_task") as mock_task, \
+             patch("apps.core.engine.scans.pipeline.create_scan_session") as mock_create:
             run_scheduled_scan("gone.example.com", "recurring")  # no Domain row at all
 
         mock_create.assert_not_called()
@@ -440,30 +440,30 @@ class TestRunScheduledScanConsentGate:
 
 class TestScheduledScanMasterSwitch:
     def test_daily_scan_skips_when_disabled(self, db, settings):
-        from apps.core.durable.workflows import run_daily_scan_if_enabled
+        from apps.core.engine.durable.workflows import run_daily_scan_if_enabled
         settings.SCHEDULED_SCANS_ENABLED = False
-        with patch("apps.core.scheduler.scheduler.daily_scan") as ds:
+        with patch("apps.core.engine.scheduler.scheduler.daily_scan") as ds:
             run_daily_scan_if_enabled()
         ds.assert_not_called()
 
     def test_daily_scan_runs_when_enabled(self, db, settings):
-        from apps.core.durable.workflows import run_daily_scan_if_enabled
+        from apps.core.engine.durable.workflows import run_daily_scan_if_enabled
         settings.SCHEDULED_SCANS_ENABLED = True
-        with patch("apps.core.scheduler.scheduler.daily_scan") as ds:
+        with patch("apps.core.engine.scheduler.scheduler.daily_scan") as ds:
             run_daily_scan_if_enabled()
         ds.assert_called_once()
 
     def test_monitoring_sweep_skips_when_disabled(self, db, settings):
-        from apps.core.durable.workflows import run_monitoring_sweep_if_enabled
+        from apps.core.engine.durable.workflows import run_monitoring_sweep_if_enabled
         settings.SCHEDULED_SCANS_ENABLED = False
-        with patch("apps.core.scheduler.scheduler.run_due_monitoring_scans") as sweep:
+        with patch("apps.core.engine.scheduler.scheduler.run_due_monitoring_scans") as sweep:
             run_monitoring_sweep_if_enabled()
         sweep.assert_not_called()
 
     def test_user_scan_sweep_skips_when_disabled(self, db, settings):
-        from apps.core.durable.workflows import run_user_scans_sweep_if_enabled
+        from apps.core.engine.durable.workflows import run_user_scans_sweep_if_enabled
         settings.SCHEDULED_SCANS_ENABLED = False
-        with patch("apps.core.scheduler.scheduler.run_due_user_scans") as sweep:
+        with patch("apps.core.engine.scheduler.scheduler.run_due_user_scans") as sweep:
             run_user_scans_sweep_if_enabled()
         sweep.assert_not_called()
 

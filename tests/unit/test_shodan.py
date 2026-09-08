@@ -16,12 +16,12 @@ from apps.shodan.scanner import run_shodan
 
 
 def _session():
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain="example.com", scan_type="full")
 
 
 def _add_ips(session, *addrs):
-    from apps.core.assets.models import IPAddress
+    from apps.core.data.assets.models import IPAddress
     for a in addrs:
         IPAddress.objects.create(session=session, address=a, version=4)
 
@@ -204,7 +204,7 @@ class TestShodanAnalyzer:
 @pytest.mark.django_db
 class TestShodanScanner:
     def test_saves_findings(self):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         sess = _session()
         with patch("apps.shodan.scanner.collect", return_value=[
             {"ip": "1.2.3.4", "tier": "internetdb", "ports": [443],

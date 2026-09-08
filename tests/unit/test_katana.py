@@ -11,7 +11,7 @@ from apps.katana.collector import collect
 @pytest.mark.django_db
 class TestKatanaCollector:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def _fake_run(self, lines: list[str]):
@@ -47,7 +47,7 @@ class TestKatanaCollector:
         assert ua.startswith("User-Agent: OpenEASD/")
 
     def test_raises_on_binary_not_found(self):
-        from apps.core.workflows.exceptions import ToolBinaryMissing
+        from apps.core.engine.workflows.exceptions import ToolBinaryMissing
         sess = self._session()
         with patch("apps.katana.collector.subprocess.run", side_effect=FileNotFoundError):
             with pytest.raises(ToolBinaryMissing):
@@ -55,7 +55,7 @@ class TestKatanaCollector:
 
     def test_raises_on_timeout(self):
         import subprocess
-        from apps.core.workflows.exceptions import ToolTimeout
+        from apps.core.engine.workflows.exceptions import ToolTimeout
         sess = self._session()
         with patch("apps.katana.collector.subprocess.run", side_effect=subprocess.TimeoutExpired("katana", 30)):
             with pytest.raises(ToolTimeout):
@@ -93,9 +93,9 @@ from apps.katana.analyzer import analyze
 
 def _make_session_with_assets():
     """Creates session, subdomain, IP, port, and one httpx URL row."""
-    from apps.core.scans.models import ScanSession
-    from apps.core.assets.models import Subdomain, IPAddress, Port
-    from apps.core.web_assets.models import URL
+    from apps.core.engine.scans.models import ScanSession
+    from apps.core.data.assets.models import Subdomain, IPAddress, Port
+    from apps.core.data.web_assets.models import URL
 
     sess = ScanSession.objects.create(domain="example.com", scan_type="full")
     sub = Subdomain.objects.create(
@@ -197,9 +197,9 @@ class TestKatanaAnalyzer:
         assert objs[0].port_number == 443
 
     def test_http_default_port_80(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, IPAddress, Port
-        from apps.core.web_assets.models import URL
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain, IPAddress, Port
+        from apps.core.data.web_assets.models import URL
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         sub = Subdomain.objects.create(session=sess, domain="example.com", subdomain="www.example.com", source="subfinder")
         ip = IPAddress.objects.create(session=sess, subdomain=sub, address="1.2.3.4", version=4, source="dnsx")
@@ -244,7 +244,7 @@ from apps.katana.scanner import run_katana
 @pytest.mark.django_db
 class TestKatanaScanner:
     def test_returns_empty_when_no_httpx_urls(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         with patch("apps.katana.scanner.collect") as mock_collect:
             result = run_katana(sess)
@@ -265,7 +265,7 @@ class TestKatanaScanner:
         assert "https://www.example.com:443" in captured["urls"]
 
     def test_saves_url_rows_to_db(self):
-        from apps.core.web_assets.models import URL
+        from apps.core.data.web_assets.models import URL
         sess, sub, port = _make_session_with_assets()
 
         fake_records = [{"request": {"endpoint": "https://www.example.com/admin"}}]

@@ -1,5 +1,5 @@
 """
-Unit tests for apps/core/reports/views.py
+Unit tests for apps/core/console/reports/views.py
 
 Tests CSV export content/structure and PDF export response.
 PDF rendering is mocked (via _render_pdf) so tests need no WeasyPrint libs.
@@ -26,7 +26,7 @@ def user(db):
 
 @pytest.fixture
 def session(db):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(
         domain="report.example.com", scan_type="full", status="completed",
         end_time=timezone.now(), total_findings=3,
@@ -35,7 +35,7 @@ def session(db):
 
 @pytest.fixture
 def findings(db, session):
-    from apps.core.findings.models import Finding
+    from apps.core.data.findings.models import Finding
     data = [
         ("TLS expired", "high", "tls_checker", "tls_expiry", "open"),
         ("No DMARC",    "medium", "domain_security", "dmarc", "open"),
@@ -180,26 +180,26 @@ class TestExportFindingsCsv:
 
 class TestExportScanPdf:
     def test_returns_200_with_mocked_pdf(self, authed_client, session, findings):
-        with patch("apps.core.reports.views._render_pdf", return_value=b"%PDF-1.7"):
+        with patch("apps.core.console.reports.views._render_pdf", return_value=b"%PDF-1.7"):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 200
 
     def test_content_type_is_pdf(self, authed_client, session, findings):
-        with patch("apps.core.reports.views._render_pdf", return_value=b"%PDF-1.7"):
+        with patch("apps.core.console.reports.views._render_pdf", return_value=b"%PDF-1.7"):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert "application/pdf" in res["Content-Type"]
 
     def test_content_disposition_has_filename(self, authed_client, session, findings):
-        with patch("apps.core.reports.views._render_pdf", return_value=b"%PDF-1.7"):
+        with patch("apps.core.console.reports.views._render_pdf", return_value=b"%PDF-1.7"):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert "attachment" in res["Content-Disposition"]
         assert "scan_report_" in res["Content-Disposition"]
 
     def test_pdf_error_returns_500(self, authed_client, session, findings):
-        with patch("apps.core.reports.views._render_pdf", side_effect=RuntimeError("render failed")):
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=RuntimeError("render failed")):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 500
@@ -210,7 +210,7 @@ class TestExportScanPdf:
         assert res.status_code in (302, 301)
 
     def test_not_found_returns_404(self, authed_client):
-        with patch("apps.core.reports.views._render_pdf", return_value=b"%PDF-1.7"):
+        with patch("apps.core.console.reports.views._render_pdf", return_value=b"%PDF-1.7"):
             res = authed_client.get("/reports/00000000-0000-0000-0000-000000000000/pdf/")
         assert res.status_code == 404
 
@@ -266,7 +266,7 @@ class TestReportCtaPdfContext:
             captured["html"] = html
             return b"%PDF-1.7"
 
-        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 200
@@ -281,7 +281,7 @@ class TestReportCtaPdfContext:
             captured["html"] = html
             return b"%PDF-1.7"
 
-        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 200
@@ -303,13 +303,13 @@ class TestTechnologyStackBlock:
             captured["html"] = html
             return b"%PDF-1.7"
 
-        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
         assert res.status_code == 200
         return captured["html"]
 
     def _url(self, session, url, technologies):
-        from apps.core.web_assets.models import URL
+        from apps.core.data.web_assets.models import URL
         return URL.objects.create(
             session=session, url=url, host="report.example.com",
             source="httpx", technologies=technologies,
@@ -348,7 +348,7 @@ class TestScanCoverageBlock:
             captured["html"] = html
             return b"%PDF-1.7"
 
-        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
         assert res.status_code == 200
         return captured["html"]
@@ -375,7 +375,7 @@ class TestPdfSeverityCounts:
     GROUP BY of the per-severity Count(), or every bucket collapses to 1."""
 
     def test_counts_all_findings_per_severity(self, authed_client, session):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         for sev, n in [("critical", 2), ("high", 3)]:
             for i in range(n):
                 Finding.objects.create(
@@ -389,7 +389,7 @@ class TestPdfSeverityCounts:
             captured["html"] = html
             return b"%PDF-1.7"
 
-        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 200
@@ -402,7 +402,7 @@ class TestPdfSeverityCounts:
     def test_headline_tiles_show_unique_not_raw(self, authed_client, session):
         """Tiles + risk reflect consolidated unique issues, not raw detections;
         the raw count appears only in the consolidation note."""
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         for ip in ("1.1.1.1:443", "2.2.2.2:443", "3.3.3.3:443"):
             Finding.objects.create(
                 session=session, source="tls_checker", check_type="unencrypted_service",
@@ -415,7 +415,7 @@ class TestPdfSeverityCounts:
             captured["html"] = html
             return b"%PDF-1.7"
 
-        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 200
@@ -438,13 +438,13 @@ class TestPartialScanDiagnostics:
             captured["html"] = html
             return b"%PDF-1.7"
 
-        with patch("apps.core.reports.views._render_pdf", side_effect=cap):
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=cap):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
         assert res.status_code == 200
         return captured["html"]
 
     def test_diagnostics_shown_for_partial_scan(self, authed_client, session):
-        from apps.core.workflows.models import Workflow, WorkflowRun, WorkflowStepResult
+        from apps.core.engine.workflows.models import Workflow, WorkflowRun, WorkflowStepResult
         session.status = "partial"
         session.save(update_fields=["status"])
         wf = Workflow.objects.create(name="WF", is_default=False)
@@ -467,7 +467,7 @@ class TestTopRisksAndIntel:
     surfaces EPSS/KEV threat intel collected by cve_intel."""
 
     def _mk(self, session, **kw):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         base = dict(
             session=session, source="tls_checker", check_type="unencrypted_service",
             severity="critical", target="1.1.1.1:5432", description="d", remediation="r",
@@ -477,8 +477,8 @@ class TestTopRisksAndIntel:
         return Finding.objects.create(**base)
 
     def _groups(self, session):
-        from apps.core.reports.views import _group_findings_by_issue
-        from apps.core.findings.models import Finding
+        from apps.core.console.reports.views import _group_findings_by_issue
+        from apps.core.data.findings.models import Finding
         return _group_findings_by_issue(Finding.objects.filter(session=session))
 
     def test_epss_kev_rollup_onto_group(self, db, session):
@@ -489,7 +489,7 @@ class TestTopRisksAndIntel:
         assert grp["epss_percentile"] == 0.97
 
     def test_kev_outranks_non_kev_critical(self, db, session):
-        from apps.core.reports.views import _top_risks
+        from apps.core.console.reports.views import _top_risks
         self._mk(session, title="Plain critical", extra={})
         self._mk(session, source="nmap", check_type="cve", severity="medium",
                  title="Exploited medium", target="2.2.2.2:80",
@@ -499,7 +499,7 @@ class TestTopRisksAndIntel:
         assert top[0]["impact"]  # plain-language line attached
 
     def test_top_risks_excludes_low_medium_noise(self, db, session):
-        from apps.core.reports.views import _top_risks
+        from apps.core.console.reports.views import _top_risks
         self._mk(session, title="Crit", extra={})
         self._mk(session, severity="low", check_type="missing_referrer_policy",
                  title="Low thing", target="x", extra={})
@@ -523,7 +523,7 @@ class TestTopRisksAndIntel:
             captured["html"] = html
             return b"%PDF-1.7"
 
-        with patch("apps.core.reports.views._render_pdf", side_effect=cap):
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=cap):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
         assert res.status_code == 200
         assert "Most urgent:" in captured["html"]                 # headline risk
@@ -539,7 +539,7 @@ class TestTopRisksAndIntel:
             captured["html"] = html
             return b"%PDF-1.7"
 
-        with patch("apps.core.reports.views._render_pdf", side_effect=cap):
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=cap):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
         assert res.status_code == 200
         assert "Priority Actions" in captured["html"]
@@ -552,7 +552,7 @@ class TestFindingGrouping:
     block with a table of affected targets, instead of one full card each."""
 
     def _mk(self, session, **kw):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         base = dict(
             session=session, source="tls_checker", check_type="unencrypted_service",
             severity="critical", target="1.1.1.1:443", description="Plaintext service.",
@@ -564,8 +564,8 @@ class TestFindingGrouping:
     def test_endpoints_capped_at_50_with_overflow(self, db, session):
         """A finding firing on thousands of targets caps shown endpoints at 50
         (OOM guard) and records the overflow count for the 'N more' note."""
-        from apps.core.reports.views import _group_findings_by_issue
-        from apps.core.findings.models import Finding
+        from apps.core.console.reports.views import _group_findings_by_issue
+        from apps.core.data.findings.models import Finding
         for i in range(120):
             self._mk(session, target=f"10.0.0.{i}:443",
                      title=f"Unencrypted HTTPS on 10.0.0.{i}:443")
@@ -576,8 +576,8 @@ class TestFindingGrouping:
         assert grp["endpoint_overflow"] == 70
 
     def test_identical_writeups_collapse_and_strip_target(self, db, session):
-        from apps.core.reports.views import _group_findings_by_issue
-        from apps.core.findings.models import Finding
+        from apps.core.console.reports.views import _group_findings_by_issue
+        from apps.core.data.findings.models import Finding
         for ip in ("1.1.1.1:443", "2.2.2.2:443", "3.3.3.3:443"):
             self._mk(session, target=ip, title=f"Unencrypted HTTPS on {ip}")
         self._mk(session, source="web_checker", check_type="missing_csp", severity="high",
@@ -603,7 +603,7 @@ class TestFindingGrouping:
             captured["html"] = html
             return b"%PDF-1.7"
 
-        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 200
@@ -619,7 +619,7 @@ class TestReportEnrichment:
     """Scope / CWE / CVSS / ID enrichment applied to issue groups."""
 
     def test_risk_rating_uses_highest_populated_severity(self):
-        from apps.core.reports.views import _risk_rating
+        from apps.core.console.reports.views import _risk_rating
         assert _risk_rating({"critical": 2, "high": 1}) == "CRITICAL"
         assert _risk_rating({"critical": 0, "high": 3, "medium": 1}) == "HIGH"
         assert _risk_rating({"medium": 4}) == "MEDIUM"
@@ -627,15 +627,15 @@ class TestReportEnrichment:
         assert _risk_rating({"critical": 0, "high": 0}) == "INFORMATIONAL"
 
     def test_finding_scope_check_type_overrides_source(self):
-        from apps.core.reports.views import _finding_scope
+        from apps.core.console.reports.views import _finding_scope
         assert _finding_scope("domain_security", "rdap") == "Domain"       # check_type wins
         assert _finding_scope("domain_security", "dmarc") == "Email / DNS"  # source fallback
         assert _finding_scope("tls_checker", "san_mismatch") == "TLS / HTTPS"
         assert _finding_scope("mystery", "unknown") == "General"
 
     def test_group_carries_id_scope_cwe_cvss_cves(self, db, session):
-        from apps.core.reports.views import _group_findings_by_issue
-        from apps.core.findings.models import Finding
+        from apps.core.console.reports.views import _group_findings_by_issue
+        from apps.core.data.findings.models import Finding
         Finding.objects.create(
             session=session, source="nmap", check_type="cve", severity="high",
             title="OpenSSH CVEs on 1.1.1.1:22", target="1.1.1.1:22",
@@ -663,7 +663,7 @@ class TestReportEnrichment:
         assert cve["endpoint_rows"] == [["1.1.1.1:22"]]
 
     def test_methodology_and_endpoint_pills_render(self, authed_client, session):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         for ip in ("1.1.1.1:443", "2.2.2.2:443"):
             Finding.objects.create(
                 session=session, source="tls_checker", check_type="san_mismatch",
@@ -676,7 +676,7 @@ class TestReportEnrichment:
             captured["html"] = html
             return b"%PDF-1.7"
 
-        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
 
         assert res.status_code == 200
@@ -718,17 +718,17 @@ def _emitted_check_types() -> set:
 
 
 def test_every_emitted_check_type_has_cwe_mapping():
-    from apps.core.reports.views import _CWE_BY_CHECK
+    from apps.core.console.reports.views import _CWE_BY_CHECK
 
     unmapped = _emitted_check_types() - set(_CWE_BY_CHECK)
     assert not unmapped, (
         f"check_types with no CWE mapping in _CWE_BY_CHECK: {sorted(unmapped)}\n"
-        "Add an entry in apps/core/reports/views.py for each."
+        "Add an entry in apps/core/console/reports/views.py for each."
     )
 
 
 # ---------------------------------------------------------------------------
-# AI Analyst Summary block (apps/core/ai integration)
+# AI Analyst Summary block (apps/core/console/ai integration)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
@@ -740,7 +740,7 @@ class TestAnalystSummaryBlock:
             captured["html"] = html
             return b"%PDF-1.7"
 
-        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
         assert res.status_code == 200
         return captured["html"]
@@ -751,7 +751,7 @@ class TestAnalystSummaryBlock:
         assert "Cloudflare Workers AI" not in html
 
     def test_renders_summary_and_top_items(self, authed_client, session, findings):
-        from apps.core.ai.models import AISummary, AITriage
+        from apps.core.console.ai.models import AISummary, AITriage
         triage = AITriage.objects.create(
             session=session, status="completed", model="@cf/meta/test-model",
             overview="triage overview",
@@ -773,7 +773,7 @@ class TestAnalystSummaryBlock:
         assert "review before acting" in html
 
     def test_triage_overview_fallback_when_no_report_summary(self, authed_client, session, findings):
-        from apps.core.ai.models import AITriage
+        from apps.core.console.ai.models import AITriage
         AITriage.objects.create(
             session=session, status="completed", model="m", overview="fallback overview",
         )
@@ -782,13 +782,13 @@ class TestAnalystSummaryBlock:
         assert "fallback overview" in html
 
     def test_failed_triage_renders_nothing(self, authed_client, session, findings):
-        from apps.core.ai.models import AITriage
+        from apps.core.console.ai.models import AITriage
         AITriage.objects.create(session=session, status="failed", overview="stale")
         html = self._capture_pdf_html(authed_client, session)
         assert "Analyst Summary" not in html
 
     def test_ai_context_helper_never_raises(self, session):
-        from apps.core.reports.views import _ai_context
-        with patch("apps.core.ai.models.AITriage.objects") as broken:
+        from apps.core.console.reports.views import _ai_context
+        with patch("apps.core.console.ai.models.AITriage.objects") as broken:
             broken.filter.side_effect = RuntimeError("db broke")
             assert _ai_context(session) == {}

@@ -3,7 +3,7 @@
 
 def test_phase_order():
     """Non-web tools (7) must run before httpx (8) and web tools (11)."""
-    from apps.core.workflows.registry import get_tool_phases
+    from apps.core.engine.workflows.registry import get_tool_phases
     phases = get_tool_phases()
 
     assert phases["httpx"] == 8,           f"httpx: expected 8, got {phases['httpx']}"

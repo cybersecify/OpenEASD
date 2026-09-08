@@ -15,7 +15,7 @@ left as a follow-up (not in this change).
 
 import logging
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 
 logger = logging.getLogger(__name__)
 

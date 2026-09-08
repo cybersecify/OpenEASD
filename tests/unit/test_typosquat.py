@@ -22,7 +22,7 @@ from apps.typosquat.scanner import run_typosquat
 
 
 def _session(domain="example.com"):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain=domain, scan_type="full")
 
 
@@ -236,7 +236,7 @@ class TestAnalyzer:
 @pytest.mark.django_db
 class TestScanner:
     def test_saves_findings(self):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         sess = _session("example.com")
         with patch("apps.typosquat.scanner.collect", return_value=[
             {"candidate": "examp1e.com", "technique": "typo", "has_a": True,

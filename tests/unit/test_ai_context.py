@@ -1,21 +1,21 @@
-"""Unit tests for apps/core/ai/context.py — prompt-context builders."""
+"""Unit tests for apps/core/console/ai/context.py — prompt-context builders."""
 
 import json
 
 import pytest
 
-from apps.core.ai import context
+from apps.core.console.ai import context
 
 
 def _session(**kw):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     defaults = dict(domain="example.com", scan_type="full")
     defaults.update(kw)
     return ScanSession.objects.create(**defaults)
 
 
 def _finding(session, severity="high", title="t", **extra):
-    from apps.core.findings.models import Finding
+    from apps.core.data.findings.models import Finding
     return Finding.objects.create(
         session=session, source="nmap", check_type="cve", severity=severity,
         title=title, description="d" * 500, target="example.com", extra=extra,

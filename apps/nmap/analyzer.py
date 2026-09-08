@@ -4,8 +4,8 @@ import logging
 
 import defusedxml.ElementTree as ET
 
-from apps.core.assets.models import Port
-from apps.core.findings.models import Finding
+from apps.core.data.assets.models import Port
+from apps.core.data.findings.models import Finding
 from apps.nmap.backports import check_backport
 
 logger = logging.getLogger(__name__)

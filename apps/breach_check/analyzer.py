@@ -11,7 +11,7 @@ Finding even if a source response carried one.
 import datetime
 import logging
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 
 logger = logging.getLogger(__name__)
 

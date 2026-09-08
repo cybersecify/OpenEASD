@@ -196,8 +196,8 @@ class TestTestAlgorithm:
 @pytest.mark.django_db
 class TestSshAnalyzerSSHv1:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -222,8 +222,8 @@ class TestSshAnalyzerSSHv1:
 @pytest.mark.django_db
 class TestSshAnalyzerHostKey:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -262,8 +262,8 @@ class TestSshAnalyzerHostKey:
 @pytest.mark.django_db
 class TestSshAnalyzerKex:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -288,8 +288,8 @@ class TestSshAnalyzerKex:
 @pytest.mark.django_db
 class TestSshAnalyzerCiphers:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -321,8 +321,8 @@ class TestSshAnalyzerCiphers:
 @pytest.mark.django_db
 class TestSshAnalyzerMACs:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -347,8 +347,8 @@ class TestSshAnalyzerMACs:
 @pytest.mark.django_db
 class TestSshAnalyzerPasswordAuth:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -373,8 +373,8 @@ class TestSshAnalyzerPasswordAuth:
 @pytest.mark.django_db
 class TestSshAnalyzerRootLogin:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -399,8 +399,8 @@ class TestSshAnalyzerRootLogin:
 @pytest.mark.django_db
 class TestSshAnalyzerProbeFailure:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -422,8 +422,8 @@ class TestSshAnalyzerProbeFailure:
 @pytest.mark.django_db
 class TestSshCollector:
     def _make_session(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
@@ -458,8 +458,8 @@ class TestSshCollector:
 
     def test_web_ports_skipped(self):
         """Ports with is_web=True must not be probed even if they run on port 22."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="webonly.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="5.6.7.8", version=4, source="dnsx")
         Port.objects.create(session=sess, ip_address=ip, address="5.6.7.8",
@@ -478,9 +478,9 @@ class TestSshCollector:
 @pytest.mark.django_db
 class TestSshScanner:
     def test_scanner_creates_findings(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
-        from apps.core.findings.models import Finding
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
+        from apps.core.data.findings.models import Finding
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
@@ -509,7 +509,7 @@ class TestSshScanner:
         assert Finding.objects.filter(session=sess, source="ssh_checker").count() == len(findings)
 
     def test_scanner_empty_session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
         with patch("apps.ssh_checker.scanner.collect", return_value=[]):
             findings = run_ssh_check(sess)
