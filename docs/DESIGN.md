@@ -245,6 +245,63 @@ POST /api/scans/start/  (authorization gate: active tools need DomainAuthorizati
 
 ---
 
+## Workflow vs. Pipeline — the two paradigms (hybrid, by design)
+
+A scan uses **both**: it runs a **workflow** (which tools) **through the pipeline**
+(what order + how data flows). They are two paradigms operating at two layers, and
+they meet in exactly one function — `resolve_phase_groups()` in
+`apps/core/workflows/runner.py`, which takes the workflow's tool *set* and imposes
+the pipeline's phase *order*.
+
+| | **Workflow-centric** | **Pipeline-centric** |
+|---|---|---|
+| Controls | *which* tools run | *what order* + *how data flows* |
+| The unit | `Workflow` + `WorkflowStep` (DB rows) | fixed 12 phases + dataflow models |
+| Mutable? | ✅ dynamic — user-configurable | ❌ fixed — hardcoded `tool_meta["phase"]` |
+| Lives in | `apps/core/workflows/` (models, api, runner, registry) | `tool_meta` phases + `apps/core/scans/pipeline.py` |
+| Example control | enable/disable tools; Full / Passive / custom workflows | `dnsx`(3)→`naabu`(5)→`httpx`(8): IPs before ports before web probing |
+
+A workflow can enable/disable tools and set their *intra-phase* `order`, but can
+**never** move a tool to a different phase or reorder the phases — the phase
+sequence encodes hard dataflow dependencies, so its fixity is correctness
+enforcement, not a limitation.
+
+### Pros / cons of each paradigm
+
+**Workflow-centric** — *Pros:* flexibility (compose custom scans), reusable presets
+(Full/Passive), zero-code tool extensibility, scan *modes* fall out naturally
+(passive vs active → the authorization boundary), user control without a deploy.
+*Cons:* indirection ("what will this scan run?" is runtime DB state, not readable in
+one file), more machinery (registry + runner + config models), a
+*registered-but-not-scanned* seam (a tool joins Full Scan only via a data migration),
+bigger test surface.
+
+**Pipeline-centric** — *Pros:* predictable, readable dataflow; strong per-stage
+contracts; tools stay decoupled (shared models, fixed phases); easy to debug
+(deterministic order); few failure modes. *Cons:* rigidity (can't customize which
+stages run without code), no user configurability, awkward for optional/conditional
+stages, all-or-nothing.
+
+### Why the hybrid is correct here
+
+The two paradigms constrain **different axes**: the workflow controls the axis you
+*want* flexible (which tools), the pipeline controls the axis that *must not* be
+flexible (phase order / dataflow — a Port must come from an IP). So the hybrid takes
+the pros of both and pays only the mild cons:
+
+- Pure pipeline-centric → too rigid (no passive-only recon, no custom subsets → you'd
+  fork the pipeline per mode).
+- Pure workflow-centric (reorderable phases) → dangerous (lets port-scan run before
+  subdomain discovery → broken dataflow, lost decoupling).
+
+**Decision: keep the hybrid** — workflow-centric orchestration over a
+pipeline-centric dataflow. Do not collapse toward either pure form. The one
+workflow-centric weakness (the *registered ≠ scanned* seam) is contained by guardrail
+tests (`test_default_workflow`, `test_passive_scan`) and could be further tightened
+by a `"default_scan"` flag in `tool_meta` (optional; see the hardening backlog).
+
+---
+
 ## Unified Finding Model
 
 Finding-producing tools write to `apps/core/findings/Finding`:
