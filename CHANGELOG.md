@@ -7,12 +7,6 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
-### Removed
-- **`docs/PRD.md`.** The product-requirements doc is retired — its content is
-  covered by `docs/DESIGN.md` (architecture), `docs/DECISIONS.md` (the *why*), and
-  the feature specs under `docs/specs/`. The stale forward-link from DESIGN.md's
-  header was removed; historical CHANGELOG entries that mention it are left intact.
-
 ### Fixed
 - **Alert idempotency on finalize replay (PQC hardening H1).** `_dispatch_alerts`
   now skips re-sending when the session already has a `sent` `Alert` row. **Why:**
