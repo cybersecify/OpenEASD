@@ -8,6 +8,16 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Changed
+- **`@durable_task` engine adapter (PQC hardening H6, slice 1).** New
+  `apps/core/engine/durable/task.py` — a thin decorator over DBOS so task bodies
+  don't import the engine: `task()` runs the body in-process (testable without a
+  DBOS engine), `task.delay()` durably enqueues (with an optional `dedupe`
+  template → DBOS `deduplication_id`). The two one-step tasks `ai_triage` and
+  `agent_step` are converted; the `enqueue_*` helpers now delegate to `.delay()`.
+  `run_scan` stays an explicit multi-step workflow (its per-phase checkpointing is
+  the point). Workflow names/dedup unchanged → no behaviour change; DBOS
+  construction + registration verified. Principle #11 (keep the engine behind an
+  adapter). Plan: `docs/specs/2026-09-07-producer-queue-consumer-hardening.md`.
 - **Reorganised the core apps into layer subpackages.** The 15 `apps/core/*` apps
   now live under **`apps/core/console/`** (dashboard, insights, reports,
   notifications, ai, api), **`apps/core/engine/`** (scans, workflows, durable,
