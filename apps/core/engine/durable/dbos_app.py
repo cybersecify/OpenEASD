@@ -7,8 +7,7 @@ definitions.
 
 The enqueue-only client + system-database URL live in `client.py` (a leaf), so
 `task.py`/`workflows.py` can enqueue without forming an import cycle through this
-module (which imports `workflows`). `get_client`/`system_database_url` are
-re-exported here for backward compatibility.
+module (which imports `workflows`). Import `get_client` from `.client` directly.
 
 The system database is the app's own Postgres, isolated in a `dbos` schema, so
 there is still just one database to run (no second service).
@@ -16,7 +15,7 @@ there is still just one database to run (no second service).
 
 from django.conf import settings
 
-from .client import get_client, system_database_url  # noqa: F401 (re-exported)
+from .client import system_database_url
 from .constants import SYSTEM_SCHEMA as _SYSTEM_SCHEMA
 
 
