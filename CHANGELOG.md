@@ -7,6 +7,16 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Removed a vestigial SQLite write-lock from the workflow runner.** `runner.py`
+  serialised parallel `WorkflowStepResult` writes behind a `threading.Lock` left
+  over from the SQLite era. **Why:** on PostgreSQL concurrent writers are fine
+  (each tool thread uses its own connection), and a per-process lock wouldn't
+  serialise across worker replicas anyway — so it was needless intra-phase
+  contention + misleading comments. Correctness-neutral; restores true parallel
+  step-result writes. Also logged the watchdog↔DBOS-resume overlap as **H4** in
+  the PQC hardening plan.
+
 ### Fixed
 - **Alert idempotency on finalize replay (PQC hardening H1).** `_dispatch_alerts`
   now skips re-sending when the session already has a `sent` `Alert` row. **Why:**

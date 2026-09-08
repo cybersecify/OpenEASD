@@ -116,6 +116,40 @@ no-op when disabled.
 
 **Effort:** ~1 PR. Slots into the existing `@scheduled` + scheduler-callable pattern.
 
+## 5b. Phase H4 — reconcile the watchdog with DBOS resume (design smell)
+
+**Problem:** `reap_stuck_scans` (the `scheduled_watchdog` cron) and DBOS's own
+crash-resume are **two uncoordinated recovery mechanisms** for the same scans.
+The watchdog reaps a `running` scan by `start_time` age → marks it `failed`/
+`partial` and fails its in-flight `WorkflowStepResult`s. But on worker restart
+DBOS **resumes** a crashed scan from its last checkpoint. In a narrow window — a
+scan that legitimately ran a long time, crashed, and whose worker was down past
+`SCAN_TIMEOUT_MINUTES` — the watchdog can reap a scan **while DBOS is resuming
+it**: conflicting `ScanSession.status`, spurious `failed` step rows, and status
+churn (DBOS usually wins if its resumed run finishes and calls `_finalize`).
+
+**Context:** low-probability today — `SCAN_TIMEOUT_MINUTES` is set very high
+(~24h) precisely so a healthy long run is never flipped mid-scan. The watchdog is
+a **Django-Q-era backstop** whose role narrowed once DBOS added real resume; it's
+now mostly needed for **orphaned `pending`** scans (enqueued but never picked up),
+not for reaping `running` ones (DBOS handles those).
+
+**Change (options, smallest first):**
+- **(A)** Gate the watchdog to **skip `running` sessions that still have a live
+  DBOS workflow** (query the `dbos` workflow-status for the session's handle;
+  only reap `running` scans with no active/enqueued DBOS workflow). Keep the
+  `pending`-reap path unchanged (that's the part still genuinely needed).
+- **(B)** Reframe the watchdog as a **pure DBOS-orphan reaper** — reap only
+  sessions whose DBOS workflow is terminal/absent but whose `ScanSession` is
+  still `running`/`pending`.
+Recommend **(A)** — smallest change, preserves the pending-orphan safety net.
+
+**Tests:** a `running` session with a live DBOS workflow is NOT reaped; a
+`pending` orphan past its cutoff still is; a `running` session with a
+terminal/absent DBOS workflow past cutoff is reaped as today.
+
+**Effort:** ~1 PR. **Priority:** low (narrow race, high timeout) — do after H2/H3.
+
 ## 6. Non-goals / explicitly out of scope
 
 - **Do NOT make the pattern "textbook pure."** The multi-producer (API +
@@ -128,10 +162,12 @@ no-op when disabled.
 ## 7. Sequencing (each independently shippable)
 
 1. **H1 — alert idempotency** (½ PR, no migration) — closes the one *correctness*
-   gap; highest leverage, lowest cost. Do first.
+   gap; highest leverage, lowest cost. **✅ Shipped (#355).**
 2. **H3 — retention** (1 PR, opt-in) — prevents slow-motion DB growth.
 3. **H2 — `/metrics`** (1 PR) — highest operational value; needs the multiprocess
    decision above, so worth reviewing this section before coding.
+4. **H4 — watchdog ↔ DBOS-resume reconcile** (1 PR) — closes the recovery-path
+   overlap. Lowest priority (narrow race, high timeout); do last.
 
 ## 8. Verification
 

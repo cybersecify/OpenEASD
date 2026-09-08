@@ -7,7 +7,6 @@ Tool runners are auto-discovered from AppConfig.tool_meta via the registry.
 
 import importlib
 import logging
-import threading
 from itertools import groupby
 from operator import itemgetter
 
@@ -16,11 +15,6 @@ from django.utils import timezone as django_tz
 from .models import WorkflowRun, WorkflowStepResult
 
 logger = logging.getLogger(__name__)
-
-# SQLite only allows one writer at a time. This lock serialises the brief
-# WorkflowStepResult INSERT/UPDATE from parallel tool threads — tool runners
-# are responsible for their own write safety.
-_step_result_write_lock = threading.Lock()
 
 
 def _get_runner(tool_name: str):
@@ -58,24 +52,22 @@ def _run_single_step(run, session, tool: str, order: int) -> None:
     """Execute one tool step, record its WorkflowStepResult, and persist timing.
 
     Calls close_old_connections() before touching the ORM so this function
-    is safe to dispatch from a ThreadPoolExecutor worker.
-
-    _step_result_write_lock serialises the brief WorkflowStepResult INSERT/UPDATE
-    so parallel threads don't race on SQLite's single-writer lock.
-    Tool runners are responsible for their own write safety.
+    is safe to dispatch from a ThreadPoolExecutor worker. Postgres handles the
+    concurrent WorkflowStepResult writes from parallel tool threads directly
+    (each thread uses its own connection); tool runners are responsible for
+    their own write safety.
     """
     from django.db import close_old_connections
     close_old_connections()
     from .registry import get_tool_produces_findings
 
-    with _step_result_write_lock:
-        step_result = WorkflowStepResult.objects.create(
-            run=run,
-            tool=tool,
-            order=order,
-            status="running",
-            started_at=django_tz.now(),
-        )
+    step_result = WorkflowStepResult.objects.create(
+        run=run,
+        tool=tool,
+        order=order,
+        status="running",
+        started_at=django_tz.now(),
+    )
 
     status = "completed"
     error_msg = ""
@@ -95,12 +87,11 @@ def _run_single_step(run, session, tool: str, order: int) -> None:
         status = "failed"
         error_msg = str(e)
 
-    with _step_result_write_lock:
-        step_result.status = status
-        step_result.findings_count = findings_count
-        step_result.error = error_msg
-        step_result.finished_at = django_tz.now()
-        step_result.save(update_fields=["status", "findings_count", "error", "finished_at"])
+    step_result.status = status
+    step_result.findings_count = findings_count
+    step_result.error = error_msg
+    step_result.finished_at = django_tz.now()
+    step_result.save(update_fields=["status", "findings_count", "error", "finished_at"])
 
 
 def resolve_phase_groups(workflow, only_tools: list | None = None) -> list:
