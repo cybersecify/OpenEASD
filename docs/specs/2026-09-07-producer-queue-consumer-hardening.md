@@ -186,6 +186,61 @@ duplicate findings/assets; a clean re-run of a completed scan is a no-op.
 **Effort:** ~1 PR (A). **Priority:** medium — it's the one *correctness* gap in the
 "durable" claim after H1 (alerts). Do after H2/H3, before or with H4.
 
+## 5d. Phase H6 — `@durable_task` engine adapter (pipeline principle #11)
+
+**Problem:** workflow bodies use `@DBOS.workflow`/`@DBOS.step` **directly**, so the
+engine leaks into every task: tasks can't run without a DBOS engine (harder to
+test), and the enqueue surface is ad-hoc (`enqueue_scan`/`enqueue_ai_triage`/
+`enqueue_agent_step` each hand-roll `EnqueueOptions`). Principle #11: *"keep the
+engine behind an adapter — one module knows the workflow library; every task uses
+a thin decorator."*
+
+**Reference (proven next door):** the sibling `cybersecify/backend` repo ships
+exactly this — `apps/core/durable/task.py`'s `@durable_task("name")`, a
+Celery-shaped surface over DBOS:
+```
+task(*args)                    run the body now, in-process (NO DBOS — tests need no engine)
+task.delay(*args, **kw)        durably enqueue on the task's queue
+task.apply_async(queue=, countdown=, dedupe=)
+task.request.retries           attempt counter
+```
+Under the hood it registers the DBOS workflow(s); no body imports `dbos`.
+
+**Change:** add `apps/core/engine/durable/task.py` with a `@durable_task` decorator;
+migrate `run_scan`/`ai_triage`/`agent_step` + the `@scheduled` hygiene jobs onto it;
+collapse the three `enqueue_*` helpers into `task.delay()/apply_async()`. Keep the
+`deduplication_id` behaviour (H1/#5) inside the adapter.
+
+**Tests:** a task body runs in-process with no DBOS engine; `.delay()` enqueues;
+dedup still holds; existing scan/agent flows unchanged.
+
+**Effort:** ~1–2 PRs. **Priority:** medium — big testability + isolation win, but
+touches the durable core, so do it deliberately (not under time pressure).
+
+## 5e. Phase H7 — `ScheduledJob` table for system crons (pipeline principle #8)
+
+**Problem:** the system crons (daily scan, monitoring/user sweeps, watchdog, token
+purge) are `@DBOS.scheduled` decorators with cron strings from `settings` — changing
+a schedule needs a deploy or env change. Principle #8: *"put every timed job in one
+editable table; rows in an admin table change without a deploy."* (OpenEASD already
+has a partial version — `ScheduledScan` for user scans — but not for the system jobs.)
+
+**Reference:** `cybersecify/backend`'s `ScheduledJob` model
+(`name, task, cron, timezone, queue, kwargs, enabled, description`) — the DBOS
+scheduler reads rows; operators edit them in Django admin.
+
+**Change:** add a `ScheduledJob` table (extend/rename the existing `ScheduledScan`
+concept, or a new model); a single DBOS `@scheduled` sweep reads due enabled rows
+and dispatches their `task` via the H6 `@durable_task` registry. Seed the current
+system crons as rows on migrate. Gate by `SCHEDULED_SCANS_ENABLED` as today.
+
+**Tests:** a disabled row never fires; an edited cron takes effect without a deploy;
+the seeded system jobs match today's cadence; `SCHEDULED_SCANS_ENABLED=false` still
+suppresses scans.
+
+**Effort:** ~1 PR (cleanest **after** H6, so scheduled rows dispatch through the
+adapter). **Priority:** medium — operator-experience win.
+
 ## 6. Non-goals / explicitly out of scope
 
 - **Do NOT make the pattern "textbook pure."** The multi-producer (API +
@@ -205,8 +260,19 @@ duplicate findings/assets; a clean re-run of a completed scan is a no-op.
 4. **H2 — `/metrics` + journey timing** (1 PR) — highest operational value
    (principle #13); needs the multiprocess decision above, so review that section
    before coding.
-5. **H4 — watchdog ↔ DBOS-resume reconcile** (1 PR) — closes the recovery-path
+5. **H6 — `@durable_task` engine adapter** (1–2 PRs) — engine isolation +
+   testability (principle #11); do deliberately, it touches the durable core.
+6. **H7 — `ScheduledJob` table** (1 PR, after H6) — editable system crons
+   (principle #8); operator-experience win.
+7. **H4 — watchdog ↔ DBOS-resume reconcile** (1 PR) — closes the recovery-path
    overlap. Lowest priority (narrow race, high timeout); do last.
+
+**Reference implementation:** H2 (metrics), H6 (`@durable_task`), and H7
+(`ScheduledJob`) are all **proven in the sibling `cybersecify/backend` repo**
+(`config/metrics.py`, `apps/core/durable/task.py`, `ScheduledJob` model) — copy the
+shape, swap the chess domain for scans. H5's delete-then-insert idempotency and
+H3's workflow-history cleanup also mirror that repo. It's the same team's
+choreographed variant of this stack; use it as the working reference.
 
 **Framework alignment:** H5 and H2's journey-timing addition come from an audit
 against a 14-point pipeline-design checklist — H5 = principle #4 (idempotent,
@@ -228,5 +294,9 @@ DESIGN.md "Workflow vs. Pipeline". Those are not tracked as gaps.
   `openeasd_scan_journey_seconds` reflects enqueue→final-output latency (#13).
 - H4: a `running` session with a live DBOS workflow is not reaped; a `pending`
   orphan past cutoff still is.
+- H6: a `@durable_task` body runs in-process with no DBOS engine; `.delay()`
+  enqueues; dedup preserved; scan/agent flows unchanged.
+- H7: a disabled `ScheduledJob` row never fires; an edited cron takes effect with
+  no deploy; `SCHEDULED_SCANS_ENABLED=false` still suppresses scans.
 - Whole: with every feature unused/disabled, a scan is byte-identical to today
   (additive-safety check).
