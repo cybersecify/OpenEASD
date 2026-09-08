@@ -1,6 +1,7 @@
 # OpenEASD — Architecture & Design
 
-> **Audience:** engineers. For engineering decisions see [DECISIONS.md](DECISIONS.md).
+> **Audience:** engineers. For product requirements see [PRD.md](PRD.md).
+> For engineering decisions see [DECISIONS.md](DECISIONS.md).
 > **`CLAUDE.md` (repo root) is the authoritative, exhaustive reference** —
 > full tool/endpoint/test tables live there. This doc is the standalone
 > architecture overview; where it abbreviates, CLAUDE.md is the source of truth.
