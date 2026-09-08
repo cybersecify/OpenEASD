@@ -367,6 +367,52 @@ class TestAlertAiSummary:
         payload = _build_teams_payload(sess, _GROUPED, "high")
         assert [f["name"] for f in payload["sections"][0]["facts"]] == ["HIGH"]
 
+
+# ---------------------------------------------------------------------------
+# H1 — alert idempotency on finalize replay (apps/core/scans/pipeline)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestAlertIdempotency:
+    def _configure_slack(self):
+        from apps.core.notifications.models import NotificationConfig
+        cfg = NotificationConfig.get()
+        cfg.slack_webhook_url = "https://hooks.slack.com/test"
+        cfg.save()
+
+    def test_skips_resend_when_already_sent(self):
+        """A finalize replay must NOT re-dispatch when a 'sent' Alert exists."""
+        from apps.core.scans.pipeline import _dispatch_alerts
+        from apps.core.notifications.models import Alert
+        self._configure_slack()
+        sess = _alert_session()
+        Alert.objects.create(session=sess, alert_type="slack",
+                             severity_threshold="high", status="sent")
+        with patch("apps.core.notifications.dispatcher.dispatch_alerts") as mock_dispatch:
+            _dispatch_alerts(sess)
+        mock_dispatch.assert_not_called()
+
+    def test_dispatches_when_no_prior_alert(self):
+        """First finalize (no prior Alert rows) dispatches normally."""
+        from apps.core.scans.pipeline import _dispatch_alerts
+        self._configure_slack()
+        sess = _alert_session()
+        with patch("apps.core.notifications.dispatcher.dispatch_alerts") as mock_dispatch:
+            _dispatch_alerts(sess)
+        mock_dispatch.assert_called_once()
+
+    def test_retries_when_prior_attempt_only_failed(self):
+        """A prior fully-failed attempt (no 'sent' row) is still retried."""
+        from apps.core.scans.pipeline import _dispatch_alerts
+        from apps.core.notifications.models import Alert
+        self._configure_slack()
+        sess = _alert_session()
+        Alert.objects.create(session=sess, alert_type="slack",
+                             severity_threshold="high", status="failed")
+        with patch("apps.core.notifications.dispatcher.dispatch_alerts") as mock_dispatch:
+            _dispatch_alerts(sess)
+        mock_dispatch.assert_called_once()
+
     def test_report_kind_not_used_for_alerts(self):
         from apps.core.ai.models import AISummary
         from apps.core.notifications.dispatcher import _get_triage_summary

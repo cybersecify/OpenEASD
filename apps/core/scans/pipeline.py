@@ -632,6 +632,17 @@ def _dispatch_alerts(session):
     from django.conf import settings
     from apps.core.notifications.models import NotificationConfig
 
+    # Idempotency guard (H1): finalize is a DBOS step that can be replayed after a
+    # partial crash (e.g. worker dies after the webhook POST but before the step
+    # checkpoints). If this session already dispatched alerts successfully, skip on
+    # replay — re-sending would double-notify. Only "sent" rows count, so a prior
+    # attempt that failed entirely is still retried on the next finalize.
+    if session.alerts.filter(status="sent").exists():
+        logger.info(
+            f"[scan:{session.id}] Alerts already dispatched; skipping re-send on replay"
+        )
+        return
+
     cfg = NotificationConfig.get()
     # DB config takes precedence; fall back to env vars for Docker/K8s deployments
     slack_url  = cfg.slack_webhook_url  or getattr(settings, "SLACK_WEBHOOK_URL", "")

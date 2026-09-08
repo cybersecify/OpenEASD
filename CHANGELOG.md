@@ -7,6 +7,15 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Fixed
+- **Alert idempotency on finalize replay (PQC hardening H1).** `_dispatch_alerts`
+  now skips re-sending when the session already has a `sent` `Alert` row. **Why:**
+  scan finalize is a durable DBOS step that can be *replayed* after a partial crash
+  (worker dies after the Slack/Teams webhook POST but before the step checkpoints);
+  without the guard, resume re-fired the alerts → duplicate notifications. Only
+  `sent` rows count, so a prior attempt that failed entirely is still retried. Plan:
+  `docs/specs/2026-09-07-producer-queue-consumer-hardening.md`.
+
 ## [v2.2.0] — 2026-09-07
 
 ### Added

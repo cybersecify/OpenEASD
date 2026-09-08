@@ -40,7 +40,12 @@ with three contained changes.
 3. **Single-user.** No per-user concerns (see `docs/DECISIONS.md`).
 4. **Opt-in where destructive.** Retention (which deletes data) defaults OFF.
 
-## 3. Phase H1 — Consumer idempotency (exactly-once side-effects)
+## 3. Phase H1 — Consumer idempotency (exactly-once side-effects) — ✅ SHIPPED
+
+> **Status:** ✅ Implemented — `_dispatch_alerts` guards on
+> `session.alerts.filter(status="sent").exists()`; tests in
+> `test_notifications.py::TestAlertIdempotency` (skip-when-sent, dispatch-when-none,
+> retry-when-only-failed). No migration.
 
 **Problem:** `_dispatch_alerts` (in the finalize step) can fire twice if the step
 is replayed after a partial crash → duplicate Slack/Teams alerts.
