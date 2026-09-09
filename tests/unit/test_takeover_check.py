@@ -137,17 +137,24 @@ class TestAnalyze:
         assert findings[0].subdomain is None
         assert findings[0].target == "blog.example.com"
 
-    def test_vulnerable_record_without_fingerprint_still_reported(self):
-        # A vulnerable record with no recognizable service must NOT be silently
-        # dropped — subzy field drift would otherwise make every real takeover
-        # vanish. It is reported with an "unidentified service" label instead.
+    def test_skips_record_with_unknown_service_when_live(self):
         sess = self._session()
+        # subzy returned no fingerprint — if the subdomain is live (HTTP probe
+        # returns content), suppress the finding to avoid false positives.
         records = [{"subdomain": "blog.example.com", "vulnerable": True}]
-        findings = analyze(sess, records)
+        with patch("apps.takeover_check.analyzer._is_live", return_value=True):
+            findings = analyze(sess, records)
+        assert findings == []
+
+    def test_reports_record_with_unknown_service_when_not_live(self):
+        sess = self._session()
+        # subzy returned no fingerprint AND the subdomain is not serving content
+        # (dangling CNAME) — report it for manual verification.
+        records = [{"subdomain": "blog.example.com", "vulnerable": True}]
+        with patch("apps.takeover_check.analyzer._is_live", return_value=False):
+            findings = analyze(sess, records)
         assert len(findings) == 1
-        assert findings[0].target == "blog.example.com"
-        assert findings[0].severity == "high"
-        assert "unidentified" in findings[0].title.lower()
+        assert "unidentified service" in findings[0].title
 
     def test_dedupes_by_subdomain_name(self):
         sess = self._session()
