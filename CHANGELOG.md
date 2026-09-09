@@ -7,6 +7,18 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **UI-managed BYOK credentials — foundation (C1).** New
+  `apps/core/console/credentials` app: a `ToolCredentials` encrypted singleton
+  (Fernet at rest) + a `get_credential()` resolver (**DB value wins over env**,
+  env fallback, fail-graceful) + a **write-only** `/api/credentials/` (presence
+  booleans + a `db|env|none` source per key; values never returned). **Why:** so
+  tool API keys (Shodan/HIBP/GitHub/DNS-history) can be set from the UI without a
+  redeploy, reusing the existing at-rest crypto. Additive — no tool is wired to
+  the resolver yet (that's C3), so scans are unchanged. Bootstrap secrets
+  (`FIELD_ENCRYPTION_KEY`, `SECRET_KEY`, `DB_*`) deliberately stay env-only. Spec:
+  `docs/specs/2026-09-09-credential-management.md`.
+
 ## [v2.3.0] — 2026-09-08
 
 ### Changed

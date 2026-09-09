@@ -1,7 +1,9 @@
 # Credential Management — UI-managed BYOK keys — Design Spec
 
-> **Status:** Draft for review. Execution belongs to a dedicated session. This
-> document is the design contract; implement it PR-by-PR from Section 9.
+> **Status:** 🟡 In progress — **C1 shipped** (`apps/core/console/credentials/`:
+> `ToolCredentials` encrypted singleton + `get_credential()` resolver +
+> write-only `/api/credentials/`; 12 tests). No tool wired yet (C3), no UI (C5) —
+> so nothing changes for scans until C3. Implement the rest PR-by-PR from Section 9.
 
 **Goal:** let the operator manage the tools' bring-your-own-key (BYOK) API keys
 from a **single console page**, stored **encrypted in the DB**, instead of

@@ -169,6 +169,9 @@ api.add_router("/insights", insights_router)
 from apps.core.console.notifications.api import router as notifications_router
 api.add_router("/notifications", notifications_router)
 
+from apps.core.console.credentials.api import router as credentials_router
+api.add_router("/credentials", credentials_router)
+
 from apps.core.console.ai.api import router as ai_router
 api.add_router("/ai", ai_router)
 
