@@ -7,7 +7,7 @@ export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/static/' : '/',
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   build: {
