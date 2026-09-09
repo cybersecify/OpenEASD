@@ -7,6 +7,13 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Frontend test-tooling major upgrades (coordinated).** `vitest` 4→5,
+  `@vitest/ui` 4→5, and `@testing-library/jest-dom` 6→7, bumped together (vitest
+  and its UI must share a major). Dev-only; no product code. All 22 Vitest tests
+  pass and the bundle builds unchanged — no source edits needed. Supersedes the
+  separate Dependabot PRs #351/#349/#352.
+
 ### Fixed
 - **Graceful timeout handling for `asn_discovery` and `dnsx`.** `asn_discovery`
   now catches `ToolTimeout` from `amass intel` and returns no findings instead of
