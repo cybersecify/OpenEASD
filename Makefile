@@ -23,12 +23,12 @@ setup:
 dev:
 	@(cd frontend && npm run dev) & \
 	(uv run manage.py runserver $(PORT)) & \
-	(uv run manage.py qcluster) & \
+	(uv run manage.py dbos_worker) & \
 	wait || kill 0
 
 ## Run only the background task worker (required for scans to execute)
 worker:
-	uv run manage.py qcluster
+	uv run manage.py dbos_worker
 
 ## Run only the Django dev server
 backend:

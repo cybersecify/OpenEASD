@@ -7,6 +7,393 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.4.0] — 2026-09-09
+
+### Added
+- **UI-managed BYOK credentials — foundation (C1).** New
+  `apps/core/console/credentials` app: a `ToolCredentials` encrypted singleton
+  (Fernet at rest) + a `get_credential()` resolver (**DB value wins over env**,
+  env fallback, fail-graceful) + a **write-only** `/api/credentials/` (presence
+  booleans + a `db|env|none` source per key; values never returned). **Why:** so
+  tool API keys (Shodan/HIBP/GitHub/DNS-history) can be set from the UI without a
+  redeploy, reusing the existing at-rest crypto. Additive — no tool is wired to
+  the resolver yet (that's C3), so scans are unchanged. Bootstrap secrets
+  (`FIELD_ENCRYPTION_KEY`, `SECRET_KEY`, `DB_*`) deliberately stay env-only. Spec:
+  `docs/specs/2026-09-09-credential-management.md`.
+- **UI-managed BYOK credentials — tools wired (C3).** `shodan`, `breach_check`,
+  `github_recon`, `github_secrets`, and `dns_history` now read their key via
+  `get_credential()` instead of `settings` directly, so a key stored in the DB
+  (`ToolCredentials`) **overrides the env var with no redeploy**; an unset DB key
+  falls back to env exactly as before. Existing tool tests unchanged (env fallback
+  preserves them); a new test proves a DB key drives `shodan` onto the paid host
+  tier with no env key. Cloudflare still defers to `AISettings`. **Why:** this is
+  where UI/DB keys start taking effect. Next: the CredentialsPage UI (C5).
+- **UI-managed BYOK credentials — the Credentials page (C5).** A new
+  **`/credentials`** page (nav item between Notifications and AI Analysis): one
+  row per key (Shodan / HIBP / GitHub token+secret / DNS-history) with a
+  password input + Save/Clear and a presence/source pill (**Set (UI)** / **From
+  env var** / **Not set**). Write-only — values are never displayed; Clear is
+  enabled only for keys set in the UI. A footer notes that `SECRET_KEY` /
+  `FIELD_ENCRYPTION_KEY` / `DB_*` stay env-only. Completes the credential-management
+  feature (C1+C3+C5): manage all tool BYOK keys from the console, no redeploy.
+
+## [v2.3.0] — 2026-09-08
+
+### Changed
+- **`@durable_task` engine adapter (PQC hardening H6, slice 1).** New
+  `apps/core/engine/durable/task.py` — a thin decorator over DBOS so task bodies
+  don't import the engine: `task()` runs the body in-process (testable without a
+  DBOS engine), `task.delay()` durably enqueues (with an optional `dedupe`
+  template → DBOS `deduplication_id`). The two one-step tasks `ai_triage` and
+  `agent_step` are converted; the `enqueue_*` helpers now delegate to `.delay()`.
+  `run_scan` stays an explicit multi-step workflow (its per-phase checkpointing is
+  the point). Workflow names/dedup unchanged → no behaviour change; DBOS
+  construction + registration verified. Principle #11 (keep the engine behind an
+  adapter). Plan: `docs/specs/2026-09-07-producer-queue-consumer-hardening.md`.
+- **Reorganised the core apps into layer subpackages.** The 15 `apps/core/*` apps
+  now live under **`apps/core/console/`** (dashboard, insights, reports,
+  notifications, ai, api), **`apps/core/engine/`** (scans, workflows, durable,
+  scheduler, service_detection), and **`apps/core/data/`** (domains, assets,
+  web_assets, findings, asset_inventory), matching the logical layer model.
+  Import paths are now `apps.core.<layer>.<app>`. **Django labels are unchanged**,
+  so the database and migrations are untouched (no schema change, no data
+  migration). Purely organisational; full test suite green.
+- **Removed a vestigial SQLite write-lock from the workflow runner.** `runner.py`
+  serialised parallel `WorkflowStepResult` writes behind a `threading.Lock` left
+  over from the SQLite era. **Why:** on PostgreSQL concurrent writers are fine
+  (each tool thread uses its own connection), and a per-process lock wouldn't
+  serialise across worker replicas anyway — so it was needless intra-phase
+  contention + misleading comments. Correctness-neutral; restores true parallel
+  step-result writes. Also logged the watchdog↔DBOS-resume overlap as **H4** in
+  the PQC hardening plan.
+
+### Fixed
+- **Alert idempotency on finalize replay (PQC hardening H1).** `_dispatch_alerts`
+  now skips re-sending when the session already has a `sent` `Alert` row. **Why:**
+  scan finalize is a durable DBOS step that can be *replayed* after a partial crash
+  (worker dies after the Slack/Teams webhook POST but before the step checkpoints);
+  without the guard, resume re-fired the alerts → duplicate notifications. Only
+  `sent` rows count, so a prior attempt that failed entirely is still retried. Plan:
+  `docs/specs/2026-09-07-producer-queue-consumer-hardening.md`.
+
+## [v2.2.0] — 2026-09-07
+
+### Added
+- **Asset inventory — backend foundation (PR1).** A new `apps/core/asset_inventory`
+  layer builds a persistent, deduplicated `Asset` record per unique
+  (domain, kind, key) — subdomains/IPs/ports/URLs — with `first_seen`/`last_seen`/
+  `status`, populated by a fail-graceful rollup at scan finalize (honest
+  `gone`-marking: only on completed scans, only for kinds actually observed).
+  `Finding.asset` links findings to the inventory. A backfill migration seeds it
+  from existing scan history. **Read API (PR2):** `GET /api/assets/` (paginated,
+  filterable by domain/kind/status/search, each row with per-severity open-finding
+  counts), `GET /api/assets/summary/` (totals by kind + active/gone), and
+  `GET /api/assets/<id>/` (metadata + findings + scan timeline). **Assets UI (PR3):**
+  a new **Assets** nav item + inventory page (filter by kind/status/domain, search,
+  per-asset severity chips) and an **AssetDetail** page (metadata, findings across
+  scans, and the scan-seen timeline) — the asset-centric view of the attack
+  surface. **Polish (PR4):** a dashboard "Asset inventory" KPI (active/gone,
+  linking to the Assets page), a Finding→Asset cross-link (the findings API now
+  carries `asset_id`/`asset_key`/`asset_kind`, and the Findings page links each
+  finding to its asset), and README/DESIGN notes. See
+  `docs/specs/2026-09-06-asset-centric-inventory.md`. Additive: with the
+  inventory unused, scans behave exactly as before.
+- **Historical DNS Records tool (`dns_history`, tool #28) — passive.** Queries a
+  passive-DNS dataset for a domain's historical A/AAAA/MX records and surfaces
+  each as an informational finding (past hosting / stale records → recon and
+  occasional takeover leads). Passive (queries a third-party dataset, never the
+  target → no authorization needed); BYO endpoint via `DNS_HISTORY_API_URL`
+  (no-op when unset); fail-graceful (never fails a scan). Joins the default Full
+  Scan and the Passive Scan workflow.
+
+### Changed
+- **k8s: web and worker are now separate Deployments** (`web-deployment.yaml` +
+  `worker-deployment.yaml`) instead of one pod with two containers — a default
+  deploy is now 3 pods (web, worker, postgres). This lets the DBOS worker scale
+  independently (`kubectl scale deploy/openeasd-worker --replicas=N`, all draining
+  the same queue), keeps `NET_RAW` off the internet-facing web tier, and allows
+  independent rollouts. The web Deployment's initContainer runs migrations; the
+  worker waits via the role-aware entrypoint (`OPENEASD_ROLE=worker`). Logs go to
+  **stdout** (the `ReadWriteOnce` logs PVC is removed, so nothing blocks a rolling
+  update), and the Service selector pins `tier: web`. **Why:** matches the
+  recommended 3-tier topology and delivers the independent-scaling benefit the
+  single-pod layout couldn't.
+
+## [v2.1.1] — 2026-09-06
+
+### Fixed
+- **k8s deploy pointed at a non-existent image tag.** `k8s/kustomization.yaml`
+  pinned `openeasd-web`/`-worker` to `v0.4` — a pre-split tag that was never
+  published for the split images (those start at v2.0.0), so a fresh
+  `kubectl apply -k k8s/` would `ImagePullBackOff`. Pinned to `v2.1.1`. (The
+  v2.1.0 release tag shipped the broken `v0.4` pin because this fix landed on
+  `main` just after that tag was cut — v2.1.1 is the corrected release.)
+- **k8s probe host dropped from the secret's `ALLOWED_HOSTS`.** The kubelet
+  readiness/liveness probes send `Host: openeasd.local`, and the secret's
+  `ALLOWED_HOSTS` overrides the configmap's — so a `secret.yaml` filled in with
+  only the real host made Django 400 the probes and the pod never went Ready.
+  The `secret.yaml` template now keeps `openeasd.local` in `ALLOWED_HOSTS`, and
+  CLAUDE.md spells out the override + probe-host requirement.
+
+### Removed
+- **Duplicate/stale docs.** Dropped the root `PRD.md` — a diverged duplicate of
+  the canonical `docs/PRD.md` whose "Delivered" section duplicated the CHANGELOG
+  and whose "Planned" roadmap was mostly shipped or now contradicts the
+  single-user design. Also removed `docs/LOCAL_BRANCH_DBOS.md`, an unreferenced
+  status doc for the long-since-merged DBOS branch, and the two historical
+  `docs/specs/2026-06-01-cloud-assets-*.md` implementation specs for a shipped
+  feature (unreferenced). `docs/PRD.md` is the single canonical PRD; the WAF
+  coverage spec (still referenced from CLAUDE.md + settings) stays.
+- **Dead SQLite WAL signal handler** in settings — a leftover `connection_created`
+  hook that only fired for the SQLite backend, which no longer exists (Postgres
+  since v2.0). No behavior change.
+
+## [v2.1.0] — 2026-09-06
+
+### Removed
+- **Dead `main.py` dev-runner.** It launched `manage.py qcluster` (Django-Q2,
+  removed in the v2.0 DBOS re-platform) and was only `COPY`d into the image, never
+  executed (the entrypoint is `docker-entrypoint.sh`). The canonical dev runner is
+  `make dev`; README updated to point there. Also dropped a stale README reference
+  to a non-existent `src/hooks/` directory and an unused test import.
+
+### Security
+- **Login brute-force rate limiting.** After `LOGIN_RATELIMIT_MAX_FAILURES`
+  (default 5) failed logins from an IP within a window, that IP is locked out of
+  `POST /api/token/pair` (429 + `Retry-After`) for the lockout period. Backed by
+  a `LoginThrottle` DB model so the limit holds across gunicorn workers; only the
+  credential endpoint is limited (not refresh), and a successful login resets the
+  counter. Per-IP keying is **per-IP, not per-username** (per-username would let
+  an attacker lock the admin out — an account-lockout DoS). The client IP comes
+  from `X-Forwarded-For` when `LOGIN_RATELIMIT_TRUST_FORWARDED_FOR` is on (the
+  default, correct behind the mandated TLS reverse proxy); set it `False` for a
+  bare deployment, where XFF is attacker-spoofable and the unspoofable
+  `REMOTE_ADDR` is used instead so the limit can't be evaded by rotating the
+  header. All thresholds are tunable via `LOGIN_RATELIMIT_*` env. **Why:** a
+  single-admin app exposes exactly one login to guess — an unthrottled one is a
+  standing brute-force target.
+- **BYOK secrets encrypted at rest.** API keys, tokens, and webhook URLs stored
+  in the database — the Cloudflare AI token, Slack/Teams webhook URLs, and every
+  provider key on the amass/subfinder config models — are now Fernet-encrypted
+  via a transparent `EncryptedField` (`apps/core/crypto.py` + `fields.py`). The
+  key is derived from `SECRET_KEY` by default, or set `FIELD_ENCRYPTION_KEY` to
+  decouple it. Existing plaintext rows are migrated in place and read
+  tolerantly. **Why:** a database dump or backup previously exposed the
+  operator's third-party credentials in cleartext.
+
+### Developer experience
+- **CI now enforces `ruff` lint, a frontend test suite (Vitest + Testing
+  Library), and an 80% backend coverage floor** — all three were previously
+  uncovered (ruff/black/isort and pytest-cov were installed but never run; the
+  React SPA had no tests). **Why:** catch regressions mechanically instead of in
+  review.
+
+## [v2.0.0] — 2026-09-06
+
+### Added
+- **AI analysis layer (`apps/core/ai`) — triage, adaptive orchestration, and
+  summaries via Cloudflare Workers AI (BYOK).** After each scan it ranks
+  findings by exploitability with a per-finding rationale ("Fix These First"
+  panel on scan detail + "Analyst Summary" block in the PDF), can schedule
+  bounded follow-up subscans based on what was found (hard caps on iterations
+  and subscans; active tools re-checked against `DomainAuthorization` at the
+  agent's own dispatch boundary), and writes plain-language report/alert
+  summaries (one extra Slack block / Teams fact when present). Entirely off
+  unless Cloudflare credentials are provided (saved on the /ai page, or
+  `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` env vars as fallback) AND the
+  operator enables it AND records consent (first-use dialog); with the gate
+  closed every scan runs byte-identical to before. Every call is recorded in
+  an audit log (time, scan, purpose, model, token counts, finding IDs — the
+  audit model has no text fields, so prompt/response bodies are structurally
+  unpersistable). New `/ai` page (settings, consent, connection test, call
+  log) and `/api/ai/` router. **Why:** v2.0 direction per D-009/D-014/D-015 —
+  the differentiation is being smarter about scanner output than the tools we
+  wrap; scanner-grade output is commodity, analyst-grade output is not.
+  Supersedes the Ollama/Claude design of D-010–D-012 (see DECISIONS.md).
+- **GitHub Org Recon tool (`github_recon`, tool #25) — passive.** Enumerates the
+  target org's PUBLIC GitHub repos via GitHub's official REST API and surfaces
+  exposed infrastructure references in that public code/config: internal
+  hostnames/subdomains of the target domain, cloud-storage bucket URLs
+  (S3/Azure/GCP), and API endpoints. Emits one `info` summary Finding ("N public
+  repos discovered for org X") plus one `low` `github_infra_exposure` Finding per
+  unique reference (deduped, capped at 200), naming the repo + file it came from.
+  Two-tier BYO-token: unauthenticated works keyless at GitHub's 60 req/hr public
+  limit (we cap total requests + repos to stay under it), a `GITHUB_TOKEN` raises
+  the ceiling to 5000 req/hr. Passive (`active=False`) — it queries GitHub, never
+  the target, so it needs no `DomainAuthorization` and joins both the Full Scan and
+  the no-auth Passive Scan (migration 0027). Fail-graceful throughout: any
+  API/network/JSON error or rate-limit returns empty and never fails a scan.
+  - **Why:** an org's public source is part of its external attack surface, and
+    developers routinely commit internal hostnames, bucket names, and API base URLs
+    into public repos, READMEs, and CI config — recon an attacker would otherwise
+    have to earn. This widens the discovered surface *from source*, complementing
+    the secret-focused `js_secrets`/`github_secrets` tools (this one finds infra
+    exposure, not secrets — and never stores secrets).
+  - **Hypothesis (user-driven):** the highest-signal, lowest-noise GitHub recon for
+    a defender is "which of our own infrastructure did we accidentally publish,"
+    surfaced as aggregate low/info findings rather than a raw grep dump.
+  - **Provenance/ToS:** uses ONLY GitHub's official REST API (no scraping), sends
+    the honest OpenEASD User-Agent, and honours GitHub's documented rate limits
+    (403/429 + `X-RateLimit-*`) with capped backoff. `GITHUB_TOKEN`/`GITHUB_ORG` are
+    per-deployment secrets, never baked into the image.
+
+### Changed
+- **Third-party licensing hygiene (attribution + notices).** Added a
+  `THIRD_PARTY_NOTICES.md` covering every bundled binary and data source: MIT
+  notices (ProjectDiscovery ×7, nuclei-templates, gitleaks, gau, cloud_enum),
+  the **Apache-2.0 NOTICE for amass** (was missing), a **GPL-2.0 source offer for
+  subzy**, the **NPSL "uses Nmap Security Scanner" notice**, and EPSS/CISA-KEV/
+  Hudson-Rock/Shodan data-source attributions. Added the EPSS + KEV + Hudson Rock
+  citation to the PDF report's Methodology section. **Why:** the Docker image
+  redistributes these binaries, so their licenses require the notices; this closes
+  the gap flagged by a dependency licence/ToS audit. No license purchase is
+  required for OpenEASD's free/non-commercial use.
+- **Documented Shodan InternetDB's non-commercial restriction** (settings +
+  notices): a *paid* product built on OpenEASD must supply its own Shodan key
+  rather than rely on the free keyless InternetDB tier.
+
+### Removed
+- **Dropped `waybackurls`** from the historical-URL collector and the Docker image.
+  It ships without a declared license (redistribution-ambiguous), and `gau` — which
+  we already run — is a strict superset of its one source (the Wayback Machine),
+  also covering Common Crawl, AlienVault OTX, and URLScan. Zero coverage loss.
+
+### Added
+- **GitHub public-secret tool (`apps/github_secrets`) — tool #24.** Searches
+  **public GitHub** for the target org's leaked secrets: confirms the org via
+  `GET /orgs/{org}`, runs org-scoped `GET /search/code` queries (`.env`,
+  `.npmrc`, `credentials`, `id_rsa`, `.pem`, and an `org:{org} "{domain}"` string
+  search), fetches the matching blobs (capped by count + bytes), and runs
+  **gitleaks** over them — the same detection engine `js_secrets` points at
+  fetched JavaScript, aimed here at the org's public GitHub footprint. Findings
+  share `check_type="exposed_secret"` with js_secrets so both secret sources
+  group together in the report. **Passive** (`active=False`): every request goes
+  to GitHub's own API, **never to the target** — no `DomainAuthorization`. In
+  default Full Scan + Passive Scan (migration `0026`). 32 tests.
+  - **BYOK is mandatory** (`GITHUB_TOKEN`): GitHub's code-search API requires
+    auth, so with no token the tool is a **logged no-op** — a keyless Full Scan
+    is never broken. `GITHUB_ORG` pins the org (recommended; auto-derivation from
+    the domain apex label is best-effort and flagged lower-confidence).
+    `GITHUB_SECRETS_GLOBAL_SEARCH` (default off) enables an extra noisy un-scoped
+    bare-string search; default is **org-scoped only**.
+  - **Redaction is enforced** (reused verbatim from js_secrets): only a redacted
+    `secret_preview` + scrubbed `match_preview` are stored — the full secret
+    never lands in the DB or report (asserted at the DB level in tests).
+  - **Fail-graceful + bounded:** any GitHub API timeout / non-200 / exhausted
+    rate-limit (429, 403 + zero remaining, secondary limit) / JSON error is
+    logged and skipped, never raised (only a missing/timed-out gitleaks binary
+    raises, like js_secrets); GitHub rate limits are honoured with capped backoff
+    (`Retry-After` / `X-RateLimit-Reset`); queries, files, and bytes are all
+    capped per session.
+
+  **Why:** credentials committed to public GitHub are one of the most common and
+  most damaging real-world leaks, and they are harvested by automated scanners
+  within minutes of a push — this surfaces them in the same passive, no-auth
+  recon pass that already runs before any target contact, closing a gap that the
+  on-site `js_secrets` (which only sees the target's own served JS) cannot cover.
+  **Key never ships in the image** (that would leak the token + spend the
+  operator's own GitHub quota + breach GitHub's API ToS): the token is a
+  per-deployment secret and the operator uses their own quota. Uses GitHub's
+  official API only and honours its rate limits.
+- **Data-breach exposure tool (`apps/breach_check`) — tool #24.** A passive,
+  Phase-1 (Domain Intelligence) tool that reports which of the org's accounts /
+  how many known breaches are tied to the target domain, using third-party breach
+  datasets. Sends **no packet to the target** (`active=False`, no
+  `DomainAuthorization`) and joins both the default **Full Scan** and the no-auth
+  **Passive Scan**. Two-tier, bring-your-own-key:
+  - **Free tier (default, zero config):** **XposedOrNot** public breach catalog
+    (`GET /v1/breaches?domain=<domain>`) — keyless, no credits. Returns the known
+    breaches whose breached organisation matches the domain (breach name, year,
+    record total). Every Docker deployment gets it.
+  - **Authoritative tier:** set `HIBP_API_KEY` → **Have I Been Pwned**
+    `GET /api/v3/breacheddomain/<domain>` (requires the operator's paid HIBP
+    subscription **and** HIBP-verified domain ownership; honest `user-agent` +
+    `hibp-api-key` headers sent). Yields the number of affected accounts + the set
+    of breach names.
+
+  Emits **one aggregate Finding** (`check_type="breach_exposure"`, CWE-359) when
+  exposure is found — `high` severity on a large affected-account count (≥100) or
+  a breach within the last 3 years (reused credentials are a live
+  credential-stuffing risk), else `medium`; no exposure → no Finding. Fail-graceful
+  throughout (timeout / 500 / exhausted 429 / bad-JSON / HIBP 404·403 never raise;
+  429/Retry-After honoured with capped backoff).
+  **PRIVACY (hard requirement, mirrors `hudson_rock`):** only aggregate COUNTS +
+  PUBLIC breach metadata (names/years/record totals) are ever stored. The HIBP
+  response is keyed by email alias (PII); the collector reads only the alias
+  *count* and the breach-name union and **discards the alias keys** — no email
+  address or credential ever reaches a Finding. Enforced by
+  `test_breach_check.py` at the collector, analyzer, and end-to-end layers.
+  **Why:** breach exposure is a high-value external signal a defender can act on
+  immediately (force resets, MFA, block breached passwords) yet most EASD tools
+  omit it; shipping a free keyless source out of the box means it always adds
+  value, while HIBP BYO-key gives operators the authoritative per-account data
+  when they have it. `HIBP_API_KEY` is a per-deployment secret, never baked into
+  the public image.
+- **Lookalike / typosquat domain tool (`apps/typosquat`) — tool #24.** Generates
+  lookalike candidates for the apex domain algorithmically — homoglyph, adjacent-key
+  substitution/insertion, omission, repetition, transposition, hyphenation, and
+  common-TLD swaps (capped at `MAX_CANDIDATES=300`, truncation logged, never silent)
+  — then checks which are **registered / weaponizable** via public DNS. A candidate
+  with A/MX records (can serve a phishing page or receive mail) is `medium`; one with
+  only NS (registered/parked) is `low`. One Finding per registered lookalike
+  (`check_type="lookalike_domain"`, CWE-451 UI Misrepresentation), with the technique,
+  DNS records, and resolved IPs in `extra`. Passive (`active=False`, no
+  `DomainAuthorization`, no API key) — every DNS query targets the CANDIDATE domain's
+  public DNS; **the target is never contacted**. Fail-graceful: any resolver
+  error / timeout / NXDOMAIN is treated as "not registered" and skipped; the tool
+  never raises and never fails a scan. In default Full Scan + Passive Scan (migration
+  `0026`). 29 tests.
+
+  **Why:** lookalike domains are the *threat surface* a defender doesn't see from
+  their own assets — phishing infrastructure and brand abuse are stood up on
+  confusable domains (`examp1e.com`, `example-support.com`, `example.io`) that never
+  appear in the org's DNS or CT logs. Surfacing which confusable names are already
+  *registered and live* is a high-signal, zero-cost addition to the passive report:
+  it needs no key, no authorization, and no packet to the target, yet it names
+  concrete attacker-controlled infrastructure — a strong free-report hook and a
+  natural upsell signal (continuous lookalike monitoring / takedown). It runs in the
+  no-auth **Passive Scan** mode, so a prospect gets it before granting authorization.
+- **Exposure Score + trend — one 0–100 executive risk number per scan.** Each
+  completed scan now gets a single saturating, severity-weighted score
+  (`raw = 25*critical + 8*high + 2*medium + 0.5*low`, capped at 100; `info`
+  contributes 0) plus a letter grade (A best … F worst; bands 0–19 A, 20–39 B,
+  40–59 C, 60–79 D, 80–100 F). A clean scan scores 0 / grade A. The score and
+  grade are stored per scan on `ScanSummary` (migration
+  `insights.0002`), so trend is queryable, and the delta vs the same domain's
+  previous scan (up = worse / down = better / flat) is computed Python-side to
+  avoid the SQLite JSON-aggregation quirk. Surfaced in `GET /api/insights/`
+  (per-scan `exposure_score`/`exposure_grade` on each `scan_trend` entry, plus a
+  top-level `exposure` object with the latest domain's score, grade, and trend),
+  in `GET /api/dashboard/` (per-domain `exposure_score`/`exposure_grade` on each
+  `domain_status` row), and as an "Exposure Score" block in the PDF report.
+  **Why:** the finding list lands with an engineer but not with the non-technical
+  buyer who signs off; a single number that trends over time gives that reader
+  something to track and anchors the free→paid value story (you improved your
+  score, here's how to keep improving it). Weights are named module constants in
+  `apps/core/insights/scoring.py` so the curve stays tunable. Frontend rendering
+  of the score/trend is deferred (backend + report only for now).
+- **Shodan passive exposure tool (`apps/shodan`) — tool #23.** Reads Shodan's own
+  internet-wide scan dataset for each resolved public IP and reports exposed
+  ports/services + known CVEs, **without sending a packet to the target**
+  (passive, `active=False`, no `DomainAuthorization`). Two-tier, bring-your-own-key:
+  - **Free tier (default, zero config):** Shodan **InternetDB** — ports, CPEs,
+    CVE ids per IP. No key, no credits. Every Docker deployment gets it.
+  - **Enhanced tier:** set `SHODAN_API_KEY` → full host API (service banners +
+    versions + tags). `SHODAN_MAX_IPS` (default 50) caps the paid path's queries
+    to protect plan credits; the free path is uncapped (costs nothing).
+
+  **Why:** completes the "what's already publicly visible about you" picture that
+  the passive report is built on — Shodan shows exposure from an external vantage
+  that active tools (nmap) can't reach when a target blocks or rate-limits our
+  scanner, and it runs in the no-auth **Passive Scan** mode where nmap cannot.
+  **Not a duplicate of nmap:** different *method* (passive/external vs
+  active/first-hand) covering a different failure mode. CVE ids are stored in
+  `extra["cve_ids"]` so the existing `cve_intel` phase enriches them with EPSS +
+  CISA KEV — a Shodan-surfaced KEV CVE is exactly the "worth a pentest" signal.
+  **Key never ships in the image** (that would leak it + breach Shodan's ToS): the
+  key is a per-deployment secret; keyless users get the free tier. In default Full
+  Scan + Passive Scan (migration `0025`). 20 tests.
+
 ### Changed
 - **Tools now run to completion and deliver full output — no output caps.** The
   product's value is complete results in one UI, so instead of *capping* tools to
@@ -674,3 +1061,18 @@ security learners. The pre-launch work below tightens the load-bearing
   (Flagged during test as a possible bug because `head -30` truncation showed
   only Full Scan with `is_default=false`; rebuilding the test with a higher
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
+
+<!-- Version compare links (Keep a Changelog) -->
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.4.0...HEAD
+[v2.4.0]: https://github.com/cybersecify/OpenEASD/compare/v2.3.0...v2.4.0
+[v2.3.0]: https://github.com/cybersecify/OpenEASD/compare/v2.2.0...v2.3.0
+[v2.2.0]: https://github.com/cybersecify/OpenEASD/compare/v2.1.1...v2.2.0
+[v2.1.1]: https://github.com/cybersecify/OpenEASD/compare/v2.1.0...v2.1.1
+[v2.1.0]: https://github.com/cybersecify/OpenEASD/compare/v2.0.0...v2.1.0
+[v2.0.0]: https://github.com/cybersecify/OpenEASD/compare/v0.10.0...v2.0.0
+[v0.10.0]: https://github.com/cybersecify/OpenEASD/compare/v0.9.0...v0.10.0
+[v0.9.0]: https://github.com/cybersecify/OpenEASD/compare/v0.8.0...v0.9.0
+[v0.8.0]: https://github.com/cybersecify/OpenEASD/compare/v0.7.1...v0.8.0
+[v0.7.1]: https://github.com/cybersecify/OpenEASD/compare/v0.7...v0.7.1
+[v0.7]: https://github.com/cybersecify/OpenEASD/compare/v0.6...v0.7
+[v0.5]: https://github.com/cybersecify/OpenEASD/compare/v0.4...v0.5

@@ -8,7 +8,7 @@ import tempfile
 
 from django.conf import settings
 
-from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+from apps.core.engine.workflows.exceptions import ToolBinaryMissing, ToolTimeout
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ def collect(session, subdomains: list[str]) -> list[dict]:
         raise ToolBinaryMissing(f"dnsx binary not found: {binary}")
     except subprocess.TimeoutExpired:
         logger.error(f"[dnsx:{session.id}] Timed out")
-        raise ToolTimeout(f"dnsx timed out")
+        raise ToolTimeout("dnsx timed out")
     finally:
         os.unlink(tmp)
 

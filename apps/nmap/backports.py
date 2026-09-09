@@ -19,18 +19,18 @@ def compare_debian_versions(v1: str, v2: str) -> int:
     """
     def parse_parts(v):
         return [int(x) if x.isdigit() else x for x in re.split(r'([0-9]+)', v) if x]
-    
+
     p1 = parse_parts(v1)
     p2 = parse_parts(v2)
-    
+
     for a, b in zip(p1, p2):
         if a == b:
             continue
-        if type(a) == type(b):
+        if type(a) is type(b):
             return 1 if a > b else -1
         # In debian, strings and numbers compare strangely, but casting to str works for most simple cases
         return 1 if str(a) > str(b) else -1
-        
+
     if len(p1) > len(p2):
         return 1
     elif len(p1) < len(p2):
@@ -44,9 +44,9 @@ def check_backport(product: str, version_string: str, cve: str) -> dict:
     """
     if not version_string or not product:
         return None
-        
+
     product = product.lower()
-    
+
     # Identify distro and distro-specific version from nmap extrainfo strings.
     # Examples:
     #   "OpenSSH 9.6p1 Ubuntu Linux; protocol 2.0"   → no version suffix (skip)
@@ -56,27 +56,27 @@ def check_backport(product: str, version_string: str, cve: str) -> dict:
     # We specifically require the suffix to START with a digit to avoid capturing
     # words like "protocol" that appear in the common "Ubuntu Linux; protocol 2.0" format.
     match = re.search(r'(?i)(ubuntu|debian)(?:[^;]*?[-; ])\s*(\d[a-z0-9.~+-]*)', version_string)
-    
+
     distro = None
     distro_version = None
-    
+
     if match:
         distro = match.group(1).lower()
         distro_version = match.group(2).strip()
-                
+
     if not distro or not distro_version:
         return None
-        
+
     distro_data = BACKPORTS.get(distro, {})
     cve_data = distro_data.get(cve)
     if not cve_data:
         return None
-        
+
     # Get the fixed version for this product
     fixed_version = cve_data.get(product)
     if not fixed_version:
         return None
-        
+
     # Compare distro_version with fixed_version
     # If installed version >= fixed_version, it is patched
     if compare_debian_versions(distro_version, fixed_version) >= 0:
@@ -84,5 +84,5 @@ def check_backport(product: str, version_string: str, cve: str) -> dict:
             "backport_applied": True,
             "first_fixed_in": fixed_version
         }
-        
+
     return None

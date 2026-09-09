@@ -29,6 +29,23 @@ jobs:
     name: Test & Security Scan
     runs-on: ubuntu-24.04
 
+    # PostgreSQL service — the app + DBOS run on Postgres now (no SQLite). The
+    # test suite creates its test database here; pytest-django + DBOS both need it.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: openeasd
+          POSTGRES_USER: openeasd
+          POSTGRES_PASSWORD: openeasd
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U openeasd -d openeasd"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -46,11 +63,27 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
-      - name: Run tests (fast — exclude slow DNS tests)
+      - name: Lint — ruff
+        run: uv run ruff check apps/ openeasd/ tests/
+        # High-signal correctness rules (E/F/W, E501 deferred). Config in
+        # pyproject.toml [tool.ruff]. Includes tests/ (per-file-ignores relax
+        # E402/E702 there). Runs before tests so lint fails fast.
+
+      - name: Run tests + coverage gate (fast — exclude slow DNS tests)
         env:
           SECRET_KEY: "ci-test-secret-key-not-used-in-prod"
           DEBUG: "True"
-        run: uv run pytest tests/ --ignore=tests/unit/test_domain_security.py -q
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          DB_NAME: openeasd
+          DB_USER: openeasd
+          DB_PASSWORD: openeasd
+        # --cov uses [tool.coverage.run] source/omit in pyproject.toml.
+        # Fail-under is set a few points below the current ~83% so the gate
+        # catches real regressions without flapping on minor fluctuation.
+        run: >-
+          uv run pytest tests/ --ignore=tests/unit/test_domain_security.py -q
+          --cov --cov-report=term-missing --cov-fail-under=80
 
       - name: SAST — bandit
         run: uv run bandit -r apps/ openeasd/ -ll -x tests/
@@ -77,10 +110,17 @@ jobs:
       - name: Install dependencies
         run: cd frontend && npm ci
 
+      - name: Test — vitest
+        run: cd frontend && npm run test:run
+
       - name: Build
         run: cd frontend && npm run build
 
   docker:
+    # One job (kept named "Docker Build" — a required status check) that builds
+    # both image targets. NOT a matrix: a matrix would report as
+    # "Docker Build (web)"/"(worker)" and the required "Docker Build" context
+    # would never report, permanently blocking the PR.
     name: Docker Build
     runs-on: ubuntu-24.04
 
@@ -90,14 +130,25 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4
 
-      - name: Build image (amd64)
+      - name: Build web image (amd64)
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: .
+          target: web
           platforms: linux/amd64
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      - name: Build worker image (amd64)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        with:
+          context: .
+          target: worker
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
 
   publish:
     name: Publish to GHCR
@@ -107,6 +158,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    strategy:
+      matrix:
+        target: [web, worker]   # publish both images: openeasd-web + openeasd-worker
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -125,9 +179,14 @@ jobs:
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6
         with:
-          images: ghcr.io/cybersecify/openeasd
+          images: ghcr.io/cybersecify/openeasd-${{ matrix.target }}
+          # type=ref,event=tag       → full version tag,  e.g. v2.0.0
+          # type=match (v-prefixed)  → major.minor tag,   e.g. v2.0 (floats to
+          #                            the latest patch of that minor line)
+          # type=raw latest          → :latest on default-branch pushes only
           tags: |
             type=ref,event=tag
+            type=match,pattern=v\d+\.\d+,group=0
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Compute build provenance
@@ -145,11 +204,12 @@ jobs:
             echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build and push (amd64 + arm64)
+      - name: Build and push ${{ matrix.target }} (amd64)
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          target: ${{ matrix.target }}
+          platforms: linux/amd64   # amd64 only — arm64 not required
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -157,11 +217,11 @@ jobs:
             OPENEASD_VERSION=${{ steps.prov.outputs.version }}
             OPENEASD_GIT_SHA=${{ github.sha }}
             OPENEASD_BUILD_DATE=${{ steps.prov.outputs.build_date }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
           # Supply-chain transparency: SBOM + SLSA provenance baked into the
           # image manifest. Retrieve with:
-          #   docker buildx imagetools inspect ghcr.io/cybersecify/openeasd:vX.Y --format '{{ json . }}'
+          #   docker buildx imagetools inspect ghcr.io/cybersecify/openeasd-web:vX.Y --format '{{ json . }}'
           # SBOM lists every package in the image; provenance attests the build.
           sbom: true
           provenance: mode=max

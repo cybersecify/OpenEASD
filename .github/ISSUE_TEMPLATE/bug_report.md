@@ -16,7 +16,7 @@ A clear description of the bug.
 
 **Build**
 The version line from the app footer, or the output of `GET /health/`
-(e.g. `OpenEASD v0.10.0 · a1b2c3d4 · 2026-08-22`). The in-app "Report an issue"
+(e.g. `OpenEASD v2.0.0 · a1b2c3d4 · 2026-09-06`). The in-app "Report an issue"
 link fills this in automatically.
 
 **Environment**

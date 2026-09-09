@@ -6,7 +6,7 @@ and Port FK linking instead of URL FK.
 
 import logging
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ def analyze(session, records: list[dict]) -> list[Finding]:
     if not records:
         return []
 
-    from apps.core.assets.models import Port
+    from apps.core.data.assets.models import Port
 
     # Build (address, port) → Port lookup
     port_map = {

@@ -41,12 +41,13 @@ const KNOWN = new Set([
   'false_positive','active','inactive','idle','web',
 ]);
 
-export function Badge({ value }) {
-  const label   = value ?? '—';
-  const variant = KNOWN.has(label) ? label : 'fallback';
+export function Badge({ value, label }) {
+  const key     = value ?? '—';
+  const variant = KNOWN.has(key) ? key : 'fallback';
+  const text    = label ?? key;
   return (
     <span className={cn(badgeVariants({ variant }))}>
-      {label.replace(/_/g, ' ')}
+      {text.replace(/_/g, ' ')}
     </span>
   );
 }

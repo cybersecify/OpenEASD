@@ -1,5 +1,5 @@
 """
-Unit tests for apps/core/workflows/runner.py and models.py
+Unit tests for apps/core/engine/workflows/runner.py and models.py
 
 Tests run_workflow step execution, cancellation, error handling,
 partial failure, and service_detection injection.
@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.utils import timezone
 
-from apps.core.workflows.models import Workflow, WorkflowRun, WorkflowStep, WorkflowStepResult
-from apps.core.workflows.runner import run_workflow
+from apps.core.engine.workflows.models import Workflow, WorkflowRun, WorkflowStep, WorkflowStepResult
+from apps.core.engine.workflows.runner import run_workflow
 
 
 # ---------------------------------------------------------------------------
@@ -19,15 +19,15 @@ from apps.core.workflows.runner import run_workflow
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def session(db):
-    from apps.core.scans.models import ScanSession
+def session(transactional_db):
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(
         domain="runner.example.com", scan_type="full", status="running"
     )
 
 
 @pytest.fixture
-def workflow(db):
+def workflow(transactional_db):
     wf = Workflow.objects.create(name="Runner Test Workflow")
     WorkflowStep.objects.create(workflow=wf, tool="subfinder", order=1, enabled=True)
     WorkflowStep.objects.create(workflow=wf, tool="dnsx",      order=2, enabled=True)
@@ -35,7 +35,7 @@ def workflow(db):
 
 
 @pytest.fixture
-def run(db, workflow, session):
+def run(transactional_db, workflow, session):
     return WorkflowRun.objects.create(workflow=workflow, session=session)
 
 
@@ -55,7 +55,7 @@ def _patch_get_runner(tool_map):
             return tool_map[tool_name]
         # service_detection gets a no-op by default
         return MagicMock(return_value=None)
-    return patch("apps.core.workflows.runner._get_runner", side_effect=side_effect)
+    return patch("apps.core.engine.workflows.runner._get_runner", side_effect=side_effect)
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +63,7 @@ def _patch_get_runner(tool_map):
 # ---------------------------------------------------------------------------
 
 class TestRunWorkflowSuccess:
-    def test_run_status_becomes_completed(self, db, run):
+    def test_run_status_becomes_completed(self, transactional_db, run):
         with _patch_get_runner({"subfinder": _mock_runner(), "dnsx": _mock_runner()}):
             run_workflow(run.id)
 
@@ -72,7 +72,7 @@ class TestRunWorkflowSuccess:
         assert run.started_at is not None
         assert run.finished_at is not None
 
-    def test_all_steps_recorded_as_completed(self, db, run):
+    def test_all_steps_recorded_as_completed(self, transactional_db, run):
         with _patch_get_runner({"subfinder": _mock_runner(), "dnsx": _mock_runner()}):
             run_workflow(run.id)
 
@@ -83,7 +83,7 @@ class TestRunWorkflowSuccess:
         for r in results:
             assert r.status in ("completed", "skipped")  # service_detection may be injected
 
-    def test_step_findings_count_zero_for_asset_producing_tools(self, db, run):
+    def test_step_findings_count_zero_for_asset_producing_tools(self, transactional_db, run):
         """Subfinder/dnsx/naabu/httpx return assets (Subdomain/IPAddress/Port/URL),
         not Findings. Their step_result.findings_count must stay 0 to avoid
         falsely claiming "subfinder: 10 findings" in API responses.
@@ -99,7 +99,7 @@ class TestRunWorkflowSuccess:
         assert subfinder_result.findings_count == 0
         assert subfinder_result.status == "completed"
 
-    def test_step_findings_count_populated_for_finding_producing_tools(self, db, session):
+    def test_step_findings_count_populated_for_finding_producing_tools(self, transactional_db, session):
         """nmap (and domain_security, web_checker, etc.) DO return Finding rows.
         Their findings_count must reflect the returned list length so API
         callers can see per-tool finding totals.
@@ -116,14 +116,14 @@ class TestRunWorkflowSuccess:
         assert nmap_result.findings_count == 3
         assert nmap_result.status == "completed"
 
-    def test_step_findings_count_for_none_return(self, db, run):
+    def test_step_findings_count_for_none_return(self, transactional_db, run):
         with _patch_get_runner({"subfinder": _mock_runner(None), "dnsx": _mock_runner(None)}):
             run_workflow(run.id)
 
         r = WorkflowStepResult.objects.get(run=run, tool="subfinder")
         assert r.findings_count == 0
 
-    def test_each_step_has_timing(self, db, run):
+    def test_each_step_has_timing(self, transactional_db, run):
         with _patch_get_runner({"subfinder": _mock_runner(), "dnsx": _mock_runner()}):
             run_workflow(run.id)
 
@@ -137,7 +137,7 @@ class TestRunWorkflowSuccess:
 # ---------------------------------------------------------------------------
 
 class TestServiceDetectionInjection:
-    def test_service_detection_injected_when_missing(self, db, session):
+    def test_service_detection_injected_when_missing(self, transactional_db, session):
         # workflow has naabu (which produces ports) but NO service_detection —
         # it must be auto-injected to classify those ports.
         wf = Workflow.objects.create(name="Naabu No SD Workflow")
@@ -150,12 +150,12 @@ class TestServiceDetectionInjection:
             tools_used.append(tool_name)
             return MagicMock(return_value=None)
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=track_runner):
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=track_runner):
             run_workflow(run.id)
 
         assert "service_detection" in tools_used
 
-    def test_service_detection_not_injected_without_naabu(self, db, run, workflow):
+    def test_service_detection_not_injected_without_naabu(self, transactional_db, run, workflow):
         # workflow has subfinder + dnsx but NO naabu → no ports to classify, so
         # service_detection (an ACTIVE nmap -sV probe) must NOT be injected.
         # This is the passive-boundary guarantee: a naabu-less workflow never
@@ -166,12 +166,12 @@ class TestServiceDetectionInjection:
             tools_used.append(tool_name)
             return MagicMock(return_value=None)
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=track_runner):
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=track_runner):
             run_workflow(run.id)
 
         assert "service_detection" not in tools_used
 
-    def test_service_detection_not_injected_for_subscan_only_tools(self, db, session):
+    def test_service_detection_not_injected_for_subscan_only_tools(self, transactional_db, session):
         # A subscan passes only_tools. Even with naabu present, service_detection
         # must NOT be auto-injected: the parent scan already classified these ports,
         # and injecting the active nmap -sV probe would cross the passive/
@@ -187,13 +187,13 @@ class TestServiceDetectionInjection:
             tools_used.append(tool_name)
             return MagicMock(return_value=None)
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=track_runner):
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=track_runner):
             run_workflow(run.id, only_tools=["naabu"])
 
         assert "naabu" in tools_used
         assert "service_detection" not in tools_used
 
-    def test_service_detection_inserted_after_naabu(self, db, session):
+    def test_service_detection_inserted_after_naabu(self, transactional_db, session):
         wf = Workflow.objects.create(name="Naabu Workflow")
         WorkflowStep.objects.create(workflow=wf, tool="subfinder",  order=1, enabled=True)
         WorkflowStep.objects.create(workflow=wf, tool="naabu",      order=2, enabled=True)
@@ -206,14 +206,14 @@ class TestServiceDetectionInjection:
             tools_used.append(tool_name)
             return MagicMock(return_value=None)
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=track_runner):
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=track_runner):
             run_workflow(run.id)
 
         naabu_idx = tools_used.index("naabu")
         sd_idx = tools_used.index("service_detection")
         assert sd_idx == naabu_idx + 1
 
-    def test_service_detection_not_duplicated_when_already_in_workflow(self, db, session):
+    def test_service_detection_not_duplicated_when_already_in_workflow(self, transactional_db, session):
         wf = Workflow.objects.create(name="SD Workflow")
         WorkflowStep.objects.create(workflow=wf, tool="naabu",             order=1, enabled=True)
         WorkflowStep.objects.create(workflow=wf, tool="service_detection", order=2, enabled=True)
@@ -225,7 +225,7 @@ class TestServiceDetectionInjection:
             tools_used.append(tool_name)
             return MagicMock(return_value=None)
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=track_runner):
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=track_runner):
             run_workflow(run.id)
 
         assert tools_used.count("service_detection") == 1
@@ -236,50 +236,50 @@ class TestServiceDetectionInjection:
 # ---------------------------------------------------------------------------
 
 class TestRunWorkflowStepFailure:
-    def test_failed_step_marks_run_as_partial(self, db, run):
+    def test_failed_step_marks_run_as_partial(self, transactional_db, run):
         def failing_runner(tool_name):
             if tool_name == "subfinder":
                 m = MagicMock(side_effect=RuntimeError("binary not found"))
                 return m
             return MagicMock(return_value=None)
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=failing_runner):
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=failing_runner):
             run_workflow(run.id)
 
         run.refresh_from_db()
         assert run.status == "partial"
 
-    def test_failed_step_records_error_message(self, db, run):
+    def test_failed_step_records_error_message(self, transactional_db, run):
         def failing_runner(tool_name):
             if tool_name == "subfinder":
                 return MagicMock(side_effect=RuntimeError("tool timed out"))
             return MagicMock(return_value=None)
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=failing_runner):
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=failing_runner):
             run_workflow(run.id)
 
         r = WorkflowStepResult.objects.get(run=run, tool="subfinder")
         assert r.status == "failed"
         assert "tool timed out" in r.error
 
-    def test_remaining_steps_still_run_after_failure(self, db, run):
+    def test_remaining_steps_still_run_after_failure(self, transactional_db, run):
         def failing_runner(tool_name):
             if tool_name == "subfinder":
                 return MagicMock(side_effect=RuntimeError("oops"))
             return MagicMock(return_value=None)
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=failing_runner):
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=failing_runner):
             run_workflow(run.id)
 
         # dnsx should still have run
         dnsx_result = WorkflowStepResult.objects.get(run=run, tool="dnsx")
         assert dnsx_result.status == "completed"
 
-    def test_all_steps_fail_marks_run_as_partial(self, db, run):
+    def test_all_steps_fail_marks_run_as_partial(self, transactional_db, run):
         def always_fail(tool_name):
             return MagicMock(side_effect=Exception("fail"))
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=always_fail):
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=always_fail):
             run_workflow(run.id)
 
         run.refresh_from_db()
@@ -291,7 +291,7 @@ class TestRunWorkflowStepFailure:
 # ---------------------------------------------------------------------------
 
 class TestRunWorkflowCancellation:
-    def test_cancelled_session_stops_at_next_step(self, db, session, workflow):
+    def test_cancelled_session_stops_at_next_step(self, transactional_db, session, workflow):
         run = WorkflowRun.objects.create(workflow=workflow, session=session)
 
         call_count = [0]
@@ -300,12 +300,12 @@ class TestRunWorkflowCancellation:
             def runner(sess):
                 call_count[0] += 1
                 # Cancel session after the first tool runs
-                from apps.core.scans.models import ScanSession
+                from apps.core.engine.scans.models import ScanSession
                 ScanSession.objects.filter(pk=sess.pk).update(status="cancelled")
                 return []
             return runner
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=cancel_after_first):
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=cancel_after_first):
             run_workflow(run.id)
 
         # Only the first step should have fully run; second should be skipped
@@ -313,17 +313,17 @@ class TestRunWorkflowCancellation:
         statuses = [r.status for r in results]
         assert "skipped" in statuses
 
-    def test_cancelled_step_has_skipped_status(self, db, session):
+    def test_cancelled_step_has_skipped_status(self, transactional_db, session):
         wf = Workflow.objects.create(name="Cancel Workflow")
         WorkflowStep.objects.create(workflow=wf, tool="subfinder", order=1, enabled=True)
         WorkflowStep.objects.create(workflow=wf, tool="dnsx",      order=2, enabled=True)
         run = WorkflowRun.objects.create(workflow=wf, session=session)
 
         # Pre-cancel the session so first check sees cancelled
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         ScanSession.objects.filter(pk=session.pk).update(status="cancelled")
 
-        with patch("apps.core.workflows.runner._get_runner", return_value=MagicMock(return_value=[])):
+        with patch("apps.core.engine.workflows.runner._get_runner", return_value=MagicMock(return_value=[])):
             run_workflow(run.id)
 
         results = WorkflowStepResult.objects.filter(run=run)
@@ -335,7 +335,7 @@ class TestRunWorkflowCancellation:
 # ---------------------------------------------------------------------------
 
 class TestWorkflowModel:
-    def test_enabled_tools_returns_only_enabled_steps(self, db):
+    def test_enabled_tools_returns_only_enabled_steps(self, transactional_db):
         wf = Workflow.objects.create(name="Model Test")
         WorkflowStep.objects.create(workflow=wf, tool="subfinder", order=1, enabled=True)
         WorkflowStep.objects.create(workflow=wf, tool="dnsx",      order=2, enabled=False)
@@ -346,7 +346,7 @@ class TestWorkflowModel:
         assert "naabu" in tools
         assert "dnsx" not in tools
 
-    def test_enabled_tools_ordered_by_order_field(self, db):
+    def test_enabled_tools_ordered_by_order_field(self, transactional_db):
         wf = Workflow.objects.create(name="Order Test")
         WorkflowStep.objects.create(workflow=wf, tool="httpx",     order=8, enabled=True)
         WorkflowStep.objects.create(workflow=wf, tool="subfinder", order=2, enabled=True)
@@ -355,14 +355,14 @@ class TestWorkflowModel:
         tools = wf.enabled_tools()
         assert tools == ["subfinder", "naabu", "httpx"]
 
-    def test_is_default_enforces_single_default(self, db):
+    def test_is_default_enforces_single_default(self, transactional_db):
         wf1 = Workflow.objects.create(name="Default 1", is_default=True)
         wf2 = Workflow.objects.create(name="Default 2", is_default=True)
         wf1.refresh_from_db()
         assert not wf1.is_default  # demoted
         assert wf2.is_default
 
-    def test_step_unique_together(self, db):
+    def test_step_unique_together(self, transactional_db):
         from django.db import IntegrityError
         wf = Workflow.objects.create(name="Unique Test")
         WorkflowStep.objects.create(workflow=wf, tool="subfinder", order=1)
@@ -375,7 +375,7 @@ class TestWorkflowModel:
 # ---------------------------------------------------------------------------
 
 class TestWorkflowStepResult:
-    def test_duration_seconds(self, db, run):
+    def test_duration_seconds(self, transactional_db, run):
         from django.utils import timezone as tz
         start = tz.now()
         end = start + timezone.timedelta(seconds=5)
@@ -385,7 +385,7 @@ class TestWorkflowStepResult:
         )
         assert sr.duration_seconds == pytest.approx(5.0, abs=0.1)
 
-    def test_duration_seconds_none_when_not_finished(self, db, run):
+    def test_duration_seconds_none_when_not_finished(self, transactional_db, run):
         sr = WorkflowStepResult.objects.create(run=run, tool="subfinder", order=1)
         assert sr.duration_seconds is None
 
@@ -398,26 +398,26 @@ class TestGroupToolsByPhase:
     """Pure function — no DB needed."""
 
     def test_single_tool_per_phase_returns_singleton_groups(self):
-        from apps.core.workflows.runner import _group_tools_by_phase
+        from apps.core.engine.workflows.runner import _group_tools_by_phase
         # subfinder=phase2, dnsx=phase3, naabu=phase4 — each in its own phase
         groups = _group_tools_by_phase(["subfinder", "dnsx", "naabu"])
         assert groups == [["subfinder"], ["dnsx"], ["naabu"]]
 
     def test_multi_tool_phase_grouped_together(self):
-        from apps.core.workflows.runner import _group_tools_by_phase
+        from apps.core.engine.workflows.runner import _group_tools_by_phase
         # nmap, tls_checker, ssh_checker, nuclei_network are all phase 7
         groups = _group_tools_by_phase(["nmap", "tls_checker", "ssh_checker", "nuclei_network"])
         assert len(groups) == 1
         assert set(groups[0]) == {"nmap", "tls_checker", "ssh_checker", "nuclei_network"}
 
     def test_mixed_phases_split_correctly(self):
-        from apps.core.workflows.runner import _group_tools_by_phase
+        from apps.core.engine.workflows.runner import _group_tools_by_phase
         # subfinder (phase 2) + nmap (phase 7): two separate groups
         groups = _group_tools_by_phase(["subfinder", "nmap"])
         assert groups == [["subfinder"], ["nmap"]]
 
     def test_preserves_intra_phase_order(self):
-        from apps.core.workflows.runner import _group_tools_by_phase
+        from apps.core.engine.workflows.runner import _group_tools_by_phase
         # Phase 7 tools — order within group must match input order
         tools = ["ssh_checker", "nmap", "tls_checker", "nuclei_network"]
         groups = _group_tools_by_phase(tools)
@@ -425,14 +425,14 @@ class TestGroupToolsByPhase:
         assert groups[0] == ["ssh_checker", "nmap", "tls_checker", "nuclei_network"]
 
     def test_unknown_tool_defaults_to_phase_99(self):
-        from apps.core.workflows.runner import _group_tools_by_phase
+        from apps.core.engine.workflows.runner import _group_tools_by_phase
         # An unregistered tool should sort last (phase 99)
         groups = _group_tools_by_phase(["subfinder", "unknown_tool"])
         assert groups[0] == ["subfinder"]
         assert groups[1] == ["unknown_tool"]
 
     def test_empty_list_returns_empty(self):
-        from apps.core.workflows.runner import _group_tools_by_phase
+        from apps.core.engine.workflows.runner import _group_tools_by_phase
         assert _group_tools_by_phase([]) == []
 
 
@@ -451,7 +451,7 @@ class TestPhaseParallelExecution:
         'failed' step. So if run.status == 'completed', they ran in parallel.
         """
         import threading
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
 
         barrier = threading.Barrier(2, timeout=5)
         session = ScanSession.objects.create(
@@ -470,7 +470,7 @@ class TestPhaseParallelExecution:
                 return []
             return runner
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=barrier_runner):
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=barrier_runner):
             run_workflow(run.id)
 
         run.refresh_from_db()
@@ -490,7 +490,7 @@ class TestPhaseParallelExecution:
         settings.LOW_MEMORY = True
         import threading
         import time
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
 
         lock = threading.Lock()
         concurrent = [0]
@@ -515,7 +515,7 @@ class TestPhaseParallelExecution:
                 return []
             return runner
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=seq_runner):
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=seq_runner):
             run_workflow(run.id)
 
         run.refresh_from_db()
@@ -535,7 +535,7 @@ class TestPhaseParallelExecution:
         inside nuclei's runner would fail.
         """
         import threading
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
 
         phase7_done = threading.Event()
         phase7_count = [0]
@@ -570,7 +570,7 @@ class TestPhaseParallelExecution:
                 return []
             return runner
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=make_runner):
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=make_runner):
             run_workflow(run.id)
 
         run.refresh_from_db()
@@ -580,7 +580,7 @@ class TestPhaseParallelExecution:
     def test_parallel_tool_failure_does_not_cancel_sibling(self, transactional_db):
         """If nmap fails, tls_checker (same phase 7) must still run to completion."""
         import threading
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
 
         # Use a barrier so we know both tools started
         started = threading.Barrier(2, timeout=5)
@@ -602,7 +602,7 @@ class TestPhaseParallelExecution:
                 return ["finding-1"]
             return runner
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=make_runner):
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=make_runner):
             run_workflow(run.id)
 
         run.refresh_from_db()
@@ -617,7 +617,7 @@ class TestPhaseParallelExecution:
         Phase 10 tools (nuclei, web_checker) must be skipped.
         """
         import threading
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
 
         both_started = threading.Barrier(2, timeout=5)
         session = ScanSession.objects.create(
@@ -640,7 +640,7 @@ class TestPhaseParallelExecution:
                 return []
             return runner
 
-        with patch("apps.core.workflows.runner._get_runner", side_effect=make_runner):
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=make_runner):
             run_workflow(run.id)
 
         run.refresh_from_db()

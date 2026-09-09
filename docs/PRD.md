@@ -30,7 +30,7 @@ nuclei, subfinder, and nmap are and prefer a GUI over manual CLI orchestration.
 | Small security consultancies | Core use case — repeatable scans across client domains |
 | Security learners | Strong fit — GUI makes the toolchain visible and approachable |
 | Bug bounty hunters / elite red-teamers | Weak fit — prefer raw CLI speed |
-| Enterprise SOCs | Out of scope — no RBAC, SAML, HA, or Postgres |
+| Enterprise SOCs | Out of scope — no RBAC, SAML, or HA |
 | Non-technical end users | Out of scope — Workflows page and tool labels assume security literacy |
 
 See [D-001](DECISIONS.md#d-001--audience-security-literate-users-not-non-technical-end-users).
@@ -49,9 +49,10 @@ engineers spend time on findings, not on pipeline plumbing.
 
 ## Where / Distribution
 
-- **Delivery:** `ghcr.io/cybersecify/openeasd:latest` (Docker) and `k8s/`
-  Kubernetes manifests. One `docker run` command is the load-bearing install
-  experience.
+- **Delivery:** `ghcr.io/cybersecify/openeasd-web` + `ghcr.io/cybersecify/openeasd-worker`
+  (Docker, published `:latest` and `:vX.Y.Z`) run via `docker compose` alongside
+  PostgreSQL, plus `k8s/` Kubernetes manifests. `docker compose up -d` is the
+  load-bearing install experience.
 - **No hosted scan UI.** Domain-ownership verification for a public scanner
   is a hard prerequisite; it isn't built yet.
   See [D-003](DECISIONS.md#d-003--distribution-docker-only).
@@ -87,10 +88,10 @@ These are the customer-facing attack vectors in canonical order
 | Constraint | Value |
 |---|---|
 | Auth | Single admin user, JWT (no RBAC, no SAML) |
-| Database | SQLite (configurable via `DB_NAME`; Postgres not supported) |
-| Concurrency | `replicas: 1` — SQLite RWO |
-| Background tasks | Django-Q2 (ORM broker, no Redis/Celery) |
-| External binaries | subfinder, dnsx, naabu, httpx, nuclei, nmap, amass — must be present on PATH or via `TOOL_*` env vars |
+| Database | **PostgreSQL** (via `DB_*` env or `DATABASE_URL`) — holds app data **and** the DBOS checkpoint schema |
+| Concurrency | The worker scales independently (Postgres has no single-writer lock); `DBOS_SCAN_CONCURRENCY` caps parallel scans |
+| Background tasks | **DBOS** durable workflows (checkpoint/resume) + `@scheduled` crons — no Django-Q/Celery/Redis |
+| External binaries | subfinder, dnsx, naabu, httpx, nuclei, nmap, amass (+ the passive-tool CLIs) — on PATH or via `TOOL_*` env vars |
 | Capabilities | `NET_RAW` required on the worker container for nmap raw socket scanning |
 
 ---
@@ -100,12 +101,15 @@ These are the customer-facing attack vectors in canonical order
 See [D-008](DECISIONS.md#d-008--things-we-deliberately-dont-have-anti-features)
 for the full rationale.
 
-- No RBAC, SAML, or multi-tenant support
-- No Postgres or horizontal scaling
-- No hosted "scan any domain" UI
-- No A–F letter grades, typosquatting, or brand impersonation — these are
-  brand-monitoring, not external-attack-surface scanning (out of scope by focus)
-- No "AI-powered" features in marketing copy
+- No RBAC, SAML, or multi-tenant support (single-user by design)
+- No hosted "scan any domain" UI — domain-ownership verification for a public
+  scanner isn't built
+- No deep brand-impersonation / dark-web monitoring — out of scope by focus
+  (note: a *passive* typosquat/lookalike-domain check and a per-scan Exposure
+  Score with an A–F grade **were** added since the original PRD; the boundary is
+  brand *monitoring*, not the surface-adjacent signals now included)
+- No "AI-powered" marketing copy — the optional AI analysis layer (BYOK,
+  off by default) is described by what it does, never as "AI-powered" (D-008)
 
 ---
 

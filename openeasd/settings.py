@@ -17,6 +17,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = config("SECRET_KEY", default="django-insecure-change-me-in-production")
 
+# Encrypts secrets stored at rest (BYOK API keys, webhook URLs) via
+# apps.core.fields.EncryptedField. Optional: when unset, a key is derived from
+# SECRET_KEY. Set it (a urlsafe-base64 32-byte Fernet key, e.g.
+# `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`)
+# to decouple secret encryption from SECRET_KEY rotation. Changing whichever key
+# is in effect makes already-stored secrets unreadable (re-enter them).
+FIELD_ENCRYPTION_KEY = config("FIELD_ENCRYPTION_KEY", default="")
+
 DEBUG = config("DEBUG", default=False, cast=bool)
 
 
@@ -86,25 +94,29 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    # Third party
-    "django_q",
     # Local apps
-    "apps.core.dashboard",
-    "apps.core.assets",
-    "apps.core.web_assets",
-    "apps.core.service_detection",
-    "apps.core.findings",
-    "apps.core.scans",
-    "apps.core.domains",
-    "apps.core.workflows",
-    "apps.core.scheduler",
-    "apps.core.notifications",
-    "apps.core.insights",
-    "apps.core.reports",
+    "apps.core.console.dashboard",
+    "apps.core.data.assets",
+    "apps.core.data.web_assets",
+    "apps.core.engine.service_detection",
+    "apps.core.data.findings",
+    "apps.core.data.asset_inventory",
+    "apps.core.engine.scans",
+    "apps.core.data.domains",
+    "apps.core.engine.workflows",
+    "apps.core.engine.scheduler",
+    "apps.core.console.notifications",
+    "apps.core.console.credentials",
+    "apps.core.console.insights",
+    "apps.core.console.reports",
+    "apps.core.console.ai",
+    "apps.core.engine.durable",
     "ninja_jwt",
     "ninja_jwt.token_blacklist",
     "apps.domain_security",
     "apps.hudson_rock",
+    "apps.breach_check",
+    "apps.dns_history",
     "apps.subfinder",
     "apps.amass",
     "apps.asn_discovery",
@@ -124,6 +136,10 @@ INSTALLED_APPS = [
     "apps.nuclei_network",
     "apps.web_checker",
     "apps.js_secrets",
+    "apps.shodan",
+    "apps.typosquat",
+    "apps.github_secrets",
+    "apps.github_recon",
     "apps.cve_intel",
 ]
 
@@ -136,7 +152,23 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "apps.core.console.api.ratelimit.LoginRateLimitMiddleware",
 ]
+
+# Brute-force rate limiting for POST /api/token/pair (see apps/core/api/ratelimit.py).
+LOGIN_RATELIMIT_ENABLED = config("LOGIN_RATELIMIT_ENABLED", default=True, cast=bool)
+# Whether to key the limiter on the leftmost X-Forwarded-For entry (the client,
+# behind the mandated TLS reverse proxy) vs the raw REMOTE_ADDR. Keep True for the
+# standard proxied deployment. Set False ONLY if OpenEASD is somehow exposed
+# without a trusted proxy — then XFF is attacker-controllable and would let a
+# brute-forcer rotate the header to evade the per-IP limit; REMOTE_ADDR (the TCP
+# peer) is unspoofable but, behind a proxy, is the proxy itself (one shared IP).
+LOGIN_RATELIMIT_TRUST_FORWARDED_FOR = config(
+    "LOGIN_RATELIMIT_TRUST_FORWARDED_FOR", default=True, cast=bool
+)
+LOGIN_RATELIMIT_MAX_FAILURES = config("LOGIN_RATELIMIT_MAX_FAILURES", default=5, cast=int)
+LOGIN_RATELIMIT_WINDOW_SECONDS = config("LOGIN_RATELIMIT_WINDOW_SECONDS", default=900, cast=int)
+LOGIN_RATELIMIT_LOCKOUT_SECONDS = config("LOGIN_RATELIMIT_LOCKOUT_SECONDS", default=900, cast=int)
 
 ROOT_URLCONF = "openeasd.urls"
 
@@ -160,15 +192,33 @@ WSGI_APPLICATION = "openeasd.wsgi.application"
 ASGI_APPLICATION = "openeasd.asgi.application"
 
 # Database
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / config("DB_NAME", default="data/openeasd.db"),
-        "OPTIONS": {
-            "timeout": 30,  # seconds to wait for write lock under concurrent phase execution
-        },
+# PostgreSQL — the `local` branch re-platforms off SQLite so DBOS can back
+# durable scan execution and so scans can run with real concurrency (no more
+# single-writer lock). Configure via DB_* env vars; DATABASE_URL wins if set.
+_DATABASE_URL = config("DATABASE_URL", default="")
+if _DATABASE_URL:
+    import dj_database_url  # type: ignore
+
+    DATABASES = {"default": dj_database_url.parse(_DATABASE_URL, conn_max_age=600)}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": config("DB_NAME", default="openeasd"),
+            "USER": config("DB_USER", default="openeasd"),
+            "PASSWORD": config("DB_PASSWORD", default="openeasd"),
+            "HOST": config("DB_HOST", default="127.0.0.1"),
+            "PORT": config("DB_PORT", default="5432"),
+            "CONN_MAX_AGE": config("DB_CONN_MAX_AGE", default=600, cast=int),
+        }
     }
-}
+
+# DBOS durable-execution system database. Checkpoints scan workflows/steps so a
+# crashed or restarted worker RESUMES a scan instead of losing it (retiring the
+# reap_stuck_scans watchdog). By default it shares the app's Postgres via a
+# dedicated `dbos` schema; the SQLAlchemy URL is derived from DATABASES in
+# apps/core/durable/dbos_app.py. Override with DBOS_DATABASE_URL to isolate it.
+DBOS_DATABASE_URL = config("DBOS_DATABASE_URL", default="")
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -224,42 +274,21 @@ OPENEASD_LOGS_DIR = BASE_DIR / "logs"
 for _dir in [OPENEASD_DATA_DIR, OPENEASD_LOGS_DIR]:
     _dir.mkdir(parents=True, exist_ok=True)
 
-# Django-Q2 task queue — ORM broker uses the existing Django DB (SQLite)
-#
-# Timer alignment (all three must agree or scans die mid-run):
-#   timeout  — worker hard-kill; MUST exceed a real full scan's wall-clock.
-#   retry    — re-queue window; MUST be > timeout or the broker re-runs a task
-#              that is still executing. max_attempts:1 makes this moot but the
-#              constraint is enforced anyway.
-#   watchdog — reap_stuck_scans (SCAN_TIMEOUT_MINUTES) must be >= timeout so it
-#              only reaps genuinely orphaned scans (dead worker), never a healthy
-#              long-running one.
-# The old defaults (timeout 3600 / retry 7200) killed every large scan: a full
-# scan runs past 1h, timeout kills it, then retry re-queues a zombie at exactly
-# 2h. max_attempts:1 is the real "no retries" switch the retry comment claimed.
-# The worker hard-kill caps the WHOLE scan, so it must exceed the sum of per-tool
-# caps (different-phase tools run sequentially). nuclei is now allowed up to 6h
-# (NUCLEI_TIMEOUT) so it can FINISH a large surface rather than be capped — worst
-# case nuclei(6h)+nuclei_network(1h)+amass(0.5h)+the rest ≈ 8h. Set a generous 24h
-# so a big uncapped scan completes within the 48h window instead of being killed.
-# The freeze fixes (GOMEMLIMIT + bulk-size) keep the box responsive during a long
-# run. (Was 4h, which killed nuclei mid-scan on any large surface.)
-Q_TASK_TIMEOUT = config("Q_TASK_TIMEOUT", default=86400, cast=int)   # 24h hard cap per scan task
-Q_TASK_RETRY = config("Q_TASK_RETRY", default=Q_TASK_TIMEOUT + 1200, cast=int)
-# Guard: retry <= timeout causes the broker to re-run a task while it's still
-# running. Force retry strictly above timeout regardless of env misconfiguration.
-if Q_TASK_RETRY <= Q_TASK_TIMEOUT:
-    Q_TASK_RETRY = Q_TASK_TIMEOUT + 1200
+# Per-scan wall-clock cap (seconds). Under DBOS this bounds a scan step; a full
+# scan can legitimately run for hours (nuclei up to NUCLEI_TIMEOUT), so keep it
+# generous. The stuck-scan watchdog (SCAN_TIMEOUT_MINUTES) must stay >= this so
+# it only reaps genuinely orphaned scans, never a healthy long-running one.
+SCAN_TASK_TIMEOUT = config("SCAN_TASK_TIMEOUT", default=86400, cast=int)  # 24h
 
-Q_CLUSTER = {
-    "name": "openeasd",
-    "workers": 1,       # SQLite is single-writer; >1 workers causes race conditions on task pickup
-    "orm": "default",   # uses Django DB — no Redis needed
-    "timeout": Q_TASK_TIMEOUT,
-    "retry": Q_TASK_RETRY,
-    "max_attempts": 1,  # a killed scan is dead, not retried — never re-queue it
-    "catch_up": False,  # skip missed tasks on worker restart
-}
+# DBOS is the entire task/execution + scheduling layer on this branch (durable,
+# resumable, Postgres-backed) — Django-Q has been removed. Scan-execution tuning
+# consumed in apps/core/durable.
+DBOS_APP_NAME = config("DBOS_APP_NAME", default="openeasd")
+# Max scans executing concurrently across all workers. Postgres (unlike SQLite)
+# handles concurrent writers, so this can be >1 — bounded here to protect target
+# politeness and host RAM (nuclei/amass are memory-hungry).
+DBOS_SCAN_CONCURRENCY = config("DBOS_SCAN_CONCURRENCY", default=2, cast=int)
+SCAN_STEP_TIMEOUT = config("SCAN_STEP_TIMEOUT", default=SCAN_TASK_TIMEOUT, cast=int)
 
 # Scanner timeouts (seconds) — override in .env if needed
 SCANNER_DNS_TIMEOUT = config("SCANNER_DNS_TIMEOUT", default=5, cast=int)
@@ -290,7 +319,6 @@ TOOL_DNSX = config("TOOL_DNSX", default="dnsx")
 TOOL_NAABU = config("TOOL_NAABU", default="naabu")
 TOOL_HTTPX = config("TOOL_HTTPX", default="httpx")
 TOOL_GAU = config("TOOL_GAU", default="gau")
-TOOL_WAYBACKURLS = config("TOOL_WAYBACKURLS", default="waybackurls")
 TOOL_KATANA = config("TOOL_KATANA", default="katana")
 TOOL_NMAP = config("TOOL_NMAP", default="nmap")
 TOOL_NUCLEI = config("TOOL_NUCLEI", default="nuclei")
@@ -298,6 +326,63 @@ TOOL_AMASS = config("TOOL_AMASS", default="amass")
 TOOL_ALTERX = config("TOOL_ALTERX", default="alterx")
 TOOL_CLOUD_ENUM = config("TOOL_CLOUD_ENUM", default="cloud_enum")
 TOOL_GITLEAKS = config("TOOL_GITLEAKS", default="gitleaks")
+
+# Shodan passive-exposure tool (apps/shodan). BYOK: with no key it uses Shodan's
+# FREE InternetDB endpoint (ports + CVEs, no credits) — so the tool always adds
+# value out of the box. Set SHODAN_API_KEY (per-deployment secret, NEVER baked
+# into the public image — that would leak the key and breach Shodan's ToS) to
+# upgrade to the full host API (service banners + versions). SHODAN_MAX_IPS caps
+# the paid path's per-scan queries to protect the plan's credit quota (the free
+# InternetDB path is uncapped — it costs no credits).
+# NOTE ON COMMERCIAL USE: Shodan's free InternetDB is licensed for NON-COMMERCIAL
+# use ("you can use it at a company but you can't use it to build commercial
+# products that you charge money for"). If you build a PAID product/service on
+# OpenEASD, supply your own paid Shodan plan via SHODAN_API_KEY (which switches to
+# the licensed host API) or disable the shodan tool. See THIRD_PARTY_NOTICES.md.
+SHODAN_API_KEY = config("SHODAN_API_KEY", default="")
+SHODAN_MAX_IPS = config("SHODAN_MAX_IPS", default=50, cast=int)
+
+# GitHub tools — both passive, BYO-token, sharing GITHUB_TOKEN/GITHUB_ORG.
+#   * apps/github_secrets — searches public GitHub code-search for the org's leaked
+#     secrets. BYOK MANDATORY (code-search needs auth; no token -> logged no-op).
+#   * apps/github_recon — enumerates the org's public repos + surfaces infra
+#     references. Works KEYLESS at 60 req/hr (capped by GITHUB_MAX_REPOS/REQUESTS);
+#     richer with a token at 5000 req/hr.
+# GITHUB_TOKEN is a PER-DEPLOYMENT secret — NEVER bake it into the public image
+# (that would leak the token + spend the operator's quota). A read-only/public-scope
+# PAT is sufficient. GITHUB_ORG pins the org (recommended; auto-derivation from the
+# domain apex label is best-effort). GitHub API ToS applies: official API only,
+# honour rate limits. GITHUB_SECRETS_GLOBAL_SEARCH adds a noisy un-scoped search
+# (github_secrets only, off by default).
+GITHUB_TOKEN = config("GITHUB_TOKEN", default="")
+GITHUB_ORG = config("GITHUB_ORG", default="")
+GITHUB_API_BASE = config("GITHUB_API_BASE", default="https://api.github.com")
+GITHUB_SECRETS_GLOBAL_SEARCH = config("GITHUB_SECRETS_GLOBAL_SEARCH", default=False, cast=bool)
+GITHUB_MAX_REPOS = config("GITHUB_MAX_REPOS", default=50, cast=int)
+GITHUB_MAX_REQUESTS = config("GITHUB_MAX_REQUESTS", default=100, cast=int)
+
+# Agentic AI subsystem (apps/core/ai). BYOK: Cloudflare Workers AI, called
+# directly from Django (D-014 as amended). Entirely OFF unless credentials
+# are available AND the operator enables the feature AND records consent in
+# the UI — with any of those missing, every scan runs exactly as if this
+# subsystem did not exist. Credentials are PER-DEPLOYMENT secrets (never
+# baked into the public image): the operator saves them on the /ai page
+# (stored in AISettings, write-only through the API — never serialized back
+# out), or supplies these env vars as fallback (DB wins, NotificationConfig
+# webhook precedent). Finding data is sent to Cloudflare only on consented
+# deployments; prompt and response bodies are NEVER persisted (AIInvocation
+# audit rows carry metadata only — D-013 4c). CLOUDFLARE_AI_MAX_CALLS_PER_SCAN
+# is a hard per-scan budget the client enforces so no agent loop can run up
+# the operator's bill.
+CLOUDFLARE_ACCOUNT_ID = config("CLOUDFLARE_ACCOUNT_ID", default="")
+CLOUDFLARE_API_TOKEN = config("CLOUDFLARE_API_TOKEN", default="")
+CLOUDFLARE_AI_MODEL = config(
+    "CLOUDFLARE_AI_MODEL", default="@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+)
+CLOUDFLARE_AI_TIMEOUT = config("CLOUDFLARE_AI_TIMEOUT", default=120, cast=int)
+CLOUDFLARE_AI_MAX_CALLS_PER_SCAN = config(
+    "CLOUDFLARE_AI_MAX_CALLS_PER_SCAN", default=10, cast=int
+)
 
 # Honest scanner identity. Sent as the User-Agent on the tools that probe the
 # target's web surface (httpx, katana, nuclei) so a customer can deliberately
@@ -307,6 +392,10 @@ OPENEASD_USER_AGENT = config(
     "OPENEASD_USER_AGENT",
     default="OpenEASD/1.0 (+https://cybersecify.com/openeasd)",
 )
+
+# dns_history (passive): BYO passive-DNS JSON endpoint returning historical
+# A/AAAA/MX records for `?domain=<domain>`. Unset → the tool no-ops.
+DNS_HISTORY_API_URL = config("DNS_HISTORY_API_URL", default="")
 
 # Resource profile — adapts scan behaviour to the host's specs.
 #   low      : same-phase tools run sequentially, nuclei throttled, amass skips
@@ -405,6 +494,20 @@ HUDSON_ROCK_BASE_URL = config(
     default="https://cavalier.hudsonrock.com/api/json/v2/osint-tools",
 )
 
+# Breach-exposure tool (apps/breach_check). Two-tier BYOK: with no key it uses
+# XposedOrNot's FREE keyless public breach catalog (which known breaches are tied
+# to the domain) — so the tool always adds value out of the box. Set HIBP_API_KEY
+# (a per-deployment secret, NEVER baked into the public image — that would leak
+# the operator's paid key) to switch to the authoritative Have I Been Pwned
+# breacheddomain endpoint, which also needs the operator to have verified domain
+# ownership with HIBP. Only aggregate counts + public breach metadata are ever
+# stored — never email aliases or credentials. Base URLs overridable for testing.
+HIBP_API_KEY = config("HIBP_API_KEY", default="")
+HIBP_BASE_URL = config("HIBP_BASE_URL", default="https://haveibeenpwned.com/api/v3")
+BREACH_CHECK_XON_BASE_URL = config(
+    "BREACH_CHECK_XON_BASE_URL", default="https://api.xposedornot.com/v1"
+)
+
 # Build provenance — baked into the image at build time (see Dockerfile ARG/ENV
 # + the CI publish job's build-args). Lets a deployer verify exactly what
 # version/commit/date the running image was built from, via GET /health/ and
@@ -463,7 +566,7 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
-        "django_q": {
+        "dbos": {
             "handlers": ["file"],
             "level": "INFO",
             "propagate": False,
@@ -515,15 +618,3 @@ NINJA_JWT = {
     "BLACKLIST_AFTER_ROTATION": False,
     "UPDATE_LAST_LOGIN": False,
 }
-
-# Enable WAL journal mode for SQLite so parallel phase-7 tool threads
-# can write concurrently without hitting "database is locked" errors.
-from django.db.backends.signals import connection_created  # noqa: E402
-
-
-def _set_sqlite_wal(sender, connection, **kwargs):
-    if connection.vendor == "sqlite":
-        connection.cursor().execute("PRAGMA journal_mode=WAL;")
-
-
-connection_created.connect(_set_sqlite_wal)

@@ -8,8 +8,8 @@ a vulnerable subdomain + an identifiable service fingerprint.
 import logging
 import urllib.request
 
-from apps.core.assets.models import Subdomain
-from apps.core.findings.models import Finding
+from apps.core.data.assets.models import Subdomain
+from apps.core.data.findings.models import Finding
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +85,8 @@ def analyze(session, records: list[dict]) -> list[Finding]:
     seen: set[str] = set()
 
     for record in records:
+        if not isinstance(record, dict):
+            continue
         if not _is_vulnerable(record):
             continue
 

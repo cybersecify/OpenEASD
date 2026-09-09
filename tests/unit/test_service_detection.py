@@ -1,4 +1,4 @@
-"""Unit tests for apps/core/service_detection — HTTP probes + nmap -sV fallback."""
+"""Unit tests for apps/core/engine/service_detection — HTTP probes + nmap -sV fallback."""
 
 from unittest.mock import patch, MagicMock
 from textwrap import dedent
@@ -6,7 +6,7 @@ from textwrap import dedent
 import pytest
 import requests
 
-from apps.core.service_detection.detector import (
+from apps.core.engine.service_detection.detector import (
     _probe_http, _parse_nmap_sv_xml, detect_services,
     WEB_SERVICES, _KNOWN_WEB_PORTS, _grab_banner,
     _banner_score, _nmap_score, _port_hint_score,
@@ -21,12 +21,12 @@ class TestProbeHttp:
     def test_http_responds(self):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        with patch("apps.core.service_detection.detector.requests.head",
+        with patch("apps.core.engine.service_detection.detector.requests.head",
                    return_value=mock_resp):
             assert _probe_http("1.2.3.4", 80, "http") is True
 
     def test_http_no_response(self):
-        with patch("apps.core.service_detection.detector.requests.head",
+        with patch("apps.core.engine.service_detection.detector.requests.head",
                    side_effect=requests.ConnectionError()):
             assert _probe_http("1.2.3.4", 22, "http") is False
 
@@ -185,8 +185,8 @@ class TestParseNmapSvXml:
 @pytest.mark.django_db
 class TestDetectServices:
     def _make_session(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
@@ -202,12 +202,12 @@ class TestDetectServices:
 
     def test_port_443_fallback_when_all_probes_fail(self):
         """Port 443 with no signals scores only port hint (20) — non-web under confidence scoring."""
-        from apps.core.assets.models import Port
+        from apps.core.data.assets.models import Port
         sess = self._make_session()
 
-        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._grab_banner", return_value=""), \
-             patch("apps.core.service_detection.detector._nmap_sv", return_value={}):
+        with patch("apps.core.engine.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.engine.service_detection.detector._grab_banner", return_value=""), \
+             patch("apps.core.engine.service_detection.detector._nmap_sv", return_value={}):
             detect_services(sess)
 
         p443 = Port.objects.get(session=sess, port=443)
@@ -216,12 +216,12 @@ class TestDetectServices:
 
     def test_port_80_fallback_when_all_probes_fail(self):
         """Port 80 with no signals scores only port hint (20) — non-web under confidence scoring."""
-        from apps.core.assets.models import Port
+        from apps.core.data.assets.models import Port
         sess = self._make_session()
 
-        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._grab_banner", return_value=""), \
-             patch("apps.core.service_detection.detector._nmap_sv", return_value={}):
+        with patch("apps.core.engine.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.engine.service_detection.detector._grab_banner", return_value=""), \
+             patch("apps.core.engine.service_detection.detector._nmap_sv", return_value={}):
             detect_services(sess)
 
         p80 = Port.objects.get(session=sess, port=80)
@@ -230,12 +230,12 @@ class TestDetectServices:
 
     def test_port_443_probe_result_takes_priority_over_fallback(self):
         """If HTTP probe succeeds on 443, use probe result — not fallback."""
-        from apps.core.assets.models import Port
+        from apps.core.data.assets.models import Port
         sess = self._make_session()
 
-        with patch("apps.core.service_detection.detector._probe_http") as mock_probe, \
-             patch("apps.core.service_detection.detector._grab_banner", return_value=""), \
-             patch("apps.core.service_detection.detector._nmap_sv", return_value={}):
+        with patch("apps.core.engine.service_detection.detector._probe_http") as mock_probe, \
+             patch("apps.core.engine.service_detection.detector._grab_banner", return_value=""), \
+             patch("apps.core.engine.service_detection.detector._nmap_sv", return_value={}):
             mock_probe.side_effect = lambda host, port, scheme: port == 443 and scheme == "https"
             detect_services(sess)
 
@@ -246,12 +246,12 @@ class TestDetectServices:
     # -- Non-standard ports: SSH via nmap -----------------------------------
 
     def test_ssh_port_classified_as_non_web(self):
-        from apps.core.assets.models import Port
+        from apps.core.data.assets.models import Port
         sess = self._make_session()
 
-        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._grab_banner", return_value=""), \
-             patch("apps.core.service_detection.detector._nmap_sv", return_value={22: "ssh"}):
+        with patch("apps.core.engine.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.engine.service_detection.detector._grab_banner", return_value=""), \
+             patch("apps.core.engine.service_detection.detector._nmap_sv", return_value={22: "ssh"}):
             detect_services(sess)
 
         p22 = Port.objects.get(session=sess, port=22)
@@ -262,16 +262,16 @@ class TestDetectServices:
 
     def test_nmap_fallback_non_standard_https(self):
         """nmap should classify non-standard HTTPS ports correctly."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
                             port=9443, protocol="tcp", state="open", source="naabu")
 
-        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._grab_banner", return_value=""), \
-             patch("apps.core.service_detection.detector._nmap_sv",
+        with patch("apps.core.engine.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.engine.service_detection.detector._grab_banner", return_value=""), \
+             patch("apps.core.engine.service_detection.detector._nmap_sv",
                    return_value={9443: "https"}):
             detect_services(sess)
 
@@ -281,16 +281,16 @@ class TestDetectServices:
 
     def test_nmap_fallback_ssl_tunnel_non_standard(self):
         """tunnel=ssl + name=http on non-standard port → ssl/http → web."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
                             port=9443, protocol="tcp", state="open", source="naabu")
 
-        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._grab_banner", return_value=""), \
-             patch("apps.core.service_detection.detector._nmap_sv",
+        with patch("apps.core.engine.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.engine.service_detection.detector._grab_banner", return_value=""), \
+             patch("apps.core.engine.service_detection.detector._nmap_sv",
                    return_value={9443: "ssl/http"}):
             detect_services(sess)
 
@@ -300,32 +300,32 @@ class TestDetectServices:
 
     def test_nmap_fallback_unknown_stays_non_web(self):
         """Unknown nmap service on non-standard port stays non-web."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
                             port=9999, protocol="tcp", state="open", source="naabu")
 
-        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._grab_banner", return_value=""), \
-             patch("apps.core.service_detection.detector._nmap_sv",
+        with patch("apps.core.engine.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.engine.service_detection.detector._grab_banner", return_value=""), \
+             patch("apps.core.engine.service_detection.detector._nmap_sv",
                    return_value={9999: "unknown"}):
             detect_services(sess)
 
         assert Port.objects.get(session=sess, port=9999).is_web is False
 
     def test_undetectable_non_standard_port_stays_non_web(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
                             port=9999, protocol="tcp", state="open", source="naabu")
 
-        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._grab_banner", return_value=""), \
-             patch("apps.core.service_detection.detector._nmap_sv", return_value={}):
+        with patch("apps.core.engine.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.engine.service_detection.detector._grab_banner", return_value=""), \
+             patch("apps.core.engine.service_detection.detector._nmap_sv", return_value={}):
             detect_services(sess)
 
         assert Port.objects.get(session=sess, port=9999).is_web is False
@@ -334,16 +334,16 @@ class TestDetectServices:
     def test_returns_count_of_updated_ports(self):
         sess = self._make_session()
 
-        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._grab_banner", return_value=""), \
-             patch("apps.core.service_detection.detector._nmap_sv", return_value={22: "ssh"}):
+        with patch("apps.core.engine.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.engine.service_detection.detector._grab_banner", return_value=""), \
+             patch("apps.core.engine.service_detection.detector._nmap_sv", return_value={22: "ssh"}):
             count = detect_services(sess)
 
         # port 22 → service="ssh" (changed); ports 80 and 443 → no signal, no change
         assert count == 1
 
     def test_empty_session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
         assert detect_services(sess) == 0
 
@@ -351,16 +351,16 @@ class TestDetectServices:
 
     def test_tcpwrapped_port_9200_is_not_web(self):
         """tcpwrapped contributes 0 — port 9200 stays non-web."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
                             port=9200, protocol="tcp", state="open", source="naabu")
 
-        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._grab_banner", return_value=""), \
-             patch("apps.core.service_detection.detector._nmap_sv",
+        with patch("apps.core.engine.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.engine.service_detection.detector._grab_banner", return_value=""), \
+             patch("apps.core.engine.service_detection.detector._nmap_sv",
                    return_value={9200: "tcpwrapped"}):
             detect_services(sess)
 
@@ -369,16 +369,16 @@ class TestDetectServices:
 
     def test_ssl_unknown_on_port_443_is_web(self):
         """ssl/unknown on port 443 scores +40+20=60 >= 50 — classified web (CDN case)."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
                             port=443, protocol="tcp", state="open", source="naabu")
 
-        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._grab_banner", return_value=""), \
-             patch("apps.core.service_detection.detector._nmap_sv",
+        with patch("apps.core.engine.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.engine.service_detection.detector._grab_banner", return_value=""), \
+             patch("apps.core.engine.service_detection.detector._nmap_sv",
                    return_value={443: "ssl/unknown"}):
             detect_services(sess)
 
@@ -387,16 +387,16 @@ class TestDetectServices:
 
     def test_ssl_unknown_on_port_9200_is_not_web(self):
         """ssl/unknown on non-web port scores +10 < 50 — stays non-web."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
                             port=9200, protocol="tcp", state="open", source="naabu")
 
-        with patch("apps.core.service_detection.detector._probe_http", return_value=False), \
-             patch("apps.core.service_detection.detector._grab_banner", return_value=""), \
-             patch("apps.core.service_detection.detector._nmap_sv",
+        with patch("apps.core.engine.service_detection.detector._probe_http", return_value=False), \
+             patch("apps.core.engine.service_detection.detector._grab_banner", return_value=""), \
+             patch("apps.core.engine.service_detection.detector._nmap_sv",
                    return_value={9200: "ssl/unknown"}):
             detect_services(sess)
 
@@ -405,17 +405,17 @@ class TestDetectServices:
 
     def test_ssh_banner_skips_http_probing(self):
         """SSH banner scores -70 — HTTP probing is skipped, port stays non-web."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
                             port=22, protocol="tcp", state="open", source="naabu")
 
-        with patch("apps.core.service_detection.detector._probe_http") as mock_http, \
-             patch("apps.core.service_detection.detector._grab_banner",
+        with patch("apps.core.engine.service_detection.detector._probe_http") as mock_http, \
+             patch("apps.core.engine.service_detection.detector._grab_banner",
                    return_value="SSH-2.0-OpenSSH_8.9\r\n"), \
-             patch("apps.core.service_detection.detector._nmap_sv",
+             patch("apps.core.engine.service_detection.detector._nmap_sv",
                    return_value={22: "ssh"}):
             detect_services(sess)
             mock_http.assert_not_called()
@@ -426,17 +426,17 @@ class TestDetectServices:
 
     def test_http_probe_success_classifies_as_web(self):
         """HTTP probe success scores +80 >= 50 — classified web."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
                             port=8888, protocol="tcp", state="open", source="naabu")
 
-        with patch("apps.core.service_detection.detector._probe_http",
+        with patch("apps.core.engine.service_detection.detector._probe_http",
                    side_effect=lambda host, port, scheme: scheme == "https"), \
-             patch("apps.core.service_detection.detector._grab_banner", return_value=""), \
-             patch("apps.core.service_detection.detector._nmap_sv", return_value={}):
+             patch("apps.core.engine.service_detection.detector._grab_banner", return_value=""), \
+             patch("apps.core.engine.service_detection.detector._nmap_sv", return_value={}):
             detect_services(sess)
 
         p = Port.objects.get(session=sess, port=8888)
@@ -454,20 +454,20 @@ class TestGrabBanner:
         mock_sock.recv.return_value = b"SSH-2.0-OpenSSH_8.9\r\n"
         mock_sock.__enter__ = lambda s: s
         mock_sock.__exit__ = MagicMock(return_value=False)
-        with patch("apps.core.service_detection.detector.socket.create_connection",
+        with patch("apps.core.engine.service_detection.detector.socket.create_connection",
                    return_value=mock_sock):
             result = _grab_banner("1.2.3.4", 22)
         assert result == "SSH-2.0-OpenSSH_8.9\r\n"
 
     def test_returns_empty_on_connection_refused(self):
-        with patch("apps.core.service_detection.detector.socket.create_connection",
+        with patch("apps.core.engine.service_detection.detector.socket.create_connection",
                    side_effect=ConnectionRefusedError()):
             result = _grab_banner("1.2.3.4", 22)
         assert result == ""
 
     def test_returns_empty_on_timeout(self):
         import socket
-        with patch("apps.core.service_detection.detector.socket.create_connection",
+        with patch("apps.core.engine.service_detection.detector.socket.create_connection",
                    side_effect=socket.timeout()):
             result = _grab_banner("1.2.3.4", 9999)
         assert result == ""
@@ -477,7 +477,7 @@ class TestGrabBanner:
         mock_sock.recv.return_value = b"\xff\xfe HTTP/1.1 200 OK"
         mock_sock.__enter__ = lambda s: s
         mock_sock.__exit__ = MagicMock(return_value=False)
-        with patch("apps.core.service_detection.detector.socket.create_connection",
+        with patch("apps.core.engine.service_detection.detector.socket.create_connection",
                    return_value=mock_sock):
             result = _grab_banner("1.2.3.4", 80)
         assert "HTTP/1.1 200 OK" in result

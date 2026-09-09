@@ -4,8 +4,8 @@ import logging
 
 import defusedxml.ElementTree as ET
 
-from apps.core.assets.models import Port
-from apps.core.findings.models import Finding
+from apps.core.data.assets.models import Port
+from apps.core.data.findings.models import Finding
 from apps.nmap.backports import check_backport
 
 logger = logging.getLogger(__name__)
@@ -142,9 +142,9 @@ def analyze(session, xml_outputs: dict[str, str]) -> list[Finding]:
                             "port_number": port_num,
                             "address": ip,
                         }
-                        
+
                         severity = _severity_from_cvss(v["cvss"])
-                        
+
                         # Check backports
                         full_version_string = f"{version} {extrainfo}".strip()
                         backport_info = check_backport(product, full_version_string, v["id"])

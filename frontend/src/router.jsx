@@ -11,10 +11,14 @@ import ScansPage from './pages/ScansPage.jsx';
 import ScanStartPage from './pages/ScanStartPage.jsx';
 import ScanDetailPage from './pages/ScanDetailPage.jsx';
 import FindingsPage from './pages/FindingsPage.jsx';
+import AssetsPage from './pages/AssetsPage.jsx';
+import AssetDetailPage from './pages/AssetDetailPage.jsx';
 import WorkflowsPage from './pages/WorkflowsPage.jsx';
 import WorkflowDetailPage from './pages/WorkflowDetailPage.jsx';
 import InsightsPage from './pages/InsightsPage.jsx';
 import NotificationsPage from './pages/NotificationsPage.jsx';
+import AiPage from './pages/AiPage.jsx';
+import CredentialsPage from './pages/CredentialsPage.jsx';
 
 function NotFound() {
   return <div className="p-8 text-body">404 - Page not found</div>;
@@ -37,11 +41,15 @@ export const router = createBrowserRouter([
       { path: '/scans', element: <ScansPage /> },
       { path: '/scans/start', element: <ScanStartPage /> },
       { path: '/scans/:uuid', element: <ScanDetailPage /> },
+      { path: '/assets', element: <AssetsPage /> },
+      { path: '/assets/:id', element: <AssetDetailPage /> },
       { path: '/findings', element: <FindingsPage /> },
       { path: '/workflows', element: <WorkflowsPage /> },
       { path: '/workflows/:id', element: <WorkflowDetailPage /> },
       { path: '/insights', element: <InsightsPage /> },
       { path: '/notifications', element: <NotificationsPage /> },
+      { path: '/credentials', element: <CredentialsPage /> },
+      { path: '/ai', element: <AiPage /> },
     ],
   },
   { path: '*', element: <NotFound /> },

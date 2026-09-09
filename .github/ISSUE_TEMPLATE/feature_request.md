@@ -15,6 +15,7 @@ passive (public sources only) or active (touches the target).
 **Alternatives considered**
 
 **Scope note**
-OpenEASD is an external attack-surface scanner. Brand-monitoring features
-(typosquatting, brand impersonation, A–F letter grades) are intentionally out of
-scope — see `docs/DECISIONS.md`.
+OpenEASD is an external attack-surface scanner focused on technical exposure.
+Features far outside that focus (e.g. full brand/social-media monitoring or
+marketing-style dashboards) are generally out of scope — see `docs/DECISIONS.md`
+for the current boundaries before proposing a large capability.

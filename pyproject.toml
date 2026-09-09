@@ -1,6 +1,6 @@
 [project]
 name = "openeasd"
-version = "0.10.0"
+version = "2.4.0"
 description = "OpenEASD - Automated External Attack Surface Detection"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,7 +25,6 @@ dependencies = [
     # @page rules, rounded corners); needs pango/gdk-pixbuf system libs.
     "weasyprint>=63",
     # Task queue
-    "django-q2>=1.6",
     "croniter>=2.0",
     # XML parsing (safe)
     "defusedxml>=0.7.1",
@@ -36,6 +35,9 @@ dependencies = [
     "pypdf>=6.15",
     "urllib3>=2.7.0",
     "idna>=3.15",
+    "psycopg[binary]>=3.2",
+    "dbos>=0.26",
+    "dj-database-url>=2.2",
 ]
 
 [project.optional-dependencies]
@@ -44,9 +46,9 @@ prod = [
 ]
 
 [project.scripts]
-openeasd = "apps.core.scans.management.commands.run_scan:Command"
-openeasd-daily = "apps.core.scans.management.commands.run_daily_scan:Command"
-openeasd-weekly = "apps.core.scans.management.commands.run_weekly_scan:Command"
+openeasd = "apps.core.engine.scans.management.commands.run_scan:Command"
+openeasd-daily = "apps.core.engine.scans.management.commands.run_daily_scan:Command"
+openeasd-weekly = "apps.core.engine.scans.management.commands.run_weekly_scan:Command"
 
 [tool.setuptools.packages.find]
 include = ["apps*", "openeasd*"]
@@ -74,3 +76,56 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["apps", "openeasd"]
+branch = true
+omit = [
+    "*/migrations/*",  # auto-generated
+    "*/tests/*",
+    "manage.py",
+    "*/apps.py",       # trivial AppConfig registration (tool_meta only)
+    "*/admin.py",      # Django admin registration
+    "openeasd/wsgi.py",
+    "openeasd/asgi.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+# Migrations are auto-generated; don't lint them.
+extend-exclude = ["**/migrations/**"]
+
+[tool.ruff.lint]
+# High-signal correctness rules only for now. E501 (line length) and import
+# ordering are left to a future formatter-adoption pass so this gate stays a
+# small, mechanical-diff-free correctness check rather than a 200-file reformat.
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line length — deferred to formatter adoption
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Intentional late/deferred imports: Django settings run import-time side
+# effects, AppConfig.ready() wiring, and the DBOS modules defer imports to
+# break registration cycles — E402 is a false positive in these.
+"openeasd/settings.py" = ["E402"]
+"**/apps.py" = ["E402"]
+"apps/core/engine/durable/**" = ["E402"]
+"manage.py" = ["E402"]
+# Routers are imported AFTER the NinjaAPI instance is built, on purpose
+# (each router module imports back from here) — the ordering is load-bearing.
+"apps/core/console/api/ninja.py" = ["E402"]
+# Tests legitimately import mid-file (near the case that uses them) and use
+# compact semicolon setup lines; keep the correctness rules (F/W) on them.
+"tests/**" = ["E402", "E702"]

@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: openeasd-postgres
+  namespace: default
+  labels:
+    app: openeasd-postgres
+spec:
+  clusterIP: None            # headless — stable DNS for the StatefulSet pod
+  selector:
+    app: openeasd-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: openeasd-postgres
+  namespace: default
+  labels:
+    app: openeasd-postgres
+spec:
+  serviceName: openeasd-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openeasd-postgres
+  template:
+    metadata:
+      labels:
+        app: openeasd-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            # DB_NAME / DB_USER come from the shared config; the password is in
+            # the secret (POSTGRES_PASSWORD must match DB_PASSWORD there).
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: openeasd-config
+                  key: DB_NAME
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: openeasd-config
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: openeasd-secret
+                  key: DB_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "openeasd", "-d", "openeasd"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi

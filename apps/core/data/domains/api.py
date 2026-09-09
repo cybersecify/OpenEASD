@@ -1,0 +1,220 @@
+"""Domains API router."""
+
+import logging
+import re
+
+from django.db import transaction
+from django.db.models import Count
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+
+from ninja import Router, Schema, Status
+from ninja.errors import HttpError
+
+from apps.core.console.api.auth import JWTAuth
+from apps.core.data.domains.models import Domain, DomainAuthorization
+from apps.core.data.findings.models import Finding
+from apps.core.console.insights.builder import rebuild_finding_type_summaries
+from apps.core.console.insights.models import ScanSummary
+from apps.core.queries import latest_session_ids
+from apps.core.engine.scans.models import ScanSession
+
+logger = logging.getLogger(__name__)
+
+# RFC 1035 / RFC 1123 hostname validation
+_VALID_HOSTNAME = re.compile(
+    r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$"
+)
+
+router = Router(auth=JWTAuth())
+
+
+def _enrich_domains(domains):
+    """Attach last_scan and findings_summary to each Domain object in-place."""
+    domain_names = [d.name for d in domains]
+    if not domain_names:
+        return
+
+    latest_sessions = {}
+    for session in ScanSession.objects.filter(domain__in=domain_names).order_by(
+        "domain", "-start_time"
+    ):
+        if session.domain not in latest_sessions:
+            latest_sessions[session.domain] = session
+
+    latest_ids = latest_session_ids(domains=domain_names)
+    findings_by_domain = {}
+    if latest_ids:
+        for row in (
+            Finding.objects.filter(session_id__in=latest_ids, status="open")
+            .exclude(severity="info")
+            .values("session__domain", "severity")
+            .annotate(count=Count("id"))
+        ):
+            d = row["session__domain"]
+            findings_by_domain.setdefault(d, {})[row["severity"]] = row["count"]
+
+    for domain in domains:
+        domain.last_scan = latest_sessions.get(domain.name)
+        domain.findings_summary = findings_by_domain.get(domain.name, {})
+
+
+def _serialize_domain(domain) -> dict:
+    last_scan = getattr(domain, "last_scan", None)
+    last_scan_data = None
+    if last_scan is not None:
+        last_scan_data = {
+            "id": last_scan.id,
+            "uuid": str(last_scan.uuid),
+            "domain_name": last_scan.domain,
+            "status": last_scan.status,
+            "start_time": last_scan.start_time.isoformat(),
+            "end_time": last_scan.end_time.isoformat() if last_scan.end_time else None,
+            "total_findings": last_scan.total_findings,
+        }
+    auth = getattr(domain, "authorization", None)
+    auth_data = None
+    if auth is not None:
+        auth_data = {
+            "auth_type": auth.auth_type,
+            "auth_type_display": auth.get_auth_type_display(),
+            "authorized_at": auth.authorized_at.isoformat(),
+            "authorized_by": auth.authorized_by,
+            "auth_reference": auth.auth_reference,
+        }
+    return {
+        "id": domain.id,
+        "name": domain.name,
+        "is_primary": domain.is_primary,
+        "is_active": domain.is_active,
+        "added_at": domain.added_at.isoformat() if domain.added_at else None,
+        "last_scan": last_scan_data,
+        "findings_summary": getattr(domain, "findings_summary", {}),
+        "monitoring_interval_hours": domain.monitoring_interval_hours,
+        "authorization": auth_data,
+    }
+
+
+class DomainIn(Schema):
+    name: str
+
+
+class MonitoringIn(Schema):
+    interval_hours: int | None = None  # null = disable
+
+
+@router.get("/")
+def list_domains(request):
+    domains = list(Domain.objects.select_related("authorization").all())
+    _enrich_domains(domains)
+    return [_serialize_domain(d) for d in domains]
+
+
+@router.post("/", response={201: dict})
+def create_domain(request, data: DomainIn):
+    name = data.name.strip().lower()
+    if not name:
+        raise HttpError(400, "Name is required")
+    if not _VALID_HOSTNAME.match(name):
+        raise HttpError(400, "Invalid domain name")
+    if Domain.objects.filter(name=name).exists():
+        raise HttpError(400, "Domain already exists")
+    domain = Domain.objects.create(name=name)
+    domain.last_scan = None
+    domain.findings_summary = {}
+    return Status(201, _serialize_domain(domain))
+
+
+@router.post("/{pk}/toggle/")
+def toggle_domain(request, pk: int):
+    domain = get_object_or_404(Domain.objects.select_related("authorization"), pk=pk)
+    domain.is_active = not domain.is_active
+    domain.save()
+    from apps.core.engine.scheduler.scheduler import sync_domain_monitoring_jobs
+    sync_domain_monitoring_jobs()
+    _enrich_domains([domain])
+    return _serialize_domain(domain)
+
+
+class AuthorizeIn(Schema):
+    attestation: bool = False
+    auth_type: str = "owner"
+
+
+@router.post("/{pk}/authorize/")
+def authorize_domain(request, pk: int, data: AuthorizeIn):
+    """Grant a DomainAuthorization record so the domain becomes scannable.
+
+    Requires an explicit `attestation` that the caller has authority to scan
+    the domain. Idempotent: if already authorized, returns the existing record.
+    """
+    domain = get_object_or_404(
+        Domain.objects.select_related("authorization"), pk=pk
+    )
+
+    if getattr(domain, "authorization", None) is not None:
+        _enrich_domains([domain])
+        return _serialize_domain(domain)
+
+    if not data.attestation:
+        raise HttpError(400, "Authorization attestation is required")
+
+    valid_types = {choice[0] for choice in DomainAuthorization.AUTH_TYPES}
+    auth_type = data.auth_type if data.auth_type in valid_types else "owner"
+
+    DomainAuthorization.objects.create(
+        domain=domain,
+        auth_type=auth_type,
+        authorized_at=timezone.localdate(),
+        authorized_by=request.auth.username,
+    )
+
+    domain = Domain.objects.select_related("authorization").get(pk=pk)
+    _enrich_domains([domain])
+    return _serialize_domain(domain)
+
+
+@router.post("/{pk}/delete/")
+def delete_domain(request, pk: int):
+    domain = get_object_or_404(Domain, pk=pk)
+    domain_name = domain.name
+
+    active = ScanSession.objects.filter(
+        domain=domain_name, status__in=["pending", "running"]
+    ).exists()
+    if active:
+        raise HttpError(409, "Cannot delete — a scan is currently active.")
+
+    with transaction.atomic():
+        ScanSession.objects.filter(domain=domain_name).delete()
+        ScanSummary.objects.filter(domain=domain_name).delete()
+        domain.delete()
+
+    rebuild_finding_type_summaries()
+    from apps.core.engine.scheduler.scheduler import sync_domain_monitoring_jobs
+    sync_domain_monitoring_jobs()
+
+    # Remove the domain's recurring/one-time scan schedules so a leftover
+    # schedule can't keep firing for a domain that no longer exists.
+    from apps.core.engine.scans.models import ScheduledScan
+    ScheduledScan.objects.filter(domain=domain_name).delete()
+
+    return {"deleted": domain_name}
+
+
+@router.post("/{pk}/monitoring/")
+def set_monitoring(request, pk: int, data: MonitoringIn):
+    VALID_INTERVALS = {6, 12, 24, 48, 168}
+    domain = get_object_or_404(Domain.objects.select_related("authorization"), pk=pk)
+
+    if data.interval_hours is not None and data.interval_hours not in VALID_INTERVALS:
+        raise HttpError(400, f"interval_hours must be one of {sorted(VALID_INTERVALS)} or null")
+
+    domain.monitoring_interval_hours = data.interval_hours
+    domain.save(update_fields=["monitoring_interval_hours"])
+
+    from apps.core.engine.scheduler.scheduler import sync_domain_monitoring_jobs
+    sync_domain_monitoring_jobs()
+
+    _enrich_domains([domain])
+    return _serialize_domain(domain)

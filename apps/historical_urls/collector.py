@@ -1,11 +1,11 @@
-"""Historical URL collector — runs gau + waybackurls per subdomain.
+"""Historical URL collector — runs gau per subdomain.
 
-Both tools accept a domain as a positional argument and emit one URL per
-line to stdout. Neither needs credentials or special setup beyond being on
-PATH (or configured via TOOL_GAU / TOOL_WAYBACKURLS in settings).
+gau accepts a domain as a positional argument and emits one URL per line to
+stdout. It needs no credentials or special setup beyond being on PATH (or
+configured via TOOL_GAU in settings), and pulls from the Wayback Machine,
+Common Crawl, AlienVault OTX, and URLScan.
 
 gau CLI:       gau <domain>
-waybackurls:   waybackurls <domain>
 """
 
 import logging
@@ -55,9 +55,12 @@ def _run_tool(binary: str, domain: str, timeout: int = _TIMEOUT) -> list[str]:
 
 
 def collect(subdomains: list[str]) -> list[str]:
-    """Run gau + waybackurls against every subdomain; return deduplicated URL strings.
+    """Run gau against every subdomain; return deduplicated URL strings.
 
-    Both tools are optional — if either binary is missing the other still runs.
+    gau pulls from the Wayback Machine, Common Crawl, AlienVault OTX, and URLScan
+    — a superset of what waybackurls covered — so it is the single historical-URL
+    source. (waybackurls was dropped: it ships without a declared license, and gau
+    already covers its one source, the Wayback Machine.)
     """
     if not subdomains:
         return []
@@ -66,12 +69,11 @@ def collect(subdomains: list[str]) -> list[str]:
     results: list[str] = []
 
     for domain in subdomains:
-        for tool_key, default in (("TOOL_GAU", "gau"), ("TOOL_WAYBACKURLS", "waybackurls")):
-            binary = getattr(settings, tool_key, default)
-            for url in _run_tool(binary, domain):
-                if url not in seen:
-                    seen.add(url)
-                    results.append(url)
+        binary = getattr(settings, "TOOL_GAU", "gau")
+        for url in _run_tool(binary, domain):
+            if url not in seen:
+                seen.add(url)
+                results.append(url)
 
     logger.info(
         "[historical_urls] collected %d unique URLs from %d subdomains",

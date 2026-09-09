@@ -1,0 +1,127 @@
+"""
+Django models for OpenEASD scan sessions.
+"""
+
+import uuid
+from django.db import models
+
+
+class ScanSession(models.Model):
+    """Represents a single scan run against a domain."""
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("running", "Running"),
+        ("completed", "Completed"),
+        ("partial", "Partial"),
+        ("cancelled", "Cancelled"),
+        ("failed", "Failed"),
+    ]
+    TRIGGERED_BY_CHOICES = [
+        ("manual", "Manual"),
+        ("scheduled", "Scheduled"),
+        ("recurring", "Recurring"),
+        ("monitoring", "Monitoring"),
+        ("subscan", "Subscan"),
+        ("agent", "Agent"),
+    ]
+
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    domain = models.CharField(max_length=255, db_index=True)
+    scan_type = models.CharField(max_length=20, default="full")
+    triggered_by = models.CharField(max_length=20, choices=TRIGGERED_BY_CHOICES, default="manual")
+    workflow = models.ForeignKey(
+        "workflow.Workflow", on_delete=models.SET_NULL, null=True, blank=True, related_name="sessions"
+    )
+    parent_session = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="subscans"
+    )
+    subscan_tools = models.JSONField(null=True, blank=True)
+    start_time = models.DateTimeField(auto_now_add=True)
+    end_time = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", db_index=True)
+    total_findings = models.IntegerField(default=0)
+
+    # Scan coverage (spec C2). Populated at finalize from httpx URL.reachability.
+    # waf_vendor is a hedged fingerprint guess ("" = no interference observed,
+    # "unidentified" = interference seen but vendor not fingerprinted).
+    # Phase 1 counts probed *endpoints*, not requests; the request-weighted
+    # figure is a Phase 2 (proxy) output.
+    waf_vendor = models.CharField(max_length=30, blank=True)
+    endpoints_probed = models.IntegerField(default=0)
+    endpoints_blocked = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["-start_time"]
+        constraints = [
+            # At most one in-flight scan per domain. On Postgres the guard in
+            # create_scan_session() (select_for_update on the not-yet-existing
+            # row) can't serialize two concurrent creators — this partial unique
+            # index does: the second insert raises IntegrityError, which
+            # create_scan_session catches and turns into "scan already active".
+            # Subscans are exempt (scan_type="subscan") — they run against a
+            # parent and legitimately overlap a domain's other work.
+            models.UniqueConstraint(
+                fields=["domain"],
+                condition=models.Q(status__in=["pending", "running"]) & ~models.Q(scan_type="subscan"),
+                name="uniq_active_scan_per_domain",
+            ),
+        ]
+
+    def __str__(self):
+        return f"[{self.id}] {self.domain} ({self.scan_type}) - {self.status}"
+
+
+class ScanDelta(models.Model):
+    """Records changes between consecutive scan sessions."""
+
+    CHANGE_TYPE_CHOICES = [
+        ("new", "New"),
+        ("removed", "Removed"),
+    ]
+    CHANGE_CATEGORY_CHOICES = [
+        ("finding", "Finding"),
+        ("domain_finding", "Domain Finding"),
+    ]
+
+    session = models.ForeignKey(ScanSession, on_delete=models.CASCADE, related_name="deltas")
+    previous_session = models.ForeignKey(
+        ScanSession, on_delete=models.SET_NULL, null=True, blank=True, related_name="next_deltas"
+    )
+    change_type = models.CharField(max_length=20, choices=CHANGE_TYPE_CHOICES)
+    change_category = models.CharField(max_length=20, choices=CHANGE_CATEGORY_CHOICES)
+    item_identifier = models.CharField(max_length=500)
+    change_details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.change_type} {self.change_category}: {self.item_identifier}"
+
+
+class ScheduledScan(models.Model):
+    """User-created one-time / recurring scan schedule (Postgres-native).
+
+    Replaces Django-Q Schedule rows: a DBOS sweep (scheduled_user_scans_sweep)
+    fires the due ones. `job_id` keeps the legacy public identifier shape
+    ("once_{domain}_{hex}" / "recurring_{domain}") the API already exposes.
+    """
+
+    KIND_CHOICES = [("once", "One-time"), ("recurring", "Recurring")]
+
+    job_id = models.CharField(max_length=255, unique=True)
+    domain = models.CharField(max_length=255, db_index=True)
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES)
+    cron = models.CharField(max_length=100, blank=True, default="")  # recurring only
+    frequency = models.CharField(max_length=50, blank=True, default="")  # display label
+    next_run = models.DateTimeField(db_index=True)
+    enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["kind", "next_run"]
+
+    def __str__(self):
+        return f"{self.kind} scan {self.domain} @ {self.next_run}"

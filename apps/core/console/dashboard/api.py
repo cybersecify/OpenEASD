@@ -1,0 +1,127 @@
+"""Dashboard API router."""
+
+from django.db.models import Max
+
+from ninja import Router
+
+from apps.core.console.api.auth import JWTAuth
+from apps.core.engine.scans.models import ScanSession
+from apps.core.data.findings.models import Finding
+from apps.core.data.domains.models import Domain
+from apps.core.console.insights.models import ScanSummary
+from apps.core.data.assets.models import Subdomain, IPAddress, Port
+from apps.core.data.web_assets.models import URL
+from apps.core.data.asset_inventory.models import Asset
+
+router = Router(auth=JWTAuth())
+
+
+@router.get("/")
+def api_dashboard(request):
+    active_domains = list(Domain.objects.filter(is_active=True))
+    domain_names = [d.name for d in active_domains]
+
+    # Latest summary per domain
+    latest_summary_ids = list(
+        ScanSummary.objects
+        .filter(domain__in=domain_names)
+        .values("domain")
+        .annotate(latest_id=Max("id"))
+        .values_list("latest_id", flat=True)
+    )
+    summaries = {
+        s.domain: s
+        for s in ScanSummary.objects.filter(id__in=latest_summary_ids)
+    }
+
+    # Latest session per domain
+    latest_session_ids = list(
+        ScanSession.objects
+        .filter(domain__in=domain_names)
+        .values("domain")
+        .annotate(latest_id=Max("id"))
+        .values_list("latest_id", flat=True)
+    )
+    sessions = {
+        s.domain: s
+        for s in ScanSession.objects.filter(id__in=latest_session_ids)
+    }
+
+    # Latest completed-or-partial session per domain (for asset counts).
+    # Partial scans still carry real findings — include them.
+    latest_completed_ids = list(
+        ScanSession.objects
+        .filter(domain__in=domain_names, status__in=["completed", "partial"])
+        .values("domain")
+        .annotate(latest_id=Max("id"))
+        .values_list("latest_id", flat=True)
+    )
+
+    current_critical = 0
+    current_high = 0
+    domain_status = []
+
+    for domain in active_domains:
+        summary = summaries.get(domain.name)
+        session = sessions.get(domain.name)
+        if summary:
+            current_critical += summary.critical_count
+            current_high += summary.high_count
+        domain_status.append({
+            "id": domain.id,
+            "domain": domain.name,
+            "scan_status": session.status if session else "idle",
+            "last_scan": session.start_time.isoformat() if session and session.start_time else None,
+            "critical": summary.critical_count if summary else 0,
+            "high": summary.high_count if summary else 0,
+            "exposure_score": summary.exposure_score if summary else 0,
+            "exposure_grade": summary.exposure_grade if summary else "A",
+        })
+
+    running_count = ScanSession.objects.filter(status__in=["pending", "running"]).count()
+
+    urgent_findings = list(
+        Finding.objects.filter(
+            session_id__in=latest_completed_ids,
+            severity__in=["critical", "high"],
+        ).select_related("session").order_by("-discovered_at")[:8]
+    )
+
+    asset_counts = {
+        "subdomains": Subdomain.objects.filter(
+            session_id__in=latest_completed_ids, is_active=True
+        ).count(),
+        "ips": IPAddress.objects.filter(session_id__in=latest_completed_ids).count(),
+        "ports": Port.objects.filter(session_id__in=latest_completed_ids).count(),
+        "urls": URL.objects.filter(session_id__in=latest_completed_ids).count(),
+    }
+
+    # Persistent asset-inventory KPI (spans scan history, not just the latest
+    # scan): total tracked assets that are currently live vs. gone.
+    inventory = Asset.objects.filter(domain__in=active_domains)
+    assets_active = inventory.filter(status="active").count()
+    assets_gone = inventory.filter(status="gone").count()
+
+    return {
+        "kpi_domains": len(active_domains),
+        "kpi_active_scans": running_count,
+        "kpi_assets_active": assets_active,
+        "kpi_assets_gone": assets_gone,
+        "kpi_critical": current_critical,
+        "kpi_high": current_high,
+        "kpi_subdomains": asset_counts["subdomains"],
+        "kpi_ips": asset_counts["ips"],
+        "kpi_ports": asset_counts["ports"],
+        "kpi_urls": asset_counts["urls"],
+        "domain_status": domain_status,
+        "urgent_findings": [
+            {
+                "id": f.id,
+                "severity": f.severity,
+                "title": f.title,
+                "domain": f.session.domain,
+                "source": f.source,
+            }
+            for f in urgent_findings
+        ],
+    }

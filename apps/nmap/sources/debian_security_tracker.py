@@ -9,7 +9,7 @@ def fetch_debian_backports() -> Dict[str, Dict[str, str]]:
     """
     url = "https://security-tracker.debian.org/tracker/data/json"
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    
+
     try:
         with urllib.request.urlopen(req, timeout=30) as response:  # nosec B310
             data = json.loads(response.read().decode('utf-8'))

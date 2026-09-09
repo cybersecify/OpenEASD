@@ -13,6 +13,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../components/ui/alert-dialog.jsx';
 import { useNavigate, useParams } from 'react-router-dom';
+import { TriagePanel } from '../components/ai/TriagePanel.jsx';
 import { apiPost, apiGet } from '../api/client.js';
 import { auth } from '../auth.js';
 import { useQuery } from '@tanstack/react-query';
@@ -253,6 +254,16 @@ export default function ScanDetailPage() {
   const paged      = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const totalPages = Math.ceil(items.length / PAGE_SIZE);
 
+  function jumpToFinding(findingId) {
+    const idx = findings.findIndex(f => f.id === findingId);
+    setTab('findings');
+    setPage(idx >= 0 ? Math.floor(idx / PAGE_SIZE) + 1 : 1);
+    setTimeout(() => {
+      document.getElementById(`finding-${findingId}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }
+
   return (
     <Layout>
       <div className="space-y-5">
@@ -303,6 +314,9 @@ export default function ScanDetailPage() {
           <StatCard label="Critical"   value={vulnCounts.critical} danger />
           <StatCard label="Findings"   value={session.total_findings} />
         </div>
+
+        {/* AI triage — renders nothing while analysis is disabled */}
+        <TriagePanel uuid={uuid} scanRunning={isRunning} onJumpToFinding={jumpToFinding} />
 
         {/* Tabs */}
         <div>
@@ -428,7 +442,7 @@ export default function ScanDetailPage() {
                       {paged.length === 0
                         ? <TableRow><TableCell colSpan={4} className="px-4 py-8 text-center text-dim">None found.</TableCell></TableRow>
                         : paged.map(f => (
-                          <TableRow key={f.id} className="hover:bg-hover">
+                          <TableRow key={f.id} id={`finding-${f.id}`} className="hover:bg-hover">
                             <TableCell className="px-4 py-3"><Badge value={f.severity} /></TableCell>
                             <TableCell className="px-4 py-3 text-body font-medium max-w-xs truncate">{f.title}</TableCell>
                             <TableCell className="px-4 py-3 font-mono text-dim text-xs">{f.target}</TableCell>

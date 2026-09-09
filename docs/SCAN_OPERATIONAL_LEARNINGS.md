@@ -11,7 +11,7 @@ recur. Add to this list whenever a scan misbehaves.
 **all** ~13,500 templates into RAM up front (~500 MB, fixed) and *then* applies
 `-severity`/`-tags` filters. So severity scoping does **NOT** shrink the startup
 parse — it only cuts the *executed* set. The startup parse (~500 MB) on top of
-gunicorn + qcluster + Django is what tips a 1 GB box; runtime peak is
+the DBOS worker + Django is what tips a 1 GB box; runtime peak is
 `concurrency × bulk-size × per-host buffer`. The levers that actually prevent the
 **freeze** are `GOMEMLIMIT` + a small **`-bulk-size`**, not `-severity`.
 
@@ -55,7 +55,12 @@ small hosts, (4) reasonably fresh templates (image rebuild cadence).
   `test_takeover_check.py`.
 - **Parsers crash on real (not curated) output**: nuclei/nuclei_network on
   `info: null`, katana on non-dict `request`, domain_security RDAP on missing
-  `eventAction`. All guarded by adversarial parser tests.
+  `eventAction`, **takeover_check/subzy on a `null` element in its JSON array**
+  (`None.get()` → whole scan flipped to `partial`, hiding real takeover findings;
+  a live scanme.nmap.org run exposed it). All guarded by adversarial parser tests.
+  takeover_check is now guarded at BOTH layers — the collector filters non-dicts
+  and the analyzer skips them (#292 + follow-up). Guard:
+  `test_takeover_check.py::TestSubzyNullRecordRegression`.
 - **Target blocking is silent**: a blocked scan returns fewer findings but read
   as clean. Now: `endpoints_probed` vs reached counting + a coverage-regression
   finding + `partial` status. Guards: `test_coverage_regression.py`.

@@ -14,7 +14,9 @@
 
 Use it as a **red teamer** to map external surface fast on targets you're authorised to test. Use it as a **defender** to see what's leaking out of your own infrastructure: subdomains, exposed ports, dangling CNAMEs, missing TLS, known CVEs, without paying $500-5000/mo for a commercial EASM platform.
 
-OpenEASD wraps the open-source recon tools security teams already use: `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `cloud_enum`, `naabu`, `nmap`, `httpx`, `gau`, `waybackurls`, `katana`, `nuclei`, `gitleaks`, behind a single web UI with scheduling, alerts, and findings tracking. Twenty-two tools across DNS/DNSSEC, email (SPF/DMARC/DKIM/MTA-STS/open-relay), TLS, SSH, ports, CVEs, subdomain takeover, ASN/IP-range discovery, historical URLs, cloud assets, exposed secrets in JavaScript, infostealer-log exposure (via Hudson Rock's keyless Cavalier API), technology fingerprinting, web hygiene, and CVE prioritisation (EPSS + CISA KEV). Run a **passive scan** (public-source only, no authorization needed) or an **active scan** (probes the target, authorization required). Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine.
+OpenEASD wraps the open-source recon tools security teams already use: `subfinder`, `amass`, `alterx`, `dnsx`, `subzy`, `cloud_enum`, `naabu`, `nmap`, `httpx`, `gau`, `katana`, `nuclei`, `gitleaks`, behind a single web UI with scheduling, alerts, and findings tracking. Twenty-eight tools across DNS/DNSSEC, historical DNS records (passive; A/AAAA/MX a domain has resolved to over time), email (SPF/DMARC/DKIM/MTA-STS/open-relay), TLS, SSH, ports, CVEs, subdomain takeover, ASN/IP-range discovery, historical URLs, cloud assets, exposed secrets in JavaScript, leaked secrets in public GitHub (passive; searches GitHub's code-search API for the org's committed credentials and runs gitleaks over the hits — bring-your-own GitHub token), public-source infrastructure exposure (passive; internal hostnames, cloud buckets, and API endpoints leaked in the org's public GitHub repos), infostealer-log exposure (via Hudson Rock's keyless Cavalier API), data-breach exposure (passive; free XposedOrNot tier out of the box, authoritative with a bring-your-own Have I Been Pwned key), Shodan-sourced exposure (passive; free InternetDB tier out of the box, richer with a bring-your-own Shodan key), lookalike / typosquat domain detection (passive; phishing infrastructure and brand abuse targeting your domain), technology fingerprinting, web hygiene, and CVE prioritisation (EPSS + CISA KEV). Run a **passive scan** (public-source only, no authorization needed) or an **active scan** (probes the target, authorization required). Self-hosted, MIT-licensed, one `docker run`. Results stay on your machine — unless you enable the optional Cloudflare Workers AI analysis (off by default, explicit consent required), which sends finding data to your own Cloudflare account.
+
+Optionally, OpenEASD can rank each scan's findings by exploitability and explain why (a "fix these first" list with per-finding rationale), schedule targeted follow-up scan steps based on what was found, and write plain-language report and alert summaries — using Cloudflare Workers AI with your own account (credentials entered on the AI Analysis page, or via `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` env vars). Off by default; enabling it requires explicit consent in the UI, every call is audit-logged (never the prompt or response contents), and active follow-up scanning still requires the same domain authorization as manual scans.
 
 Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok S Kamat](https://www.linkedin.com/in/ashokskamat/) of [Cybersecify](https://cybersecify.com), the same tool we run in engagements and on our own infrastructure.
 
@@ -47,7 +49,6 @@ its maintainer's official source. No repackaging, no mirroring:
 | `amass` | [github.com/owasp-amass/amass](https://github.com/owasp-amass/amass) (OWASP) |
 | `subzy` | [github.com/PentestPad/subzy](https://github.com/PentestPad/subzy) (Go modules) |
 | `gau` | [github.com/lc/gau](https://github.com/lc/gau) (Go modules) |
-| `waybackurls` | [github.com/tomnomnom/waybackurls](https://github.com/tomnomnom/waybackurls) (Go modules) |
 | `cloud_enum` | [github.com/initstring/cloud_enum](https://github.com/initstring/cloud_enum) |
 | `gitleaks` | [github.com/gitleaks/gitleaks](https://github.com/gitleaks/gitleaks) (MIT, signed releases) |
 | `nmap` | `apt-get install nmap` (Ubuntu 24.04 official) |
@@ -60,7 +61,7 @@ from the upstream URL; it should byte-match what ships in the image.
 
 Every push to `main` and every `vX.Y` tag triggers
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml), which builds
-`linux/amd64` + `linux/arm64` images and publishes to
+`linux/amd64` images and publishes to
 `ghcr.io/cybersecify/openeasd`. The build is reproducible from the
 public source; the published image carries:
 
@@ -71,8 +72,9 @@ public source; the published image carries:
   elsewhere
 
 ```bash
-docker buildx imagetools inspect ghcr.io/cybersecify/openeasd:v0.8.0 --format '{{ json .SBOM }}'
-docker buildx imagetools inspect ghcr.io/cybersecify/openeasd:v0.8.0 --format '{{ json .Provenance }}'
+# Both images carry their own SBOM + provenance; inspect either target:
+docker buildx imagetools inspect ghcr.io/cybersecify/openeasd-web:v2.0.0    --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/cybersecify/openeasd-worker:v2.0.0 --format '{{ json .Provenance }}'
 ```
 
 ### What we don't do
@@ -151,24 +153,18 @@ target is hit — the per-target request rate stays capped across all profiles, 
 
 ## Quick start
 
+OpenEASD runs as three services (PostgreSQL + web + worker). Set the secrets in
+`docker-compose.yml` (`SECRET_KEY`, `DB_PASSWORD`, `ALLOWED_HOSTS`), then:
+
 ```bash
-docker run -d \
-  -p 8000:8000 \
-  -v openeasd-data:/app/data \
-  -v openeasd-logs:/app/logs \
-  -e SECRET_KEY="$(openssl rand -hex 32)" \
-  -e ALLOWED_HOSTS="*" \
-  --cap-add NET_RAW \
-  --restart unless-stopped \
-  --name openeasd \
-  ghcr.io/cybersecify/openeasd:latest
+docker compose up -d --build
 ```
 
 Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced to set a new password) → add a domain → run a scan. Full env-var reference, update path, Kubernetes manifests, and standalone (no-Docker) install are under [Deployment](#deployment).
 
 ## Features
 
-- **Automated pipeline**: 22-tool scan workflow from domain to findings
+- **Automated pipeline**: 28-tool scan workflow from domain to findings
 - **Network attack surface scanning**: CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
 - **CVE prioritisation**: EPSS exploit-probability scores + CISA KEV (known-exploited-in-the-wild) flags enrich CVE findings in place, so you triage by real-world risk rather than severity alone
 - **Dynamic workflows**: Create custom scan configurations, enable/disable tools per workflow
@@ -176,6 +172,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 - **Live scan progress**: Real-time pipeline status with per-tool step tracking
 - **Scan stop/cancel**: Graceful cancellation between tool steps
 - **Unified findings**: All tools write to a single Finding model with lifecycle tracking
+- **Asset inventory**: A persistent, deduplicated view of your attack surface across scans — every subdomain/IP/port/URL with first-seen / last-seen / active-or-gone status; pivot from any asset to its findings and scan history (Assets page + `/api/assets/`)
 - **Continuous monitoring**: Per-domain rescans on a configurable schedule (6h / 12h / 24h / 48h / weekly)
 - **Subscan**: Re-run specific tools on existing scan assets without full rediscovery
 - **Reports**: CSV and PDF export
@@ -193,12 +190,23 @@ Phase 1  Domain Security   - DNS, DNSSEC chain-of-trust, email
                              (SPF/DMARC/DKIM/MTA-STS/open-relay), RDAP checks
 Phase 1  Hudson Rock        - Infostealer-log exposure via Hudson Rock's keyless
                              Cavalier API (aggregate counts only, no plaintext)
+Phase 1  GitHub Secrets      - Leaked secrets in public GitHub via gitleaks
+                             (passive; BYO GITHUB_TOKEN, redacted before storage)
+Phase 1  Typosquat          - Lookalike / typosquat domain detection (passive;
+                             registered lookalikes via public DNS — phishing/brand abuse)
+Phase 1  Breach Check       - Data-breach exposure via XposedOrNot (free/keyless)
+                             or Have I Been Pwned (BYO key); counts only, no PII
+Phase 1  DNS History        - Historical A/AAAA/MX records via a passive-DNS
+                             dataset (passive; BYO DNS_HISTORY_API_URL)
 
 ── Surface Enumeration ─────────────────────────────────────────────────────
 Phase 2  Subfinder         - Passive subdomain enumeration
 Phase 2  Amass             - Active subdomain enumeration
 Phase 2  Alterx            - Subdomain permutation from discovered subdomains
 Phase 2  ASN Discovery     - Owned ASN/CIDR ranges via amass intel (reports only)
+Phase 2  GitHub Org Recon  - Infra refs (internal hostnames, cloud buckets, API
+                             endpoints) leaked in the org's public GitHub repos
+                             (passive; official API — keyless, richer with a token)
 Phase 3  DNSx              - DNS resolution, public IP filtering
 Phase 4  Takeover Check    - Subdomain takeover detection via subzy
 Phase 4  Cloud Assets      - Public S3/Azure/GCP bucket enumeration (cloud_enum)
@@ -215,7 +223,7 @@ Phase 7  Nuclei Network    - Network protocol vuln templates (non-web ports)
 
 ── Web Exposure ─────────────────────────────────────────────────────────────
 Phase 8  httpx             - Web probing, URL discovery, technology fingerprinting
-Phase 9  Historical URLs   - Archived URL discovery via gau + waybackurls
+Phase 9  Historical URLs   - Archived URL discovery via gau
 Phase 10 Katana            - Deep URL crawl on top of httpx
 Phase 11 Nuclei            - Web vulnerability scanning (community templates)
 Phase 11 Web Checker       - Security headers, cookies, CORS analysis
@@ -223,11 +231,26 @@ Phase 11 JS Secrets        - Hardcoded secrets in JavaScript via gitleaks
 
 ── Prioritization ───────────────────────────────────────────────────────────
 Phase 12 CVE Intel         - Enrich CVE findings with EPSS + CISA KEV
+
+── AI analysis (optional; off by default, bring-your-own Cloudflare) ──────────
+Post-scan Triage          - Rank findings by exploitability (CISA KEV + EPSS
+                            outrank raw CVSS) with a per-finding rationale, plus
+                            plain-language report and alert summaries
+Post-scan Orchestration   - A bounded agent may schedule targeted follow-up
+                            subscans based on what was found (still gated by the
+                            same domain authorization as manual scans)
 ```
 
 Every scan probe also carries an honest `OpenEASD/1.0` user agent (so a target
 can allowlist it), and the report flags WAF/edge blocking so an empty result
 means "clean", never "silently blocked".
+
+The AI stage runs only when Cloudflare Workers AI credentials are provided
+(saved on the AI Analysis page, or `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN`
+env vars) **and** an operator enables it with explicit consent. With it off — the
+default — the pipeline ends at Phase 12 and nothing leaves your machine. Every AI
+call is recorded in an audit log (time, scan, purpose, model, token counts,
+finding IDs); prompt and response contents are never stored.
 
 ## Architecture
 
@@ -241,16 +264,20 @@ apps/core/              - Infrastructure (never changes)
   findings/             - Unified Finding model
   scans/                - ScanSession, pipeline orchestrator
   workflows/            - Dynamic workflow engine + tool registry
-  scheduler/            - Django-Q2 scheduling, daily/weekly scans, per-domain monitoring, stuck scan watchdog
+  scheduler/            - Scan callables (daily / monitoring sweep / user-schedule sweep / watchdog) driven by DBOS @scheduled workflows
+  durable/              - DBOS engine, scan/AI workflows, dbos_worker command
   notifications/        - Slack/Teams alerts
   insights/             - Scan summaries, charts
   reports/              - CSV/PDF export
+  ai/                   - AI analysis (Cloudflare Workers AI, BYOK): triage, orchestration, summaries, consent + audit
   domains/              - Domain management
   dashboard/            - UI home
 
 apps/                   - Tool apps (add/remove freely)
   domain_security/      - DNS, email, RDAP checks
   hudson_rock/          - Infostealer-log exposure (Hudson Rock Cavalier API)
+  github_secrets/       - Leaked secrets in public GitHub (gitleaks, BYO token)
+  breach_check/         - Data-breach exposure (XposedOrNot free / HIBP BYO key)
   subfinder/            - Passive subdomain enumeration
   amass/                - Active subdomain enumeration
   alterx/               - Subdomain permutation (from discovered subdomains)
@@ -262,7 +289,7 @@ apps/                   - Tool apps (add/remove freely)
   ssh_checker/          - SSH configuration audit
   nuclei_network/       - Network protocol vuln scanning
   httpx/                - Web probing
-  historical_urls/      - Archived URL discovery (gau + waybackurls)
+  historical_urls/      - Archived URL discovery (gau)
   katana/               - Deep URL crawl
   nuclei/               - Web vulnerability scanning
   web_checker/          - Security headers, cookies, CORS
@@ -271,27 +298,43 @@ frontend/               - React 19 + Vite 8 SPA
   src/pages/            - Page components
   src/components/       - Shared UI primitives (Badge, Spinner, Pagination, ConfirmButton)
   src/components/ui/    - shadcn/ui primitives (Button, Card, Table, AlertDialog, …)
-  src/hooks/            - useFetch, usePolling
+  src/lib/              - queryClient, utils
   src/api/client.js     - JWT apiFetch wrapper
   src/auth.js           - localStorage token helpers
 ```
 
 ## Deployment
 
-### Docker (recommended)
+### Docker Compose (recommended)
+
+OpenEASD runs as three services — **PostgreSQL + web + worker**. Edit the
+secrets in `docker-compose.yml` (`SECRET_KEY`, `DB_PASSWORD`, `ALLOWED_HOSTS`),
+then:
 
 ```bash
-docker run -d \
-  -p 8000:8000 \
-  -v openeasd-data:/app/data \
-  -v openeasd-logs:/app/logs \
-  -e SECRET_KEY="$(openssl rand -hex 32)" \
-  -e ALLOWED_HOSTS="*" \
-  --cap-add NET_RAW \
-  --restart unless-stopped \
-  --name openeasd \
-  ghcr.io/cybersecify/openeasd:latest
+docker compose up -d --build
 ```
+
+- `db` — PostgreSQL 17 (app data + the DBOS durable-execution schema)
+- `web` — the slim `openeasd-web` image (UI/API + synchronous CSV/PDF reports; no scanner tools)
+- `worker` — the `openeasd-worker` image (DBOS worker + the full scanner matrix, `NET_RAW`)
+
+> **Run all three tiers — this is the recommended architecture.** Keeping
+> `web`, `worker`, and `db` as separate containers is deliberate:
+> - **Privilege separation** — the internet-facing `web` image carries **no
+>   scanner tools and no `NET_RAW`**, so a compromised web surface doesn't
+>   inherit the offensive toolkit or raw-socket access (those live only on the
+>   worker, which isn't exposed).
+> - **Fault isolation** — nuclei/amass are memory-hungry; if one is OOM-killed
+>   it takes down only a worker, not the UI/API.
+> - **Independent scaling** — Postgres has no single-writer lock, so you can run
+>   multiple `worker` replicas pulling the same DBOS queue for scan throughput
+>   while the `web` tier scales separately for HTTP load.
+>
+> Collapsing `web` + `worker` into one container is possible for a small,
+> trusted, single-user evaluation, but it puts the scanner tools and `NET_RAW`
+> on the exposed process — **not recommended for internet-facing deployments.**
+> Keep `db` as its own container either way so app replacement never risks data.
 
 Open http://localhost:8000, then log in with `admin` / `admin`. You will be forced to set a new password before accessing the app.
 
@@ -300,9 +343,8 @@ Open http://localhost:8000, then log in with `admin` / `admin`. You will be forc
 #### Update to latest
 
 ```bash
-docker pull ghcr.io/cybersecify/openeasd:latest
-docker stop openeasd && docker rm openeasd
-# re-run the docker run command above, volumes preserve all data
+docker compose pull        # pulls fresh openeasd-web + openeasd-worker
+docker compose up -d       # recreates changed containers; the db volume persists all data
 ```
 
 #### Environment variables
@@ -310,10 +352,15 @@ docker stop openeasd && docker rm openeasd
 | Variable | Default | Description |
 |---|---|---|
 | `SECRET_KEY` | insecure default | Django secret key; **set this in production** |
+| `FIELD_ENCRYPTION_KEY` | *(derived from `SECRET_KEY`)* | Optional Fernet key (urlsafe-base64, 32 bytes) encrypting BYOK API keys/webhooks at rest. Set it to decouple secret encryption from `SECRET_KEY` rotation; changing the effective key makes stored secrets unreadable (re-enter them) |
+| `LOGIN_RATELIMIT_ENABLED` / `LOGIN_RATELIMIT_MAX_FAILURES` / `LOGIN_RATELIMIT_WINDOW_SECONDS` / `LOGIN_RATELIMIT_LOCKOUT_SECONDS` | `True` / `5` / `900` / `900` | Brute-force protection on the login endpoint: after N failed logins from an IP within the window, that IP is locked out (429) for the lockout period |
+| `LOGIN_RATELIMIT_TRUST_FORWARDED_FOR` | `True` | Key the limiter on the client's `X-Forwarded-For` (correct behind the mandated TLS proxy). Set `False` only if running without a trusted proxy — then XFF is ignored (it would be attacker-spoofable) and the raw `REMOTE_ADDR` is used |
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated hostnames (add your server IP/domain) |
 | `CSRF_TRUSTED_ORIGINS` | *(none)* | Required if accessing via a domain, e.g. `https://openeasd.example.com` |
 | `DEBUG` | `False` | Set `True` only for local development |
-| `DB_NAME` | `data/openeasd.db` | SQLite path relative to `/app` |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | `db` / `5432` / `openeasd` / `openeasd` / — | PostgreSQL connection (or set `DATABASE_URL`) |
+| `DBOS_SCAN_CONCURRENCY` | `2` | Max scans executing at once (Postgres has no single-writer lock) |
+| `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` | *(none)* | Optional AI analysis (or enter on the AI Analysis page) |
 | `SLACK_WEBHOOK_URL` | *(none)* | Slack incoming webhook for scan alerts (can also be set in the Notifications UI) |
 | `MS_TEAMS_WEBHOOK_URL` | *(none)* | Teams incoming webhook for scan alerts (can also be set in the Notifications UI) |
 | `ALERT_SEVERITY_THRESHOLD` | `high` | Minimum severity to trigger alerts; overridden by the Notifications UI setting |
@@ -352,16 +399,17 @@ kubectl rollout restart deployment/openeasd-web deployment/openeasd-worker -n de
 
 #### Architecture
 
-Single pod, two containers, one `ReadWriteOnce` PVC:
+Three tiers, each its own workload — a default deploy is **3 pods** (logs → stdout, no PVC):
 
-| Container | Command | Resources |
+| Workload | Command | Resources |
 |---|---|---|
-| `web` | `gunicorn` (2 workers) | 256Mi–512Mi |
-| `worker` | `manage.py qcluster` | 512Mi–1Gi, `NET_RAW` capability |
+| `openeasd-web` Deployment | init (migrations/admin) → `gunicorn` (2 workers) | 256Mi–512Mi, no `NET_RAW`, Service → :8000 |
+| `openeasd-worker` Deployment | `manage.py dbos_worker` | 512Mi–4Gi, `NET_RAW` for nmap/naabu, no Service |
+| `openeasd-postgres` StatefulSet | PostgreSQL 17 | 10Gi PVC |
 
-An init container runs migrations and admin user setup before the main containers start. The `worker` container gets `NET_RAW` capability for nmap/naabu port scanning.
+Only the `openeasd-web` Deployment runs migrations (its initContainer); the `openeasd-worker` Deployment waits for them via the role-aware entrypoint (`OPENEASD_ROLE=worker` → `migrate --check`), so there's no DDL race.
 
-> **SQLite constraint:** `replicas: 1` is required. To scale horizontally, migrate to PostgreSQL.
+> **Scaling:** each Deployment is `replicas: 1` by default. Postgres removes the old single-writer limit, so `openeasd-worker` scales independently — `kubectl scale deploy/openeasd-worker --replicas=N` adds workers all draining the same DBOS queue, without touching the web tier.
 
 #### Health check
 
@@ -397,27 +445,17 @@ On macOS, start manually:
 
 ```bash
 uv run gunicorn openeasd.wsgi:application --bind 0.0.0.0:8000 --workers 2
-uv run manage.py qcluster   # second terminal
+uv run manage.py dbos_worker   # second terminal (needs PostgreSQL running)
 ```
 
 ### Development Mode
 
 ```bash
-# Terminal 1: Django + Django-Q2 worker
-uv run python main.py
+# Starts Django (:8001) + the Vite dev server + the DBOS worker together
+# (needs PostgreSQL running). See the Makefile for the individual commands.
+make dev
 
-# Terminal 2: Vite dev server (proxies /api/ to Django on port 8000)
-cd frontend && npm run dev
 # React app at http://localhost:5173
-```
-
-### main.py flags
-
-```bash
-uv run python main.py --build          # npm build then start
-uv run python main.py --build-only     # npm build only
-uv run python main.py --port 9000      # custom port
-uv run python main.py --no-worker      # web server only (no worker)
 ```
 
 ## CI/CD
@@ -428,7 +466,7 @@ GitHub Actions runs on every push to `main` and `v*` tags:
 - **pip-audit**: dependency CVE scan
 - **Frontend build**: `npm ci && npm run build`
 - **Docker build**: amd64 smoke-build on every push
-- **Publish to GHCR**: multi-arch (`amd64` + `arm64`) image published on every `main` push and version tags
+- **Publish to GHCR**: `amd64` images published on every `main` push and version tags
 
 ## API
 
@@ -488,10 +526,10 @@ uv run pytest tests/
 **Backend:**
 - **Django 5**: Web framework
 - **Django Ninja**: REST API with OpenAPI docs
-- **Django-Q2**: Background task queue and scheduler (ORM broker, replaces APScheduler)
-- **croniter**: Cron expression parsing for Django-Q2 CRON schedules
+- **DBOS**: Durable-execution engine — task queue + scheduler, Postgres-backed (crash-resumable scans)
+- **croniter**: Cron parsing for the DBOS user-schedule sweep
 - **WhiteNoise**: Serves static files in production (Docker) with gzip compression
-- **SQLite**: Database (dev), configurable via `DB_NAME`
+- **PostgreSQL** (+ **psycopg 3**): Database — app data and the DBOS checkpoint schema
 - **paramiko**: SSH protocol inspection
 - **cryptography**: X.509 certificate analysis
 - **xhtml2pdf**: PDF report generation

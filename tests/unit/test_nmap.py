@@ -164,8 +164,8 @@ class TestNmapAnalyzer:
 """
 
     def _make_session(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         Port.objects.create(
@@ -284,8 +284,8 @@ class TestBackportMatching:
 """
 
     def _make_session(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         Port.objects.create(
@@ -302,14 +302,14 @@ class TestBackportMatching:
     def test_backport_applied_demotes_to_info(self):
         sess = self._make_session()
         findings = analyze(sess, {"1.2.3.4": self.SAMPLE_XML_UBUNTU})
-        
+
         by_cve = {f.cve: f for f in findings}
-        
+
         # CVE-2024-6387 is patched in 3ubuntu13.3, and we are running 3ubuntu13.4 -> info
         f1 = by_cve["CVE-2024-6387"]
         assert f1.severity == "info"
         assert f1.extra.get("backport_applied") is True
-        
+
         # CVE-2024-39894 is not in our mock BACKPORTS -> original severity
         f2 = by_cve["CVE-2024-39894"]
         assert f2.severity == "medium"
@@ -324,8 +324,8 @@ class TestWebClassification:
     """Tests that nmap only scans ports with is_web=False."""
 
     def test_nmap_skips_web_ports(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
@@ -345,8 +345,8 @@ class TestWebClassification:
             assert 22 in ports
 
     def test_nmap_skips_when_all_web(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
@@ -359,7 +359,7 @@ class TestWebClassification:
         assert findings == []
 
     def test_empty_session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
         assert run_nmap(sess) == []
 
@@ -371,15 +371,15 @@ class TestWebClassification:
 @pytest.mark.django_db
 class TestNmapScanner:
     def test_run_nmap_skips_when_no_non_web_ports(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
         findings = run_nmap(sess)
         assert findings == []
 
     def test_run_nmap_excludes_web_ports_via_is_web(self):
         """nmap should skip ports with is_web=True."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
@@ -420,7 +420,7 @@ class TestNmapCollectorFailureModes:
         # Every target IP timing out means the CVE scan produced nothing due to
         # timeouts — must raise so the scan reports 'partial', not falsely 'clean'.
         from apps.nmap.collector import collect
-        from apps.core.workflows.exceptions import ToolTimeout
+        from apps.core.engine.workflows.exceptions import ToolTimeout
         with _patch("apps.nmap.collector.subprocess.run",
                     side_effect=_subprocess.TimeoutExpired("nmap", 360)):
             with __import__("pytest").raises(ToolTimeout):
@@ -437,7 +437,7 @@ class TestNmapCollectorFailureModes:
 
     def test_binary_missing_raises(self):
         from apps.nmap.collector import collect
-        from apps.core.workflows.exceptions import ToolBinaryMissing
+        from apps.core.engine.workflows.exceptions import ToolBinaryMissing
         with _patch("apps.nmap.collector.subprocess.run", side_effect=FileNotFoundError()):
             with __import__("pytest").raises(ToolBinaryMissing):
                 collect(self._sess(), {"1.2.3.4": [80]})

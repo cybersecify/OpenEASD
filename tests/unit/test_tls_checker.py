@@ -260,8 +260,8 @@ class TestProbeTlsDetails:
 @pytest.mark.django_db
 class TestTlsAnalyzerUnencrypted:
     def _make_port(self, service="redis", port_num=6379):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -291,8 +291,8 @@ class TestTlsAnalyzerUnencrypted:
 @pytest.mark.django_db
 class TestTlsAnalyzerCipherSuites:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -378,8 +378,8 @@ class TestTlsAnalyzerCipherSuites:
 @pytest.mark.django_db
 class TestTlsAnalyzerProtocolVersions:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -420,8 +420,8 @@ class TestTlsAnalyzerProtocolVersions:
 @pytest.mark.django_db
 class TestTlsAnalyzerCertificates:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -482,8 +482,8 @@ class TestTlsAnalyzerCertDeep:
     """Tests for cryptography-powered cert analysis: weak keys, SHA-1 sig, SAN, SCT."""
 
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -613,9 +613,9 @@ class TestTlsAnalyzerCertDeep:
 @pytest.mark.django_db
 class TestTlsCollector:
     def _make_session(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port, Subdomain
-        from apps.core.web_assets.models import URL
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port, Subdomain
+        from apps.core.data.web_assets.models import URL
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         sub = Subdomain.objects.create(session=sess, domain="example.com",
@@ -732,9 +732,9 @@ class TestTlsCollector:
 @pytest.mark.django_db
 class TestTlsScanner:
     def test_scanner_creates_findings(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
-        from apps.core.findings.models import Finding
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
+        from apps.core.data.findings.models import Finding
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
@@ -761,7 +761,7 @@ class TestTlsScanner:
         assert Finding.objects.filter(session=sess, source="tls_checker").count() == 1
 
     def test_scanner_empty_session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
         with patch("apps.tls_checker.scanner.collect", return_value=[]):
             findings = run_tls_check(sess)
@@ -893,8 +893,8 @@ class TestEnumerateCiphers:
 @pytest.mark.django_db
 class TestSupportedCipherFindings:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -986,8 +986,8 @@ class TestSupportedCipherFindings:
 @pytest.mark.django_db
 class TestTlsCheckerCdnExclusion:
     def _make_session_with_cdn_ip(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(

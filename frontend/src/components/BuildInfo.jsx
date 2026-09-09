@@ -9,7 +9,7 @@ import { apiGet } from '../api/client.js';
  * runs report "dev"/"unknown" defaults, which are omitted so the line never
  * reads "unknown · unknown".
  */
-export default function BuildInfo({ className = '', checkUpdates = false }) {
+export default function BuildInfo({ className = '', checkUpdates = false, variant = 'footer' }) {
   const { data } = useQuery({
     queryKey: ['/version/'],
     queryFn: () => apiGet('/version/'),
@@ -28,6 +28,35 @@ export default function BuildInfo({ className = '', checkUpdates = false }) {
   });
 
   if (!data) return null;
+
+  const versionLabel = data.version === 'dev' ? 'dev' : `v${data.version}`;
+  const updateAvailable = checkUpdates && latest?.update_available;
+  const releaseUrl = latest?.release_url || 'https://github.com/cybersecify/OpenEASD/releases/latest';
+
+  // Compact, prominent variant for the app's top-right header. Shows just the
+  // running version, muted, when current; when a newer release exists it becomes
+  // a brand-colored "Update" pill linking to the GitHub release. Display-only —
+  // the app never self-updates, this is purely a heads-up + link.
+  if (variant === 'topbar') {
+    return (
+      <div className={`flex items-center gap-2 text-xs select-none ${className}`}>
+        {updateAvailable ? (
+          <a
+            href={releaseUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`OpenEASD ${versionLabel} → v${latest.latest_version} available on GitHub`}
+            className="inline-flex items-center gap-1 rounded-full border border-brand/40 bg-brand/10 px-2.5 py-1 font-semibold text-brand hover:bg-brand/20 transition-colors whitespace-nowrap"
+          >
+            <span aria-hidden="true">↑</span>
+            <span>Update v{latest.latest_version}</span>
+          </a>
+        ) : (
+          <span className="text-dim/80 whitespace-nowrap" title="Running build">{versionLabel}</span>
+        )}
+      </div>
+    );
+  }
 
   const parts = [`OpenEASD ${data.version === 'dev' ? 'dev' : `v${data.version}`}`];
   if (data.git_sha_short && data.git_sha_short !== 'unknown') {
