@@ -92,11 +92,20 @@ ci-frontend:
 ci: ci-backend ci-frontend
     @echo "✅ local CI passed (ruff + pytest+coverage + bandit + pip-audit + vitest + build)"
 
-# ── Docker (production-like 3-container stack: db + web + worker) ──────────────
+# ── Dev deployment (3-container stack: db + web + worker) ─────────────────────
+# NOTE ON THE SPLIT:
+#   • DEV lifecycle lives here in `just` — setup, dev, up, deploy-dev.
+#   • PRODUCTION is the GitHub pipeline (unchanged): `git tag vX.Y.Z` → CI builds
+#     & publishes pinned :vX.Y.Z images to GHCR; deploy them via the base
+#     docker-compose.yml. `just` is NOT used for production.
 
-# Build + start the 3-container stack (http://localhost:8000)
+# Dev deploy: build the stack locally from source (http://localhost:8000)
 up:
     docker compose up -d --build
+
+# Dev deploy from the CI-published :latest images (no local build — pulls GHCR)
+deploy-dev:
+    docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --no-build --pull always
 
 # Stop the stack (keep the db volume)
 down:
