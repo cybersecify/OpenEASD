@@ -9,8 +9,8 @@ any interesting endpoints.
 import logging
 from urllib.parse import urlparse
 
-from apps.core.assets.models import Subdomain
-from apps.core.web_assets.models import URL
+from apps.core.data.assets.models import Subdomain
+from apps.core.data.web_assets.models import URL
 
 logger = logging.getLogger(__name__)
 

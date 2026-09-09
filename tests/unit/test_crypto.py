@@ -60,7 +60,7 @@ class TestEncryptedFieldStorage:
             return cur.fetchone()[0]
 
     def test_db_holds_ciphertext_orm_returns_plaintext(self):
-        from apps.core.ai.models import AISettings
+        from apps.core.console.ai.models import AISettings
         cfg = AISettings.get()
         cfg.cloudflare_api_token = "super-secret-token"
         cfg.save()
@@ -73,7 +73,7 @@ class TestEncryptedFieldStorage:
         assert cfg.cloudflare_api_token == "super-secret-token"  # transparent read
 
     def test_blank_secret_stays_blank_unencrypted(self):
-        from apps.core.ai.models import AISettings
+        from apps.core.console.ai.models import AISettings
         cfg = AISettings.get()
         cfg.cloudflare_api_token = ""
         cfg.save()
@@ -81,7 +81,7 @@ class TestEncryptedFieldStorage:
 
     def test_legacy_plaintext_row_is_readable(self):
         # Rows written before encryption existed must still read back.
-        from apps.core.ai.models import AISettings
+        from apps.core.console.ai.models import AISettings
         cfg = AISettings.get()
         cfg.save()
         with connection.cursor() as cur:
@@ -94,7 +94,7 @@ class TestEncryptedFieldStorage:
         assert cfg.cloudflare_api_token == "legacy-plaintext-key"
 
     def test_webhook_urls_encrypted(self):
-        from apps.core.notifications.models import NotificationConfig
+        from apps.core.console.notifications.models import NotificationConfig
         cfg, _ = NotificationConfig.objects.get_or_create(pk=1)
         cfg.slack_webhook_url = "https://hooks.slack.com/services/T/B/secret"
         cfg.save()

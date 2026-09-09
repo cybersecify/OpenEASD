@@ -2,7 +2,7 @@
 
 import logging
 
-from apps.core.assets.models import Subdomain
+from apps.core.data.assets.models import Subdomain
 
 logger = logging.getLogger(__name__)
 

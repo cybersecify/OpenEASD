@@ -7,7 +7,7 @@ from django.http import JsonResponse
 from django.urls import path, include, re_path
 from django.views.generic import TemplateView
 
-from apps.core.api.ninja import api
+from apps.core.console.api.ninja import api
 
 
 def health(request):
@@ -27,7 +27,7 @@ urlpatterns = [
     path("health/", health),
     path("admin/", admin.site.urls),
     path("api/", api.urls),
-    path("reports/", include("apps.core.reports.urls")),
+    path("reports/", include("apps.core.console.reports.urls")),
     re_path(
         r'^(?!api/|admin|static/|media/).*$',
         TemplateView.as_view(template_name='index.html'),

@@ -248,7 +248,7 @@ def collect(session) -> list[dict]:
       }
     """
     from django.db import models as db_models
-    from apps.core.assets.models import Port
+    from apps.core.data.assets.models import Port
 
     # Match by service name OR well-known SSH port (naabu doesn't set service names)
     ssh_ports = list(Port.objects.filter(

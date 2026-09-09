@@ -2,8 +2,8 @@
 
 import logging
 
-from apps.core.assets.models import Subdomain
-from apps.core.web_assets.models import URL
+from apps.core.data.assets.models import Subdomain
+from apps.core.data.web_assets.models import URL
 
 from .analyzer import analyze
 from .collector import collect

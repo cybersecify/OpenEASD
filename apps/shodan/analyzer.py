@@ -16,7 +16,7 @@ says so and points at the active nmap results for confirmation.
 
 import logging
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 
 logger = logging.getLogger(__name__)
 

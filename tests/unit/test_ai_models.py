@@ -1,10 +1,10 @@
-"""Unit tests for apps/core/ai/models.py — singleton config, audit-log
+"""Unit tests for apps/core/console/ai/models.py — singleton config, audit-log
 no-bodies invariant, and relational constraints."""
 
 import pytest
 from django.db import IntegrityError, models as dj_models
 
-from apps.core.ai.models import (
+from apps.core.console.ai.models import (
     CURRENT_CONSENT_VERSION,
     AIInvocation,
     AISettings,
@@ -14,7 +14,7 @@ from apps.core.ai.models import (
 
 
 def _session():
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain="example.com", scan_type="full")
 
 

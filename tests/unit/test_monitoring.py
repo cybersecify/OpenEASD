@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 def _make_domain(name, is_active=True, interval=None, authorized=True):
     from django.utils import timezone
-    from apps.core.domains.models import Domain, DomainAuthorization
+    from apps.core.data.domains.models import Domain, DomainAuthorization
     domain = Domain.objects.create(
         name=name, is_active=is_active, monitoring_interval_hours=interval,
     )
@@ -29,7 +29,7 @@ def _make_domain(name, is_active=True, interval=None, authorized=True):
 def _last_scan(domain_name, hours_ago):
     """Give a domain a most-recent scan `hours_ago` hours in the past."""
     from django.utils import timezone
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     s = ScanSession.objects.create(domain=domain_name, scan_type="full", status="completed")
     ScanSession.objects.filter(id=s.id).update(
         start_time=timezone.now() - timedelta(hours=hours_ago)
@@ -41,9 +41,9 @@ class TestRunDueMonitoringScans:
     """The monitoring sweep — which domains it scans and which it skips."""
 
     def _sweep(self):
-        from apps.core.scheduler.scheduler import run_due_monitoring_scans
+        from apps.core.engine.scheduler.scheduler import run_due_monitoring_scans
         fired = []
-        with patch("apps.core.scheduler.scheduler.run_monitoring_scan",
+        with patch("apps.core.engine.scheduler.scheduler.run_monitoring_scan",
                    side_effect=lambda d: fired.append(d)):
             run_due_monitoring_scans()
         return fired
@@ -87,17 +87,17 @@ class TestSchedulingIsDBOS:
     helpers are no-ops."""
 
     def test_setup_core_schedules_is_noop(self):
-        from apps.core.scheduler.scheduler import setup_core_schedules
+        from apps.core.engine.scheduler.scheduler import setup_core_schedules
         # Must not raise and must not require django_q.
         setup_core_schedules()
 
     def test_sync_domain_monitoring_jobs_is_noop(self):
-        from apps.core.scheduler.scheduler import sync_domain_monitoring_jobs
+        from apps.core.engine.scheduler.scheduler import sync_domain_monitoring_jobs
         _make_domain("watch.com", interval=6)
         sync_domain_monitoring_jobs()  # no schedule rows to create anymore
 
     def test_scheduled_workflows_register_as_pollers(self):
-        from apps.core.durable.dbos_app import configure_dbos
+        from apps.core.engine.durable.dbos_app import configure_dbos
         from dbos._dbos import _get_or_create_dbos_registry
 
         configure_dbos()

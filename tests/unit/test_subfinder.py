@@ -12,7 +12,7 @@ from apps.subfinder.scanner import run_subfinder
 @pytest.mark.django_db
 class TestSubfinderCollector:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_parses_jsonline_output(self):
@@ -63,7 +63,7 @@ class TestSubfinderCollector:
         assert len(records) == 2
 
     def test_raises_on_binary_not_found(self):
-        from apps.core.workflows.exceptions import ToolBinaryMissing
+        from apps.core.engine.workflows.exceptions import ToolBinaryMissing
         sess = self._session()
         with patch("apps.subfinder.collector.subprocess.run", side_effect=FileNotFoundError):
             with pytest.raises(ToolBinaryMissing):
@@ -71,7 +71,7 @@ class TestSubfinderCollector:
 
     def test_raises_on_timeout(self):
         import subprocess
-        from apps.core.workflows.exceptions import ToolTimeout
+        from apps.core.engine.workflows.exceptions import ToolTimeout
         sess = self._session()
         with patch("apps.subfinder.collector.subprocess.run", side_effect=subprocess.TimeoutExpired("subfinder", 300)):
             with pytest.raises(ToolTimeout):
@@ -81,8 +81,8 @@ class TestSubfinderCollector:
 @pytest.mark.django_db
 class TestSubfinderAnalyzer:
     def test_builds_subdomain_objects(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         records = [{"host": "api.example.com"}, {"host": "www.example.com"}]
         objs = analyze(sess, records)
@@ -92,21 +92,21 @@ class TestSubfinderAnalyzer:
         assert all(o.domain == "example.com" for o in objs)
 
     def test_dedupes_within_batch(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         records = [{"host": "api.example.com"}, {"host": "api.example.com"}]
         objs = analyze(sess, records)
         assert len(objs) == 1
 
     def test_normalizes_to_lowercase(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         records = [{"host": "API.Example.COM"}]
         objs = analyze(sess, records)
         assert objs[0].subdomain == "api.example.com"
 
     def test_skips_empty_hosts(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         records = [{"host": ""}, {"host": "  "}, {"host": "valid.example.com"}]
         objs = analyze(sess, records)
@@ -116,7 +116,7 @@ class TestSubfinderAnalyzer:
         # subfinder's plain-text fallback can turn a stray log line into a bogus
         # "host". The analyzer's in-scope filter must drop anything that isn't a
         # subdomain of the target, keeping only the real one.
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         records = [
             {"host": "[INF] enumerating sources"},   # log noise → out of scope
@@ -130,8 +130,8 @@ class TestSubfinderAnalyzer:
 @pytest.mark.django_db
 class TestSubfinderScanner:
     def test_run_subfinder_writes_to_shared_assets(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         with patch("apps.subfinder.scanner.collect", return_value=[
             {"host": "api.example.com"}, {"host": "www.example.com"}

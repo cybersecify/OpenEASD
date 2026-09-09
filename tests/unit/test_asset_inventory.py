@@ -5,38 +5,38 @@ Spec: docs/specs/2026-09-06-asset-centric-inventory.md
 
 import pytest
 
-from apps.core.asset_inventory.models import Asset
-from apps.core.asset_inventory.rollup import rollup_session
+from apps.core.data.asset_inventory.models import Asset
+from apps.core.data.asset_inventory.rollup import rollup_session
 
 pytestmark = pytest.mark.django_db
 
 
 def _domain(name="example.com"):
-    from apps.core.domains.models import Domain
+    from apps.core.data.domains.models import Domain
     return Domain.objects.get_or_create(name=name)[0]
 
 
 def _session(domain="example.com", status="completed", scan_type="full"):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain=domain, status=status, scan_type=scan_type)
 
 
 def _sub(session, name, source="subfinder"):
-    from apps.core.assets.models import Subdomain
+    from apps.core.data.assets.models import Subdomain
     return Subdomain.objects.create(
         session=session, domain=session.domain, subdomain=name, source=source
     )
 
 
 def _ip(session, addr, version=4, source="dnsx"):
-    from apps.core.assets.models import IPAddress
+    from apps.core.data.assets.models import IPAddress
     return IPAddress.objects.create(
         session=session, address=addr, version=version, source=source
     )
 
 
 def _port(session, addr, port, proto="tcp", service="", is_web=False, source="naabu"):
-    from apps.core.assets.models import Port
+    from apps.core.data.assets.models import Port
     return Port.objects.create(
         session=session, address=addr, port=port, protocol=proto,
         service=service, is_web=is_web, source=source,
@@ -44,12 +44,12 @@ def _port(session, addr, port, proto="tcp", service="", is_web=False, source="na
 
 
 def _url(session, url, source="httpx", **kw):
-    from apps.core.web_assets.models import URL
+    from apps.core.data.web_assets.models import URL
     return URL.objects.create(session=session, url=url, source=source, **kw)
 
 
 def _finding(session, **kw):
-    from apps.core.findings.models import Finding
+    from apps.core.data.findings.models import Finding
     defaults = dict(source="nmap", check_type="cve", severity="high", title="t")
     defaults.update(kw)
     return Finding.objects.create(session=session, **defaults)

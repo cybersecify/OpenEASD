@@ -25,7 +25,7 @@ class TestCollect:
     @patch("apps.cloud_assets.collector.shutil.which", return_value="/usr/bin/cloud_enum")
     @patch("apps.cloud_assets.collector.subprocess.run")
     def test_timeout_raises(self, mock_run, _):
-        from apps.core.workflows.exceptions import ToolTimeout
+        from apps.core.engine.workflows.exceptions import ToolTimeout
         mock_run.side_effect = subprocess.TimeoutExpired("cloud_enum", 1800)
         with pytest.raises(ToolTimeout):
             collect(["example"])
@@ -88,7 +88,7 @@ from apps.cloud_assets.analyzer import analyze
 @pytest.mark.django_db
 class TestAnalyze:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_empty_urls_returns_empty(self):
@@ -186,7 +186,7 @@ class TestDeriveKeywords:
 @pytest.mark.django_db
 class TestScanner:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_no_subdomains_skips_collect(self):
@@ -197,8 +197,8 @@ class TestScanner:
         mock_collect.assert_not_called()
 
     def test_happy_path_persists_and_returns_findings(self):
-        from apps.core.assets.models import Subdomain
-        from apps.core.findings.models import Finding
+        from apps.core.data.assets.models import Subdomain
+        from apps.core.data.findings.models import Finding
 
         sess = self._session()
         Subdomain.objects.create(
@@ -216,7 +216,7 @@ class TestScanner:
         assert result[0].severity == "high"
 
     def test_collect_returns_empty_no_findings(self):
-        from apps.core.assets.models import Subdomain
+        from apps.core.data.assets.models import Subdomain
 
         sess = self._session()
         Subdomain.objects.create(

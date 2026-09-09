@@ -7,24 +7,24 @@ AI failure must be swallowed by the hook boundary.
 import pytest
 from unittest.mock import patch
 
-from apps.core.ai.models import (
+from apps.core.console.ai.models import (
     AIInvocation,
     AISettings,
     AISummary,
     AITriage,
 )
-from apps.core.scans.pipeline import _finalize_session
+from apps.core.engine.scans.pipeline import _finalize_session
 
 
 def _session(**kw):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     defaults = dict(domain="example.com", scan_type="full", status="running")
     defaults.update(kw)
     return ScanSession.objects.create(**defaults)
 
 
 def _finding(session):
-    from apps.core.findings.models import Finding
+    from apps.core.data.findings.models import Finding
     return Finding.objects.create(
         session=session, source="nmap", check_type="cve", severity="high",
         title="t", target="example.com",
@@ -50,7 +50,7 @@ class TestAiOffInvariant:
         settings.CLOUDFLARE_API_TOKEN = ""
         sess = _session()
         _finding(sess)
-        with patch("apps.core.ai.client.requests.post") as post:
+        with patch("apps.core.console.ai.client.requests.post") as post:
             _finalize_session(sess)
         post.assert_not_called()
         assert AIInvocation.objects.count() == 0
@@ -65,7 +65,7 @@ class TestAiOffInvariant:
         AISettings.get()  # exists, enabled=False by default
         sess = _session()
         _finding(sess)
-        with patch("apps.core.ai.client.requests.post") as post:
+        with patch("apps.core.console.ai.client.requests.post") as post:
             _finalize_session(sess)
         post.assert_not_called()
         assert AIInvocation.objects.count() == 0
@@ -78,7 +78,7 @@ class TestAiOffInvariant:
         cfg.save()
         sess = _session()
         _finding(sess)
-        with patch("apps.core.ai.client.requests.post") as post:
+        with patch("apps.core.console.ai.client.requests.post") as post:
             _finalize_session(sess)
         post.assert_not_called()
 
@@ -89,8 +89,8 @@ class TestHookWiring:
         _activate_ai(settings)
         sess = _session()
         _finding(sess)
-        with patch("apps.core.ai.triage.run_triage") as triage, \
-             patch("apps.core.ai.summaries.run_summaries") as summaries:
+        with patch("apps.core.console.ai.triage.run_triage") as triage, \
+             patch("apps.core.console.ai.summaries.run_summaries") as summaries:
             _finalize_session(sess)
         triage.assert_called_once()
         summaries.assert_called_once()
@@ -102,8 +102,8 @@ class TestHookWiring:
         cfg.save()
         sess = _session()
         _finding(sess)
-        with patch("apps.core.ai.triage.run_triage") as triage, \
-             patch("apps.core.ai.summaries.run_summaries") as summaries:
+        with patch("apps.core.console.ai.triage.run_triage") as triage, \
+             patch("apps.core.console.ai.summaries.run_summaries") as summaries:
             _finalize_session(sess)
         triage.assert_not_called()
         summaries.assert_not_called()
@@ -113,9 +113,9 @@ class TestHookWiring:
         sess = _session()
         _finding(sess)
         order = []
-        with patch("apps.core.ai.hooks.run_ai_post_scan",
+        with patch("apps.core.console.ai.hooks.run_ai_post_scan",
                    side_effect=lambda s: order.append("ai")), \
-             patch("apps.core.scans.pipeline._dispatch_alerts",
+             patch("apps.core.engine.scans.pipeline._dispatch_alerts",
                    side_effect=lambda s: order.append("alerts")):
             _finalize_session(sess)
         assert order == ["ai", "alerts"]
@@ -125,7 +125,7 @@ class TestHookWiring:
         parent = _session(status="completed")
         sub = _session(scan_type="subscan", parent_session=parent)
         _finding(sub)
-        with patch("apps.core.ai.hooks.run_ai_post_scan") as hook:
+        with patch("apps.core.console.ai.hooks.run_ai_post_scan") as hook:
             _finalize_session(sub)
         hook.assert_not_called()
 
@@ -138,7 +138,7 @@ class TestFailureSwallowing:
         _activate_ai(settings)
         sess = _session()
         _finding(sess)
-        with patch("apps.core.ai.triage.run_triage", side_effect=RuntimeError("boom")):
+        with patch("apps.core.console.ai.triage.run_triage", side_effect=RuntimeError("boom")):
             _finalize_session(sess)  # must not raise
         sess.refresh_from_db()
         assert sess.status == "completed"
@@ -148,8 +148,8 @@ class TestFailureSwallowing:
         _activate_ai(settings)
         sess = _session()
         _finding(sess)
-        with patch("apps.core.ai.hooks.logger") as log, \
-             patch("apps.core.ai.guard.is_ai_active", side_effect=RuntimeError("db gone")):
+        with patch("apps.core.console.ai.hooks.logger") as log, \
+             patch("apps.core.console.ai.guard.is_ai_active", side_effect=RuntimeError("db gone")):
             _finalize_session(sess)
         assert log.exception.called
         sess.refresh_from_db()
@@ -159,7 +159,7 @@ class TestFailureSwallowing:
         _activate_ai(settings)
         sess = _session()
         _finding(sess)
-        with patch("apps.core.ai.client.chat_json", return_value=None), \
-             patch("apps.core.scans.pipeline._dispatch_alerts") as alerts:
+        with patch("apps.core.console.ai.client.chat_json", return_value=None), \
+             patch("apps.core.engine.scans.pipeline._dispatch_alerts") as alerts:
             _finalize_session(sess)
         alerts.assert_called_once()

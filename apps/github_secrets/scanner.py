@@ -7,7 +7,7 @@ binary (a real config error), exactly like js_secrets.
 
 import logging
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 
 from .analyzer import analyze
 from .collector import collect

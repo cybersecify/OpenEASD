@@ -52,7 +52,7 @@ class TestFingerprint:
 @pytest.mark.django_db
 class TestAnalyzerSetsReachability:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_reachability_persisted(self):
