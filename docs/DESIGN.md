@@ -126,24 +126,25 @@ the folder move is purely organisational; the table lists each app by name.
 | `insights/` | `insights` | `ScanSummary` (incl. Exposure Score + grade), `FindingTypeSummary`, trend charts |
 | `reports/` | `reports` | CSV + PDF export (synchronous Django views, on the web tier) |
 | `ai/` | `ai` | AI triage / adaptive orchestration / summaries (Cloudflare Workers AI, BYOK) — a core subsystem, **not** a registry tool |
+| `credentials/` | `credentials` | `ToolCredentials` encrypted singleton + `get_credential()` resolver (DB-wins-over-env) + write-only `/api/credentials/` — UI-managed BYOK keys |
 | `api/` | — | `NinjaAPI` instance, JWT routes, router registration, error handlers, rate-limit middleware |
 
 ### By layer — console / engine / data
 
-The 15 core apps map cleanly to three of the four logical layers (see
+The 16 core apps map cleanly to three of the four logical layers (see
 [Layers vs. Tiers](#layers-vs-tiers--two-orthogonal-axes)):
 
 | Layer | Apps | Count |
 |---|---|---|
-| **Console** (presentation) | `dashboard`, `insights`, `reports`, `notifications`, `ai` | **5** |
+| **Console** (presentation) | `dashboard`, `insights`, `reports`, `notifications`, `ai`, `credentials` | **6** |
 | **Engine** (orchestration) | `scans`, `workflows`, `durable`, `scheduler` | **4** |
 | **Data** (dataflow models) | `domains`, `assets`, `web_assets`, `findings`, `asset_inventory` | **5** |
 | *(core + registry tool)* | `service_detection` — a core app that is *also* a phase-6 scan tool | **1** |
 
-**Total: 15 core apps.** The `api/` module is part of the console tier but is
+**Total: 16 core apps.** The `api/` module is part of the console tier but is
 **not** a registered app (no models — it only mounts routers), so it's not in the
-15. The fourth logical layer, **Tools**, is the 27 `apps/<tool>/` plugins (next
-section) — bringing the first-party total to 42 apps / 28 registered tools
+16. The fourth logical layer, **Tools**, is the 27 `apps/<tool>/` plugins (next
+section) — bringing the first-party total to 43 apps / 28 registered tools
 (`service_detection` is the one app counted in both core and the tool registry).
 
 Notes on the mapping's soft edges:

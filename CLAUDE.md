@@ -331,10 +331,10 @@ request-counting proxy C4 is deferred).
 
 ## Architecture
 
-### Core infrastructure — `apps/core/` (15 sub-apps)
+### Core infrastructure — `apps/core/` (16 sub-apps)
 
-The 15 core apps are grouped into layer subpackages: **`apps/core/console/`**
-(dashboard, insights, reports, notifications, ai, api), **`apps/core/engine/`**
+The 16 core apps are grouped into layer subpackages: **`apps/core/console/`**
+(dashboard, insights, reports, notifications, ai, credentials, api), **`apps/core/engine/`**
 (scans, workflows, durable, scheduler, service_detection), and
 **`apps/core/data/`** (domains, assets, web_assets, findings, asset_inventory).
 Django labels are unchanged — the nesting is organisational only (import paths are
@@ -356,6 +356,7 @@ Django labels are unchanged — the nesting is organisational only (import paths
 | `insights/` | `insights` | ScanSummary (incl. per-scan Exposure Score + grade, `scoring.py`), FindingTypeSummary, charts |
 | `reports/` | `reports` | CSV + PDF export (synchronous, served by the web tier) |
 | `ai/` | `ai` | AI analysis (Cloudflare Workers AI, BYOK): finding triage, bounded adaptive orchestration, report/alert summaries, consent + per-call audit log |
+| `credentials/` | `credentials` | UI-managed BYOK API keys — `ToolCredentials` encrypted singleton + `get_credential()` resolver (DB-wins-over-env) + write-only `/api/credentials/` (C1; tools not wired yet) |
 | `api/` | — | Django Ninja API — routers, JWT auth, error handlers |
 
 ### REST API module — `apps/core/console/api/`
@@ -373,6 +374,7 @@ Per-module routers (each file exports a `router = Router(auth=JWTAuth())`):
     apps/core/engine/workflows/api.py   — /api/workflows/ CRUD + /tools/
     apps/core/console/insights/api.py    — /api/insights/
     apps/core/console/notifications/api.py — /api/notifications/ config + test + alerts
+    apps/core/console/credentials/api.py — /api/credentials/ (write-only BYOK key store)
     apps/core/data/asset_inventory/api.py — /api/assets/ list + summary + detail
     (scheduled router in scans/api.py) — /api/scheduled/
 ```
@@ -670,7 +672,10 @@ decrypt-on-read; TEXT column; blank stays blank; legacy plaintext rows decrypt
 tolerantly and re-encrypt on next save). Covered fields: `AISettings`
 cloudflare token; `NotificationConfig` Slack/Teams webhook URLs; every
 `*_key`/`*_secret`/`*_token` on `AmassConfig` + `SubfinderConfig` (Censys IDs /
-PassiveTotal usernames stay plaintext — identifiers, not secrets). The key comes
+PassiveTotal usernames stay plaintext — identifiers, not secrets); `ToolCredentials`
+(UI-managed BYOK keys — Shodan/HIBP/GitHub/DNS-history, read via `get_credential()`
+DB-wins-over-env). Bootstrap secrets `FIELD_ENCRYPTION_KEY`/`SECRET_KEY`/`DB_*`
+stay env-only (they bootstrap the crypto + DB). The key comes
 from `FIELD_ENCRYPTION_KEY` (a urlsafe-base64 Fernet key) when set, else derived
 from `SECRET_KEY`; changing the effective key makes stored secrets unreadable
 (re-enter them). Fernet is non-deterministic → these fields can't be used in
@@ -762,6 +767,8 @@ GET  /api/notifications/config/           — get Slack/Teams notification confi
 POST /api/notifications/config/           — update notification config
 POST /api/notifications/test/             — send a test alert
 GET  /api/notifications/alerts/           — alert history
+GET  /api/credentials/                    — BYOK key presence booleans + db|env|none source per key (values never returned)
+POST /api/credentials/                    — set/clear BYOK keys (write-only; None=unchanged, ""=clear→env fallback)
 GET  /api/ai/config/                      — AI settings (credential presence booleans only — values are never returned)
 POST /api/ai/config/                      — enable/disable + save credentials (write-only; None=unchanged, ""=clear→env fallback); enabling requires current-version consent (consent_accepted stamps it)
 POST /api/ai/test/                        — Workers AI connectivity probe (fixed prompt, no scan data; allowed pre-consent)
@@ -814,6 +821,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_pipeline_phases.py` | 1 | Phase ordering sanity |
 | `tests/unit/test_qcluster_config.py` | 3 | Scan-timeout invariants (Q_CLUSTER removed; SCAN_TASK_TIMEOUT + watchdog bound) |
 | `tests/unit/test_durable_task.py` | 7 | `@durable_task` engine adapter (H6) — in-process call, `.delay()` enqueue, dedupe template + override, registry, real tasks are DurableTasks, enqueue_* wrappers delegate |
+| `tests/unit/test_credentials.py` | 12 | UI-managed BYOK credentials (C1) — singleton, ciphertext-at-rest/plaintext-via-ORM, resolver DB-wins-over-env + env fallback + source + never-raises, write-only API (presence-only never values, set/none-unchanged/clear) |
 | `tests/unit/test_reports.py` | 57 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block, technology stack block, AI Analyst Summary block (absent without AI rows) |
 | `tests/unit/test_waf_detection.py` | 16 | WAF/block/challenge classifier (spec C1) — vendor fingerprint, false-positive guards, analyzer wiring |
 | `tests/unit/test_coverage.py` | 6 | Scan coverage (spec C2) — endpoint counts, dominant vendor, report note wording |
@@ -857,6 +865,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1765 tests** (1713 fast + 52 slow domain_security)
+**Total: 1777 tests** (1725 fast + 52 slow domain_security)
 
 Frontend: **18 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, and the Assets `SeverityChips`. Run with `cd frontend && npm run test:run`.

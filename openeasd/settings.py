@@ -106,6 +106,7 @@ INSTALLED_APPS = [
     "apps.core.engine.workflows",
     "apps.core.engine.scheduler",
     "apps.core.console.notifications",
+    "apps.core.console.credentials",
     "apps.core.console.insights",
     "apps.core.console.reports",
     "apps.core.console.ai",
