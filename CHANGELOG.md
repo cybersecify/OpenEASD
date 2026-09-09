@@ -8,6 +8,13 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Added
+- **Dev deployment via `just` (production stays on the GitHub pipeline).** Clean
+  split: the **dev** lifecycle lives in `just` — `just setup`, `just dev` (hot
+  reload), `just up` (build+run the 3-container stack locally), and new
+  **`just deploy-dev`** (run the CI-published `:latest` images via
+  `docker-compose.dev.yml`, no local build). **Production is unchanged** — still
+  `git tag vX.Y.Z` → the GitHub pipeline builds & publishes pinned `:vX.Y.Z`
+  images to GHCR; `just` is not used for prod.
 - **`justfile` task runner** (alongside the existing `Makefile`) with matching
   recipes plus extras: **`just ci`** runs the full CI pipeline locally (ruff +
   pytest w/ 80% coverage gate + bandit + pip-audit + vitest + build, mirroring
