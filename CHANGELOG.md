@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.4.0] — 2026-09-09
+
 ### Added
 - **UI-managed BYOK credentials — foundation (C1).** New
   `apps/core/console/credentials` app: a `ToolCredentials` encrypted singleton
@@ -1061,7 +1063,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.4.0...HEAD
+[v2.4.0]: https://github.com/cybersecify/OpenEASD/compare/v2.3.0...v2.4.0
 [v2.3.0]: https://github.com/cybersecify/OpenEASD/compare/v2.2.0...v2.3.0
 [v2.2.0]: https://github.com/cybersecify/OpenEASD/compare/v2.1.1...v2.2.0
 [v2.1.1]: https://github.com/cybersecify/OpenEASD/compare/v2.1.0...v2.1.1
