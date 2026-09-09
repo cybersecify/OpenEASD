@@ -7,6 +7,15 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.6.0] — 2026-09-09
+
+### Fixed
+- **asn_discovery test robust to `TOOL_AMASS` path.** `test_happy_path_two_step`
+  pinned the amass command's binary to the bare `"amass"`; any environment that
+  sets `TOOL_AMASS` to an absolute path (Docker/k8s deployments, or a local `.env`
+  for running scans) failed the test though the code was correct. Now asserts the
+  binary ends with `amass` and checks the args separately.
+
 ### Added
 - **Dev deployment via `just` (production stays on the GitHub pipeline).** Clean
   split: the **dev** lifecycle lives in `just` — `just setup`, `just dev` (hot
@@ -1125,7 +1134,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.6.0...HEAD
+[v2.6.0]: https://github.com/cybersecify/OpenEASD/compare/v2.5.0...v2.6.0
 [v2.5.0]: https://github.com/cybersecify/OpenEASD/compare/v2.4.2...v2.5.0
 [v2.4.2]: https://github.com/cybersecify/OpenEASD/compare/v2.4.1...v2.4.2
 [v2.4.1]: https://github.com/cybersecify/OpenEASD/compare/v2.4.0...v2.4.1
