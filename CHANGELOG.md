@@ -7,7 +7,17 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.4.1] — 2026-09-09
+
+### Fixed
+- **Subdomain-takeover false positives suppressed via a live HTTP probe** — a
+  dangling-DNS candidate is only reported when the probe confirms it, cutting
+  noise from stale-but-harmless records (contributor fix).
+
 ### Changed
+- **Dependency bumps:** worker base image `debian` 12-slim → 13-slim; dev deps
+  `postcss` 8.5.26 → 8.5.28 and `autoprefixer` 10.5.4 → 10.5.5; CI action
+  `peter-evans/create-pull-request` pinned to a newer SHA.
 - **Frontend test-tooling major upgrades (coordinated).** `vitest` 4→5,
   `@vitest/ui` 4→5, and `@testing-library/jest-dom` 6→7, bumped together (vitest
   and its UI must share a major). Dev-only; no product code. All 22 Vitest tests
@@ -1079,7 +1089,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.4.1...HEAD
+[v2.4.1]: https://github.com/cybersecify/OpenEASD/compare/v2.4.0...v2.4.1
 [v2.4.0]: https://github.com/cybersecify/OpenEASD/compare/v2.3.0...v2.4.0
 [v2.3.0]: https://github.com/cybersecify/OpenEASD/compare/v2.2.0...v2.3.0
 [v2.2.0]: https://github.com/cybersecify/OpenEASD/compare/v2.1.1...v2.2.0
