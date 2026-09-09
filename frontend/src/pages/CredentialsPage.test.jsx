@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
 import CredentialsPage from './CredentialsPage.jsx';
 
 // The page renders inside Layout (which needs router/query context); the pure bit
-// worth testing here is the source→label mapping. Re-derive it via the rendered
-// badges would need full providers, so we assert the mapping contract directly.
+// worth testing here is the source→label mapping, asserted directly, plus that
+// the module exports a component. (Full-render coverage lives in the live check.)
 
 // Extract the same logic the page uses (kept in sync intentionally simple).
 function sourceLabel(source) {
