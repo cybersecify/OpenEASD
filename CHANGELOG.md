@@ -7,6 +7,42 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.4.2] — 2026-09-09
+
+### Changed
+- **Settings split into a `settings/` package.** `openeasd/settings.py` is now
+  `openeasd/settings/` (`base.py` + `__init__.py`) — the standard, more-scalable
+  Django layout, so environment-specific overrides can layer on `base.py` if ever
+  needed. `DJANGO_SETTINGS_MODULE=openeasd.settings` is unchanged (resolves to the
+  package); behaviour is identical (no config values changed, full suite green).
+  Structural only — no user-facing change.
+
+## [v2.4.1] — 2026-09-09
+
+### Fixed
+- **Subdomain-takeover false positives suppressed via a live HTTP probe** — a
+  dangling-DNS candidate is only reported when the probe confirms it, cutting
+  noise from stale-but-harmless records (contributor fix).
+
+### Changed
+- **Dependency bumps:** worker base image `debian` 12-slim → 13-slim; dev deps
+  `postcss` 8.5.26 → 8.5.28 and `autoprefixer` 10.5.4 → 10.5.5; CI action
+  `peter-evans/create-pull-request` pinned to a newer SHA.
+- **Frontend test-tooling major upgrades (coordinated).** `vitest` 4→5,
+  `@vitest/ui` 4→5, and `@testing-library/jest-dom` 6→7, bumped together (vitest
+  and its UI must share a major). Dev-only; no product code. All 22 Vitest tests
+  pass and the bundle builds unchanged — no source edits needed. Supersedes the
+  separate Dependabot PRs #351/#349/#352.
+
+### Fixed
+- **Graceful timeout handling for `asn_discovery` and `dnsx`.** `asn_discovery`
+  now catches `ToolTimeout` from `amass intel` and returns no findings instead of
+  failing the step (ASN/CIDR discovery is informational, so a slow BGP/registry
+  lookup should not flip a scan to `partial`); `dnsx`'s subprocess timeout is
+  raised 300s→600s so large subdomain sets resolve fully. Re-applied from a
+  contributor PR with the import path corrected for the core-app layer reorg
+  (`apps.core.engine.workflows.exceptions`) + a regression test.
+
 ## [v2.4.0] — 2026-09-09
 
 ### Added
@@ -1063,7 +1099,9 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.4.2...HEAD
+[v2.4.2]: https://github.com/cybersecify/OpenEASD/compare/v2.4.1...v2.4.2
+[v2.4.1]: https://github.com/cybersecify/OpenEASD/compare/v2.4.0...v2.4.1
 [v2.4.0]: https://github.com/cybersecify/OpenEASD/compare/v2.3.0...v2.4.0
 [v2.3.0]: https://github.com/cybersecify/OpenEASD/compare/v2.2.0...v2.3.0
 [v2.2.0]: https://github.com/cybersecify/OpenEASD/compare/v2.1.1...v2.2.0

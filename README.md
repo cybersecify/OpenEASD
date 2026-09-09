@@ -498,7 +498,7 @@ class MyToolConfig(AppConfig):
     }
 ```
 
-Then add `"apps.my_tool"` to `INSTALLED_APPS` in `openeasd/settings.py`. The tool auto-registers in the workflow system.
+Then add `"apps.my_tool"` to `INSTALLED_APPS` in `openeasd/settings/base.py`. The tool auto-registers in the workflow system.
 
 ### Tool App Structure
 

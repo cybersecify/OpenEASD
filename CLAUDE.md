@@ -3,10 +3,10 @@
 External Attack Surface Detection platform. Scans domains for network and
 web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 
-## Status (v2.4.0 — 2026-09-09)
+## Status (v2.4.2 — 2026-09-09)
 
-- **Released**: v2.4.0 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
-  `:v2.4.0` / `:v2.4` / `:latest`. 3-tier deploy: `db` (postgres:17) + `web`
+- **Released**: v2.4.2 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
+  `:v2.4.2` / `:v2.4` / `:latest`. 3-tier deploy: `db` (postgres:17) + `web`
   (gunicorn, no tools) + `worker` (`dbos_worker` + scanner matrix, `NET_RAW`).
 - **Scope**: 28 registered scan tools across 12 pipeline phases; single-user
   (one admin, no RBAC) by design.
@@ -206,7 +206,7 @@ docker compose up -d --build
   default; `high` (≥8GB) raises LOCAL concurrency. Per-target request rate stays
   capped across all profiles (politeness — a big box is no licence to hammer the
   target; higher rates just trip WAFs, which the coverage report flags). Add
-  swap on 1GB hosts. Resolver + tuning in settings.py (`_resolve_profile`,
+  swap on 1GB hosts. Resolver + tuning in settings/base.py (`_resolve_profile`,
   `_PROFILE_TUNING`). nuclei is also severity-scoped per profile (`NUCLEI_SEVERITY`;
   low=critical/high/medium, else +low; `info` dropped everywhere) — the fix for
   its freeze/timeout since it compiles all ~13.5k templates into RAM. See

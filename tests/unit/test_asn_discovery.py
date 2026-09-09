@@ -232,3 +232,11 @@ class TestAsnDiscoveryScanner:
         sess = _session()
         with patch("apps.asn_discovery.scanner.collect", return_value=[]):
             assert run_asn_discovery(sess) == []
+
+    def test_timeout_is_swallowed_not_raised(self):
+        """amass intel timing out must not fail the step — ASN discovery is
+        informational, so a ToolTimeout returns [] instead of propagating."""
+        from apps.core.engine.workflows.exceptions import ToolTimeout
+        sess = _session()
+        with patch("apps.asn_discovery.scanner.collect", side_effect=ToolTimeout("amass intel timed out")):
+            assert run_asn_discovery(sess) == []

@@ -31,7 +31,7 @@ def collect(session, subdomains: list[str]) -> list[dict]:
     logger.info(f"[dnsx:{session.id}] Resolving {len(subdomains)} subdomains")
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL)
     except FileNotFoundError:
         logger.error(f"[dnsx:{session.id}] Binary not found: {binary}")
         raise ToolBinaryMissing(f"dnsx binary not found: {binary}")
