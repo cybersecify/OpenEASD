@@ -87,7 +87,7 @@ RUN go install github.com/lc/gau/v2/cmd/gau@${GAU_VERSION} \
 # ===========================================================================
 # WEB runtime — python:3.12-slim. UI/API + PDF reports. NO scanner tools.
 # ===========================================================================
-FROM python:3.12-slim AS web
+FROM python:3.14-slim AS web
 
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     VIRTUAL_ENV=/app/.venv PATH="/app/.venv/bin:/root/.local/bin:${PATH}" \
