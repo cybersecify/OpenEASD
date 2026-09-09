@@ -7,6 +7,13 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.7.0] — 2026-09-09
+
+### Fixed
+- **Vite config `__dirname` warning.** `vite.config.js` used the CJS `__dirname`
+  global, which Vite 8's native config loader warns is unsupported; switched to
+  `import.meta.dirname` (supported on the Node ≥20.19 Vite 8 requires). Dev-only.
+
 ### Added
 - **Dedicated Reports page** (`/reports`, new nav item). Lists completed scans
   with per-scan **CSV/PDF export** and a `min_severity` filter, so you can export
@@ -1142,7 +1149,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.7.0...HEAD
+[v2.7.0]: https://github.com/cybersecify/OpenEASD/compare/v2.6.0...v2.7.0
 [v2.6.0]: https://github.com/cybersecify/OpenEASD/compare/v2.5.0...v2.6.0
 [v2.5.0]: https://github.com/cybersecify/OpenEASD/compare/v2.4.2...v2.5.0
 [v2.4.2]: https://github.com/cybersecify/OpenEASD/compare/v2.4.1...v2.4.2
