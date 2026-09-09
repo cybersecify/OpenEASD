@@ -7,6 +7,16 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.4.2] — 2026-09-09
+
+### Changed
+- **Settings split into a `settings/` package.** `openeasd/settings.py` is now
+  `openeasd/settings/` (`base.py` + `__init__.py`) — the standard, more-scalable
+  Django layout, so environment-specific overrides can layer on `base.py` if ever
+  needed. `DJANGO_SETTINGS_MODULE=openeasd.settings` is unchanged (resolves to the
+  package); behaviour is identical (no config values changed, full suite green).
+  Structural only — no user-facing change.
+
 ## [v2.4.1] — 2026-09-09
 
 ### Fixed
@@ -1089,7 +1099,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.4.1...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.4.2...HEAD
+[v2.4.2]: https://github.com/cybersecify/OpenEASD/compare/v2.4.1...v2.4.2
 [v2.4.1]: https://github.com/cybersecify/OpenEASD/compare/v2.4.0...v2.4.1
 [v2.4.0]: https://github.com/cybersecify/OpenEASD/compare/v2.3.0...v2.4.0
 [v2.3.0]: https://github.com/cybersecify/OpenEASD/compare/v2.2.0...v2.3.0

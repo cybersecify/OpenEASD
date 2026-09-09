@@ -3,10 +3,10 @@
 External Attack Surface Detection platform. Scans domains for network and
 web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 
-## Status (v2.4.1 — 2026-09-09)
+## Status (v2.4.2 — 2026-09-09)
 
-- **Released**: v2.4.1 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
-  `:v2.4.1` / `:v2.4` / `:latest`. 3-tier deploy: `db` (postgres:17) + `web`
+- **Released**: v2.4.2 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
+  `:v2.4.2` / `:v2.4` / `:latest`. 3-tier deploy: `db` (postgres:17) + `web`
   (gunicorn, no tools) + `worker` (`dbos_worker` + scanner matrix, `NET_RAW`).
 - **Scope**: 28 registered scan tools across 12 pipeline phases; single-user
   (one admin, no RBAC) by design.
