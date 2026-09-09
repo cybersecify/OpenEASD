@@ -27,6 +27,7 @@ import time
 
 import requests
 from django.conf import settings
+from apps.core.console.credentials.resolver import get_credential
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +149,7 @@ def collect(session) -> list[dict]:
         logger.info("[shodan:%s] no resolved public IPs — skipping", session.id)
         return []
 
-    key = getattr(settings, "SHODAN_API_KEY", "")
+    key = get_credential("SHODAN_API_KEY")
     results: list[dict] = []
 
     if key:

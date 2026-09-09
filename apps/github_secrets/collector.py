@@ -33,6 +33,7 @@ import time
 
 import requests
 from django.conf import settings
+from apps.core.console.credentials.resolver import get_credential
 
 from apps.core.engine.workflows.exceptions import ToolBinaryMissing, ToolTimeout
 
@@ -308,7 +309,7 @@ def collect(session) -> list[dict]:
     metadata (``_source_url``, ``_repo``, ``_html_url``). Always returns a list;
     the GitHub API side never raises (only a missing gitleaks binary does).
     """
-    token = (getattr(settings, "GITHUB_TOKEN", "") or "").strip()
+    token = (get_credential("GITHUB_TOKEN") or "").strip()
     if not token:
         # No token -> logged no-op. GitHub code-search requires auth; a keyless
         # Full Scan must not be broken by this tool.
