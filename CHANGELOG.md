@@ -7,6 +7,15 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Fixed
+- **Graceful timeout handling for `asn_discovery` and `dnsx`.** `asn_discovery`
+  now catches `ToolTimeout` from `amass intel` and returns no findings instead of
+  failing the step (ASN/CIDR discovery is informational, so a slow BGP/registry
+  lookup should not flip a scan to `partial`); `dnsx`'s subprocess timeout is
+  raised 300s→600s so large subdomain sets resolve fully. Re-applied from a
+  contributor PR with the import path corrected for the core-app layer reorg
+  (`apps.core.engine.workflows.exceptions`) + a regression test.
+
 ## [v2.4.0] — 2026-09-09
 
 ### Added
