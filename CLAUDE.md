@@ -788,6 +788,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 ### Other routes
 - `/reports/<uuid>/csv/` → CSV export (**synchronous** Django view on the web tier, `_report_auth_required` — accepts session auth or `?token=<access_token>`)
 - `/reports/<uuid>/pdf/` → PDF export (**synchronous** Django view on the web tier, rendered with WeasyPrint, `_report_auth_required` — accepts session auth or `?token=<access_token>`)
+- **Reports UI:** the React SPA has a dedicated **Reports page** (`/reports`, nav item + `ReportsPage.jsx`) listing completed scans with per-scan CSV/PDF export + a `min_severity` filter (auth'd fetch+Blob, JWT in header); also still available as CSV/PDF buttons on the Scan Detail page. The SPA `/reports` route and the Django `/reports/<uuid>/{csv,pdf}/` endpoints coexist — Django's SPA catch-all serves bare `/reports`, and the Vite dev proxy uses a `^/reports/.+` regex so only the endpoints proxy to Django.
 - `/admin/` → Django admin
 - `/api/docs` → Django Ninja auto-generated OpenAPI docs
 - `/*` → React SPA catch-all (`frontend/dist/index.html`)

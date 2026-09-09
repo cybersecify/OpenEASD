@@ -7,6 +7,14 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **Dedicated Reports page** (`/reports`, new nav item). Lists completed scans
+  with per-scan **CSV/PDF export** and a `min_severity` filter, so you can export
+  without opening each scan (the Scan Detail export buttons stay too). Frontend-only
+  — reuses the existing `/reports/<uuid>/{csv,pdf}/` endpoints; the SPA `/reports`
+  route coexists with them via Django's SPA catch-all and a `^/reports/.+` Vite
+  dev-proxy regex.
+
 ## [v2.6.0] — 2026-09-09
 
 ### Fixed

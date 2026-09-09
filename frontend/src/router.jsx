@@ -16,6 +16,7 @@ import AssetDetailPage from './pages/AssetDetailPage.jsx';
 import WorkflowsPage from './pages/WorkflowsPage.jsx';
 import WorkflowDetailPage from './pages/WorkflowDetailPage.jsx';
 import InsightsPage from './pages/InsightsPage.jsx';
+import ReportsPage from './pages/ReportsPage.jsx';
 import NotificationsPage from './pages/NotificationsPage.jsx';
 import AiPage from './pages/AiPage.jsx';
 import CredentialsPage from './pages/CredentialsPage.jsx';
@@ -47,6 +48,7 @@ export const router = createBrowserRouter([
       { path: '/workflows', element: <WorkflowsPage /> },
       { path: '/workflows/:id', element: <WorkflowDetailPage /> },
       { path: '/insights', element: <InsightsPage /> },
+      { path: '/reports', element: <ReportsPage /> },
       { path: '/notifications', element: <NotificationsPage /> },
       { path: '/credentials', element: <CredentialsPage /> },
       { path: '/ai', element: <AiPage /> },
