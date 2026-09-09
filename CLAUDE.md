@@ -149,9 +149,17 @@ git describe --tags --abbrev=0
 - **`/change-password` route** — forced redirect after login if `must_change_password=true`; clears flag on success
 
 ### Frontend dev setup
+
+**Task runners:** both a `Makefile` and a `justfile` are provided with the same
+recipes (`dev`, `worker`, `test`, `lint`, `migrate`, …) — use `make <target>` or
+`just <target>` interchangeably. `just` adds a few extras: **`just ci`** runs the
+whole CI pipeline locally (ruff + pytest w/ 80% coverage + bandit + pip-audit +
+vitest + build — mirrors `.github/workflows/ci.yml`), and `just up`/`down`/`logs`/`ps`
+drive the 3-container Docker Compose stack. `just` (no arg) lists all recipes.
+
 ```bash
 # Quickest: starts Django (:8001) + Vite dev server + DBOS worker together
-make dev
+make dev        # or: just dev
 
 # Or manually in three terminals:
 # Terminal 1 — Django

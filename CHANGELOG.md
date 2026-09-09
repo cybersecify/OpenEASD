@@ -7,6 +7,13 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **`justfile` task runner** (alongside the existing `Makefile`) with matching
+  recipes plus extras: **`just ci`** runs the full CI pipeline locally (ruff +
+  pytest w/ 80% coverage gate + bandit + pip-audit + vitest + build, mirroring
+  `.github/workflows/ci.yml`), and `just up`/`down`/`logs`/`ps` drive the
+  3-container Docker Compose stack. `just` with no argument lists all recipes.
+
 ## [v2.5.0] — 2026-09-09
 
 ### Changed
