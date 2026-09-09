@@ -3,18 +3,18 @@ partial scan status (the 'silent degradation' fixes)."""
 
 import pytest
 
-from apps.core.scans.pipeline import (
+from apps.core.engine.scans.pipeline import (
     _compute_coverage, _check_coverage_regression, _finalize_session,
 )
 
 
 def _session(**kw):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain="example.com", scan_type="full", **kw)
 
 
 def _httpx_url(session, host, reachability=""):
-    from apps.core.web_assets.models import URL
+    from apps.core.data.web_assets.models import URL
     return URL.objects.create(
         session=session, url=f"https://{host}:443", host=host, port_number=443,
         scheme="https", reachability=reachability, source="httpx",
@@ -50,7 +50,7 @@ class TestSilentBlockCounting:
 @pytest.mark.django_db
 class TestCoverageRegression:
     def test_high_block_ratio_flags(self):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         s = _session(endpoints_probed=10, endpoints_blocked=10)
         _check_coverage_regression(s)
         f = Finding.objects.filter(session=s, check_type="coverage_regression")
@@ -58,21 +58,21 @@ class TestCoverageRegression:
         assert "unreachable" in f.first().description.lower()
 
     def test_findings_drop_flags(self):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         _session(status="completed", total_findings=50)  # baseline the check compares against
         cur = _session(total_findings=10)
         _check_coverage_regression(cur)
         assert Finding.objects.filter(session=cur, check_type="coverage_regression").exists()
 
     def test_stable_scan_no_flag(self):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         _session(status="completed", total_findings=50)
         cur = _session(total_findings=48, endpoints_probed=10, endpoints_blocked=1)
         _check_coverage_regression(cur)
         assert not Finding.objects.filter(session=cur, check_type="coverage_regression").exists()
 
     def test_no_previous_and_reachable_no_flag(self):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         cur = _session(total_findings=3, endpoints_probed=4, endpoints_blocked=1)
         _check_coverage_regression(cur)
         assert not Finding.objects.filter(session=cur, check_type="coverage_regression").exists()
@@ -81,8 +81,8 @@ class TestCoverageRegression:
         # A Passive Scan (fewer tools) must NOT be diffed against a prior Full
         # Scan baseline — that always looks like a collapse and fires a spurious
         # "results incomplete" finding (seen live on a cybersecify.com passive run).
-        from apps.core.findings.models import Finding
-        from apps.core.workflows.models import Workflow
+        from apps.core.data.findings.models import Finding
+        from apps.core.engine.workflows.models import Workflow
         full = Workflow.objects.create(name="Full Scan X")
         passive = Workflow.objects.create(name="Passive Scan X")
         _session(status="completed", total_findings=50, workflow=full)
@@ -92,8 +92,8 @@ class TestCoverageRegression:
 
     def test_same_workflow_still_flags(self):
         # Same-workflow drop must still fire (the real signal isn't lost).
-        from apps.core.findings.models import Finding
-        from apps.core.workflows.models import Workflow
+        from apps.core.data.findings.models import Finding
+        from apps.core.engine.workflows.models import Workflow
         full = Workflow.objects.create(name="Full Scan Y")
         _session(status="completed", total_findings=50, workflow=full)
         cur = _session(total_findings=5, workflow=full)
@@ -122,17 +122,17 @@ class TestCoverageRegressionReport:
             captured["html"] = html
             return b"%PDF-1.7"
 
-        with patch("apps.core.reports.views._render_pdf", side_effect=capture_html):
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
             res = client.get(f"/reports/{session.uuid}/pdf/")
         assert res.status_code == 200
         return captured["html"]
 
     def test_regression_finding_renders_and_is_not_a_new_delta(self):
         from django.utils import timezone
-        from apps.core.scans.models import ScanSession, ScanDelta
-        from apps.core.findings.models import Finding
-        from apps.core.workflows.models import Workflow, WorkflowRun
-        from apps.core.scans.pipeline import _finalize_session
+        from apps.core.engine.scans.models import ScanSession, ScanDelta
+        from apps.core.data.findings.models import Finding
+        from apps.core.engine.workflows.models import Workflow, WorkflowRun
+        from apps.core.engine.scans.pipeline import _finalize_session
 
         # A prior completed scan makes delta detection meaningful (real baseline).
         ScanSession.objects.create(
@@ -175,7 +175,7 @@ class TestCoverageRegressionReport:
 @pytest.mark.django_db
 class TestPartialStatus:
     def _run(self, session, status):
-        from apps.core.workflows.models import Workflow, WorkflowRun
+        from apps.core.engine.workflows.models import Workflow, WorkflowRun
         wf = Workflow.objects.create(name="wf")
         return WorkflowRun.objects.create(workflow=wf, session=session, status=status)
 

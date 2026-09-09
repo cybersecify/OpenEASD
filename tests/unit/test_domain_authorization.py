@@ -16,7 +16,7 @@ def post_json(client, path, data):
 @pytest.mark.django_db
 class TestDomainAuthorizationModel:
     def test_create_and_retrieve_via_related_name(self, domain):
-        from apps.core.domains.models import DomainAuthorization
+        from apps.core.data.domains.models import DomainAuthorization
         auth = DomainAuthorization.objects.create(
             domain=domain,
             auth_type="owner",
@@ -29,7 +29,7 @@ class TestDomainAuthorizationModel:
         assert auth.authorized_by == "Alice Smith"
 
     def test_cascade_delete(self, domain):
-        from apps.core.domains.models import DomainAuthorization
+        from apps.core.data.domains.models import DomainAuthorization
         DomainAuthorization.objects.create(
             domain=domain,
             auth_type="owner",
@@ -41,7 +41,7 @@ class TestDomainAuthorizationModel:
         assert DomainAuthorization.objects.count() == 0
 
     def test_auth_reference_optional(self, domain):
-        from apps.core.domains.models import DomainAuthorization
+        from apps.core.data.domains.models import DomainAuthorization
         auth = DomainAuthorization(
             domain=domain,
             auth_type="bug_bounty",
@@ -54,7 +54,7 @@ class TestDomainAuthorizationModel:
         assert auth.pk is not None
 
     def test_str_includes_domain_and_type(self, domain):
-        from apps.core.domains.models import DomainAuthorization
+        from apps.core.data.domains.models import DomainAuthorization
         auth = DomainAuthorization.objects.create(
             domain=domain,
             auth_type="written_consent",
@@ -72,7 +72,7 @@ class TestDomainAuthorizationModel:
 @pytest.mark.django_db
 class TestDomainSerializationAuthorization:
     def test_domain_with_authorization_includes_auth_object(self, auth_client, domain):
-        from apps.core.domains.models import DomainAuthorization
+        from apps.core.data.domains.models import DomainAuthorization
         DomainAuthorization.objects.create(
             domain=domain,
             auth_type="owner",
@@ -116,7 +116,7 @@ class TestScanStartAuthorizationGate:
         assert resp.json()["error"]["message"] == "Domain is not authorized for scanning"
 
     def test_authorized_domain_starts_scan(self, auth_client, domain):
-        from apps.core.domains.models import DomainAuthorization
+        from apps.core.data.domains.models import DomainAuthorization
         from unittest.mock import patch
         DomainAuthorization.objects.create(
             domain=domain,
@@ -125,8 +125,8 @@ class TestScanStartAuthorizationGate:
             authorized_by="Alice Smith",
         )
         fake_session = type("S", (), {"uuid": "test-uuid-9999", "id": 99})()
-        with patch("apps.core.scans.tasks.run_scan_task"), \
-             patch("apps.core.scans.pipeline.create_scan_session", return_value=fake_session):
+        with patch("apps.core.engine.scans.tasks.run_scan_task"), \
+             patch("apps.core.engine.scans.pipeline.create_scan_session", return_value=fake_session):
             resp = post_json(auth_client, "/api/scans/start/", {
                 "domain": "example.com",
                 "schedule_type": "now",
@@ -147,7 +147,7 @@ class TestScanStartAuthorizationGate:
         # Authorizing ONE domain must NOT authorize scanning ANOTHER. This is the
         # test that would fail if the gate ever regressed to a global
         # DomainAuthorization.objects.exists() (authorize A -> scan anything).
-        from apps.core.domains.models import Domain, DomainAuthorization
+        from apps.core.data.domains.models import Domain, DomainAuthorization
         other = Domain.objects.create(name="other.example.com", is_active=True)
         DomainAuthorization.objects.create(
             domain=other, auth_type="owner",

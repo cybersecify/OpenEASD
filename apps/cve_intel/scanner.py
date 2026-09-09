@@ -10,7 +10,7 @@ are down; findings are simply left unenriched.
 
 import logging
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 
 from .analyzer import build_finding_intel, finding_cves
 from .collector import fetch_epss_scores, fetch_kev_catalog

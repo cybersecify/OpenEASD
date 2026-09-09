@@ -8,7 +8,7 @@ even if no behavioral test happens to exercise it.
 import re
 from pathlib import Path
 
-AI_DIR = Path(__file__).resolve().parents[2] / "apps" / "core" / "ai"
+AI_DIR = Path(__file__).resolve().parents[2] / "apps" / "core" / "console" / "ai"
 
 
 def _ai_sources() -> dict[str, str]:
@@ -33,7 +33,7 @@ def test_audit_writer_takes_no_body_parameters():
     parameter that could carry prompt or response text."""
     import inspect
 
-    from apps.core.ai.client import _audit
+    from apps.core.console.ai.client import _audit
 
     params = set(inspect.signature(_audit).parameters)
     forbidden = {"prompt", "response", "messages", "content", "body", "text"}

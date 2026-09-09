@@ -1,13 +1,13 @@
 """Nmap scanner — orchestrator: collect → analyze → save findings.
 
-Reads non-web ports from apps.core.assets.Port (is_web=False),
+Reads non-web ports from apps.core.data.assets.Port (is_web=False),
 runs nmap with vulners NSE, stores findings linked back to the Port asset.
 """
 
 import logging
 
-from apps.core.assets.models import Port
-from apps.core.findings.models import Finding
+from apps.core.data.assets.models import Port
+from apps.core.data.findings.models import Finding
 from .collector import collect, group_ports_by_ip
 from .analyzer import analyze
 

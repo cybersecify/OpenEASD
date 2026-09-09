@@ -118,7 +118,7 @@ class TestCollect:
 @pytest.mark.django_db
 class TestAnalyze:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_no_finding_when_counts_zero(self):
@@ -218,12 +218,12 @@ class TestAnalyze:
 @pytest.mark.django_db
 class TestScanner:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_saves_finding(self):
         from apps.hudson_rock.scanner import run_hudson_rock
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         s = self._session()
         with patch("apps.hudson_rock.scanner.collect",
                    return_value={"counts": _COUNTS, "urls": _URLS}):
@@ -233,7 +233,7 @@ class TestScanner:
 
     def test_no_exposure_saves_nothing(self):
         from apps.hudson_rock.scanner import run_hudson_rock
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         s = self._session()
         with patch("apps.hudson_rock.scanner.collect",
                    return_value={"counts": {"employees": 0, "users": 0}, "urls": None}):
@@ -257,7 +257,7 @@ class TestScanner:
 @pytest.mark.django_db
 class TestCollectAnalyzeContract:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_realistic_body_produces_saved_finding(self):
@@ -266,7 +266,7 @@ class TestCollectAnalyzeContract:
         mocked — and assert a single aggregate infostealer Finding is persisted
         with the expected counts, families and attribution."""
         from apps.hudson_rock.scanner import run_hudson_rock
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
 
         def fake_get(url, params=None, headers=None, timeout=None):
             if "search-by-domain" in url.split("/"):

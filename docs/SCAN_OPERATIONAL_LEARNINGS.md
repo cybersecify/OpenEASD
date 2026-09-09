@@ -11,7 +11,7 @@ recur. Add to this list whenever a scan misbehaves.
 **all** ~13,500 templates into RAM up front (~500 MB, fixed) and *then* applies
 `-severity`/`-tags` filters. So severity scoping does **NOT** shrink the startup
 parse — it only cuts the *executed* set. The startup parse (~500 MB) on top of
-gunicorn + qcluster + Django is what tips a 1 GB box; runtime peak is
+the DBOS worker + Django is what tips a 1 GB box; runtime peak is
 `concurrency × bulk-size × per-host buffer`. The levers that actually prevent the
 **freeze** are `GOMEMLIMIT` + a small **`-bulk-size`**, not `-severity`.
 

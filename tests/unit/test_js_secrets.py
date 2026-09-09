@@ -18,7 +18,7 @@ from apps.js_secrets.collector import collect, _is_js_url
 # helpers
 # --------------------------------------------------------------------------- #
 def _session():
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain="example.com", scan_type="full")
 
 
@@ -150,7 +150,7 @@ class TestJsSecretsCollector:
         assert records == []
 
     def test_raises_on_binary_missing(self):
-        from apps.core.workflows.exceptions import ToolBinaryMissing
+        from apps.core.engine.workflows.exceptions import ToolBinaryMissing
         sess = _session()
         with patch("apps.js_secrets.collector.requests.get", return_value=_fake_response("code")), \
              patch("apps.js_secrets.collector.subprocess.run", side_effect=FileNotFoundError):
@@ -158,7 +158,7 @@ class TestJsSecretsCollector:
                 collect(sess, ["https://example.com/app.js"])
 
     def test_raises_on_timeout(self):
-        from apps.core.workflows.exceptions import ToolTimeout
+        from apps.core.engine.workflows.exceptions import ToolTimeout
         sess = _session()
         with patch("apps.js_secrets.collector.requests.get", return_value=_fake_response("code")), \
              patch("apps.js_secrets.collector.subprocess.run",
@@ -233,7 +233,7 @@ class TestJsSecretsAnalyzer:
         assert len(findings) == 2
 
     def test_links_url_fk_when_known(self):
-        from apps.core.web_assets.models import URL
+        from apps.core.data.web_assets.models import URL
         sess = _session()
         url_row = URL.objects.create(
             session=sess, url="https://example.com/app.js", scheme="https",
@@ -268,8 +268,8 @@ class TestJsSecretsScanner:
         mock_collect.assert_not_called()
 
     def test_passes_urls_to_collector_and_saves_findings(self):
-        from apps.core.web_assets.models import URL
-        from apps.core.findings.models import Finding
+        from apps.core.data.web_assets.models import URL
+        from apps.core.data.findings.models import Finding
         sess = _session()
         URL.objects.create(
             session=sess, url="https://example.com/app.js", scheme="https",

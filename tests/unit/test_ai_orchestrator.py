@@ -1,4 +1,4 @@
-"""Unit tests for apps/core/ai/orchestrator.py — the bounded agent loop.
+"""Unit tests for apps/core/console/ai/orchestrator.py — the bounded agent loop.
 
 Covers safety invariants 2 (auth gate at the agent's dispatch boundary),
 4 (guaranteed termination), 7 (sanctioned subscan path only), 8 (revocation
@@ -8,17 +8,17 @@ is terminal), and 9 (no Finding.status mutation).
 import pytest
 from unittest.mock import patch
 
-from apps.core.ai.models import AgentAction, AgentRun, AISettings
-from apps.core.ai.orchestrator import run_agent_step
+from apps.core.console.ai.models import AgentAction, AgentRun, AISettings
+from apps.core.console.ai.orchestrator import run_agent_step
 
 
 def _root(status="completed"):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain="example.com", scan_type="full", status=status)
 
 
 def _finding(session, severity="high", title="t"):
-    from apps.core.findings.models import Finding
+    from apps.core.data.findings.models import Finding
     return Finding.objects.create(
         session=session, source="nmap", check_type="cve", severity=severity,
         title=title, target="example.com",
@@ -27,7 +27,7 @@ def _finding(session, severity="high", title="t"):
 
 def _authorize():
     from django.utils import timezone
-    from apps.core.domains.models import Domain, DomainAuthorization
+    from apps.core.data.domains.models import Domain, DomainAuthorization
     dom, _ = Domain.objects.get_or_create(name="example.com", defaults={"is_active": True})
     DomainAuthorization.objects.get_or_create(
         domain=dom, defaults={"auth_type": "owner", "authorized_by": "t",
@@ -63,7 +63,7 @@ class TestGateAndRevocation:
         settings.CLOUDFLARE_API_TOKEN = ""
         root = _root()
         AgentRun.objects.create(root_session=root, status="running")
-        with patch("apps.core.ai.orchestrator.client.chat_json") as call:
+        with patch("apps.core.console.ai.orchestrator.client.chat_json") as call:
             run_agent_step(root.id)
         call.assert_not_called()
         run = AgentRun.objects.get()
@@ -74,14 +74,14 @@ class TestGateAndRevocation:
         active.orchestration_enabled = False
         active.save()
         root = _root()
-        with patch("apps.core.ai.orchestrator.client.chat_json") as call:
+        with patch("apps.core.console.ai.orchestrator.client.chat_json") as call:
             run_agent_step(root.id)
         call.assert_not_called()
 
     def test_terminal_run_never_restarts(self, active):
         root = _root()
         AgentRun.objects.create(root_session=root, status="done")
-        with patch("apps.core.ai.orchestrator.client.chat_json") as call:
+        with patch("apps.core.console.ai.orchestrator.client.chat_json") as call:
             run_agent_step(root.id)
         call.assert_not_called()
         assert AgentRun.objects.get().status == "done"
@@ -93,7 +93,7 @@ class TestTermination:
         root = _root()
         AgentRun.objects.create(root_session=root, status="running",
                                 iterations_used=active.max_agent_iterations)
-        with patch("apps.core.ai.orchestrator.client.chat_json") as call:
+        with patch("apps.core.console.ai.orchestrator.client.chat_json") as call:
             run_agent_step(root.id)
         call.assert_not_called()
         assert AgentRun.objects.get().status == "limit_reached"
@@ -104,21 +104,21 @@ class TestTermination:
         def crash(*a, **kw):
             raise RuntimeError("mid-call crash")
 
-        with patch("apps.core.ai.orchestrator.client.chat_json", side_effect=crash):
+        with patch("apps.core.console.ai.orchestrator.client.chat_json", side_effect=crash):
             with pytest.raises(RuntimeError):
                 run_agent_step(root.id)
         assert AgentRun.objects.get().iterations_used == 1  # no free retry
 
     def test_llm_failure_is_terminal(self, active):
         root = _root()
-        with patch("apps.core.ai.orchestrator.client.chat_json", return_value=None):
+        with patch("apps.core.console.ai.orchestrator.client.chat_json", return_value=None):
             run_agent_step(root.id)
         run = AgentRun.objects.get()
         assert run.status == "failed"
 
     def test_done_action_ends_run(self, active):
         root = _root()
-        with patch("apps.core.ai.orchestrator.client.chat_json", return_value=_decide(_DONE)):
+        with patch("apps.core.console.ai.orchestrator.client.chat_json", return_value=_decide(_DONE)):
             run_agent_step(root.id)
         run = AgentRun.objects.get()
         assert run.status == "done"
@@ -127,7 +127,7 @@ class TestTermination:
 
     def test_no_actionable_output_ends_run(self, active):
         root = _root()
-        with patch("apps.core.ai.orchestrator.client.chat_json", return_value=_decide()):
+        with patch("apps.core.console.ai.orchestrator.client.chat_json", return_value=_decide()):
             run_agent_step(root.id)
         assert AgentRun.objects.get().status == "done"
 
@@ -137,7 +137,7 @@ class TestTermination:
         _authorize()
         root = _root()
         steps = 0
-        with patch("apps.core.ai.orchestrator.client.chat_json") as call:
+        with patch("apps.core.console.ai.orchestrator.client.chat_json") as call:
             # Fresh tools each step so the dedupe never short-circuits first.
             call.side_effect = [
                 _decide(_run_subscan(["naabu"])),
@@ -145,7 +145,7 @@ class TestTermination:
                 _decide(_run_subscan(["httpx"])),
                 _decide(_run_subscan(["katana"])),
             ]
-            with patch("apps.core.scans.tasks.run_scan_task"):
+            with patch("apps.core.engine.scans.tasks.run_scan_task"):
                 while AgentRun.objects.filter(root_session=root, status="running").exists() or steps == 0:
                     run_agent_step(root.id)
                     steps += 1
@@ -166,7 +166,7 @@ class TestTermination:
 class TestSubscanDispatch:
     def test_active_tools_denied_without_authorization(self, active):
         root = _root()
-        with patch("apps.core.ai.orchestrator.client.chat_json",
+        with patch("apps.core.console.ai.orchestrator.client.chat_json",
                    return_value=_decide(_run_subscan(["naabu"]))):
             run_agent_step(root.id)
         run = AgentRun.objects.get()
@@ -179,9 +179,9 @@ class TestSubscanDispatch:
     def test_authorized_subscan_launched_via_sanctioned_path(self, active):
         _authorize()
         root = _root()
-        with patch("apps.core.ai.orchestrator.client.chat_json",
+        with patch("apps.core.console.ai.orchestrator.client.chat_json",
                    return_value=_decide(_run_subscan(["naabu"]))), \
-             patch("apps.core.scans.tasks.run_scan_task") as enqueue:
+             patch("apps.core.engine.scans.tasks.run_scan_task") as enqueue:
             run_agent_step(root.id)
         run = AgentRun.objects.get()
         assert run.status == "running"  # waiting on the subscan
@@ -195,20 +195,20 @@ class TestSubscanDispatch:
 
     def test_passive_tools_need_no_authorization(self, active):
         root = _root()
-        with patch("apps.core.ai.orchestrator.client.chat_json",
+        with patch("apps.core.console.ai.orchestrator.client.chat_json",
                    return_value=_decide(_run_subscan(["shodan"]))), \
-             patch("apps.core.scans.tasks.run_scan_task"):
+             patch("apps.core.engine.scans.tasks.run_scan_task"):
             run_agent_step(root.id)
         assert AgentRun.objects.get().subscans_launched == 1
 
     def test_already_run_tools_noop(self, active):
         _authorize()
         root = _root()
-        from apps.core.workflows.models import Workflow, WorkflowRun, WorkflowStepResult
+        from apps.core.engine.workflows.models import Workflow, WorkflowRun, WorkflowStepResult
         wf = Workflow.objects.create(name="t")
         wrun = WorkflowRun.objects.create(workflow=wf, session=root, status="completed")
         WorkflowStepResult.objects.create(run=wrun, tool="naabu", status="completed", order=1)
-        with patch("apps.core.ai.orchestrator.client.chat_json",
+        with patch("apps.core.console.ai.orchestrator.client.chat_json",
                    return_value=_decide(_run_subscan(["naabu"]))):
             run_agent_step(root.id)
         run = AgentRun.objects.get()
@@ -219,10 +219,10 @@ class TestSubscanDispatch:
 
     def test_only_one_subscan_per_step(self, active):
         root = _root()
-        with patch("apps.core.ai.orchestrator.client.chat_json",
+        with patch("apps.core.console.ai.orchestrator.client.chat_json",
                    return_value=_decide(_run_subscan(["shodan"]),
                                         _run_subscan(["subfinder"]))), \
-             patch("apps.core.scans.tasks.run_scan_task"):
+             patch("apps.core.engine.scans.tasks.run_scan_task"):
             run_agent_step(root.id)
         run = AgentRun.objects.get()
         assert run.subscans_launched == 1
@@ -233,7 +233,7 @@ class TestSubscanDispatch:
         root = _root()
         AgentRun.objects.create(root_session=root, status="running",
                                 subscans_launched=active.max_subscans_per_scan)
-        with patch("apps.core.ai.orchestrator.client.chat_json",
+        with patch("apps.core.console.ai.orchestrator.client.chat_json",
                    return_value=_decide(_run_subscan(["shodan"]))):
             run_agent_step(root.id)
         run = AgentRun.objects.get()
@@ -242,7 +242,7 @@ class TestSubscanDispatch:
 
     def test_partial_parent_cannot_spawn_subscan(self, active):
         root = _root(status="partial")
-        with patch("apps.core.ai.orchestrator.client.chat_json",
+        with patch("apps.core.console.ai.orchestrator.client.chat_json",
                    return_value=_decide(_run_subscan(["shodan"]))):
             run_agent_step(root.id)
         run = AgentRun.objects.get()
@@ -255,7 +255,7 @@ class TestFlagFinding:
     def test_flag_never_mutates_finding_status(self, active):
         root = _root()
         f = _finding(root)
-        with patch("apps.core.ai.orchestrator.client.chat_json",
+        with patch("apps.core.console.ai.orchestrator.client.chat_json",
                    return_value=_decide(
                        {"action": "flag_finding", "finding_id": f.id, "note": "look"},
                        _DONE)):
@@ -270,7 +270,7 @@ class TestFlagFinding:
         root = _root()
         other = _root()
         f = _finding(other)
-        with patch("apps.core.ai.orchestrator.client.chat_json",
+        with patch("apps.core.console.ai.orchestrator.client.chat_json",
                    return_value=_decide(
                        {"action": "flag_finding", "finding_id": f.id, "note": "x"},
                        _DONE)):
@@ -282,19 +282,19 @@ class TestFlagFinding:
 @pytest.mark.django_db
 class TestChainHooks:
     def test_finalize_enqueues_agent_for_root(self, active):
-        from apps.core.scans.pipeline import _finalize_session
+        from apps.core.engine.scans.pipeline import _finalize_session
         root = _root(status="running")
         _finding(root)
-        with patch("apps.core.ai.client.chat_json", return_value=None), \
-             patch("apps.core.ai.tasks.enqueue_agent_step") as enqueue:
+        with patch("apps.core.console.ai.client.chat_json", return_value=None), \
+             patch("apps.core.console.ai.tasks.enqueue_agent_step") as enqueue:
             _finalize_session(root)
         enqueue.assert_any_call(root.id)
 
     def test_subscan_finalize_resumes_running_chain(self, active):
-        from apps.core.scans.pipeline import _finalize_session
+        from apps.core.engine.scans.pipeline import _finalize_session
         root = _root()
         run = AgentRun.objects.create(root_session=root, status="running")
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sub = ScanSession.objects.create(
             domain="example.com", scan_type="subscan", parent_session=root,
             status="running", subscan_tools=["shodan"],
@@ -302,28 +302,28 @@ class TestChainHooks:
         AgentAction.objects.create(agent_run=run, iteration=1,
                                    action_type="run_subscan", status="executed",
                                    subscan_session=sub)
-        with patch("apps.core.ai.tasks.enqueue_agent_step") as enqueue:
+        with patch("apps.core.console.ai.tasks.enqueue_agent_step") as enqueue:
             _finalize_session(sub)
         enqueue.assert_called_once_with(root.id)
 
     def test_unrelated_subscan_does_not_resume(self, active):
-        from apps.core.scans.pipeline import _finalize_session
+        from apps.core.engine.scans.pipeline import _finalize_session
         root = _root()
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sub = ScanSession.objects.create(
             domain="example.com", scan_type="subscan", parent_session=root,
             status="running",
         )
-        with patch("apps.core.ai.tasks.enqueue_agent_step") as enqueue:
+        with patch("apps.core.console.ai.tasks.enqueue_agent_step") as enqueue:
             _finalize_session(sub)
         enqueue.assert_not_called()
 
     def test_no_agent_for_manual_subscan_root(self, active):
-        from apps.core.ai.hooks import maybe_start_agent
-        from apps.core.scans.models import ScanSession
+        from apps.core.console.ai.hooks import maybe_start_agent
+        from apps.core.engine.scans.models import ScanSession
         sub = ScanSession.objects.create(
             domain="example.com", scan_type="subscan", status="completed",
         )
-        with patch("apps.core.ai.tasks.enqueue_agent_step") as enqueue:
+        with patch("apps.core.console.ai.tasks.enqueue_agent_step") as enqueue:
             maybe_start_agent(sub)
         enqueue.assert_not_called()

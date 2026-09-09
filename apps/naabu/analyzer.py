@@ -2,7 +2,7 @@
 
 import logging
 
-from apps.core.assets.models import Port, IPAddress
+from apps.core.data.assets.models import Port, IPAddress
 
 logger = logging.getLogger(__name__)
 

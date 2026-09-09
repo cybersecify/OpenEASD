@@ -1,1 +1,1 @@
-# No admin — findings managed via apps.core.findings admin
+# No admin — findings managed via apps.core.data.findings admin

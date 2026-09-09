@@ -25,7 +25,7 @@ import subprocess
 
 from django.conf import settings
 
-from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+from apps.core.engine.workflows.exceptions import ToolBinaryMissing, ToolTimeout
 
 logger = logging.getLogger(__name__)
 

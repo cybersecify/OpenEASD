@@ -15,7 +15,7 @@ _EXPECTED_FULL_SCAN = {
 
 @pytest.mark.django_db
 def test_default_is_full_scan():
-    from apps.core.workflows.models import Workflow
+    from apps.core.engine.workflows.models import Workflow
     default = Workflow.objects.get(is_default=True)
     assert default.name == "Full Scan"
 
@@ -27,8 +27,8 @@ def test_full_scan_covers_every_registered_tool():
     weight (the exact 21-vs-19 drift that shipped asn_discovery/js_secrets
     without wiring them into Full Scan). This fails CI if a new tool is added to
     the registry but not to the Full Scan workflow migration."""
-    from apps.core.workflows.registry import get_registry
-    from apps.core.workflows.models import Workflow
+    from apps.core.engine.workflows.registry import get_registry
+    from apps.core.engine.workflows.models import Workflow
     non_core = {n for n, i in get_registry().items() if not i.get("core")}
     full_scan = set(Workflow.objects.get(name="Full Scan").steps.values_list("tool", flat=True))
     missing = non_core - full_scan
@@ -41,13 +41,13 @@ def test_full_scan_covers_every_registered_tool():
 
 @pytest.mark.django_db
 def test_exactly_one_default():
-    from apps.core.workflows.models import Workflow
+    from apps.core.engine.workflows.models import Workflow
     assert Workflow.objects.filter(is_default=True).count() == 1
 
 
 @pytest.mark.django_db
 def test_full_scan_has_complete_tool_set():
-    from apps.core.workflows.models import Workflow
+    from apps.core.engine.workflows.models import Workflow
     wf = Workflow.objects.get(name="Full Scan")
     tools = set(wf.steps.values_list("tool", flat=True))
     assert _EXPECTED_FULL_SCAN <= tools, f"missing: {_EXPECTED_FULL_SCAN - tools}"
@@ -58,10 +58,10 @@ def test_forward_is_idempotent_and_fills_gaps():
     """Re-running the promotion on a partial Full Scan adds only missing tools."""
     import importlib
     from django.apps import apps as django_apps
-    from apps.core.workflows.models import Workflow, WorkflowStep
+    from apps.core.engine.workflows.models import Workflow, WorkflowStep
 
     _0021 = importlib.import_module(
-        "apps.core.workflows.migrations.0021_set_full_scan_default_and_complete"
+        "apps.core.engine.workflows.migrations.0021_set_full_scan_default_and_complete"
     )
 
     wf = Workflow.objects.get(name="Full Scan")

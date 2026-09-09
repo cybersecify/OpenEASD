@@ -42,8 +42,8 @@ body:
       label: Does it produce Findings or Assets?
       description: "Findings = vulnerabilities/issues (nmap, nuclei). Assets = discovered things (subfinder, naabu)."
       options:
-        - Findings (writes to apps/core/findings/)
-        - Assets (writes to apps/core/assets/ or web_assets/)
+        - Findings (writes to apps/core/data/findings/)
+        - Assets (writes to apps/core/data/assets/ or web_assets/)
         - Both (rare — explain below)
     validations:
       required: true

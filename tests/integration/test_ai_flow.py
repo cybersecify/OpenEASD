@@ -16,14 +16,14 @@ import os
 import pytest
 from unittest.mock import MagicMock, patch
 
-from apps.core.ai.models import (
+from apps.core.console.ai.models import (
     AgentRun,
     AIInvocation,
     AISettings,
     AISummary,
     AITriage,
 )
-from apps.core.scans.pipeline import _finalize_session
+from apps.core.engine.scans.pipeline import _finalize_session
 
 
 # ---------------------------------------------------------------------------
@@ -73,10 +73,10 @@ def _run_ai_queue_inline():
     """Run enqueued agent-step workflows synchronously instead of via DBOS, so
     the orchestration chain completes within the test. (Triage/summaries already
     run inline inside _finalize_session; only the agent step is enqueued.)"""
-    from apps.core.ai import tasks
+    from apps.core.console.ai import tasks
 
     return patch(
-        "apps.core.ai.tasks.enqueue_agent_step",
+        "apps.core.console.ai.tasks.enqueue_agent_step",
         side_effect=lambda session_id: tasks.run_agent_step_safe(session_id),
     )
 
@@ -92,12 +92,12 @@ def _activate(settings):
 
 
 def _root_session(status="running"):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain="example.com", scan_type="full", status=status)
 
 
 def _finding(session, title="Exposed admin panel", severity="critical"):
-    from apps.core.findings.models import Finding
+    from apps.core.data.findings.models import Finding
     return Finding.objects.create(
         session=session, source="nuclei", check_type="exposure", severity=severity,
         title=title, target="admin.example.com", description="d", remediation="r",
@@ -119,9 +119,9 @@ class TestAiFullFlow:
             [f.id], orchestration_script=[
                 {"actions": [{"action": "done", "summary": "surface fully covered"}]},
             ])
-        with patch("apps.core.ai.client.requests.post", side_effect=responder), \
+        with patch("apps.core.console.ai.client.requests.post", side_effect=responder), \
              _run_ai_queue_inline(), \
-             patch("apps.core.scans.pipeline._dispatch_alerts"):
+             patch("apps.core.engine.scans.pipeline._dispatch_alerts"):
             _finalize_session(sess)
 
         # Scan itself unaffected.
@@ -155,16 +155,16 @@ class TestAiFullFlow:
             assert row.session_uuid == sess.uuid
 
     def test_report_and_alert_carry_the_ai_output(self, settings):
-        from apps.core.notifications.dispatcher import _build_slack_payload
-        from apps.core.reports.views import _ai_context
+        from apps.core.console.notifications.dispatcher import _build_slack_payload
+        from apps.core.console.reports.views import _ai_context
 
         _activate(settings)
         sess = _root_session()
         f = _finding(sess)
         responder = _fake_cloudflare([f.id], orchestration_script=[])
-        with patch("apps.core.ai.client.requests.post", side_effect=responder), \
+        with patch("apps.core.console.ai.client.requests.post", side_effect=responder), \
              _run_ai_queue_inline(), \
-             patch("apps.core.scans.pipeline._dispatch_alerts"):
+             patch("apps.core.engine.scans.pipeline._dispatch_alerts"):
             _finalize_session(sess)
 
         ctx = _ai_context(sess)
@@ -195,10 +195,10 @@ class TestAgentChainFlow:
                 {"actions": [{"action": "done", "summary": "shodan added nothing new"}]},
             ])
 
-        with patch("apps.core.ai.client.requests.post", side_effect=responder), \
+        with patch("apps.core.console.ai.client.requests.post", side_effect=responder), \
              _run_ai_queue_inline(), \
-             patch("apps.core.scans.tasks.run_scan_task"), \
-             patch("apps.core.scans.pipeline._dispatch_alerts"):
+             patch("apps.core.engine.scans.tasks.run_scan_task"), \
+             patch("apps.core.engine.scans.pipeline._dispatch_alerts"):
             _finalize_session(sess)
 
             # Step 1 launched a passive subscan through the sanctioned path.
@@ -234,8 +234,8 @@ class TestAiOffAndBrokenFlow:
         settings.CLOUDFLARE_API_TOKEN = ""
         sess = _root_session()
         _finding(sess)
-        with patch("apps.core.ai.client.requests.post") as post, \
-             patch("apps.core.scans.pipeline._dispatch_alerts"):
+        with patch("apps.core.console.ai.client.requests.post") as post, \
+             patch("apps.core.engine.scans.pipeline._dispatch_alerts"):
             _finalize_session(sess)
         post.assert_not_called()
         assert AIInvocation.objects.count() == 0
@@ -249,10 +249,10 @@ class TestAiOffAndBrokenFlow:
         sess = _root_session()
         _finding(sess)
         down = MagicMock(status_code=500, headers={})
-        with patch("apps.core.ai.client.requests.post", return_value=down), \
-             patch("apps.core.ai.client.time.sleep"), \
+        with patch("apps.core.console.ai.client.requests.post", return_value=down), \
+             patch("apps.core.console.ai.client.time.sleep"), \
              _run_ai_queue_inline(), \
-             patch("apps.core.scans.pipeline._dispatch_alerts") as alerts:
+             patch("apps.core.engine.scans.pipeline._dispatch_alerts") as alerts:
             _finalize_session(sess)
 
         sess.refresh_from_db()
@@ -280,8 +280,8 @@ class TestLiveCloudflareSmoke:
     """
 
     def test_live_structured_call_round_trips(self, settings):
-        from apps.core.ai import client
-        from apps.core.ai.schemas import SummaryOut
+        from apps.core.console.ai import client
+        from apps.core.console.ai.schemas import SummaryOut
 
         settings.CLOUDFLARE_ACCOUNT_ID = os.environ["CLOUDFLARE_ACCOUNT_ID"]
         settings.CLOUDFLARE_API_TOKEN = os.environ["CLOUDFLARE_API_TOKEN"]

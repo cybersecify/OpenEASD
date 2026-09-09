@@ -12,7 +12,7 @@ Finding categories based on:
 import logging
 import re
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 
 logger = logging.getLogger(__name__)
 
