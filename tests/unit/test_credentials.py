@@ -142,3 +142,34 @@ class TestApi:
             content_type="application/json",
         )
         assert ToolCredentials.get().shodan_api_key == ""
+
+
+# --- C3: a DB-stored key actually reaches a tool -------------------------
+
+class TestToolWiring:
+    def test_db_key_drives_shodan_paid_tier_without_env(self, settings, monkeypatch):
+        """A DB Shodan key (no env key) makes shodan.collect take the keyed path."""
+        from unittest.mock import MagicMock
+        from apps.shodan import collector
+        from apps.core.console.credentials.models import ToolCredentials
+
+        settings.SHODAN_API_KEY = ""  # no env key
+        cfg = ToolCredentials.get()
+        cfg.shodan_api_key = "db-shodan-key"
+        cfg.save()
+
+        # capture the key the paid host API is called with
+        seen = {}
+
+        def fake_get_json(url, params=None):
+            seen["url"] = url
+            seen["key"] = (params or {}).get("key")
+            return None  # short-circuit; we only assert the tier/key choice
+
+        monkeypatch.setattr(collector, "_get_json", fake_get_json)
+        monkeypatch.setattr(collector, "_session_ips", lambda s: ["1.2.3.4"])
+        session = MagicMock(id=1)
+
+        collector.collect(session)
+        assert seen.get("key") == "db-shodan-key"  # DB key reached the tool
+        assert "/shodan/host/" in seen.get("url", "")  # paid tier, not free InternetDB

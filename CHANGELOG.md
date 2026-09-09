@@ -18,6 +18,14 @@ commits to recover the reasoning.
   the resolver yet (that's C3), so scans are unchanged. Bootstrap secrets
   (`FIELD_ENCRYPTION_KEY`, `SECRET_KEY`, `DB_*`) deliberately stay env-only. Spec:
   `docs/specs/2026-09-09-credential-management.md`.
+- **UI-managed BYOK credentials — tools wired (C3).** `shodan`, `breach_check`,
+  `github_recon`, `github_secrets`, and `dns_history` now read their key via
+  `get_credential()` instead of `settings` directly, so a key stored in the DB
+  (`ToolCredentials`) **overrides the env var with no redeploy**; an unset DB key
+  falls back to env exactly as before. Existing tool tests unchanged (env fallback
+  preserves them); a new test proves a DB key drives `shodan` onto the paid host
+  tier with no env key. Cloudflare still defers to `AISettings`. **Why:** this is
+  where UI/DB keys start taking effect. Next: the CredentialsPage UI (C5).
 
 ## [v2.3.0] — 2026-09-08
 

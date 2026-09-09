@@ -21,6 +21,7 @@ import logging
 
 import requests
 from django.conf import settings
+from apps.core.console.credentials.resolver import get_credential
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ _MAX_RECORDS = 50  # cap the records returned so a noisy dataset can't flood fin
 
 
 def _api_url() -> str:
-    return getattr(settings, "DNS_HISTORY_API_URL", "").rstrip("/")
+    return get_credential("DNS_HISTORY_API_URL").rstrip("/")
 
 
 def _user_agent() -> str:
