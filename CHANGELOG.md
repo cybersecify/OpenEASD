@@ -1031,3 +1031,17 @@ security learners. The pre-launch work below tightens the load-bearing
   (Flagged during test as a possible bug because `head -30` truncation showed
   only Full Scan with `is_default=false`; rebuilding the test with a higher
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
+
+<!-- Version compare links (Keep a Changelog) -->
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.3.0...HEAD
+[v2.3.0]: https://github.com/cybersecify/OpenEASD/compare/v2.2.0...v2.3.0
+[v2.2.0]: https://github.com/cybersecify/OpenEASD/compare/v2.1.1...v2.2.0
+[v2.1.1]: https://github.com/cybersecify/OpenEASD/compare/v2.1.0...v2.1.1
+[v2.1.0]: https://github.com/cybersecify/OpenEASD/compare/v2.0.0...v2.1.0
+[v2.0.0]: https://github.com/cybersecify/OpenEASD/compare/v0.10.0...v2.0.0
+[v0.10.0]: https://github.com/cybersecify/OpenEASD/compare/v0.9.0...v0.10.0
+[v0.9.0]: https://github.com/cybersecify/OpenEASD/compare/v0.8.0...v0.9.0
+[v0.8.0]: https://github.com/cybersecify/OpenEASD/compare/v0.7.1...v0.8.0
+[v0.7.1]: https://github.com/cybersecify/OpenEASD/compare/v0.7...v0.7.1
+[v0.7]: https://github.com/cybersecify/OpenEASD/compare/v0.6...v0.7
+[v0.5]: https://github.com/cybersecify/OpenEASD/compare/v0.4...v0.5
