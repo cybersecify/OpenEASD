@@ -3,6 +3,23 @@
 External Attack Surface Detection platform. Scans domains for network and
 web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 
+## Status (v2.3.0 — 2026-09-09)
+
+- **Released**: v2.3.0 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
+  `:v2.3.0` / `:v2.3` / `:latest`. 3-tier deploy: `db` (postgres:17) + `web`
+  (gunicorn, no tools) + `worker` (`dbos_worker` + scanner matrix, `NET_RAW`).
+- **Scope**: 28 registered scan tools across 12 pipeline phases; single-user
+  (one admin, no RBAC) by design.
+- **Engine**: DBOS durable workflows on PostgreSQL — one multi-step `run_scan`
+  workflow per scan (checkpoint/resume) + `@durable_task` for one-step tasks
+  (`ai_triage`, `agent_step`) + `@scheduled` crons. No SQLite, no Django-Q/Celery.
+- **AI**: optional Cloudflare Workers AI layer (BYOK, off by default, consent-gated).
+- **Docs**: [`docs/DESIGN.md`](docs/DESIGN.md) (architecture — layers/tiers,
+  workflow-vs-pipeline, apps), [`docs/DECISIONS.md`](docs/DECISIONS.md) (why),
+  [`docs/PRD.md`](docs/PRD.md) (product), `docs/specs/` (feature specs +
+  producer→queue→consumer hardening plan H1–H7). Release notes: `CHANGELOG.md`.
+- **Health**: `GET /health/` (unauth, K8s probes) · `GET /api/version/`.
+
 ## GitHub Flow
 
 **Rule:** Never commit to `main` directly.
@@ -592,6 +609,37 @@ every Cloudflare call → AIInvocation audit row (metadata only, never prompt/re
 6. **nmap only scans non-web ports** (`Port.objects.filter(is_web=False)`).
 7. **Asset deletion cascades:** Subdomain → IPAddress → Port → URL. Deleting a Domain wipes all session data.
 8. **Delta detection** compares ALL findings between current and previous scan for the same domain.
+
+### Pipeline + workflow rules
+
+The architecture is a **pipeline** (12 phases) built out of **durable workflows**
+(DBOS). Pipeline outside, workflows inside, Postgres between them. These are the
+same 14-point rules the sibling `cybersecify/backend` follows; OpenEASD adopts the
+foundational ones and consciously differs on the *choreography* ones (it's
+**orchestrated** — one workflow-per-scan — because the dataflow is fixed). Each
+row notes OpenEASD's stance. Full plan + status: `docs/specs/2026-09-07-producer-queue-consumer-hardening.md`.
+
+**Design**
+1. **Draw the pipeline before writing a workflow** — name the phase, the rows it stores, what triggers the next. ✅ (12 phases in DESIGN.md)
+2. **Stages talk through stored data, never workflow calls** — a tool writes rows, the next phase reads them. ✅ (the empty-`models.py` rule)
+3. **One workflow per unit of work** — ⚠️ *deliberate deviation*: OpenEASD runs one multi-step `run_scan` per scan (orchestrated), not per-unit; retry granularity is per phase-group (checkpointed step).
+4. **Every workflow idempotent** (delete-then-insert / upsert, not append) — 🟡 partial: alerts ✅ (H1), phase-step idempotency is **H5**.
+5. **Every workflow has an identity key** — ✅ `deduplication_id` (`scan-{id}`, `triage-{id}`) + `dedupe=` on `@durable_task`.
+
+**Triggering**
+6. **Trigger the next stage from the write, not the caller** — ⚠️ *deviation*: phases are orchestrator-driven, not write/signal-triggered (the AI-agent chain is the one hook-triggered path).
+7. **Gate automatic triggers by freshness** — 🟡 `SCHEDULED_SCANS_ENABLED` + monitoring intervals.
+8. **Every timed job in one editable table** — 🟡 user scans in `ScheduledScan`; system crons are `@DBOS.scheduled` in code → **H7** (`ScheduledJob` table).
+
+**Running**
+9. **Route by resource, not stage** — ⚠️ *deviation*: single `scans` queue (no scarce GPU-like resource to isolate).
+10. **Fail whole, retry whole** — 🟡 *deliberate variation*: OpenEASD delivers **labeled partials** (a time-boxed scan is a valid result; a failed tool → `partial`, never fake-complete).
+11. **Keep the engine behind an adapter** — ✅ `@durable_task` (H6); DBOS isolated to `apps/core/engine/durable/`.
+
+**Operating**
+12. **Every stage: safety net + alarm** — 🟡 scan-level watchdog (`reap_stuck_scans`) + sweeps; per-stage + alarm is **H4**.
+13. **Measure the whole journey, not each run** — ❌ **H2** (`/metrics` + enqueue→output timing) pending.
+14. **Rehearse the failure** — 🟡 crash-resume is tested (D-016), no prod chaos drill yet.
 
 ## Unified Finding model
 
