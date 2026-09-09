@@ -206,7 +206,7 @@ docker compose up -d --build
   default; `high` (≥8GB) raises LOCAL concurrency. Per-target request rate stays
   capped across all profiles (politeness — a big box is no licence to hammer the
   target; higher rates just trip WAFs, which the coverage report flags). Add
-  swap on 1GB hosts. Resolver + tuning in settings.py (`_resolve_profile`,
+  swap on 1GB hosts. Resolver + tuning in settings/base.py (`_resolve_profile`,
   `_PROFILE_TUNING`). nuclei is also severity-scoped per profile (`NUCLEI_SEVERITY`;
   low=critical/high/medium, else +low; `info` dropped everywhere) — the fix for
   its freeze/timeout since it compiles all ~13.5k templates into RAM. See
