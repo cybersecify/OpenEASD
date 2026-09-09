@@ -29,6 +29,7 @@ import time
 
 import requests
 from django.conf import settings
+from apps.core.console.credentials.resolver import get_credential
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ def _headers() -> dict:
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
-    token = getattr(settings, "GITHUB_TOKEN", "")
+    token = get_credential("GITHUB_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
@@ -276,7 +277,7 @@ def collect(domain: str) -> dict:
     logger.info(
         "github_recon: org '%s' (%s) — %d public repo(s) inspected in %d API call(s)%s",
         login, kind, len(repos), budget["used"],
-        "" if getattr(settings, "GITHUB_TOKEN", "") else " (unauthenticated free tier)",
+        "" if get_credential("GITHUB_TOKEN") else " (unauthenticated free tier)",
     )
     return {
         "org": login,

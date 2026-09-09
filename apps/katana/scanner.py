@@ -2,7 +2,7 @@
 
 import logging
 
-from apps.core.web_assets.models import URL
+from apps.core.data.web_assets.models import URL
 from .collector import collect
 from .analyzer import analyze
 

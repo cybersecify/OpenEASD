@@ -2,12 +2,12 @@
 
 import pytest
 
-from apps.core.reports.views import _coverage_context
-from apps.core.scans.pipeline import _compute_coverage
+from apps.core.console.reports.views import _coverage_context
+from apps.core.engine.scans.pipeline import _compute_coverage
 
 
 def _url(session, host, reachability, web_server="", title=""):
-    from apps.core.web_assets.models import URL
+    from apps.core.data.web_assets.models import URL
     return URL.objects.create(
         session=session, url=f"https://{host}:443", host=host, port_number=443,
         scheme="https", reachability=reachability, web_server=web_server,
@@ -18,7 +18,7 @@ def _url(session, host, reachability, web_server="", title=""):
 @pytest.mark.django_db
 class TestComputeCoverage:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_counts_and_vendor(self):
@@ -42,7 +42,7 @@ class TestComputeCoverage:
         s = self._session()
         _url(s, "a.example.com", "blocked", web_server="cloudflare")
         # non-httpx URL with no reachability must not count
-        from apps.core.web_assets.models import URL
+        from apps.core.data.web_assets.models import URL
         URL.objects.create(session=s, url="https://k.example.com", host="k.example.com",
                            scheme="https", reachability="", source="katana")
         _compute_coverage(s)
@@ -53,7 +53,7 @@ class TestComputeCoverage:
 @pytest.mark.django_db
 class TestCoverageNote:
     def _session(self, **kw):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", **kw)
 
     def test_none_when_nothing_blocked(self):

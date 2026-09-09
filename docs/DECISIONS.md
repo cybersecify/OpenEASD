@@ -173,9 +173,9 @@ to one and patronizing the other.
 10. Web Vulnerability Scanning (Nuclei community)
 11. HTTP Security Headers / Cookies / CORS (Web Checker)
 
-**Note on 11 vs 13.** The internal pipeline has 13 phases. Internal phases
+**Note on 11 vs 12.** The internal pipeline has 12 phases. Internal phases
 like `service_detection` aren't customer-facing vectors — they're
-classification steps that feed other tools. Don't reconcile 11 and 13;
+classification steps that feed other tools. Don't reconcile 11 and 12;
 they're different abstractions.
 
 ---

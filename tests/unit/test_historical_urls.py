@@ -137,13 +137,13 @@ class TestIsNoise:
 @pytest.mark.django_db
 class TestAnalyze:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def _make_assets(self, session):
         """Create subdomain + IP + port + httpx URL for FK lookup tests."""
-        from apps.core.assets.models import Subdomain, IPAddress, Port
-        from apps.core.web_assets.models import URL
+        from apps.core.data.assets.models import Subdomain, IPAddress, Port
+        from apps.core.data.web_assets.models import URL
         sub = Subdomain.objects.create(
             session=session, domain="example.com",
             subdomain="www.example.com", source="subfinder",
@@ -284,7 +284,7 @@ from apps.historical_urls.scanner import run_historical_urls
 @pytest.mark.django_db
 class TestScanner:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_no_subdomains_returns_empty_without_calling_collect(self):
@@ -295,7 +295,7 @@ class TestScanner:
         mock_collect.assert_not_called()
 
     def test_includes_root_domain_in_targets(self):
-        from apps.core.assets.models import Subdomain
+        from apps.core.data.assets.models import Subdomain
         sess = self._session()
         Subdomain.objects.create(
             session=sess, domain="example.com",
@@ -313,7 +313,7 @@ class TestScanner:
         assert "example.com" in captured["targets"]
 
     def test_includes_subdomains_in_targets(self):
-        from apps.core.assets.models import Subdomain
+        from apps.core.data.assets.models import Subdomain
         sess = self._session()
         Subdomain.objects.create(
             session=sess, domain="example.com",
@@ -331,8 +331,8 @@ class TestScanner:
         assert "blog.example.com" in captured["targets"]
 
     def test_saves_url_rows_to_db_and_returns_them(self):
-        from apps.core.assets.models import Subdomain
-        from apps.core.web_assets.models import URL
+        from apps.core.data.assets.models import Subdomain
+        from apps.core.data.web_assets.models import URL
 
         sess = self._session()
         Subdomain.objects.create(
@@ -348,7 +348,7 @@ class TestScanner:
         assert len(result) == 2
 
     def test_returns_empty_when_collect_returns_nothing(self):
-        from apps.core.assets.models import Subdomain
+        from apps.core.data.assets.models import Subdomain
         sess = self._session()
         Subdomain.objects.create(
             session=sess, domain="example.com",
@@ -359,7 +359,7 @@ class TestScanner:
         assert result == []
 
     def test_deduplicates_targets_when_root_domain_is_also_a_subdomain(self):
-        from apps.core.assets.models import Subdomain
+        from apps.core.data.assets.models import Subdomain
         sess = self._session()
         # apex domain recorded as a subdomain row (subfinder/amass emit this)
         Subdomain.objects.create(

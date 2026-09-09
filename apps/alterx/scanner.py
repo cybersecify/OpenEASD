@@ -4,7 +4,7 @@ import secrets
 import dns.exception
 import dns.resolver
 
-from apps.core.assets.models import Subdomain
+from apps.core.data.assets.models import Subdomain
 
 from .analyzer import analyze
 from .collector import collect

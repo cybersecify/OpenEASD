@@ -19,7 +19,7 @@ from apps.asn_discovery.scanner import run_asn_discovery
 
 
 def _session(domain="example.com"):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain=domain, scan_type="full")
 
 
@@ -120,7 +120,7 @@ class TestAsnDiscoveryCollector:
         assert mock_run.call_count == 1
 
     def test_raises_on_binary_not_found(self):
-        from apps.core.workflows.exceptions import ToolBinaryMissing
+        from apps.core.engine.workflows.exceptions import ToolBinaryMissing
         sess = _session()
         with patch(
             "apps.asn_discovery.collector.subprocess.run",
@@ -130,7 +130,7 @@ class TestAsnDiscoveryCollector:
                 collect(sess)
 
     def test_raises_on_timeout(self):
-        from apps.core.workflows.exceptions import ToolTimeout
+        from apps.core.engine.workflows.exceptions import ToolTimeout
         sess = _session()
         with patch(
             "apps.asn_discovery.collector.subprocess.run",
@@ -170,7 +170,7 @@ class TestAsnDiscoveryCollector:
 @pytest.mark.django_db
 class TestAsnDiscoveryAnalyzer:
     def test_builds_one_finding_per_asn(self):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         sess = _session()
         records = [
             {"asn": 714, "description": "Apple Inc.", "cidrs": ["17.0.0.0/8"]},
@@ -219,7 +219,7 @@ class TestAsnDiscoveryAnalyzer:
 @pytest.mark.django_db
 class TestAsnDiscoveryScanner:
     def test_saves_findings_to_db(self):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         sess = _session()
         with patch("apps.asn_discovery.scanner.collect", return_value=[
             {"asn": 714, "description": "Apple", "cidrs": ["17.0.0.0/8"]},

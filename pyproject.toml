@@ -1,6 +1,6 @@
 [project]
 name = "openeasd"
-version = "2.2.0"
+version = "2.4.0"
 description = "OpenEASD - Automated External Attack Surface Detection"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -46,9 +46,9 @@ prod = [
 ]
 
 [project.scripts]
-openeasd = "apps.core.scans.management.commands.run_scan:Command"
-openeasd-daily = "apps.core.scans.management.commands.run_daily_scan:Command"
-openeasd-weekly = "apps.core.scans.management.commands.run_weekly_scan:Command"
+openeasd = "apps.core.engine.scans.management.commands.run_scan:Command"
+openeasd-daily = "apps.core.engine.scans.management.commands.run_daily_scan:Command"
+openeasd-weekly = "apps.core.engine.scans.management.commands.run_weekly_scan:Command"
 
 [tool.setuptools.packages.find]
 include = ["apps*", "openeasd*"]
@@ -121,11 +121,11 @@ ignore = [
 # break registration cycles — E402 is a false positive in these.
 "openeasd/settings.py" = ["E402"]
 "**/apps.py" = ["E402"]
-"apps/core/durable/**" = ["E402"]
+"apps/core/engine/durable/**" = ["E402"]
 "manage.py" = ["E402"]
 # Routers are imported AFTER the NinjaAPI instance is built, on purpose
 # (each router module imports back from here) — the ordering is load-bearing.
-"apps/core/api/ninja.py" = ["E402"]
+"apps/core/console/api/ninja.py" = ["E402"]
 # Tests legitimately import mid-file (near the case that uses them) and use
 # compact semicolon setup lines; keep the correctness rules (F/W) on them.
 "tests/**" = ["E402", "E702"]

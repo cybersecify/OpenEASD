@@ -2,7 +2,7 @@
 
 import logging
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 from .collector import collect
 from .analyzer import analyze
 

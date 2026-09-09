@@ -16,12 +16,12 @@ def auth_client(client):
 
 
 def _domain(name="example.com"):
-    from apps.core.domains.models import Domain
+    from apps.core.data.domains.models import Domain
     return Domain.objects.get_or_create(name=name)[0]
 
 
 def _asset(domain, kind, key, status="active", **extra):
-    from apps.core.asset_inventory.models import Asset
+    from apps.core.data.asset_inventory.models import Asset
     now = timezone.now()
     return Asset.objects.create(
         domain=domain, kind=kind, key=key, status=status,
@@ -30,12 +30,12 @@ def _asset(domain, kind, key, status="active", **extra):
 
 
 def _session(domain="example.com", status="completed"):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain=domain, scan_type="full", status=status)
 
 
 def _finding(session, asset, severity="high"):
-    from apps.core.findings.models import Finding
+    from apps.core.data.findings.models import Finding
     return Finding.objects.create(
         session=session, asset=asset, source="nmap", check_type="cve",
         severity=severity, title="t", status="open",
@@ -122,7 +122,7 @@ class TestDetail:
         d = _domain()
         a = _asset(d, "subdomain", "a.example.com")
         s = _session()
-        from apps.core.assets.models import Subdomain
+        from apps.core.data.assets.models import Subdomain
         Subdomain.objects.create(
             session=s, domain="example.com", subdomain="a.example.com", source="subfinder"
         )

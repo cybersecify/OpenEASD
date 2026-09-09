@@ -104,8 +104,8 @@ class TestExtractTitle:
 @pytest.mark.django_db
 class TestWebCheckerHeaders:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -175,8 +175,8 @@ class TestWebCheckerHeaders:
 @pytest.mark.django_db
 class TestWebCheckerHSTS:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -217,8 +217,8 @@ class TestWebCheckerHSTS:
 @pytest.mark.django_db
 class TestWebCheckerCookies:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -269,8 +269,8 @@ class TestWebCheckerCookies:
 @pytest.mark.django_db
 class TestWebCheckerCORS:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -315,8 +315,8 @@ class TestWebCheckerCORS:
 @pytest.mark.django_db
 class TestWebCheckerServerDisclosure:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -350,8 +350,8 @@ class TestWebCheckerServerDisclosure:
 @pytest.mark.django_db
 class TestWebCheckerDirectoryListing:
     def _make_port(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         p = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -379,9 +379,9 @@ class TestWebCheckerDirectoryListing:
 @pytest.mark.django_db
 class TestWebCheckerCollector:
     def _make_session(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, IPAddress, Port
-        from apps.core.web_assets.models import URL
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain, IPAddress, Port
+        from apps.core.data.web_assets.models import URL
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         port = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
@@ -422,16 +422,16 @@ class TestWebCheckerCollector:
         assert results[0]["error"] is not None
 
     def test_empty_session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
         results = collect(sess)
         assert results == []
 
     def test_deduplicates_same_host_across_sources(self):
         """katana URLs on same host as httpx URL must not produce a second fetch."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, IPAddress, Port
-        from apps.core.web_assets.models import URL
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain, IPAddress, Port
+        from apps.core.data.web_assets.models import URL
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
@@ -465,9 +465,9 @@ class TestWebCheckerCollector:
 
     def test_different_hosts_each_get_fetched(self):
         """Two different subdomains on the same port → two fetches."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain, IPAddress, Port
-        from apps.core.web_assets.models import URL
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain, IPAddress, Port
+        from apps.core.data.web_assets.models import URL
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
@@ -502,8 +502,8 @@ class TestWebCheckerCollector:
 @pytest.mark.django_db
 class TestWebCheckerScanner:
     def test_scanner_creates_findings(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.findings.models import Finding
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.findings.models import Finding
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         fake_results = [_make_result(headers={})]  # Missing all headers
@@ -515,7 +515,7 @@ class TestWebCheckerScanner:
         assert Finding.objects.filter(session=sess, source="web_checker").count() == len(findings)
 
     def test_scanner_empty_session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
         with patch("apps.web_checker.scanner.collect", return_value=[]):
             findings = run_web_check(sess)

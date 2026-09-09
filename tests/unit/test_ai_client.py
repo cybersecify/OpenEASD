@@ -1,4 +1,4 @@
-"""Unit tests for apps/core/ai/client.py — the Cloudflare Workers AI client.
+"""Unit tests for apps/core/console/ai/client.py — the Cloudflare Workers AI client.
 
 The client must be fail-graceful (never raises), audit every logical call with
 metadata only, validate structured output with one corrective retry, and
@@ -8,13 +8,13 @@ enforce the per-scan call budget.
 import pytest
 from unittest.mock import MagicMock, patch
 
-from apps.core.ai import client
-from apps.core.ai.models import AIInvocation
-from apps.core.ai.schemas import SummaryOut
+from apps.core.console.ai import client
+from apps.core.console.ai.models import AIInvocation
+from apps.core.console.ai.schemas import SummaryOut
 
 
 def _session(domain="example.com"):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain=domain, scan_type="full")
 
 
@@ -68,7 +68,7 @@ class TestIsConfigured:
         assert client.is_configured() is False
 
     def test_db_saved_credentials_suffice_without_env(self, settings):
-        from apps.core.ai.models import AISettings
+        from apps.core.console.ai.models import AISettings
         settings.CLOUDFLARE_ACCOUNT_ID = ""
         settings.CLOUDFLARE_API_TOKEN = ""
         cfg = AISettings.get()
@@ -80,7 +80,7 @@ class TestIsConfigured:
         assert client.api_token() == "db-tok"
 
     def test_db_wins_over_env(self, configured):
-        from apps.core.ai.models import AISettings
+        from apps.core.console.ai.models import AISettings
         cfg = AISettings.get()
         cfg.cloudflare_account_id = "db-acct"
         cfg.cloudflare_api_token = "db-tok"
@@ -89,7 +89,7 @@ class TestIsConfigured:
         assert client.api_token() == "db-tok"
 
     def test_cleared_db_falls_back_to_env(self, configured):
-        from apps.core.ai.models import AISettings
+        from apps.core.console.ai.models import AISettings
         cfg = AISettings.get()
         cfg.cloudflare_account_id = "   "  # whitespace = effectively cleared
         cfg.save()
@@ -102,7 +102,7 @@ class TestResolveModel:
         assert client.resolve_model() == "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 
     def test_db_override_wins(self, configured):
-        from apps.core.ai.models import AISettings
+        from apps.core.console.ai.models import AISettings
         cfg = AISettings.get()
         cfg.model_override = "@cf/qwen/qwen2.5-coder-32b-instruct"
         cfg.save()
@@ -118,7 +118,7 @@ class TestChatJsonSuccess:
     def test_unconfigured_returns_none_without_http(self, settings):
         settings.CLOUDFLARE_ACCOUNT_ID = ""
         settings.CLOUDFLARE_API_TOKEN = ""
-        with patch("apps.core.ai.client.requests.post") as post:
+        with patch("apps.core.console.ai.client.requests.post") as post:
             assert client.chat_json(_MESSAGES, SummaryOut, purpose="test") is None
         post.assert_not_called()
         assert AIInvocation.objects.count() == 0
@@ -126,7 +126,7 @@ class TestChatJsonSuccess:
     def test_dict_response_validated_and_audited(self, configured):
         sess = _session()
         body = _envelope({"text": "all clear"}, usage={"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120})
-        with patch("apps.core.ai.client.requests.post", return_value=_resp(json_body=body)) as post:
+        with patch("apps.core.console.ai.client.requests.post", return_value=_resp(json_body=body)) as post:
             out = client.chat_json(_MESSAGES, SummaryOut, purpose="alert_summary",
                                    session=sess, finding_ids=[1, 2])
         assert out == {"text": "all clear"}
@@ -144,7 +144,7 @@ class TestChatJsonSuccess:
 
     def test_string_response_parsed(self, configured):
         body = _envelope('{"text": "ok"}')
-        with patch("apps.core.ai.client.requests.post", return_value=_resp(json_body=body)):
+        with patch("apps.core.console.ai.client.requests.post", return_value=_resp(json_body=body)):
             out = client.chat_json(_MESSAGES, SummaryOut, purpose="test")
         assert out == {"text": "ok"}
         assert AIInvocation.objects.get().session is None  # test calls have no session
@@ -158,19 +158,19 @@ class TestChatJsonSuccess:
 class TestChatJsonFailures:
     def test_timeout(self, configured):
         import requests as requests_lib
-        with patch("apps.core.ai.client.requests.post", side_effect=requests_lib.Timeout):
+        with patch("apps.core.console.ai.client.requests.post", side_effect=requests_lib.Timeout):
             assert client.chat_json(_MESSAGES, SummaryOut, purpose="triage", session=_session()) is None
         assert AIInvocation.objects.get().status == "timeout"
 
     def test_connection_error(self, configured):
         import requests as requests_lib
-        with patch("apps.core.ai.client.requests.post", side_effect=requests_lib.ConnectionError):
+        with patch("apps.core.console.ai.client.requests.post", side_effect=requests_lib.ConnectionError):
             assert client.chat_json(_MESSAGES, SummaryOut, purpose="triage") is None
         assert AIInvocation.objects.get().status == "http_error"
 
     def test_5xx_retries_then_fails(self, configured):
-        with patch("apps.core.ai.client.requests.post", return_value=_resp(status=500, json_body={})) as post, \
-             patch("apps.core.ai.client.time.sleep") as slept:
+        with patch("apps.core.console.ai.client.requests.post", return_value=_resp(status=500, json_body={})) as post, \
+             patch("apps.core.console.ai.client.time.sleep") as slept:
             assert client.chat_json(_MESSAGES, SummaryOut, purpose="triage") is None
         assert post.call_count == 2  # initial + one retry
         slept.assert_called_once()
@@ -179,26 +179,26 @@ class TestChatJsonFailures:
     def test_429_backoff_capped_then_success(self, configured):
         ok = _resp(json_body=_envelope({"text": "ok"}))
         limited = _resp(status=429, json_body={}, headers={"Retry-After": "9999"})
-        with patch("apps.core.ai.client.requests.post", side_effect=[limited, ok]), \
-             patch("apps.core.ai.client.time.sleep") as slept:
+        with patch("apps.core.console.ai.client.requests.post", side_effect=[limited, ok]), \
+             patch("apps.core.console.ai.client.time.sleep") as slept:
             out = client.chat_json(_MESSAGES, SummaryOut, purpose="triage")
         assert out == {"text": "ok"}
         assert slept.call_args[0][0] <= client._MAX_BACKOFF
 
     def test_429_exhausted(self, configured):
         limited = _resp(status=429, json_body={}, headers={})
-        with patch("apps.core.ai.client.requests.post", return_value=limited), \
-             patch("apps.core.ai.client.time.sleep"):
+        with patch("apps.core.console.ai.client.requests.post", return_value=limited), \
+             patch("apps.core.console.ai.client.time.sleep"):
             assert client.chat_json(_MESSAGES, SummaryOut, purpose="triage") is None
         assert AIInvocation.objects.get().status == "rate_limited"
 
     def test_non_json_body(self, configured):
-        with patch("apps.core.ai.client.requests.post", return_value=_resp(json_body=None)):
+        with patch("apps.core.console.ai.client.requests.post", return_value=_resp(json_body=None)):
             assert client.chat_json(_MESSAGES, SummaryOut, purpose="triage") is None
         assert AIInvocation.objects.get().status == "bad_json"
 
     def test_http_4xx(self, configured):
-        with patch("apps.core.ai.client.requests.post", return_value=_resp(status=403, json_body={})):
+        with patch("apps.core.console.ai.client.requests.post", return_value=_resp(status=403, json_body={})):
             assert client.chat_json(_MESSAGES, SummaryOut, purpose="triage") is None
         assert AIInvocation.objects.get().status == "http_error"
 
@@ -212,7 +212,7 @@ class TestSchemaRetry:
     def test_mismatch_then_valid(self, configured):
         bad = _resp(json_body=_envelope({"wrong_field": 1}))
         good = _resp(json_body=_envelope({"text": "fixed"}))
-        with patch("apps.core.ai.client.requests.post", side_effect=[bad, good]) as post:
+        with patch("apps.core.console.ai.client.requests.post", side_effect=[bad, good]) as post:
             out = client.chat_json(_MESSAGES, SummaryOut, purpose="triage")
         assert out == {"text": "fixed"}
         # Corrective message appended on the retry call.
@@ -224,7 +224,7 @@ class TestSchemaRetry:
 
     def test_mismatch_twice_gives_up(self, configured):
         bad = _resp(json_body=_envelope({"wrong_field": 1}))
-        with patch("apps.core.ai.client.requests.post", return_value=bad) as post:
+        with patch("apps.core.console.ai.client.requests.post", return_value=bad) as post:
             assert client.chat_json(_MESSAGES, SummaryOut, purpose="triage") is None
         assert post.call_count == 2
         statuses = list(AIInvocation.objects.values_list("status", flat=True))
@@ -232,7 +232,7 @@ class TestSchemaRetry:
 
     def test_api_level_failure_envelope(self, configured):
         body = {"success": False, "errors": [{"code": 10000, "message": "auth error"}]}
-        with patch("apps.core.ai.client.requests.post", return_value=_resp(json_body=body)) as post:
+        with patch("apps.core.console.ai.client.requests.post", return_value=_resp(json_body=body)) as post:
             assert client.chat_json(_MESSAGES, SummaryOut, purpose="triage") is None
         assert post.call_count == 2  # treated as unusable output -> one corrective retry
 
@@ -249,7 +249,7 @@ class TestCallBudget:
         for _ in range(2):
             AIInvocation.objects.create(session=sess, session_uuid=sess.uuid,
                                         purpose="triage", model="m", status="ok")
-        with patch("apps.core.ai.client.requests.post") as post:
+        with patch("apps.core.console.ai.client.requests.post") as post:
             assert client.chat_json(_MESSAGES, SummaryOut, purpose="triage", session=sess) is None
         post.assert_not_called()
         assert AIInvocation.objects.count() == 2  # no new row for a refused call
@@ -261,5 +261,5 @@ class TestCallBudget:
                                     purpose="triage", model="m", status="ok")
         sess = _session()
         body = _envelope({"text": "ok"})
-        with patch("apps.core.ai.client.requests.post", return_value=_resp(json_body=body)):
+        with patch("apps.core.console.ai.client.requests.post", return_value=_resp(json_body=body)):
             assert client.chat_json(_MESSAGES, SummaryOut, purpose="triage", session=sess) is not None

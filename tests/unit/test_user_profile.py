@@ -3,7 +3,7 @@
 import pytest
 from django.contrib.auth import get_user_model
 
-from apps.core.dashboard.models import UserProfile
+from apps.core.console.dashboard.models import UserProfile
 
 User = get_user_model()
 

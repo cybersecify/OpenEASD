@@ -23,11 +23,11 @@ from apps.github_secrets.collector import (
     collect,
 )
 from apps.github_secrets.scanner import run_github_secrets
-from apps.core.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+from apps.core.engine.workflows.exceptions import ToolBinaryMissing, ToolTimeout
 
 
 def _session(domain="acme.com"):
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain=domain, scan_type="full")
 
 
@@ -342,7 +342,7 @@ class TestScanner:
         assert run_github_secrets(_session()) == []
 
     def test_saves_findings_and_persists_redacted(self, settings):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         secret = "AKIAEXAMPLEKEY1234567"
         rec = {
             "RuleID": "aws-access-token",

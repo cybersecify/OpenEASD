@@ -14,6 +14,7 @@ const NAV = [
   { label: 'Workflows',      path: '/workflows' },
   { label: 'Insights',       path: '/insights' },
   { label: 'Notifications',  path: '/notifications' },
+  { label: 'Credentials',    path: '/credentials' },
   { label: 'AI Analysis',    path: '/ai' },
 ];
 

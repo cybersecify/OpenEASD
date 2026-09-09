@@ -1,7 +1,7 @@
 import logging
 
-from apps.core.assets.models import Subdomain
-from apps.core.findings.models import Finding
+from apps.core.data.assets.models import Subdomain
+from apps.core.data.findings.models import Finding
 
 from .analyzer import analyze
 from .collector import collect

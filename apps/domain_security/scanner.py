@@ -32,7 +32,7 @@ import requests
 from django.conf import settings
 from django.utils import timezone as django_tz
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 
 logger = logging.getLogger(__name__)
 

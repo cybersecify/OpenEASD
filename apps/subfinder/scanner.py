@@ -2,7 +2,7 @@
 
 import logging
 
-from apps.core.assets.models import Subdomain
+from apps.core.data.assets.models import Subdomain
 from .collector import collect
 from .analyzer import analyze
 

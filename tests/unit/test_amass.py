@@ -11,7 +11,7 @@ from apps.amass.scanner import run_amass
 
 
 def _session():
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain="example.com", scan_type="full")
 
 
@@ -93,7 +93,7 @@ class TestAmassCollector:
         assert records[0]["host"] == "api.example.com"
 
     def test_raises_on_binary_not_found(self):
-        from apps.core.workflows.exceptions import ToolBinaryMissing
+        from apps.core.engine.workflows.exceptions import ToolBinaryMissing
         sess = _session()
         _config()
         with patch("apps.amass.collector.subprocess.Popen", side_effect=FileNotFoundError):
@@ -185,8 +185,8 @@ class TestAmassCollector:
 @pytest.mark.django_db
 class TestAmassAnalyzer:
     def test_builds_subdomain_objects(self):
-        from apps.core.assets.models import Subdomain
-        from apps.core.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         records = [{"host": "api.example.com"}, {"host": "www.example.com"}]
         objs = analyze(sess, records)
@@ -196,7 +196,7 @@ class TestAmassAnalyzer:
         assert all(o.domain == "example.com" for o in objs)
 
     def test_dedupes_within_batch(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         records = [{"host": "api.example.com"}, {"host": "api.example.com"}]
         objs = analyze(sess, records)
@@ -205,7 +205,7 @@ class TestAmassAnalyzer:
     def test_drops_out_of_scope_hosts(self):
         """Scope boundary: only the target domain + its subdomains are kept;
         suffix-bypass tricks are rejected."""
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         records = [
             {"host": "api.example.com"},        # in scope
@@ -218,19 +218,19 @@ class TestAmassAnalyzer:
         assert hosts == {"api.example.com", "example.com"}
 
     def test_normalizes_to_lowercase(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         objs = analyze(sess, [{"host": "API.Example.COM"}])
         assert objs[0].subdomain == "api.example.com"
 
     def test_skips_empty_hosts(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         objs = analyze(sess, [{"host": ""}, {"host": "  "}, {"host": "valid.example.com"}])
         assert len(objs) == 1
 
     def test_returns_empty_for_no_records(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         assert analyze(sess, []) == []
 
@@ -242,8 +242,8 @@ class TestAmassAnalyzer:
 @pytest.mark.django_db
 class TestAmassScanner:
     def test_saves_subdomains_to_db(self):
-        from apps.core.assets.models import Subdomain
-        from apps.core.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         with patch("apps.amass.scanner.collect", return_value=[
             {"host": "api.example.com"},
@@ -254,7 +254,7 @@ class TestAmassScanner:
         assert Subdomain.objects.filter(session=sess, source="amass").count() == 2
 
     def test_returns_empty_when_collector_returns_nothing(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         with patch("apps.amass.scanner.collect", return_value=[]):
             saved = run_amass(sess)

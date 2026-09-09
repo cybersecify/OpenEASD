@@ -233,7 +233,7 @@ def test_collect_no_ports_returns_empty(MockPort, mock_run, mock_session):
 def test_collect_binary_missing_raises(MockPort, mock_run, mock_session):
     """A missing nuclei binary must surface as ToolBinaryMissing, not a silent []
     — a false 'completed with 0 findings' hides the broken install."""
-    from apps.core.workflows.exceptions import ToolBinaryMissing
+    from apps.core.engine.workflows.exceptions import ToolBinaryMissing
     port = MagicMock(address="1.2.3.4", port=6379, service="redis")
     MockPort.objects.filter.return_value = [port]
     mock_run.side_effect = FileNotFoundError()
@@ -325,8 +325,8 @@ def _net_record(template_id="redis-exposure", name="Redis Exposure",
 @pytest.mark.django_db
 class TestNucleiNetworkAnalyzer:
     def _make_session(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4", port=6379,
