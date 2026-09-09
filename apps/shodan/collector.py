@@ -27,6 +27,7 @@ import time
 
 import requests
 from django.conf import settings
+from apps.core.console.credentials.resolver import get_credential
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ def _get_json(url: str, params: dict | None = None):
 def _session_ips(session) -> list[str]:
     """Distinct resolved public IPs for the session (dnsx already filtered these
     to public-only). Sorted for deterministic ordering / capping."""
-    from apps.core.assets.models import IPAddress
+    from apps.core.data.assets.models import IPAddress
 
     ips = IPAddress.objects.filter(session=session).values_list("address", flat=True)
     return sorted({ip for ip in ips if ip})
@@ -148,7 +149,7 @@ def collect(session) -> list[dict]:
         logger.info("[shodan:%s] no resolved public IPs — skipping", session.id)
         return []
 
-    key = getattr(settings, "SHODAN_API_KEY", "")
+    key = get_credential("SHODAN_API_KEY")
     results: list[dict] = []
 
     if key:

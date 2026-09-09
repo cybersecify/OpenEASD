@@ -38,7 +38,76 @@ data + DBOS checkpoints); there is no SQLite and no Django-Q/APScheduler.
 
 ---
 
+## Layers vs. Tiers — two orthogonal axes
+
+OpenEASD is best understood as **4 logical layers** deployed as a **3-tier
+topology**. These are *different axes* — code is organized by layer, runtime is
+organized by process — and they deliberately do **not** map 1:1. Keep them
+separate: a folder can't "live in the web container," because both containers
+import the same codebase and differ only by entrypoint.
+
+### Axis 1 — logical layers (how the CODE is organized, by responsibility)
+
+```
+┌─ CONSOLE   presentation: Ninja API + React SPA + reports/insights/notifications/ai
+│               apps/core/{dashboard, api, insights, reports, notifications, ai}
+├─ ENGINE    orchestration: durable scan execution + dynamic workflow runner
+│               apps/core/{scans, workflows, durable, scheduler}
+├─ TOOLS     plugins: the 27 self-registering scanner tools
+│               apps/<tool>/  (subfinder, nmap, nuclei, …)
+└─ DATA      models: the dataflow substrate every layer reads/writes
+                apps/core/{domains, assets, web_assets, findings, asset_inventory}
+
+Dependency direction — everything points DOWN to DATA (which depends on nothing):
+      console ─┐
+      engine  ─┼──►  data
+      tools   ─┘
+```
+
+The current folders don't *nest* these layers (it's `apps/core/*` + flat
+`apps/<tool>/*`), but every app maps cleanly to exactly one layer — see the
+Core Infrastructure and Tool Apps tables below.
+
+### Axis 2 — deployment tiers (how the RUNTIME is organized, by process)
+
+```
+   client ──HTTPS──►  web (gunicorn)  ──enqueue via DBOS queue──►  worker (dbos_worker)
+                      python:slim                                   ubuntu:24.04
+                      console code paths                            engine + tools code paths
+                      no tools, no NET_RAW                          full scanner matrix, NET_RAW
+                              └──────────────► db (postgres:17-alpine) ◄──────────────┘
+                                               app data + DBOS checkpoints
+```
+
+### The map between them (layer → container)
+
+| Logical layer | Runs in | Note |
+|---|---|---|
+| **Console** | `web` | gunicorn serves the API + React bundle |
+| **Engine** | `worker` | `dbos_worker` runs the durable scan workflows |
+| **Tools** | `worker` | the scanner binaries live only in the worker image |
+| **Data** | `db` | Postgres; accessed by **both** web & worker via the Django ORM |
+
+**Why the mismatch is correct:** it's **one codebase, two entrypoints** — the
+`web` and `worker` images ship the same Python code and differ only in which
+process they start (`gunicorn` vs `dbos_worker`). So folders are grouped by
+*layer* (responsibility), never by *container* (process). This keeps deployment
+flexible — a layer can be re-mapped to a different container without moving any
+code — and keeps the internet-facing `web` image tool-free regardless of how the
+code is organized. **Decision:** the 4-layer model lives here as documentation;
+the folders stay a standard `apps/core/*` + flat `apps/<tool>/*` Django layout and
+are **not** reorganized to mirror the layers — a reorg would be pure churn (every
+import path, the 27 `tool_meta` runner strings, tests) with no functional gain.
+Reorganize only if the flat layout starts causing real friction.
+
+---
+
 ## Core Infrastructure — `apps/core/`
+
+The core apps are physically grouped into **layer subpackages** —
+`apps/core/console/`, `apps/core/engine/`, `apps/core/data/` — matching the
+logical layers (see the *By layer* table below). Django labels are unchanged, so
+the folder move is purely organisational; the table lists each app by name.
 
 | App | Django label | Responsibility |
 |---|---|---|
@@ -57,7 +126,33 @@ data + DBOS checkpoints); there is no SQLite and no Django-Q/APScheduler.
 | `insights/` | `insights` | `ScanSummary` (incl. Exposure Score + grade), `FindingTypeSummary`, trend charts |
 | `reports/` | `reports` | CSV + PDF export (synchronous Django views, on the web tier) |
 | `ai/` | `ai` | AI triage / adaptive orchestration / summaries (Cloudflare Workers AI, BYOK) — a core subsystem, **not** a registry tool |
+| `credentials/` | `credentials` | `ToolCredentials` encrypted singleton + `get_credential()` resolver (DB-wins-over-env) + write-only `/api/credentials/` — UI-managed BYOK keys |
 | `api/` | — | `NinjaAPI` instance, JWT routes, router registration, error handlers, rate-limit middleware |
+
+### By layer — console / engine / data
+
+The 16 core apps map cleanly to three of the four logical layers (see
+[Layers vs. Tiers](#layers-vs-tiers--two-orthogonal-axes)):
+
+| Layer | Apps | Count |
+|---|---|---|
+| **Console** (presentation) | `dashboard`, `insights`, `reports`, `notifications`, `ai`, `credentials` | **6** |
+| **Engine** (orchestration) | `scans`, `workflows`, `durable`, `scheduler` | **4** |
+| **Data** (dataflow models) | `domains`, `assets`, `web_assets`, `findings`, `asset_inventory` | **5** |
+| *(core + registry tool)* | `service_detection` — a core app that is *also* a phase-6 scan tool | **1** |
+
+**Total: 16 core apps.** The `api/` module is part of the console tier but is
+**not** a registered app (no models — it only mounts routers), so it's not in the
+16. The fourth logical layer, **Tools**, is the 27 `apps/<tool>/` plugins (next
+section) — bringing the first-party total to 43 apps / 28 registered tools
+(`service_detection` is the one app counted in both core and the tool registry).
+
+Notes on the mapping's soft edges:
+- **`scheduler`** sits in *engine* as its **automated-operations** sub-part (cron
+  triggers + hygiene). Under the producer→queue→consumer lens it's a *producer*,
+  not the execution core — the one app where the two lenses disagree on placement.
+- **`service_detection`** is the only app that is both core infrastructure and a
+  registry tool (nmap -sV, phase 6).
 
 Secrets at rest (`apps/core/crypto.py` + `fields.py`): BYOK API keys and webhook
 URLs stored in the DB are Fernet-encrypted via `EncryptedCharField`/`EncryptedTextField`.
@@ -67,14 +162,14 @@ URLs stored in the DB are Fernet-encrypted via `EncryptedCharField`/`EncryptedTe
 ## Tool Apps — `apps/<tool>/`
 
 Tools are **self-registering**: each `AppConfig` declares `tool_meta` and the
-registry (`apps/core/workflows/registry.py`) auto-discovers them at startup.
+registry (`apps/core/engine/workflows/registry.py`) auto-discovers them at startup.
 Adding a tool needs only an `INSTALLED_APPS` entry + a data migration to join the
 default Full Scan — no core files change.
 
 ```
 apps/<tool>/
     apps.py       — AppConfig with tool_meta (label, runner, phase, phase_group, requires, produces_findings, active)
-    models.py     — empty (data goes to apps/core/assets|web_assets|findings)
+    models.py     — empty (data goes to apps/core/data/assets|web_assets|findings)
     scanner.py    — thin orchestrator: collect → analyze → save
     collector.py  — runs binary / probes; returns raw data (no DB writes)
     analyzer.py   — parses raw data; builds Asset / Finding objects
@@ -181,9 +276,66 @@ POST /api/scans/start/  (authorization gate: active tools need DomainAuthorizati
 
 ---
 
+## Workflow vs. Pipeline — the two paradigms (hybrid, by design)
+
+A scan uses **both**: it runs a **workflow** (which tools) **through the pipeline**
+(what order + how data flows). They are two paradigms operating at two layers, and
+they meet in exactly one function — `resolve_phase_groups()` in
+`apps/core/engine/workflows/runner.py`, which takes the workflow's tool *set* and imposes
+the pipeline's phase *order*.
+
+| | **Workflow-centric** | **Pipeline-centric** |
+|---|---|---|
+| Controls | *which* tools run | *what order* + *how data flows* |
+| The unit | `Workflow` + `WorkflowStep` (DB rows) | fixed 12 phases + dataflow models |
+| Mutable? | ✅ dynamic — user-configurable | ❌ fixed — hardcoded `tool_meta["phase"]` |
+| Lives in | `apps/core/engine/workflows/` (models, api, runner, registry) | `tool_meta` phases + `apps/core/engine/scans/pipeline.py` |
+| Example control | enable/disable tools; Full / Passive / custom workflows | `dnsx`(3)→`naabu`(5)→`httpx`(8): IPs before ports before web probing |
+
+A workflow can enable/disable tools and set their *intra-phase* `order`, but can
+**never** move a tool to a different phase or reorder the phases — the phase
+sequence encodes hard dataflow dependencies, so its fixity is correctness
+enforcement, not a limitation.
+
+### Pros / cons of each paradigm
+
+**Workflow-centric** — *Pros:* flexibility (compose custom scans), reusable presets
+(Full/Passive), zero-code tool extensibility, scan *modes* fall out naturally
+(passive vs active → the authorization boundary), user control without a deploy.
+*Cons:* indirection ("what will this scan run?" is runtime DB state, not readable in
+one file), more machinery (registry + runner + config models), a
+*registered-but-not-scanned* seam (a tool joins Full Scan only via a data migration),
+bigger test surface.
+
+**Pipeline-centric** — *Pros:* predictable, readable dataflow; strong per-stage
+contracts; tools stay decoupled (shared models, fixed phases); easy to debug
+(deterministic order); few failure modes. *Cons:* rigidity (can't customize which
+stages run without code), no user configurability, awkward for optional/conditional
+stages, all-or-nothing.
+
+### Why the hybrid is correct here
+
+The two paradigms constrain **different axes**: the workflow controls the axis you
+*want* flexible (which tools), the pipeline controls the axis that *must not* be
+flexible (phase order / dataflow — a Port must come from an IP). So the hybrid takes
+the pros of both and pays only the mild cons:
+
+- Pure pipeline-centric → too rigid (no passive-only recon, no custom subsets → you'd
+  fork the pipeline per mode).
+- Pure workflow-centric (reorderable phases) → dangerous (lets port-scan run before
+  subdomain discovery → broken dataflow, lost decoupling).
+
+**Decision: keep the hybrid** — workflow-centric orchestration over a
+pipeline-centric dataflow. Do not collapse toward either pure form. The one
+workflow-centric weakness (the *registered ≠ scanned* seam) is contained by guardrail
+tests (`test_default_workflow`, `test_passive_scan`) and could be further tightened
+by a `"default_scan"` flag in `tool_meta` (optional; see the hardening backlog).
+
+---
+
 ## Unified Finding Model
 
-Finding-producing tools write to `apps/core/findings/Finding`:
+Finding-producing tools write to `apps/core/data/findings/Finding`:
 
 ```python
 Finding
@@ -252,7 +404,7 @@ synchronous Django views under `/reports/<uuid>/` served by the web tier.
 
 ---
 
-## AI subsystem — `apps/core/ai/`
+## AI subsystem — `apps/core/console/ai/`
 
 A core subsystem (not a registry tool) that runs post-finalize over the whole
 session. Gated by consent + Cloudflare Workers AI keys (BYOK) — **entirely off
@@ -330,8 +482,8 @@ the probe `Host` header must be an entry in `openeasd-secret`'s `ALLOWED_HOSTS`.
 ## Scheduler
 
 Unattended scanning is a set of DBOS `@scheduled` cron workflows registered when
-the `dbos_worker` process imports `apps/core/durable/workflows` (never in gunicorn
-workers). They call the thin callables in `apps/core/scheduler/scheduler.py`.
+the `dbos_worker` process imports `apps/core/engine/durable/workflows` (never in gunicorn
+workers). They call the thin callables in `apps/core/engine/scheduler/scheduler.py`.
 `SCHEDULED_SCANS_ENABLED` (default True) is the master switch; the
 consent/`DomainAuthorization` gate applies to scheduled scans too.
 

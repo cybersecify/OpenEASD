@@ -1,1 +1,1 @@
-"""dnsx admin — no models registered; data lives in apps.core.assets."""
+"""dnsx admin — no models registered; data lives in apps.core.data.assets."""

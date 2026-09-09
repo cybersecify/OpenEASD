@@ -1,4 +1,4 @@
-"""Unit tests for apps/core/notifications — model, dispatcher helpers, API endpoints."""
+"""Unit tests for apps/core/console/notifications — model, dispatcher helpers, API endpoints."""
 
 import pytest
 from unittest.mock import patch, MagicMock
@@ -11,27 +11,27 @@ from unittest.mock import patch, MagicMock
 @pytest.mark.django_db
 class TestNotificationConfig:
     def test_get_creates_singleton_on_first_call(self, db):
-        from apps.core.notifications.models import NotificationConfig
+        from apps.core.console.notifications.models import NotificationConfig
         cfg = NotificationConfig.get()
         assert cfg.pk == 1
 
     def test_get_returns_same_object_on_repeated_calls(self, db):
-        from apps.core.notifications.models import NotificationConfig
+        from apps.core.console.notifications.models import NotificationConfig
         a = NotificationConfig.get()
         b = NotificationConfig.get()
         assert a.pk == b.pk
-        from apps.core.notifications.models import NotificationConfig as NC
+        from apps.core.console.notifications.models import NotificationConfig as NC
         assert NC.objects.count() == 1
 
     def test_defaults(self, db):
-        from apps.core.notifications.models import NotificationConfig
+        from apps.core.console.notifications.models import NotificationConfig
         cfg = NotificationConfig.get()
         assert cfg.slack_webhook_url == ""
         assert cfg.teams_webhook_url == ""
         assert cfg.severity_threshold == "high"
 
     def test_str(self, db):
-        from apps.core.notifications.models import NotificationConfig
+        from apps.core.console.notifications.models import NotificationConfig
         cfg = NotificationConfig.get()
         assert "high" in str(cfg)
 
@@ -43,49 +43,49 @@ class TestNotificationConfig:
 @pytest.mark.django_db
 class TestGetWebhookUrls:
     def test_slack_returns_db_url_when_set(self, db):
-        from apps.core.notifications.models import NotificationConfig
-        from apps.core.notifications.dispatcher import _get_slack_url
+        from apps.core.console.notifications.models import NotificationConfig
+        from apps.core.console.notifications.dispatcher import _get_slack_url
         cfg = NotificationConfig.get()
         cfg.slack_webhook_url = "https://hooks.slack.com/db-url"
         cfg.save()
         assert _get_slack_url() == "https://hooks.slack.com/db-url"
 
     def test_slack_falls_back_to_env_when_db_empty(self, db):
-        from apps.core.notifications.dispatcher import _get_slack_url
-        with patch("apps.core.notifications.dispatcher.settings") as mock_settings:
+        from apps.core.console.notifications.dispatcher import _get_slack_url
+        with patch("apps.core.console.notifications.dispatcher.settings") as mock_settings:
             mock_settings.SLACK_WEBHOOK_URL = "https://hooks.slack.com/env-url"
             result = _get_slack_url()
         assert result == "https://hooks.slack.com/env-url"
 
     def test_slack_db_url_takes_priority_over_env(self, db):
-        from apps.core.notifications.models import NotificationConfig
-        from apps.core.notifications.dispatcher import _get_slack_url
+        from apps.core.console.notifications.models import NotificationConfig
+        from apps.core.console.notifications.dispatcher import _get_slack_url
         cfg = NotificationConfig.get()
         cfg.slack_webhook_url = "https://hooks.slack.com/db-url"
         cfg.save()
-        with patch("apps.core.notifications.dispatcher.settings") as mock_settings:
+        with patch("apps.core.console.notifications.dispatcher.settings") as mock_settings:
             mock_settings.SLACK_WEBHOOK_URL = "https://hooks.slack.com/env-url"
             result = _get_slack_url()
         assert result == "https://hooks.slack.com/db-url"
 
     def test_teams_returns_db_url_when_set(self, db):
-        from apps.core.notifications.models import NotificationConfig
-        from apps.core.notifications.dispatcher import _get_teams_url
+        from apps.core.console.notifications.models import NotificationConfig
+        from apps.core.console.notifications.dispatcher import _get_teams_url
         cfg = NotificationConfig.get()
         cfg.teams_webhook_url = "https://outlook.office.com/db-url"
         cfg.save()
         assert _get_teams_url() == "https://outlook.office.com/db-url"
 
     def test_teams_falls_back_to_env_when_db_empty(self, db):
-        from apps.core.notifications.dispatcher import _get_teams_url
-        with patch("apps.core.notifications.dispatcher.settings") as mock_settings:
+        from apps.core.console.notifications.dispatcher import _get_teams_url
+        with patch("apps.core.console.notifications.dispatcher.settings") as mock_settings:
             mock_settings.MS_TEAMS_WEBHOOK_URL = "https://outlook.office.com/env-url"
             result = _get_teams_url()
         assert result == "https://outlook.office.com/env-url"
 
     def test_returns_empty_string_when_neither_set(self, db):
-        from apps.core.notifications.dispatcher import _get_slack_url, _get_teams_url
-        with patch("apps.core.notifications.dispatcher.settings") as mock_settings:
+        from apps.core.console.notifications.dispatcher import _get_slack_url, _get_teams_url
+        with patch("apps.core.console.notifications.dispatcher.settings") as mock_settings:
             mock_settings.SLACK_WEBHOOK_URL = ""
             mock_settings.MS_TEAMS_WEBHOOK_URL = ""
             assert _get_slack_url() == ""
@@ -144,7 +144,7 @@ class TestNotificationsConfigAPI:
         assert data["severity_threshold"] == "medium"
 
     def test_post_config_persists_to_db(self, client, db):
-        from apps.core.notifications.models import NotificationConfig
+        from apps.core.console.notifications.models import NotificationConfig
         headers = self._auth_headers(client)
         client.post(
             "/api/notifications/config/",
@@ -191,7 +191,7 @@ class TestNotificationsTestAPI:
         return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
 
     def test_slack_test_succeeds_when_configured(self, client, db):
-        from apps.core.notifications.models import NotificationConfig
+        from apps.core.console.notifications.models import NotificationConfig
         cfg = NotificationConfig.get()
         cfg.slack_webhook_url = "https://hooks.slack.com/test"
         cfg.save()
@@ -229,7 +229,7 @@ class TestNotificationsTestAPI:
         assert resp.status_code == 400
 
     def test_webhook_failure_returns_502(self, client, db):
-        from apps.core.notifications.models import NotificationConfig
+        from apps.core.console.notifications.models import NotificationConfig
         cfg = NotificationConfig.get()
         cfg.teams_webhook_url = "https://outlook.office.com/test"
         cfg.save()
@@ -268,8 +268,8 @@ class TestNotificationsAlertsAPI:
         return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
 
     def _make_alert(self, alert_type="slack", status="sent"):
-        from apps.core.scans.models import ScanSession
-        from apps.core.notifications.models import Alert
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.console.notifications.models import Alert
         session = ScanSession.objects.create(domain="example.com", scan_type="full", status="completed")
         return Alert.objects.create(
             session=session,
@@ -312,11 +312,11 @@ class TestNotificationsAlertsAPI:
 
 
 # ---------------------------------------------------------------------------
-# AI summary in alert payloads (apps/core/ai integration)
+# AI summary in alert payloads (apps/core/console/ai integration)
 # ---------------------------------------------------------------------------
 
 def _alert_session():
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain="example.com", scan_type="full", status="completed")
 
 
@@ -326,7 +326,7 @@ _GROUPED = {"high": [{"title": "TLS expired", "check_type": "tls_expiry", "targe
 @pytest.mark.django_db
 class TestAlertAiSummary:
     def test_slack_payload_identical_without_summary(self):
-        from apps.core.notifications.dispatcher import _build_slack_payload
+        from apps.core.console.notifications.dispatcher import _build_slack_payload
         sess = _alert_session()
         payload = _build_slack_payload(sess, _GROUPED, "high")
         # header, meta section, divider, one severity section — no AI block.
@@ -334,8 +334,8 @@ class TestAlertAiSummary:
         assert all("Cloudflare" not in str(b) for b in payload["blocks"])
 
     def test_slack_payload_gains_one_block_with_summary(self):
-        from apps.core.ai.models import AISummary
-        from apps.core.notifications.dispatcher import _build_slack_payload
+        from apps.core.console.ai.models import AISummary
+        from apps.core.console.notifications.dispatcher import _build_slack_payload
         sess = _alert_session()
         AISummary.objects.create(session=sess, kind="alert", text="One urgent issue.")
         payload = _build_slack_payload(sess, _GROUPED, "high")
@@ -343,8 +343,8 @@ class TestAlertAiSummary:
         assert payload["blocks"][2]["text"]["text"] == "_One urgent issue._"
 
     def test_summary_truncated_at_cap(self):
-        from apps.core.ai.models import AISummary
-        from apps.core.notifications.dispatcher import _get_triage_summary
+        from apps.core.console.ai.models import AISummary
+        from apps.core.console.notifications.dispatcher import _get_triage_summary
         sess = _alert_session()
         AISummary.objects.create(session=sess, kind="alert", text="x" * 500)
         out = _get_triage_summary(sess)
@@ -352,8 +352,8 @@ class TestAlertAiSummary:
         assert out.endswith("…")
 
     def test_teams_payload_gains_summary_fact(self):
-        from apps.core.ai.models import AISummary
-        from apps.core.notifications.dispatcher import _build_teams_payload
+        from apps.core.console.ai.models import AISummary
+        from apps.core.console.notifications.dispatcher import _build_teams_payload
         sess = _alert_session()
         AISummary.objects.create(session=sess, kind="alert", text="One urgent issue.")
         payload = _build_teams_payload(sess, _GROUPED, "high")
@@ -362,22 +362,68 @@ class TestAlertAiSummary:
         assert facts[1]["name"] == "HIGH"
 
     def test_teams_payload_identical_without_summary(self):
-        from apps.core.notifications.dispatcher import _build_teams_payload
+        from apps.core.console.notifications.dispatcher import _build_teams_payload
         sess = _alert_session()
         payload = _build_teams_payload(sess, _GROUPED, "high")
         assert [f["name"] for f in payload["sections"][0]["facts"]] == ["HIGH"]
 
+
+# ---------------------------------------------------------------------------
+# H1 — alert idempotency on finalize replay (apps/core/engine/scans/pipeline)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestAlertIdempotency:
+    def _configure_slack(self):
+        from apps.core.console.notifications.models import NotificationConfig
+        cfg = NotificationConfig.get()
+        cfg.slack_webhook_url = "https://hooks.slack.com/test"
+        cfg.save()
+
+    def test_skips_resend_when_already_sent(self):
+        """A finalize replay must NOT re-dispatch when a 'sent' Alert exists."""
+        from apps.core.engine.scans.pipeline import _dispatch_alerts
+        from apps.core.console.notifications.models import Alert
+        self._configure_slack()
+        sess = _alert_session()
+        Alert.objects.create(session=sess, alert_type="slack",
+                             severity_threshold="high", status="sent")
+        with patch("apps.core.console.notifications.dispatcher.dispatch_alerts") as mock_dispatch:
+            _dispatch_alerts(sess)
+        mock_dispatch.assert_not_called()
+
+    def test_dispatches_when_no_prior_alert(self):
+        """First finalize (no prior Alert rows) dispatches normally."""
+        from apps.core.engine.scans.pipeline import _dispatch_alerts
+        self._configure_slack()
+        sess = _alert_session()
+        with patch("apps.core.console.notifications.dispatcher.dispatch_alerts") as mock_dispatch:
+            _dispatch_alerts(sess)
+        mock_dispatch.assert_called_once()
+
+    def test_retries_when_prior_attempt_only_failed(self):
+        """A prior fully-failed attempt (no 'sent' row) is still retried."""
+        from apps.core.engine.scans.pipeline import _dispatch_alerts
+        from apps.core.console.notifications.models import Alert
+        self._configure_slack()
+        sess = _alert_session()
+        Alert.objects.create(session=sess, alert_type="slack",
+                             severity_threshold="high", status="failed")
+        with patch("apps.core.console.notifications.dispatcher.dispatch_alerts") as mock_dispatch:
+            _dispatch_alerts(sess)
+        mock_dispatch.assert_called_once()
+
     def test_report_kind_not_used_for_alerts(self):
-        from apps.core.ai.models import AISummary
-        from apps.core.notifications.dispatcher import _get_triage_summary
+        from apps.core.console.ai.models import AISummary
+        from apps.core.console.notifications.dispatcher import _get_triage_summary
         sess = _alert_session()
         AISummary.objects.create(session=sess, kind="report", text="report text")
         assert _get_triage_summary(sess) is None
 
     def test_lookup_failure_sends_without_summary(self):
-        from apps.core.notifications.dispatcher import _build_slack_payload
+        from apps.core.console.notifications.dispatcher import _build_slack_payload
         sess = _alert_session()
-        with patch("apps.core.ai.models.AISummary.objects") as broken:
+        with patch("apps.core.console.ai.models.AISummary.objects") as broken:
             broken.filter.side_effect = RuntimeError("db broke")
             payload = _build_slack_payload(sess, _GROUPED, "high")
         assert len(payload["blocks"]) == 4  # unchanged, no raise

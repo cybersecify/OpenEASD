@@ -18,7 +18,7 @@ def latest_session_ids(domains=None):
 
     If *domains* is ``None``, returns for all domains.
     """
-    from apps.core.scans.models import ScanSession
+    from apps.core.engine.scans.models import ScanSession
 
     qs = ScanSession.objects.filter(status__in=["completed", "partial"]).exclude(
         scan_type="subscan"

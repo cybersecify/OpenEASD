@@ -487,7 +487,7 @@ def collect(session) -> list[dict]:
     Plain HTTP ports (service="http") produce no TLS findings because the probe
     returns no TLS details; HSTS coverage for those is handled by web_checker.
     """
-    from apps.core.assets.models import Port
+    from apps.core.data.assets.models import Port
 
     open_ports = list(
         Port.objects.filter(session=session, state="open")

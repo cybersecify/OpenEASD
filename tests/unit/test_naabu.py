@@ -12,7 +12,7 @@ from apps.naabu.scanner import run_naabu
 @pytest.mark.django_db
 class TestNaabuCollector:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_parses_jsonline_output(self):
@@ -43,7 +43,7 @@ class TestNaabuCollector:
         assert records == []
 
     def test_raises_on_binary_not_found(self):
-        from apps.core.workflows.exceptions import ToolBinaryMissing
+        from apps.core.engine.workflows.exceptions import ToolBinaryMissing
         sess = self._session()
         with patch("apps.naabu.collector.subprocess.run", side_effect=FileNotFoundError):
             with pytest.raises(ToolBinaryMissing):
@@ -51,7 +51,7 @@ class TestNaabuCollector:
 
     def test_raises_on_timeout(self):
         import subprocess
-        from apps.core.workflows.exceptions import ToolTimeout
+        from apps.core.engine.workflows.exceptions import ToolTimeout
         sess = self._session()
         with patch("apps.naabu.collector.subprocess.run",
                    side_effect=subprocess.TimeoutExpired("naabu", 900)):
@@ -95,8 +95,8 @@ class TestNaabuCollector:
 @pytest.mark.django_db
 class TestNaabuAnalyzer:
     def test_builds_port_objects(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
 
@@ -111,8 +111,8 @@ class TestNaabuAnalyzer:
         assert all(o.state == "open" for o in objs)
 
     def test_links_port_to_ip_address(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
         records = [{"host": "1.2.3.4", "port": 80, "protocol": "tcp"}]
@@ -120,7 +120,7 @@ class TestNaabuAnalyzer:
         assert objs[0].ip_address == ip
 
     def test_dedupes_within_batch(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         records = [
             {"host": "1.2.3.4", "port": 80, "protocol": "tcp"},
@@ -130,7 +130,7 @@ class TestNaabuAnalyzer:
         assert len(objs) == 1
 
     def test_handles_ip_with_no_matching_address_record(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         # Port for an IP that has no IPAddress record — should still build, just no FK
         records = [{"host": "9.9.9.9", "port": 80, "protocol": "tcp"}]
@@ -143,14 +143,14 @@ class TestNaabuAnalyzer:
 @pytest.mark.django_db
 class TestNaabuScanner:
     def test_run_naabu_skips_when_no_ips(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
         result = run_naabu(sess)
         assert result == []
 
     def test_run_naabu_writes_to_shared_port_table(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress, Port
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress, Port
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
 
@@ -165,8 +165,8 @@ class TestNaabuScanner:
 
     def test_cdn_ips_are_excluded_from_scan(self):
         """Cloudflare anycast IPs must not be passed to naabu."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         # Two Cloudflare IPs that caused false-positive CRITICAL findings
         IPAddress.objects.create(session=sess, address="172.67.191.147", version=4, source="dnsx")
@@ -189,8 +189,8 @@ class TestNaabuScanner:
 
     def test_all_cdn_ips_returns_early(self):
         """When every discovered IP is CDN, run_naabu returns [] without calling collect."""
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import IPAddress
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import IPAddress
         sess = ScanSession.objects.create(domain="cdn-only.com", scan_type="full")
         IPAddress.objects.create(session=sess, address="172.67.191.147", version=4, source="dnsx")
         IPAddress.objects.create(session=sess, address="104.21.84.116", version=4, source="dnsx")

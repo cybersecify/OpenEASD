@@ -86,11 +86,11 @@ class TestServiceOf:
 @pytest.mark.django_db
 class TestAnalyze:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def _subdomain(self, session, name):
-        from apps.core.assets.models import Subdomain
+        from apps.core.data.assets.models import Subdomain
         return Subdomain.objects.create(
             session=session, domain="example.com",
             subdomain=name, source="subfinder",
@@ -186,7 +186,7 @@ class TestCollectorEdgeCases:
 
     @patch("apps.takeover_check.collector.shutil.which", return_value=None)
     def test_missing_binary_raises(self, _which):
-        from apps.core.workflows.exceptions import ToolBinaryMissing
+        from apps.core.engine.workflows.exceptions import ToolBinaryMissing
         with pytest.raises(ToolBinaryMissing):
             collect(["foo.example.com"])
 
@@ -200,7 +200,7 @@ class TestCollectorEdgeCases:
     @patch("apps.takeover_check.collector.subprocess.run")
     def test_timeout_raises(self, mock_run, _which):
         import subprocess
-        from apps.core.workflows.exceptions import ToolTimeout
+        from apps.core.engine.workflows.exceptions import ToolTimeout
         mock_run.side_effect = subprocess.TimeoutExpired("subzy", 1800)
         with pytest.raises(ToolTimeout):
             collect(["foo.example.com"])
@@ -260,7 +260,7 @@ class TestCollectorEdgeCases:
 @pytest.mark.django_db
 class TestScanner:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_returns_empty_when_session_has_no_subdomains(self):
@@ -270,8 +270,8 @@ class TestScanner:
             c.assert_not_called()
 
     def test_runs_collect_then_analyze_and_persists(self):
-        from apps.core.assets.models import Subdomain
-        from apps.core.findings.models import Finding
+        from apps.core.data.assets.models import Subdomain
+        from apps.core.data.findings.models import Finding
 
         sess = self._session()
         Subdomain.objects.create(
@@ -296,7 +296,7 @@ class TestScanner:
         ).count() == 1
 
     def test_no_findings_when_subzy_returns_nothing(self):
-        from apps.core.assets.models import Subdomain
+        from apps.core.data.assets.models import Subdomain
 
         sess = self._session()
         Subdomain.objects.create(
@@ -336,7 +336,7 @@ class TestSubzyNullRecordRegression:
     def test_analyzer_skips_null_and_non_dict_records(self):
         """analyze() must skip non-dict records instead of crashing on
         None.get() — the exact failure that made scans report `partial`."""
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         # A None + a bare string mixed with a valid, non-vulnerable dict.
         result = analyze(

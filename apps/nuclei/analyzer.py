@@ -23,7 +23,7 @@ Nuclei JSON output format (per finding):
 
 import logging
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ def analyze(session, records: list[dict]) -> list[Finding]:
     Deduplicates by (template_id, matched_at) — nuclei can report the
     same finding multiple times across template runs.
     """
-    from apps.core.web_assets.models import URL
+    from apps.core.data.web_assets.models import URL
 
     if not records:
         return []

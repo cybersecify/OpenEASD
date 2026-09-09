@@ -54,7 +54,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "openeasd.settings")
 import django
 django.setup()
 from django.contrib.auth import get_user_model
-from apps.core.dashboard.models import UserProfile
+from apps.core.console.dashboard.models import UserProfile
 U = get_user_model()
 if not U.objects.exists():
     u = U.objects.create_superuser("admin", "admin@localhost", "admin")

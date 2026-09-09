@@ -15,8 +15,8 @@ import tempfile
 
 from django.conf import settings
 
-from apps.core.workflows.exceptions import ToolBinaryMissing
-from apps.core.workflows.proc import run_capped
+from apps.core.engine.workflows.exceptions import ToolBinaryMissing
+from apps.core.engine.workflows.proc import run_capped
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ CONCURRENCY = 25      # fallback -c; the resource profile overrides it
 # stays polite even on 'high' — a big box is no licence to hammer the target.
 
 
-# The hardened, child-escape-proof runner lives in apps.core.workflows.proc
+# The hardened, child-escape-proof runner lives in apps.core.engine.workflows.proc
 # (run_capped) so nuclei_network — the same binary — gets the same anti-wedge
 # protection instead of a plain subprocess.run that can hang the worker.
 
@@ -52,7 +52,7 @@ def _select_targets(session) -> list[str]:
     crawled ones, capped at NUCLEI_MAX_TARGETS. The cap is logged, never silent —
     a large surface at the polite rate would otherwise blow past the wall-clock.
     """
-    from apps.core.web_assets.models import URL
+    from apps.core.data.web_assets.models import URL
 
     live = list(URL.objects.filter(session=session, source="httpx").values_list("url", flat=True))
     rest = list(URL.objects.filter(session=session).exclude(source="httpx").values_list("url", flat=True))
@@ -132,7 +132,7 @@ def collect(session) -> list[dict]:
     stdout, stderr = "", ""
     try:
         # Cap nuclei's Go heap on low-memory hosts (env unchanged on balanced/high).
-        from apps.core.workflows.proc_env import go_memory_env
+        from apps.core.engine.workflows.proc_env import go_memory_env
         timeout = getattr(settings, "NUCLEI_TIMEOUT", TIMEOUT)
         result = run_capped(cmd, timeout, env=go_memory_env())
         stdout, stderr = result.stdout, result.stderr

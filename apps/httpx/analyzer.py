@@ -2,8 +2,8 @@
 
 import logging
 
-from apps.core.assets.models import Port, Subdomain
-from apps.core.web_assets.models import URL
+from apps.core.data.assets.models import Port, Subdomain
+from apps.core.data.web_assets.models import URL
 from apps.httpx.waf import classify
 
 logger = logging.getLogger(__name__)

@@ -11,7 +11,7 @@ from unittest.mock import patch, MagicMock
 @pytest.mark.django_db
 class TestDomainFindingModel:
     def test_create_finding(self, completed_session):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         f = Finding.objects.create(session=completed_session, source="domain_security", target="example.com", check_type="email",
             severity="high",
             title="SPF record missing",
@@ -22,7 +22,7 @@ class TestDomainFindingModel:
         assert f.check_type == "email"
 
     def test_extra_json_field(self, completed_session):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         f = Finding.objects.create(session=completed_session, source="domain_security", target="example.com", check_type="rdap",
             severity="medium",
             title="Transfer lock not enabled",
@@ -32,13 +32,13 @@ class TestDomainFindingModel:
         assert f.extra["statuses"] == ["active"]
 
     def test_finding_cascades_on_session_delete(self, domain_finding, completed_session):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         session_id = completed_session.id
         completed_session.delete()
         assert not Finding.objects.filter(session_id=session_id).exists()
 
     def test_findings_filtered_by_severity(self, db, completed_session):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         Finding.objects.create(session=completed_session, source="domain_security", target="example.com", check_type="dns", severity="critical", title="Critical issue")
         Finding.objects.create(session=completed_session, source="domain_security", target="example.com", check_type="dns", severity="low", title="Low issue")
         assert Finding.objects.filter(severity="critical").count() == 1
@@ -52,7 +52,7 @@ class TestDomainFindingModel:
 @pytest.mark.django_db
 class TestDNSChecks:
     def _make_session(self, db):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
 
     def test_missing_a_and_aaaa_creates_high_finding(self, db):
@@ -154,7 +154,7 @@ class TestDNSChecks:
 @pytest.mark.django_db
 class TestEmailChecks:
     def _make_session(self, db):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
 
     def test_missing_spf_creates_high_finding(self, db):
@@ -260,7 +260,7 @@ class TestEmailChecks:
 @pytest.mark.django_db
 class TestRDAPChecks:
     def _make_session(self, db):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
 
     def _mock_rdap(self, statuses, days_until_expiry=365):
@@ -484,7 +484,7 @@ class TestRDAPChecks:
 @pytest.mark.django_db
 class TestCAAChecks:
     def _make_session(self, db):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
 
     def test_missing_caa_creates_medium_finding(self, db):
@@ -532,7 +532,7 @@ class TestCAAChecks:
 @pytest.mark.django_db
 class TestWildcardChecks:
     def _make_session(self, db):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
 
     def test_wildcard_enabled_creates_medium_finding(self, db):
@@ -568,7 +568,7 @@ class TestWildcardChecks:
 @pytest.mark.django_db
 class TestZoneTransferChecks:
     def _make_session(self, db):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
 
     def _mock_ns(self, ns_host="ns1.example.com"):
@@ -618,7 +618,7 @@ class TestZoneTransferChecks:
 @pytest.mark.django_db
 class TestMTASTSChecks:
     def _make_session(self, db):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
 
     def _mock_policy(self, mode):
@@ -692,7 +692,7 @@ class TestMTASTSChecks:
 @pytest.mark.django_db
 class TestOpenRelayChecks:
     def _make_session(self, db):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
 
     def _mock_mx(self, hostname="mail.example.com", preference=10):
@@ -782,7 +782,7 @@ class TestOpenRelayChecks:
 @pytest.mark.django_db
 class TestTLSRPTChecks:
     def _make_session(self, db):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
 
     def test_missing_tls_rpt_creates_low_finding(self, db):
@@ -814,7 +814,7 @@ class TestTLSRPTChecks:
 @pytest.mark.django_db
 class TestLameDelegationChecks:
     def _make_session(self, db):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
 
     def _mock_ns(self, ns_host="ns1.example.com"):
@@ -895,7 +895,7 @@ class TestLameDelegationChecks:
 @pytest.mark.django_db
 class TestBIMIChecks:
     def _make_session(self, db):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
 
     def test_missing_bimi_creates_info_finding(self, db):

@@ -1,4 +1,4 @@
-"""Unit tests for the update-available check (apps/core/api/update_check.py)."""
+"""Unit tests for the update-available check (apps/core/console/api/update_check.py)."""
 
 from unittest.mock import patch, MagicMock
 
@@ -6,7 +6,7 @@ import pytest
 import requests
 from django.core.cache import cache
 
-from apps.core.api import update_check as uc
+from apps.core.console.api import update_check as uc
 
 
 @pytest.fixture(autouse=True)
@@ -57,37 +57,37 @@ class TestGetLatestRelease:
         return m
 
     def test_happy_path_strips_v(self):
-        with patch("apps.core.api.update_check.requests.get", return_value=self._resp()) as g:
+        with patch("apps.core.console.api.update_check.requests.get", return_value=self._resp()) as g:
             out = uc.get_latest_release()
         assert out == {"version": "0.11.0", "url": "https://gh/rel"}
         g.assert_called_once()
 
     def test_result_is_cached(self):
-        with patch("apps.core.api.update_check.requests.get", return_value=self._resp()) as g:
+        with patch("apps.core.console.api.update_check.requests.get", return_value=self._resp()) as g:
             uc.get_latest_release()
             uc.get_latest_release()  # second call must hit cache, not network
         g.assert_called_once()
 
     def test_timeout_returns_none(self):
-        with patch("apps.core.api.update_check.requests.get",
+        with patch("apps.core.console.api.update_check.requests.get",
                    side_effect=requests.Timeout("slow")):
             assert uc.get_latest_release() is None
 
     def test_http_error_returns_none(self):
         bad = MagicMock()
         bad.raise_for_status.side_effect = requests.HTTPError("500")
-        with patch("apps.core.api.update_check.requests.get", return_value=bad):
+        with patch("apps.core.console.api.update_check.requests.get", return_value=bad):
             assert uc.get_latest_release() is None
 
     def test_missing_tag_returns_none(self):
         m = MagicMock()
         m.raise_for_status.return_value = None
         m.json.return_value = {"html_url": "x"}
-        with patch("apps.core.api.update_check.requests.get", return_value=m):
+        with patch("apps.core.console.api.update_check.requests.get", return_value=m):
             assert uc.get_latest_release() is None
 
     def test_failure_is_cached_briefly(self):
-        with patch("apps.core.api.update_check.requests.get",
+        with patch("apps.core.console.api.update_check.requests.get",
                    side_effect=requests.Timeout("slow")) as g:
             uc.get_latest_release()
             uc.get_latest_release()  # cached failure -> no second network call
@@ -97,7 +97,7 @@ class TestGetLatestRelease:
 class TestCheckForUpdate:
     def test_shape_when_behind(self, settings):
         settings.OPENEASD_VERSION = "0.10.0"
-        with patch("apps.core.api.update_check.get_latest_release",
+        with patch("apps.core.console.api.update_check.get_latest_release",
                    return_value={"version": "0.11.0", "url": "https://gh/rel"}):
             out = uc.check_for_update()
         assert out == {
@@ -109,14 +109,14 @@ class TestCheckForUpdate:
 
     def test_shape_when_up_to_date(self, settings):
         settings.OPENEASD_VERSION = "0.11.0"
-        with patch("apps.core.api.update_check.get_latest_release",
+        with patch("apps.core.console.api.update_check.get_latest_release",
                    return_value={"version": "0.11.0", "url": "https://gh/rel"}):
             out = uc.check_for_update()
         assert out["update_available"] is False
 
     def test_graceful_when_github_down(self, settings):
         settings.OPENEASD_VERSION = "0.10.0"
-        with patch("apps.core.api.update_check.get_latest_release", return_value=None):
+        with patch("apps.core.console.api.update_check.get_latest_release", return_value=None):
             out = uc.check_for_update()
         assert out["latest_version"] is None
         assert out["update_available"] is False

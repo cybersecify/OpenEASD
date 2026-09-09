@@ -159,11 +159,11 @@ class TestFetchEpssScores:
 
 class TestRunCveIntel:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", status="running")
 
     def _finding(self, session, **extra):
-        from apps.core.findings.models import Finding
+        from apps.core.data.findings.models import Finding
         return Finding.objects.create(
             session=session, source="nmap", target="1.2.3.4:443",
             check_type="cve", severity="high", title="t", description="d",

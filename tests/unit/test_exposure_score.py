@@ -15,7 +15,7 @@ from django.contrib.auth.models import User
 from django.test import Client
 from django.utils import timezone
 
-from apps.core.insights.scoring import (
+from apps.core.console.insights.scoring import (
     WEIGHT_CRITICAL,
     WEIGHT_HIGH,
     WEIGHT_MEDIUM,
@@ -129,7 +129,7 @@ class TestExposureTrend:
 # ---------------------------------------------------------------------------
 
 def _finding(session, severity, title, source="web_checker", check_type="x"):
-    from apps.core.findings.models import Finding
+    from apps.core.data.findings.models import Finding
     return Finding.objects.create(
         session=session, source=source, target=session.domain,
         check_type=check_type, severity=severity, title=title,
@@ -140,15 +140,15 @@ def _finding(session, severity, title, source="web_checker", check_type="x"):
 @pytest.mark.django_db
 class TestBuilderPopulatesExposure:
     def _session(self, domain="exp.example.com"):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(
             domain=domain, scan_type="full", status="completed",
             end_time=timezone.now(),
         )
 
     def test_clean_scan_scores_zero_grade_a(self, db):
-        from apps.core.insights.builder import build_insights
-        from apps.core.insights.models import ScanSummary
+        from apps.core.console.insights.builder import build_insights
+        from apps.core.console.insights.models import ScanSummary
 
         s = self._session()
         build_insights(s)
@@ -157,8 +157,8 @@ class TestBuilderPopulatesExposure:
         assert summary.exposure_grade == "A"
 
     def test_findings_produce_expected_score(self, db):
-        from apps.core.insights.builder import build_insights
-        from apps.core.insights.models import ScanSummary
+        from apps.core.console.insights.builder import build_insights
+        from apps.core.console.insights.models import ScanSummary
 
         s = self._session()
         _finding(s, "critical", "c1")
@@ -172,8 +172,8 @@ class TestBuilderPopulatesExposure:
         assert summary.exposure_grade == "C"
 
     def test_score_saturates_in_builder(self, db):
-        from apps.core.insights.builder import build_insights
-        from apps.core.insights.models import ScanSummary
+        from apps.core.console.insights.builder import build_insights
+        from apps.core.console.insights.models import ScanSummary
 
         s = self._session()
         for i in range(6):
@@ -199,10 +199,10 @@ def api_client(db):
 
 
 def _domain_and_summary(domain, score, when, critical=0, high=0):
-    from apps.core.domains.models import Domain
-    from apps.core.scans.models import ScanSession
-    from apps.core.insights.models import ScanSummary
-    from apps.core.insights.scoring import grade_for_score
+    from apps.core.data.domains.models import Domain
+    from apps.core.engine.scans.models import ScanSession
+    from apps.core.console.insights.models import ScanSummary
+    from apps.core.console.insights.scoring import grade_for_score
 
     Domain.objects.get_or_create(name=domain, defaults={"is_active": True})
     session = ScanSession.objects.create(
@@ -243,7 +243,7 @@ class TestInsightsAPIExposure:
         assert exposure["change"] == 35
 
     def test_exposure_none_when_no_summaries(self, api_client):
-        from apps.core.domains.models import Domain
+        from apps.core.data.domains.models import Domain
         Domain.objects.create(name="empty.example.com", is_active=True)
         resp = api_client.get("/api/insights/")
         assert resp.json()["exposure"] is None
@@ -274,7 +274,7 @@ class TestReportExposureContext:
         return c
 
     def _session_with_findings(self, domain="rep.example.com"):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         s = ScanSession.objects.create(
             domain=domain, scan_type="full", status="completed",
             end_time=timezone.now(), total_findings=3,
@@ -291,7 +291,7 @@ class TestReportExposureContext:
             captured["html"] = html
             return b"%PDF-1.7"
 
-        with patch("apps.core.reports.views._render_pdf", side_effect=capture):
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture):
             resp = client.get(f"/reports/{session.uuid}/pdf/")
         assert resp.status_code == 200
         return captured["html"]

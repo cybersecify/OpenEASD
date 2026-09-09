@@ -21,7 +21,7 @@ gitleaks JSON report format (one object per leak):
 
 import logging
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 
 logger = logging.getLogger(__name__)
 
