@@ -7,6 +7,16 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Web image on Python 3.14; CI tests on 3.14.** The `web` runtime image moves
+  `python:3.12-slim` → `python:3.14-slim`, and the CI test job moves 3.12 → 3.14
+  so the shipped web Python is the tested one. Verified: the full dependency set
+  installs on 3.14 (CI Docker Build + a local 3.14 venv — django/psycopg/lxml/
+  cryptography/weasyprint/dbos/pydantic all import) and the suite passes on 3.14.
+  The `worker` image stays Ubuntu 24.04 (Python 3.12) — an intentional split, the
+  worker base is pinned to the OS the scanner tools were validated on;
+  `requires-python >=3.11` covers both. Supersedes Dependabot PR #346.
+
 ## [v2.4.2] — 2026-09-09
 
 ### Changed
