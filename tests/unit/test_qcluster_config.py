@@ -10,7 +10,7 @@ still running — locked here against SCAN_TASK_TIMEOUT.
 
 from django.conf import settings
 
-from apps.core.scheduler.scheduler import SCAN_TIMEOUT_MINUTES
+from apps.core.engine.scheduler.scheduler import SCAN_TIMEOUT_MINUTES
 
 
 def test_django_q_cluster_removed():

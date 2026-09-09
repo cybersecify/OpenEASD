@@ -12,9 +12,9 @@ import subprocess
 import tempfile
 
 from django.conf import settings
-from apps.core.assets.models import Port
-from apps.core.workflows.exceptions import ToolBinaryMissing
-from apps.core.workflows.proc import run_capped
+from apps.core.data.assets.models import Port
+from apps.core.engine.workflows.exceptions import ToolBinaryMissing
+from apps.core.engine.workflows.proc import run_capped
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ def collect(session) -> list[dict]:
         # run_capped (not subprocess.run) so an escaped interactsh/resolver helper
         # can't hold the stdout pipe open and wedge the worker on timeout — the
         # same anti-hang fix the web nuclei collector already had.
-        from apps.core.workflows.proc_env import go_memory_env
+        from apps.core.engine.workflows.proc_env import go_memory_env
         result = run_capped(cmd, TIMEOUT, env=go_memory_env())
         stdout, stderr = result.stdout, result.stderr
     except FileNotFoundError:

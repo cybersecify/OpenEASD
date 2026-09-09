@@ -28,7 +28,7 @@ class TestCollect:
     def test_binary_not_found_raises(self, mock_run):
         # A missing binary must surface (ToolBinaryMissing -> scan marked partial),
         # not silently return [] — a silent skip hid a missing tool from the operator.
-        from apps.core.workflows.exceptions import ToolBinaryMissing
+        from apps.core.engine.workflows.exceptions import ToolBinaryMissing
         mock_run.side_effect = FileNotFoundError()
         with pytest.raises(ToolBinaryMissing):
             collect(["api.example.com"])
@@ -40,7 +40,7 @@ class TestCollect:
 
     @patch("apps.alterx.collector.subprocess.run")
     def test_timeout_raises(self, mock_run):
-        from apps.core.workflows.exceptions import ToolTimeout
+        from apps.core.engine.workflows.exceptions import ToolTimeout
         mock_run.side_effect = subprocess.TimeoutExpired("alterx", 300)
         with pytest.raises(ToolTimeout):
             collect(["api.example.com"])
@@ -79,7 +79,7 @@ from apps.alterx.analyzer import analyze
 @pytest.mark.django_db
 class TestAnalyze:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def test_empty_input_returns_empty(self):
@@ -92,7 +92,7 @@ class TestAnalyze:
         assert objs == []
 
     def test_valid_permutation_builds_subdomain_object(self):
-        from apps.core.assets.models import Subdomain
+        from apps.core.data.assets.models import Subdomain
         sess = self._session()
         objs = analyze(sess, ["api-dev.example.com"])
         assert len(objs) == 1
@@ -107,7 +107,7 @@ class TestAnalyze:
         assert len(objs) == 1
 
     def test_deduplicates_against_existing_session_subdomains(self):
-        from apps.core.assets.models import Subdomain
+        from apps.core.data.assets.models import Subdomain
         sess = self._session()
         Subdomain.objects.create(
             session=sess, domain="example.com",
@@ -133,11 +133,11 @@ from apps.alterx.scanner import run_alterx
 @pytest.mark.django_db
 class TestScanner:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def _subdomain(self, session, name):
-        from apps.core.assets.models import Subdomain
+        from apps.core.data.assets.models import Subdomain
         return Subdomain.objects.create(
             session=session, domain="example.com",
             subdomain=name, source="subfinder",
@@ -166,7 +166,7 @@ class TestScanner:
         assert "api.example.com" in captured["subdomains"]
 
     def test_saves_permutations_and_returns_them(self):
-        from apps.core.assets.models import Subdomain
+        from apps.core.data.assets.models import Subdomain
         sess = self._session()
         self._subdomain(sess, "api.example.com")
 

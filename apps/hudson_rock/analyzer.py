@@ -9,7 +9,7 @@ here — only the fields explicitly extracted below reach the Finding.
 
 import logging
 
-from apps.core.findings.models import Finding
+from apps.core.data.findings.models import Finding
 
 logger = logging.getLogger(__name__)
 

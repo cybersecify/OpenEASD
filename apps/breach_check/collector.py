@@ -37,6 +37,7 @@ import time
 
 import requests
 from django.conf import settings
+from apps.core.console.credentials.resolver import get_credential
 
 logger = logging.getLogger(__name__)
 
@@ -212,7 +213,7 @@ def collect(domain: str) -> dict:
     Picks the authoritative HIBP tier when ``HIBP_API_KEY`` is set, else the free
     keyless XposedOrNot tier. Always returns a dict; never raises.
     """
-    key = getattr(settings, "HIBP_API_KEY", "")
+    key = get_credential("HIBP_API_KEY")
     if key:
         logger.info("[breach_check] HIBP_API_KEY set — using HIBP breacheddomain for %s", domain)
         return _collect_hibp(domain, key)

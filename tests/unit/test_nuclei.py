@@ -87,9 +87,9 @@ class TestParseHostTarget:
 @pytest.mark.django_db
 class TestNucleiAnalyzer:
     def _make_session(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain
-        from apps.core.web_assets.models import URL
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain
+        from apps.core.data.web_assets.models import URL
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         sub = Subdomain.objects.create(session=sess, domain="example.com",
                                        subdomain="www.example.com", source="subfinder")
@@ -213,9 +213,9 @@ class TestNucleiAnalyzer:
 @pytest.mark.django_db
 class TestNucleiCollector:
     def _make_session(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain
-        from apps.core.web_assets.models import URL
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain
+        from apps.core.data.web_assets.models import URL
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         sub = Subdomain.objects.create(session=sess, domain="example.com",
                                        subdomain="www.example.com", source="subfinder")
@@ -244,7 +244,7 @@ class TestNucleiCollector:
         assert len(records) == 1
 
     def test_empty_session_no_run(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
 
         with patch("apps.nuclei.collector.run_capped") as mock_run:
@@ -284,7 +284,7 @@ class TestNucleiCollector:
     def test_binary_not_found_raises(self):
         """A missing binary must surface as ToolBinaryMissing, not a silent [] —
         otherwise the runner marks the step 'completed' and the failure hides."""
-        from apps.core.workflows.exceptions import ToolBinaryMissing
+        from apps.core.engine.workflows.exceptions import ToolBinaryMissing
         sess = self._make_session()
         with patch("apps.nuclei.collector.run_capped", side_effect=FileNotFoundError):
             with pytest.raises(ToolBinaryMissing):
@@ -442,7 +442,7 @@ class TestRunProcessGroupKill:
         use wait() (not communicate()) so an escaped child holding the stdout pipe
         can't block us — the bug that wedged the scan past the timeout."""
         import subprocess as sp
-        from apps.core.workflows import proc
+        from apps.core.engine.workflows import proc
 
         fake_proc = MagicMock()
         fake_proc.pid = 4242
@@ -453,9 +453,9 @@ class TestRunProcessGroupKill:
             0,
         ]
 
-        with patch("apps.core.workflows.proc.subprocess.Popen", return_value=fake_proc), \
-             patch("apps.core.workflows.proc.os.getpgid", return_value=4242), \
-             patch("apps.core.workflows.proc.os.killpg") as mock_killpg:
+        with patch("apps.core.engine.workflows.proc.subprocess.Popen", return_value=fake_proc), \
+             patch("apps.core.engine.workflows.proc.os.getpgid", return_value=4242), \
+             patch("apps.core.engine.workflows.proc.os.killpg") as mock_killpg:
             with pytest.raises(sp.TimeoutExpired):
                 proc.run_capped(["nuclei"], timeout=1)
 
@@ -466,14 +466,14 @@ class TestRunProcessGroupKill:
         assert not fake_proc.communicate.called
 
     def test_returns_completed_process_on_success(self):
-        from apps.core.workflows import proc
+        from apps.core.engine.workflows import proc
 
         fake_proc = MagicMock()
         fake_proc.pid = 99
         fake_proc.returncode = 0
         fake_proc.wait.return_value = 0
 
-        with patch("apps.core.workflows.proc.subprocess.Popen", return_value=fake_proc):
+        with patch("apps.core.engine.workflows.proc.subprocess.Popen", return_value=fake_proc):
             result = proc.run_capped(["nuclei"], timeout=10)
 
         assert result.returncode == 0
@@ -482,7 +482,7 @@ class TestRunProcessGroupKill:
         assert not fake_proc.communicate.called
 
     def test_real_run_captures_output(self):
-        from apps.core.workflows import proc
+        from apps.core.engine.workflows import proc
         result = proc.run_capped(["printf", "hello\nworld\n"], timeout=10)
         assert result.returncode == 0
         assert "hello" in result.stdout and "world" in result.stdout
@@ -495,7 +495,7 @@ class TestRunProcessGroupKill:
         import sys
         import time
         import subprocess as sp
-        from apps.core.workflows import proc
+        from apps.core.engine.workflows import proc
 
         script = (
             "import os, sys, time\n"
@@ -520,10 +520,10 @@ class TestRunProcessGroupKill:
 @pytest.mark.django_db
 class TestNucleiScanner:
     def test_scanner_creates_findings(self):
-        from apps.core.scans.models import ScanSession
-        from apps.core.assets.models import Subdomain
-        from apps.core.web_assets.models import URL
-        from apps.core.findings.models import Finding
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain
+        from apps.core.data.web_assets.models import URL
+        from apps.core.data.findings.models import Finding
 
         sess = ScanSession.objects.create(domain="example.com", scan_type="full")
         sub = Subdomain.objects.create(session=sess, domain="example.com",
@@ -539,7 +539,7 @@ class TestNucleiScanner:
         assert Finding.objects.filter(session=sess, source="nuclei").count() == 1
 
     def test_scanner_empty_session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="empty.com", scan_type="full")
         with patch("apps.nuclei.scanner.collect", return_value=[]):
             findings = run_nuclei(sess)
@@ -557,11 +557,11 @@ import pytest as _pytest
 @_pytest.mark.django_db
 class TestSelectTargets:
     def _session(self):
-        from apps.core.scans.models import ScanSession
+        from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full")
 
     def _url(self, session, host, source):
-        from apps.core.web_assets.models import URL
+        from apps.core.data.web_assets.models import URL
         return URL.objects.create(
             session=session, url=f"https://{host}", host=host,
             scheme="https", source=source,

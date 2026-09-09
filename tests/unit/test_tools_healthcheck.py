@@ -1,4 +1,4 @@
-"""Unit tests for apps/core/dashboard/management/commands/tools_healthcheck.
+"""Unit tests for apps/core/console/dashboard/management/commands/tools_healthcheck.
 
 Covers the four failure modes the healthcheck is designed to surface:
  - binary missing (FileNotFoundError)
@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 from django.core.management import call_command
 
-from apps.core.dashboard.management.commands.tools_healthcheck import (
+from apps.core.console.dashboard.management.commands.tools_healthcheck import (
     Probe,
     run_probe,
 )
@@ -115,7 +115,7 @@ class TestCommand:
     def test_quick_mode_runs_version_checks_only(self, db):
         out = StringIO()
         with patch(
-            "apps.core.dashboard.management.commands.tools_healthcheck.run_probe",
+            "apps.core.console.dashboard.management.commands.tools_healthcheck.run_probe",
             return_value=(True, "OK"),
         ) as mock_probe:
             call_command("tools_healthcheck", "--quick", stdout=out)
@@ -128,7 +128,7 @@ class TestCommand:
     def test_functional_mode_runs_full_probes(self, db):
         out = StringIO()
         with patch(
-            "apps.core.dashboard.management.commands.tools_healthcheck.run_probe",
+            "apps.core.console.dashboard.management.commands.tools_healthcheck.run_probe",
             return_value=(True, "OK"),
         ) as mock_probe:
             call_command("tools_healthcheck", stdout=out)
@@ -142,7 +142,7 @@ class TestCommand:
             return (False, "binary not found") if probe.name == "naabu" else (True, "OK")
 
         with patch(
-            "apps.core.dashboard.management.commands.tools_healthcheck.run_probe",
+            "apps.core.console.dashboard.management.commands.tools_healthcheck.run_probe",
             side_effect=fake_probe,
         ):
             call_command("tools_healthcheck", "--quick", stdout=out)
@@ -156,7 +156,7 @@ class TestCommand:
         """Healthcheck is observability, not gating — never crashes the boot."""
         out = StringIO()
         with patch(
-            "apps.core.dashboard.management.commands.tools_healthcheck.run_probe",
+            "apps.core.console.dashboard.management.commands.tools_healthcheck.run_probe",
             return_value=(False, "binary not found"),
         ):
             # call_command raises CommandError on non-zero exit; here it should NOT raise

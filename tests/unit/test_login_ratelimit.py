@@ -1,4 +1,4 @@
-"""Tests for login brute-force rate limiting (apps/core/api/ratelimit.py)."""
+"""Tests for login brute-force rate limiting (apps/core/console/api/ratelimit.py)."""
 
 import json
 from datetime import timedelta
@@ -8,8 +8,8 @@ from django.contrib.auth import get_user_model
 from django.test import Client
 from django.utils import timezone
 
-from apps.core.api import ratelimit
-from apps.core.dashboard.models import LoginThrottle
+from apps.core.console.api import ratelimit
+from apps.core.console.dashboard.models import LoginThrottle
 
 pytestmark = pytest.mark.django_db
 

@@ -1,6 +1,6 @@
-"""Tests for the Go-tool memory-env helper (apps/core/workflows/proc_env.py)."""
+"""Tests for the Go-tool memory-env helper (apps/core/engine/workflows/proc_env.py)."""
 
-from apps.core.workflows.proc_env import go_memory_env
+from apps.core.engine.workflows.proc_env import go_memory_env
 
 
 class TestGoMemoryEnv:

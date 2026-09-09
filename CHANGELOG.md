@@ -7,6 +7,75 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.4.0] — 2026-09-09
+
+### Added
+- **UI-managed BYOK credentials — foundation (C1).** New
+  `apps/core/console/credentials` app: a `ToolCredentials` encrypted singleton
+  (Fernet at rest) + a `get_credential()` resolver (**DB value wins over env**,
+  env fallback, fail-graceful) + a **write-only** `/api/credentials/` (presence
+  booleans + a `db|env|none` source per key; values never returned). **Why:** so
+  tool API keys (Shodan/HIBP/GitHub/DNS-history) can be set from the UI without a
+  redeploy, reusing the existing at-rest crypto. Additive — no tool is wired to
+  the resolver yet (that's C3), so scans are unchanged. Bootstrap secrets
+  (`FIELD_ENCRYPTION_KEY`, `SECRET_KEY`, `DB_*`) deliberately stay env-only. Spec:
+  `docs/specs/2026-09-09-credential-management.md`.
+- **UI-managed BYOK credentials — tools wired (C3).** `shodan`, `breach_check`,
+  `github_recon`, `github_secrets`, and `dns_history` now read their key via
+  `get_credential()` instead of `settings` directly, so a key stored in the DB
+  (`ToolCredentials`) **overrides the env var with no redeploy**; an unset DB key
+  falls back to env exactly as before. Existing tool tests unchanged (env fallback
+  preserves them); a new test proves a DB key drives `shodan` onto the paid host
+  tier with no env key. Cloudflare still defers to `AISettings`. **Why:** this is
+  where UI/DB keys start taking effect. Next: the CredentialsPage UI (C5).
+- **UI-managed BYOK credentials — the Credentials page (C5).** A new
+  **`/credentials`** page (nav item between Notifications and AI Analysis): one
+  row per key (Shodan / HIBP / GitHub token+secret / DNS-history) with a
+  password input + Save/Clear and a presence/source pill (**Set (UI)** / **From
+  env var** / **Not set**). Write-only — values are never displayed; Clear is
+  enabled only for keys set in the UI. A footer notes that `SECRET_KEY` /
+  `FIELD_ENCRYPTION_KEY` / `DB_*` stay env-only. Completes the credential-management
+  feature (C1+C3+C5): manage all tool BYOK keys from the console, no redeploy.
+
+## [v2.3.0] — 2026-09-08
+
+### Changed
+- **`@durable_task` engine adapter (PQC hardening H6, slice 1).** New
+  `apps/core/engine/durable/task.py` — a thin decorator over DBOS so task bodies
+  don't import the engine: `task()` runs the body in-process (testable without a
+  DBOS engine), `task.delay()` durably enqueues (with an optional `dedupe`
+  template → DBOS `deduplication_id`). The two one-step tasks `ai_triage` and
+  `agent_step` are converted; the `enqueue_*` helpers now delegate to `.delay()`.
+  `run_scan` stays an explicit multi-step workflow (its per-phase checkpointing is
+  the point). Workflow names/dedup unchanged → no behaviour change; DBOS
+  construction + registration verified. Principle #11 (keep the engine behind an
+  adapter). Plan: `docs/specs/2026-09-07-producer-queue-consumer-hardening.md`.
+- **Reorganised the core apps into layer subpackages.** The 15 `apps/core/*` apps
+  now live under **`apps/core/console/`** (dashboard, insights, reports,
+  notifications, ai, api), **`apps/core/engine/`** (scans, workflows, durable,
+  scheduler, service_detection), and **`apps/core/data/`** (domains, assets,
+  web_assets, findings, asset_inventory), matching the logical layer model.
+  Import paths are now `apps.core.<layer>.<app>`. **Django labels are unchanged**,
+  so the database and migrations are untouched (no schema change, no data
+  migration). Purely organisational; full test suite green.
+- **Removed a vestigial SQLite write-lock from the workflow runner.** `runner.py`
+  serialised parallel `WorkflowStepResult` writes behind a `threading.Lock` left
+  over from the SQLite era. **Why:** on PostgreSQL concurrent writers are fine
+  (each tool thread uses its own connection), and a per-process lock wouldn't
+  serialise across worker replicas anyway — so it was needless intra-phase
+  contention + misleading comments. Correctness-neutral; restores true parallel
+  step-result writes. Also logged the watchdog↔DBOS-resume overlap as **H4** in
+  the PQC hardening plan.
+
+### Fixed
+- **Alert idempotency on finalize replay (PQC hardening H1).** `_dispatch_alerts`
+  now skips re-sending when the session already has a `sent` `Alert` row. **Why:**
+  scan finalize is a durable DBOS step that can be *replayed* after a partial crash
+  (worker dies after the Slack/Teams webhook POST but before the step checkpoints);
+  without the guard, resume re-fired the alerts → duplicate notifications. Only
+  `sent` rows count, so a prior attempt that failed entirely is still retried. Plan:
+  `docs/specs/2026-09-07-producer-queue-consumer-hardening.md`.
+
 ## [v2.2.0] — 2026-09-07
 
 ### Added
@@ -992,3 +1061,18 @@ security learners. The pre-launch work below tightens the load-bearing
   (Flagged during test as a possible bug because `head -30` truncation showed
   only Full Scan with `is_default=false`; rebuilding the test with a higher
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
+
+<!-- Version compare links (Keep a Changelog) -->
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.4.0...HEAD
+[v2.4.0]: https://github.com/cybersecify/OpenEASD/compare/v2.3.0...v2.4.0
+[v2.3.0]: https://github.com/cybersecify/OpenEASD/compare/v2.2.0...v2.3.0
+[v2.2.0]: https://github.com/cybersecify/OpenEASD/compare/v2.1.1...v2.2.0
+[v2.1.1]: https://github.com/cybersecify/OpenEASD/compare/v2.1.0...v2.1.1
+[v2.1.0]: https://github.com/cybersecify/OpenEASD/compare/v2.0.0...v2.1.0
+[v2.0.0]: https://github.com/cybersecify/OpenEASD/compare/v0.10.0...v2.0.0
+[v0.10.0]: https://github.com/cybersecify/OpenEASD/compare/v0.9.0...v0.10.0
+[v0.9.0]: https://github.com/cybersecify/OpenEASD/compare/v0.8.0...v0.9.0
+[v0.8.0]: https://github.com/cybersecify/OpenEASD/compare/v0.7.1...v0.8.0
+[v0.7.1]: https://github.com/cybersecify/OpenEASD/compare/v0.7...v0.7.1
+[v0.7]: https://github.com/cybersecify/OpenEASD/compare/v0.6...v0.7
+[v0.5]: https://github.com/cybersecify/OpenEASD/compare/v0.4...v0.5

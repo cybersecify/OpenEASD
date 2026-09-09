@@ -3,6 +3,23 @@
 External Attack Surface Detection platform. Scans domains for network and
 web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 
+## Status (v2.4.0 — 2026-09-09)
+
+- **Released**: v2.4.0 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
+  `:v2.4.0` / `:v2.4` / `:latest`. 3-tier deploy: `db` (postgres:17) + `web`
+  (gunicorn, no tools) + `worker` (`dbos_worker` + scanner matrix, `NET_RAW`).
+- **Scope**: 28 registered scan tools across 12 pipeline phases; single-user
+  (one admin, no RBAC) by design.
+- **Engine**: DBOS durable workflows on PostgreSQL — one multi-step `run_scan`
+  workflow per scan (checkpoint/resume) + `@durable_task` for one-step tasks
+  (`ai_triage`, `agent_step`) + `@scheduled` crons. No SQLite, no Django-Q/Celery.
+- **AI**: optional Cloudflare Workers AI layer (BYOK, off by default, consent-gated).
+- **Docs**: [`docs/DESIGN.md`](docs/DESIGN.md) (architecture — layers/tiers,
+  workflow-vs-pipeline, apps), [`docs/DECISIONS.md`](docs/DECISIONS.md) (why),
+  [`docs/PRD.md`](docs/PRD.md) (product), `docs/specs/` (feature specs +
+  producer→queue→consumer hardening plan H1–H7). Release notes: `CHANGELOG.md`.
+- **Health**: `GET /health/` (unauth, K8s probes) · `GET /api/version/`.
+
 ## GitHub Flow
 
 **Rule:** Never commit to `main` directly.
@@ -97,7 +114,7 @@ git describe --tags --abbrev=0
 - **Publish triggers:** every push to `main` (`:latest` tag) and `v*` git tags. A tag push emits both the full `:vX.Y.Z` (from `type=ref,event=tag`) and a floating `:vX.Y` major.minor tag (from `type=match,pattern=v\d+\.\d+`) so downstream can pin to a minor line and still get patch updates
 - Runner: `ubuntu-24.04`, Python 3.12, `uv sync --group dev` for deps, `libcairo2-dev gcc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0` system deps required (WeasyPrint PDF rendering)
 - `pip-audit --ignore-vuln PYSEC-2025-183` — disputed PyJWT weak-key-length CVE, no fix available
-- **Build provenance:** the `publish` job computes `OPENEASD_VERSION` (git tag for `v*`, else `pyproject.toml` version), `OPENEASD_GIT_SHA` (`github.sha`), and `OPENEASD_BUILD_DATE` (ISO UTC) and passes them as `build-args` to buildx. The Dockerfile bakes them into `ENV` (placed late so they never bust the cache of the heavy layers). Settings read them via `config()` with `dev`/`unknown` defaults for local runs. Surfaced at `GET /health/` + `GET /api/version/`, and shown as a muted footer on the login + change-password pages AND in the authenticated app sidebar (`frontend/src/components/BuildInfo.jsx`). The sidebar footer also does an "update available" check via `GET /api/version/latest/` (authenticated; compares the running build to the latest GitHub release, cached 6h, fail-graceful — logic in `apps/core/api/update_check.py`). The app never self-updates; it only surfaces a heads-up + release link.
+- **Build provenance:** the `publish` job computes `OPENEASD_VERSION` (git tag for `v*`, else `pyproject.toml` version), `OPENEASD_GIT_SHA` (`github.sha`), and `OPENEASD_BUILD_DATE` (ISO UTC) and passes them as `build-args` to buildx. The Dockerfile bakes them into `ENV` (placed late so they never bust the cache of the heavy layers). Settings read them via `config()` with `dev`/`unknown` defaults for local runs. Surfaced at `GET /health/` + `GET /api/version/`, and shown as a muted footer on the login + change-password pages AND in the authenticated app sidebar (`frontend/src/components/BuildInfo.jsx`). The sidebar footer also does an "update available" check via `GET /api/version/latest/` (authenticated; compares the running build to the latest GitHub release, cached 6h, fail-graceful — logic in `apps/core/console/api/update_check.py`). The app never self-updates; it only surfaces a heads-up + release link.
 
 ## Commands
 - Always use `uv run python` instead of `python` or `python3`
@@ -151,7 +168,7 @@ uv run manage.py dbos_worker
 ### Frontend rules
 - New interactive features → React pages in `frontend/src/pages/`, wired into the route tree in `src/router.jsx`
 - Fetch data with react-query `useQuery` + `apiGet`/`apiPost` (keyed by the API path); don't reintroduce ad-hoc `fetch`/`useFetch`. Navigate with react-router-dom's `useNavigate`, not a hand-rolled router.
-- New API data → add endpoint to the relevant `apps/core/<module>/api.py` router + wire in `apps/core/api/ninja.py`
+- New API data → add endpoint to the relevant `apps/core/<module>/api.py` router + wire in `apps/core/console/api/ninja.py`
 - Shared UI primitives → `frontend/src/components/`
 - Don't add CORS headers — always use same-origin (Vite proxy in dev, Django serves in prod)
 - Legacy HTMX/Alpine/Django-template stack is **retired**. All UI is the React SPA.
@@ -284,9 +301,9 @@ Don't enable the `ingress` addon if the host already runs Caddy on :80/:443 — 
 - **Auto-scan consent gate:** `daily_scan` and per-domain monitoring only scan domains with a `DomainAuthorization` record (`is_active=True, authorization__isnull=False`); `run_monitoring_scan` re-checks at run time. The scheduler cannot bypass the authorization gate the manual API/UI already enforce. (Scheduled scans always run the default active Full Scan workflow, so the gate always applies to them — the passive-scan exemption below is manual/`now`-only.)
 - **`SCHEDULED_SCANS_ENABLED`** (env, default `True`) is the master switch for unattended scanning. When `False`, `setup_core_schedules()` registers only the hygiene jobs (watchdog + token purge) and removes any existing `daily_scan`/`monitor_*` schedules on startup — this is how a deployment is made durably manual-only (set in `k8s/configmap.yaml`). Manual/API scans are unaffected.
 - Schedule history visible in Django admin under "Django Q" → "Scheduled tasks"
-- Scheduler code lives in `apps/core/scheduler/scheduler.py`
-- `setup_core_schedules()` called from `apps/core/scheduler/apps.py` → `SchedulerConfig.ready()`
-- The DBOS `@scheduled` cron workflows register only in the `dbos_worker` process (they are decorators applied when the worker imports `apps/core/durable/workflows`) — never in gunicorn workers
+- Scheduler code lives in `apps/core/engine/scheduler/scheduler.py`
+- `setup_core_schedules()` called from `apps/core/engine/scheduler/apps.py` → `SchedulerConfig.ready()`
+- The DBOS `@scheduled` cron workflows register only in the `dbos_worker` process (they are decorators applied when the worker imports `apps/core/engine/durable/workflows`) — never in gunicorn workers
 
 ## External binary tools
 
@@ -314,7 +331,14 @@ request-counting proxy C4 is deferred).
 
 ## Architecture
 
-### Core infrastructure — `apps/core/` (15 sub-apps)
+### Core infrastructure — `apps/core/` (16 sub-apps)
+
+The 16 core apps are grouped into layer subpackages: **`apps/core/console/`**
+(dashboard, insights, reports, notifications, ai, credentials, api), **`apps/core/engine/`**
+(scans, workflows, durable, scheduler, service_detection), and
+**`apps/core/data/`** (domains, assets, web_assets, findings, asset_inventory).
+Django labels are unchanged — the nesting is organisational only (import paths are
+`apps.core.<layer>.<app>`). See `docs/DESIGN.md` for the layer model.
 
 | App | Label | Purpose |
 |---|---|---|
@@ -327,29 +351,31 @@ request-counting proxy C4 is deferred).
 | `asset_inventory/` | `asset_inventory` | Persistent, deduplicated `Asset` inventory (domain-scoped, first/last-seen + status) — populated by a fail-graceful rollup at finalize; `Finding.asset` links findings to it. Spec: `docs/specs/2026-09-06-asset-centric-inventory.md` (PR1: model + rollup + backfill) |
 | `scans/` | `scans` | ScanSession, ScanDelta, pipeline orchestrator |
 | `workflows/` | `workflow` | Workflow CRUD, dynamic runner, tool registry |
-| `scheduler/` | `scheduler` | Scan callables (daily_scan, run_due_monitoring_scans, run_due_user_scans, reap_stuck_scans, token purge) invoked by the DBOS `@scheduled` workflows in `apps/core/durable` |
+| `scheduler/` | `scheduler` | Scan callables (daily_scan, run_due_monitoring_scans, run_due_user_scans, reap_stuck_scans, token purge) invoked by the DBOS `@scheduled` workflows in `apps/core/engine/durable` |
 | `notifications/` | `alerts` | Slack/Teams alerts, NotificationConfig model, alert history |
 | `insights/` | `insights` | ScanSummary (incl. per-scan Exposure Score + grade, `scoring.py`), FindingTypeSummary, charts |
 | `reports/` | `reports` | CSV + PDF export (synchronous, served by the web tier) |
 | `ai/` | `ai` | AI analysis (Cloudflare Workers AI, BYOK): finding triage, bounded adaptive orchestration, report/alert summaries, consent + per-call audit log |
+| `credentials/` | `credentials` | UI-managed BYOK API keys — `ToolCredentials` encrypted singleton + `get_credential()` resolver (DB-wins-over-env) + write-only `/api/credentials/` + the `/credentials` **CredentialsPage**. Tools read via the resolver (shodan/breach_check/github_recon/github_secrets/dns_history) — a DB key overrides env with no redeploy |
 | `api/` | — | Django Ninja API — routers, JWT auth, error handlers |
 
-### REST API module — `apps/core/api/`
+### REST API module — `apps/core/console/api/`
 
 ```
-apps/core/api/
+apps/core/console/api/
     __init__.py
     ninja.py          — NinjaAPI instance, ninja-jwt auth routes (/token/pair|refresh|verify|blacklist),
                         /user/ endpoint, error handlers, router registration
 
 Per-module routers (each file exports a `router = Router(auth=JWTAuth())`):
-    apps/core/dashboard/api.py   — /api/dashboard/
-    apps/core/domains/api.py     — /api/domains/ CRUD
-    apps/core/scans/api.py       — /api/scans/ + findings
-    apps/core/workflows/api.py   — /api/workflows/ CRUD + /tools/
-    apps/core/insights/api.py    — /api/insights/
-    apps/core/notifications/api.py — /api/notifications/ config + test + alerts
-    apps/core/asset_inventory/api.py — /api/assets/ list + summary + detail
+    apps/core/console/dashboard/api.py   — /api/dashboard/
+    apps/core/data/domains/api.py     — /api/domains/ CRUD
+    apps/core/engine/scans/api.py       — /api/scans/ + findings
+    apps/core/engine/workflows/api.py   — /api/workflows/ CRUD + /tools/
+    apps/core/console/insights/api.py    — /api/insights/
+    apps/core/console/notifications/api.py — /api/notifications/ config + test + alerts
+    apps/core/console/credentials/api.py — /api/credentials/ (write-only BYOK key store)
+    apps/core/data/asset_inventory/api.py — /api/assets/ list + summary + detail
     (scheduled router in scans/api.py) — /api/scheduled/
 ```
 
@@ -363,11 +389,11 @@ Per-module routers (each file exports a `router = Router(auth=JWTAuth())`):
 - Access token: short-lived, sent as `Authorization: Bearer <token>`
 - Refresh token: long-lived, sent in POST body to `/api/token/refresh`
 - Logout: blacklists refresh token via `/api/token/blacklist` (simplejwt OutstandingToken/BlacklistedToken)
-- **Brute-force rate limiting:** `LoginRateLimitMiddleware` (`apps/core/api/ratelimit.py`) locks out an IP after `LOGIN_RATELIMIT_MAX_FAILURES` (default 5) failed `POST /api/token/pair` attempts within the window, returning 429 + `Retry-After`. State is the DB-backed `LoginThrottle` model (shared across gunicorn workers, unlike the per-process LocMemCache). Only `/token/pair` is limited (not `/refresh`); a successful login clears the IP's counter. Per-IP via `X-Forwarded-For` when `LOGIN_RATELIMIT_TRUST_FORWARDED_FOR` is on (default, for the mandated proxy); off → falls back to the unspoofable `REMOTE_ADDR` so a bare deployment can't be evaded by rotating the header. Tunable/`LOGIN_RATELIMIT_ENABLED`-toggle via settings. Tests: `tests/unit/test_login_ratelimit.py`.
+- **Brute-force rate limiting:** `LoginRateLimitMiddleware` (`apps/core/console/api/ratelimit.py`) locks out an IP after `LOGIN_RATELIMIT_MAX_FAILURES` (default 5) failed `POST /api/token/pair` attempts within the window, returning 429 + `Retry-After`. State is the DB-backed `LoginThrottle` model (shared across gunicorn workers, unlike the per-process LocMemCache). Only `/token/pair` is limited (not `/refresh`); a successful login clears the IP's counter. Per-IP via `X-Forwarded-For` when `LOGIN_RATELIMIT_TRUST_FORWARDED_FOR` is on (default, for the mandated proxy); off → falls back to the unspoofable `REMOTE_ADDR` so a bare deployment can't be evaded by rotating the header. Tunable/`LOGIN_RATELIMIT_ENABLED`-toggle via settings. Tests: `tests/unit/test_login_ratelimit.py`.
 
 **Adding a new API endpoint:**
 1. Add endpoint function to the relevant `apps/core/<module>/api.py` router
-2. Register the router in `apps/core/api/ninja.py` if it's a new module
+2. Register the router in `apps/core/console/api/ninja.py` if it's a new module
 3. Consume in `frontend/src/api/client.js` or a page component
 
 ### Tool auto-registration
@@ -408,7 +434,7 @@ class MyToolConfig(AppConfig):
     }
 ```
 
-The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` at startup and provides:
+The registry (`apps/core/engine/workflows/registry.py`) auto-discovers all `tool_meta` at startup and provides:
 - `get_tool_choices()` — for forms and UI
 - `get_tool_runners()` — for workflow execution
 - `get_tool_phases()` — for ordering
@@ -436,7 +462,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 | `apps/cloud_assets/` | 4 | Surface Enumeration | Yes | Public cloud bucket enumeration via cloud_enum (AWS S3 / Azure Blob / GCP Storage) |
 | `apps/naabu/` | 5 | Port Discovery | No | Port scanning (top 100 TCP) |
 | `apps/shodan/` | 5 | Port Discovery | Yes | Passive exposure intel from Shodan's own scan data — ports/services/CVEs per resolved IP. BYOK: free InternetDB tier (no key, no credits), full host API when `SHODAN_API_KEY` set (`SHODAN_MAX_IPS` caps the paid path). CVEs land in `extra["cve_ids"]` so `cve_intel` enriches them. Passive, fail-graceful |
-| `apps/core/service_detection/` | 6 | Port Discovery | No | nmap -sV enriches Port.service + is_web |
+| `apps/core/engine/service_detection/` | 6 | Port Discovery | No | nmap -sV enriches Port.service + is_web |
 | `apps/nmap/` | 7 | Network Exposure | Yes | NSE vulners CVE scan (non-web ports); backport-aware CVE matching (`backports.json` registry) |
 | `apps/tls_checker/` | 7 | Network Exposure | Yes | TLS/cert analysis + cipher suite enumeration via `nmap --script ssl-enum-ciphers` (all ports) |
 | `apps/ssh_checker/` | 7 | Network Exposure | Yes | SSH config analysis |
@@ -453,7 +479,7 @@ The registry (`apps/core/workflows/registry.py`) auto-discovers all `tool_meta` 
 ```
 apps/<tool>/
     apps.py         — AppConfig with tool_meta (self-registration)
-    models.py       — empty (writes to apps/core/assets/ and apps/core/findings/)
+    models.py       — empty (writes to apps/core/data/assets/ and apps/core/data/findings/)
     scanner.py      — thin orchestrator: collect → analyze → save
     collector.py    — runs binary or probes, returns raw data (no DB)
     analyzer.py     — parses raw data, builds shared Asset/Finding objects
@@ -526,7 +552,7 @@ also performs AXFR zone transfers, SMTP open-relay probes, and mta-sts policy
 fetches directly against the target. A tool with ANY code path that touches the
 target is active.
 
-**Authorization rule (`apps/core/scans/api.py`):** a `schedule_type="now"` scan
+**Authorization rule (`apps/core/engine/scans/api.py`):** a `schedule_type="now"` scan
 whose resolved workflow contains **only passive tools** bypasses the
 `DomainAuthorization` gate. Any active tool, a bare `now` scan (default = active
 Full Scan), or any scheduled (`once`/`recurring`) scan keeps the gate. The
@@ -556,7 +582,7 @@ create_scan_session(domain)          # auto-assigns default workflow
           → maybe_start_agent(session)    # queues the bounded orchestration agent
 ```
 
-### AI layer flow (apps/core/ai — runs only when keys + enabled + consent)
+### AI layer flow (apps/core/console/ai — runs only when keys + enabled + consent)
 ```
 _finalize_session
   → run_ai_post_scan(session)              # INLINE in the scan task, before alerts
@@ -577,7 +603,7 @@ every Cloudflare call → AIInvocation audit row (metadata only, never prompt/re
 ```
 
 ### Key design rules
-1. **Tools never import from each other.** Shared data flows through `apps/core/assets/`, `apps/core/web_assets/`, and `apps/core/findings/`.
+1. **Tools never import from each other.** Shared data flows through `apps/core/data/assets/`, `apps/core/data/web_assets/`, and `apps/core/data/findings/`.
 2. **Tools self-register.** Add `tool_meta` to AppConfig + add to `INSTALLED_APPS`. No other core files to touch.
 3. **Port.is_web** classifies ports. Set by `service_detection` (Phase 6) based on nmap -sV service name. Used by nmap to skip web ports (`is_web=False` only). tls_checker probes all ports — including HTTPS (port 443).
 4. **dnsx filters to public IPs only.** Private/loopback/link-local/AWS metadata IPs dropped.
@@ -586,9 +612,40 @@ every Cloudflare call → AIInvocation audit row (metadata only, never prompt/re
 7. **Asset deletion cascades:** Subdomain → IPAddress → Port → URL. Deleting a Domain wipes all session data.
 8. **Delta detection** compares ALL findings between current and previous scan for the same domain.
 
+### Pipeline + workflow rules
+
+The architecture is a **pipeline** (12 phases) built out of **durable workflows**
+(DBOS). Pipeline outside, workflows inside, Postgres between them. These are the
+same 14-point rules the sibling `cybersecify/backend` follows; OpenEASD adopts the
+foundational ones and consciously differs on the *choreography* ones (it's
+**orchestrated** — one workflow-per-scan — because the dataflow is fixed). Each
+row notes OpenEASD's stance. Full plan + status: `docs/specs/2026-09-07-producer-queue-consumer-hardening.md`.
+
+**Design**
+1. **Draw the pipeline before writing a workflow** — name the phase, the rows it stores, what triggers the next. ✅ (12 phases in DESIGN.md)
+2. **Stages talk through stored data, never workflow calls** — a tool writes rows, the next phase reads them. ✅ (the empty-`models.py` rule)
+3. **One workflow per unit of work** — ⚠️ *deliberate deviation*: OpenEASD runs one multi-step `run_scan` per scan (orchestrated), not per-unit; retry granularity is per phase-group (checkpointed step).
+4. **Every workflow idempotent** (delete-then-insert / upsert, not append) — 🟡 partial: alerts ✅ (H1), phase-step idempotency is **H5**.
+5. **Every workflow has an identity key** — ✅ `deduplication_id` (`scan-{id}`, `triage-{id}`) + `dedupe=` on `@durable_task`.
+
+**Triggering**
+6. **Trigger the next stage from the write, not the caller** — ⚠️ *deviation*: phases are orchestrator-driven, not write/signal-triggered (the AI-agent chain is the one hook-triggered path).
+7. **Gate automatic triggers by freshness** — 🟡 `SCHEDULED_SCANS_ENABLED` + monitoring intervals.
+8. **Every timed job in one editable table** — 🟡 user scans in `ScheduledScan`; system crons are `@DBOS.scheduled` in code → **H7** (`ScheduledJob` table).
+
+**Running**
+9. **Route by resource, not stage** — ⚠️ *deviation*: single `scans` queue (no scarce GPU-like resource to isolate).
+10. **Fail whole, retry whole** — 🟡 *deliberate variation*: OpenEASD delivers **labeled partials** (a time-boxed scan is a valid result; a failed tool → `partial`, never fake-complete).
+11. **Keep the engine behind an adapter** — ✅ `@durable_task` (H6); DBOS isolated to `apps/core/engine/durable/`.
+
+**Operating**
+12. **Every stage: safety net + alarm** — 🟡 scan-level watchdog (`reap_stuck_scans`) + sweeps; per-stage + alarm is **H4**.
+13. **Measure the whole journey, not each run** — ❌ **H2** (`/metrics` + enqueue→output timing) pending.
+14. **Rehearse the failure** — 🟡 crash-resume is tested (D-016), no prod chaos drill yet.
+
 ## Unified Finding model
 
-`apps/core/findings/Finding` — all tools write to it:
+`apps/core/data/findings/Finding` — all tools write to it:
 
 ```python
 class Finding(models.Model):
@@ -615,14 +672,17 @@ decrypt-on-read; TEXT column; blank stays blank; legacy plaintext rows decrypt
 tolerantly and re-encrypt on next save). Covered fields: `AISettings`
 cloudflare token; `NotificationConfig` Slack/Teams webhook URLs; every
 `*_key`/`*_secret`/`*_token` on `AmassConfig` + `SubfinderConfig` (Censys IDs /
-PassiveTotal usernames stay plaintext — identifiers, not secrets). The key comes
+PassiveTotal usernames stay plaintext — identifiers, not secrets); `ToolCredentials`
+(UI-managed BYOK keys — Shodan/HIBP/GitHub/DNS-history, read via `get_credential()`
+DB-wins-over-env). Bootstrap secrets `FIELD_ENCRYPTION_KEY`/`SECRET_KEY`/`DB_*`
+stay env-only (they bootstrap the crypto + DB). The key comes
 from `FIELD_ENCRYPTION_KEY` (a urlsafe-base64 Fernet key) when set, else derived
 from `SECRET_KEY`; changing the effective key makes stored secrets unreadable
 (re-enter them). Fernet is non-deterministic → these fields can't be used in
 equality `.filter()` lookups (only ever read via singleton `.get()` + attribute
 access). Tests: `tests/unit/test_crypto.py`.
 
-## AI subsystem — `apps/core/ai/` (D-014/D-015)
+## AI subsystem — `apps/core/console/ai/` (D-014/D-015)
 
 Core subsystem, deliberately **NOT a registry tool** (no `tool_meta`): it runs
 post-finalize over the whole session and has orchestration authority, so its
@@ -639,7 +699,7 @@ gate is consent + keys, never workflow membership.
 - **Gate:** `guard.is_ai_active()` = keys configured AND `AISettings.enabled`
   AND current-version consent recorded. Checked at every entry, never cached
   across tasks (revocation is immediate).
-- **Pipeline wiring** (all via `apps/core/ai/hooks.py`, the fail-graceful
+- **Pipeline wiring** (all via `apps/core/console/ai/hooks.py`, the fail-graceful
   boundary — the ONLY module pipeline.py imports): `run_ai_post_scan` (triage +
   summaries, inline, after `build_insights` / before `_dispatch_alerts`),
   `maybe_start_agent` (last line of finalize), `maybe_continue_agent` (subscan
@@ -707,6 +767,8 @@ GET  /api/notifications/config/           — get Slack/Teams notification confi
 POST /api/notifications/config/           — update notification config
 POST /api/notifications/test/             — send a test alert
 GET  /api/notifications/alerts/           — alert history
+GET  /api/credentials/                    — BYOK key presence booleans + db|env|none source per key (values never returned)
+POST /api/credentials/                    — set/clear BYOK keys (write-only; None=unchanged, ""=clear→env fallback)
 GET  /api/ai/config/                      — AI settings (credential presence booleans only — values are never returned)
 POST /api/ai/config/                      — enable/disable + save credentials (write-only; None=unchanged, ""=clear→env fallback); enabling requires current-version consent (consent_accepted stamps it)
 POST /api/ai/test/                        — Workers AI connectivity probe (fixed prompt, no scan data; allowed pre-consent)
@@ -753,11 +815,13 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_naabu.py` | 10 | JSON parser, FK to IPAddress |
 | `tests/unit/test_nmap.py` | 26 |
 | `tests/unit/test_nmap_backports.py` | 16 | Backport-aware CVE demotion engine — Debian/Ubuntu version compare, check_backport, `protocol 2.0` false-positive guard | Severity mapping, vulners XML parser, web/non-web exclusion, backport matching |
-| `tests/unit/test_notifications.py` | 32 | NotificationConfig, Slack/Teams alerts, alert-history API, AI summary block/fact (absent = payload byte-identical) |
+| `tests/unit/test_notifications.py` | 35 | NotificationConfig, Slack/Teams alerts, alert-history API, AI summary block/fact (absent = payload byte-identical), alert idempotency on finalize replay (skip when already sent, retry when only failed) |
 | `tests/unit/test_nuclei.py` | 33 | CVE parsing, severity, dedup, URL linking, collector, honest UA |
 | `tests/unit/test_nuclei_network.py` | 28 | Network-template parsing, non-web targeting, collector |
 | `tests/unit/test_pipeline_phases.py` | 1 | Phase ordering sanity |
 | `tests/unit/test_qcluster_config.py` | 3 | Scan-timeout invariants (Q_CLUSTER removed; SCAN_TASK_TIMEOUT + watchdog bound) |
+| `tests/unit/test_durable_task.py` | 7 | `@durable_task` engine adapter (H6) — in-process call, `.delay()` enqueue, dedupe template + override, registry, real tasks are DurableTasks, enqueue_* wrappers delegate |
+| `tests/unit/test_credentials.py` | 13 | UI-managed BYOK credentials (C1+C3) — singleton, ciphertext-at-rest/plaintext-via-ORM, resolver DB-wins-over-env + env fallback + source + never-raises, write-only API (presence-only never values, set/none-unchanged/clear), and a DB key reaching `shodan.collect` (paid tier, no env key) |
 | `tests/unit/test_reports.py` | 57 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block, technology stack block, AI Analyst Summary block (absent without AI rows) |
 | `tests/unit/test_waf_detection.py` | 16 | WAF/block/challenge classifier (spec C1) — vendor fingerprint, false-positive guards, analyzer wiring |
 | `tests/unit/test_coverage.py` | 6 | Scan coverage (spec C2) — endpoint counts, dominant vendor, report note wording |
@@ -801,6 +865,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1755 tests** (1703 fast + 52 slow domain_security)
+**Total: 1778 tests** (1726 fast + 52 slow domain_security)
 
-Frontend: **18 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, and the Assets `SeverityChips`. Run with `cd frontend && npm run test:run`.
+Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.
