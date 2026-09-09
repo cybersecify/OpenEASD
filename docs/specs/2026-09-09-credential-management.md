@@ -1,14 +1,14 @@
 # Credential Management — UI-managed BYOK keys — Design Spec
 
-> **Status:** 🟡 In progress — **C1 + C3 shipped.** C1: `apps/core/console/credentials/`
+> **Status:** ✅ **Implemented (C1 + C3 + C5).** C1: `apps/core/console/credentials/`
 > (`ToolCredentials` encrypted singleton + `get_credential()` resolver + write-only
-> `/api/credentials/`). **C3: the 5 tools now read via `get_credential()`** —
-> `shodan` (SHODAN_API_KEY), `breach_check` (HIBP_API_KEY), `github_recon` +
-> `github_secrets` (GITHUB_TOKEN), `dns_history` (DNS_HISTORY_API_URL) — so a
-> DB-stored key overrides the env with no redeploy (proven by
-> `test_credentials.py::TestToolWiring`). Cloudflare still defers to `AISettings`
-> (Section 6). `github_secret` field kept but unconsumed (no tool reads it).
-> **Remaining: C5 (the CredentialsPage UI).**
+> `/api/credentials/`). C3: the 5 tools read via `get_credential()` — `shodan`,
+> `breach_check`, `github_recon`, `github_secrets`, `dns_history` — so a DB-stored
+> key overrides the env with no redeploy. **C5: `CredentialsPage`** (`/credentials`,
+> new nav item) — per-key password inputs + Save/Clear, presence/source pills
+> (UI/env/not-set), write-only (values never shown). Cloudflare still defers to
+> `AISettings` (Section 6); `github_secret` field kept but unconsumed. The feature
+> is complete — manage BYOK keys from the console, no redeploy.
 
 **Goal:** let the operator manage the tools' bring-your-own-key (BYOK) API keys
 from a **single console page**, stored **encrypted in the DB**, instead of

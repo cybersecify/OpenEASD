@@ -26,6 +26,14 @@ commits to recover the reasoning.
   preserves them); a new test proves a DB key drives `shodan` onto the paid host
   tier with no env key. Cloudflare still defers to `AISettings`. **Why:** this is
   where UI/DB keys start taking effect. Next: the CredentialsPage UI (C5).
+- **UI-managed BYOK credentials — the Credentials page (C5).** A new
+  **`/credentials`** page (nav item between Notifications and AI Analysis): one
+  row per key (Shodan / HIBP / GitHub token+secret / DNS-history) with a
+  password input + Save/Clear and a presence/source pill (**Set (UI)** / **From
+  env var** / **Not set**). Write-only — values are never displayed; Clear is
+  enabled only for keys set in the UI. A footer notes that `SECRET_KEY` /
+  `FIELD_ENCRYPTION_KEY` / `DB_*` stay env-only. Completes the credential-management
+  feature (C1+C3+C5): manage all tool BYOK keys from the console, no redeploy.
 
 ## [v2.3.0] — 2026-09-08
 
