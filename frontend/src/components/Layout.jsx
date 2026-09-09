@@ -13,6 +13,7 @@ const NAV = [
   { label: 'Findings',       path: '/findings' },
   { label: 'Workflows',      path: '/workflows' },
   { label: 'Insights',       path: '/insights' },
+  { label: 'Reports',        path: '/reports' },
   { label: 'Notifications',  path: '/notifications' },
   { label: 'Credentials',    path: '/credentials' },
   { label: 'AI Analysis',    path: '/ai' },
