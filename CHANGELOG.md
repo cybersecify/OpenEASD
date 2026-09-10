@@ -7,6 +7,38 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.10.0] — 2026-09-10
+
+### Changed
+- **The UI is now strictly scan-centric.** The scan is the single organizing
+  unit: the global Findings page and the persistent Assets inventory pages
+  (list + detail) were removed, along with their nav entries and routes.
+  Findings and assets are viewed only within a scan (Scan Detail's tabs).
+  Finding triage (status: open/acknowledged/in_progress/resolved/false_positive)
+  moved into the Scan Detail finding modal, so no capability was lost. The
+  Dashboard's cross-scan cards (Domain Intelligence, Asset inventory) were
+  dropped; the domain-status table (→ View Scans) and latest-scan KPIs remain.
+  **Why:** commit to the scan as the primary model rather than the prior
+  half scan / half attack-surface-posture UI. The `/api/assets/` endpoints and
+  `asset_inventory` data layer are left intact (valid REST surface, still tested).
+
+### Added
+- **Domain Intelligence surfaced as the primary scan category.** The category
+  taxonomy (phase_group) — previously an internal execution-ordering concept —
+  is now first-class in the UI: the Workflows tool picker is grouped by category
+  (Domain Intelligence first), and `/api/workflows/tools/` exposes `phase_group`
+  and `active` per tool.
+- **Scan-start presets with dynamic attestation.** The Start Scan form offers
+  three intent-based presets — Passive recon / Full scan / Custom. The
+  authorization attestation now appears only when the selection includes active
+  tools or is scheduled (matching the API's auth gate), so passive scans are
+  friction-free and Passive is the default. `/api/workflows/` exposes
+  `is_passive` per workflow.
+- **Category-scoped scans.** Under the Custom preset, a By category / By workflow
+  toggle lets you launch a scan restricted to selected categories' tools without
+  building a workflow. `/api/scans/start/` accepts an optional validated `tools`
+  subset, gated on `is_passive_tool_set` and run via `subscan_tools`.
+
 ## [v2.9.1] — 2026-09-10
 
 ### Changed
@@ -1215,7 +1247,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.9.1...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.10.0...HEAD
+[v2.10.0]: https://github.com/cybersecify/OpenEASD/compare/v2.9.1...v2.10.0
 [v2.9.1]: https://github.com/cybersecify/OpenEASD/compare/v2.9.0...v2.9.1
 [v2.9.0]: https://github.com/cybersecify/OpenEASD/compare/v2.8.0...v2.9.0
 [v2.8.0]: https://github.com/cybersecify/OpenEASD/compare/v2.7.0...v2.8.0
