@@ -747,6 +747,45 @@ def test_every_emitted_check_type_has_cwe_mapping():
 
 
 # ---------------------------------------------------------------------------
+# The Five Questions (CEO-question executive framing)
+# ---------------------------------------------------------------------------
+
+class TestCeoQuestions:
+    def _g(self, source, check_type, severity="high", n=1):
+        return {"source": source, "check_type": check_type,
+                "severity": severity, "instances": [object()] * n}
+
+    def _by_q(self, groups, active):
+        from apps.core.console.reports.views import _ceo_questions
+        return {q["question"]: q for q in _ceo_questions(groups, active)}
+
+    def test_email_finding_maps_to_spoof_question(self):
+        qs = self._by_q([self._g("domain_security", "email")], {"domain_security"})
+        assert qs["Can someone spoof our email?"]["status"] == "at_risk"
+
+    def test_dnssec_rdap_maps_to_lose_domain(self):
+        qs = self._by_q([self._g("domain_security", "dnssec", "medium")], {"domain_security"})
+        assert qs["Can we lose our domain?"]["status"] == "attention"
+
+    def test_typosquat_maps_to_impersonation(self):
+        qs = self._by_q([self._g("typosquat", "lookalike_domain", "medium")], {"typosquat"})
+        assert qs["Is anyone impersonating us?"]["status"] == "attention"
+
+    def test_tool_not_run_is_not_checked(self):
+        # No breach tools in the scan → honest "not checked", not a false all-clear.
+        qs = self._by_q([], set())
+        assert qs["Are staff logins stolen?"]["status"] == "not_checked"
+
+    def test_tool_ran_no_findings_is_clear(self):
+        qs = self._by_q([], {"breach_check"})
+        assert qs["Are staff logins stolen?"]["status"] == "clear"
+
+    def test_all_five_questions_present(self):
+        qs = self._by_q([], {"domain_security"})
+        assert len(qs) == 5
+
+
+# ---------------------------------------------------------------------------
 # AI Analyst Summary block (apps/core/console/ai integration)
 # ---------------------------------------------------------------------------
 

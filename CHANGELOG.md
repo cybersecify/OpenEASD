@@ -7,6 +7,16 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **"The Five Questions" executive block in the PDF report.** The report now
+  opens (in the Executive Summary) by answering the five questions a
+  decision-maker actually asks — Can someone spoof our email? · Can we lose our
+  domain? · Are staff logins stolen? · Is anyone impersonating us? · Did we leak
+  keys? — each mapped to the relevant findings with a status: at risk (a
+  critical/high), needs attention (medium/low), no issues found, or **not
+  assessed** (the tool that answers it wasn't in this scan — an honest state, not
+  a false all-clear).
+
 ### Changed
 - **Domain Intelligence finding tuning (report roadmap, Edit bucket).**
   - **DNSSEC** ("not enabled" and "chain of trust broken") and **MTA-STS** ("not
