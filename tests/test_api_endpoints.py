@@ -100,6 +100,15 @@ class TestHealthEndpoint:
         assert res.status_code == 200
 
 
+class TestSpaCaching:
+    def test_spa_entry_point_is_not_cached(self, client):
+        # index.html references content-hashed bundles; a CDN caching it serves a
+        # stale UI after a deploy (Cloudflare did this post-v2.10.0). Must be no-store.
+        res = client.get("/dashboard")
+        assert res.status_code == 200
+        assert "no-store" in res.headers.get("Cache-Control", "")
+
+
 # ---------------------------------------------------------------------------
 # Auth endpoints
 # ---------------------------------------------------------------------------
