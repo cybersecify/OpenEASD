@@ -321,3 +321,54 @@ class TestScanner:
         sess = _session("example.com")
         with patch("apps.typosquat.scanner.collect", side_effect=RuntimeError("boom")):
             assert run_typosquat(sess) == []  # swallowed — must never fail a scan
+
+
+@pytest.mark.django_db
+class TestCollectorConcurrency:
+    """The registration + homepage passes run concurrently (ThreadPoolExecutor)
+    but must stay deterministic: results follow candidate order, and every
+    registered candidate is still checked."""
+
+    def test_results_preserve_candidate_order(self):
+        from apps.typosquat import collector
+        sess = _session("example.com")
+        cands = [
+            {"candidate": "aaa.com", "technique": "typo"},
+            {"candidate": "bbb.com", "technique": "typo"},
+            {"candidate": "ccc.com", "technique": "typo"},
+        ]
+
+        # aaa + ccc register (A record), bbb is NXDOMAIN → dropped.
+        def fake_resolve(name, rdtype):
+            if name in ("aaa.com", "ccc.com") and rdtype == "A":
+                return ["1.2.3.4"]
+            return []
+
+        with patch("apps.typosquat.collector.generate_candidates", return_value=cands), \
+             patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
+             patch("apps.typosquat.collector.requests.get") as get:
+            get.return_value.text = "<html></html>"
+            get.return_value.url = "https://x/"
+            results = collector.collect(sess)
+
+        assert [r["candidate"] for r in results] == ["aaa.com", "ccc.com"]
+
+    def test_all_registered_candidates_checked_when_many(self):
+        from apps.typosquat import collector
+        sess = _session("example.com")
+        cands = [{"candidate": f"c{i}.com", "technique": "typo"} for i in range(50)]
+
+        def fake_resolve(name, rdtype):
+            return ["1.2.3.4"] if rdtype == "A" else []  # all register
+
+        with patch("apps.typosquat.collector.generate_candidates", return_value=cands), \
+             patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
+             patch("apps.typosquat.collector.requests.get") as get:
+            get.return_value.text = "<html></html>"
+            get.return_value.url = "https://x/"
+            results = collector.collect(sess)
+
+        assert len(results) == 50
+        assert {r["candidate"] for r in results} == {f"c{i}.com" for i in range(50)}
+        # homepage fetches capped at CONTENT_MAX_FETCHES
+        assert sum(1 for r in results if r.get("content_checked")) == collector.CONTENT_MAX_FETCHES

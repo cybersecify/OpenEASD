@@ -7,6 +7,24 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Faster phase-1 (Domain Intelligence) — concurrency where it was serial.** Two
+  changes cut the phase from up-to-minutes toward seconds:
+  - `typosquat` now resolves its lookalike candidates and probes their homepages
+    **concurrently** (bounded thread pools, `TYPOSQUAT_DNS_CONCURRENCY`=16 /
+    `TYPOSQUAT_FETCH_CONCURRENCY`=8) instead of one-at-a-time — it was the phase's
+    dominant cost (up to 300 serial DNS lookups + 25 serial 6s homepage fetches).
+    Results stay deterministic (candidate order preserved) and fail-graceful.
+  - The workflow runner now **parallelises a phase group of only light,
+    network-I/O tools even under `LOW_MEMORY`** (`_LOW_MEM_PARALLEL_SAFE` —
+    domain_security/domain_probe/typosquat/dns_history/hudson_rock/breach_check/
+    github_secrets; override via `SCAN_LOW_MEM_PARALLEL_SAFE`). Previously low
+    memory serialised *every* multi-tool phase; now only groups containing a
+    RAM-hungry scanner (nuclei/amass/…) stay serial, so the phase-1 intelligence
+    group runs concurrently on a 1GB box without risking an OOM. **Why:** the
+    low-memory rule exists to avoid two memory hogs at once — it needlessly
+    serialised the cheap DNS/HTTP intelligence tools too.
+
 ### Added
 - **`render_pipeline_diagram` management command — a generated, drift-proof
   pipeline diagram.** Renders the whole scan pipeline (every phase group, tool,

@@ -526,6 +526,42 @@ class TestPhaseParallelExecution:
             f"LOW_MEMORY must serialise the phase; observed peak concurrency {peak[0]}"
         )
 
+    def test_low_memory_light_phase_still_parallel(self, transactional_db, settings):
+        """Under LOW_MEMORY, a group of only light network-I/O tools
+        (_LOW_MEM_PARALLEL_SAFE) must STILL run concurrently — that's the speedup
+        for the phase-1 intelligence group on a small box. domain_security +
+        typosquat are both phase 1 and both on the safe list. Barrier(2) proves
+        parallelism: serial execution would never satisfy it → failed step → the
+        run would not be 'completed'.
+        """
+        settings.LOW_MEMORY = True
+        import threading
+        from apps.core.engine.scans.models import ScanSession
+
+        barrier = threading.Barrier(2, timeout=5)
+        session = ScanSession.objects.create(
+            domain="lightmem.example.com", scan_type="full", status="running"
+        )
+        wf = Workflow.objects.create(name="LowMem Phase 1 light")
+        WorkflowStep.objects.create(workflow=wf, tool="domain_security", order=1, enabled=True)
+        WorkflowStep.objects.create(workflow=wf, tool="typosquat",       order=2, enabled=True)
+        run = WorkflowRun.objects.create(workflow=wf, session=session)
+
+        def barrier_runner(tool_name):
+            def runner(sess):
+                barrier.wait()
+                return []
+            return runner
+
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=barrier_runner):
+            run_workflow(run.id)
+
+        run.refresh_from_db()
+        assert run.status == "completed", (
+            "Light phase-1 tools must run concurrently even under LOW_MEMORY "
+            "(barrier never satisfied → they ran serially)"
+        )
+
     def test_phase_boundary_respected(self, transactional_db):
         """All phase-7 tools must finish before any phase-10 tool starts.
 
