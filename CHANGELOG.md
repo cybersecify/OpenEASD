@@ -7,6 +7,22 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Removed
+- **Retired the `github_recon` tool.** The GitHub Org Recon tool (infra references —
+  internal hostnames/subdomains, cloud-bucket URLs, API endpoints — in the org's
+  public GitHub repos) is removed: app, tests, and its Full Scan + Passive Scan
+  workflow steps (migration 0033 cleans existing DBs on deploy). Registry tool
+  count 30 → 29. The secret-scanning GitHub tool (`github_secrets`) and infra
+  discovery via subdomains/ASN remain.
+
+### Changed
+- **`js_secrets` moved to the Web Exposure category.** It runs at phase 12 (it
+  needs discovered `.js` assets), so it now groups with its execution neighbors
+  (`nuclei`/`web_checker`) instead of Credential Exposure. This makes **Credential
+  Exposure a clean, single-phase (phase 2) category** — `breach_check`,
+  `hudson_rock`, `github_secrets`. Display-only `phase_group` change; `js_secrets`
+  still finds and redacts hardcoded secrets, unchanged.
+
 ## [v2.14.2] — 2026-09-11
 
 ### Changed

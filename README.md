@@ -164,7 +164,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ## Features
 
-- **Automated pipeline**: 30-tool scan workflow from domain to findings
+- **Automated pipeline**: 29-tool scan workflow from domain to findings
 - **Network attack surface scanning**: CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
 - **CVE prioritisation**: EPSS exploit-probability scores + CISA KEV (known-exploited-in-the-wild) flags enrich CVE findings in place, so you triage by real-world risk rather than severity alone
 - **Dynamic workflows**: Create custom scan configurations, enable/disable tools per workflow
@@ -205,17 +205,12 @@ Phase 2  GitHub Secrets      - Leaked secrets in public GitHub via gitleaks
                              (passive; BYO GITHUB_TOKEN, redacted before storage)
 Phase 2  Breach Check       - Data-breach exposure via XposedOrNot (free/keyless)
                              or Have I Been Pwned (BYO key); counts only, no PII
-Phase 12 JS Secrets         - Hardcoded secrets in fetched JavaScript via gitleaks
-                             (redacted before storage; runs after web crawl)
 
 ── Surface Enumeration ─────────────────────────────────────────────────────
 Phase 3  Subfinder         - Passive subdomain enumeration
 Phase 3  Amass             - Active subdomain enumeration
 Phase 3  Alterx            - Subdomain permutation from discovered subdomains
 Phase 3  ASN Discovery     - Owned ASN/CIDR ranges via amass intel (reports only)
-Phase 3  GitHub Org Recon  - Infra refs (internal hostnames, cloud buckets, API
-                             endpoints) leaked in the org's public GitHub repos
-                             (passive; official API — keyless, richer with a token)
 Phase 4  DNSx              - DNS resolution, public IP filtering
 Phase 5  Takeover Check    - Subdomain takeover detection via subzy
 Phase 5  Cloud Assets      - Public S3/Azure/GCP bucket enumeration (cloud_enum)
@@ -236,6 +231,7 @@ Phase 10 Historical URLs   - Archived URL discovery via gau
 Phase 11 Katana            - Deep URL crawl on top of httpx
 Phase 12 Nuclei            - Web vulnerability scanning (community templates)
 Phase 12 Web Checker       - Security headers, cookies, CORS; security.txt (RFC 9116)
+Phase 12 JS Secrets        - Hardcoded secrets in fetched JavaScript via gitleaks
 
 ── Prioritization ───────────────────────────────────────────────────────────
 Phase 13 CVE Intel         - Enrich CVE findings with EPSS + CISA KEV

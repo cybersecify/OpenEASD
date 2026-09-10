@@ -74,7 +74,7 @@ class TestRegistryActiveFlag:
 class TestPhaseGroupCategories:
     # The leak-detection tools live in their own "Credential Exposure" category
     # rather than being mixed into Domain Intelligence / Web Exposure.
-    _CRED_EXPOSURE = {"hudson_rock", "breach_check", "github_secrets", "js_secrets"}
+    _CRED_EXPOSURE = {"hudson_rock", "breach_check", "github_secrets"}
 
     def test_credential_exposure_tools_grouped_together(self):
         from apps.core.engine.workflows.registry import get_tool_phase_groups
