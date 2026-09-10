@@ -369,6 +369,69 @@ class TestAlertAiSummary:
 
 
 # ---------------------------------------------------------------------------
+# "New since last scan" delta in alert payloads
+# ---------------------------------------------------------------------------
+
+_GROUPED_SRC = {"high": [
+    {"title": "TLS expired", "check_type": "tls_expiry", "target": "example.com", "source": "tls_checker"},
+    {"title": "Open SSH", "check_type": "ssh", "target": "example.com", "source": "ssh_checker"},
+]}
+
+
+@pytest.mark.django_db
+class TestAlertNewSinceLastScan:
+    def _delta(self, session, source, check_type, title):
+        from apps.core.engine.scans.models import ScanDelta
+        ScanDelta.objects.create(
+            session=session, change_type="new", change_category="finding",
+            item_identifier=f"{source}:{check_type}:{title}",
+        )
+
+    def test_zero_when_no_deltas(self):
+        from apps.core.console.notifications.dispatcher import _new_since_last_scan
+        sess = _alert_session()
+        flat = [f for v in _GROUPED_SRC.values() for f in v]
+        assert _new_since_last_scan(sess, flat) == 0
+
+    def test_counts_only_alerted_new_findings(self):
+        from apps.core.console.notifications.dispatcher import _new_since_last_scan
+        sess = _alert_session()
+        self._delta(sess, "tls_checker", "tls_expiry", "TLS expired")   # in alert set
+        self._delta(sess, "nuclei", "cve", "Some CVE")                  # new but below threshold / not alerted
+        flat = [f for v in _GROUPED_SRC.values() for f in v]
+        assert _new_since_last_scan(sess, flat) == 1
+
+    def test_slack_payload_identical_when_no_new(self):
+        from apps.core.console.notifications.dispatcher import _build_slack_payload
+        sess = _alert_session()
+        payload = _build_slack_payload(sess, _GROUPED_SRC, "high")
+        assert all("new since the last scan" not in str(b) for b in payload["blocks"])
+
+    def test_slack_meta_gains_new_line(self):
+        from apps.core.console.notifications.dispatcher import _build_slack_payload
+        sess = _alert_session()
+        self._delta(sess, "tls_checker", "tls_expiry", "TLS expired")
+        payload = _build_slack_payload(sess, _GROUPED_SRC, "high")
+        # No extra block — it rides on the existing meta section.
+        assert len(payload["blocks"]) == 4
+        assert "1 new since the last scan" in payload["blocks"][1]["text"]["text"]
+
+    def test_teams_gains_new_fact(self):
+        from apps.core.console.notifications.dispatcher import _build_teams_payload
+        sess = _alert_session()
+        self._delta(sess, "tls_checker", "tls_expiry", "TLS expired")
+        payload = _build_teams_payload(sess, _GROUPED_SRC, "high")
+        facts = payload["sections"][0]["facts"]
+        assert {"name": "New since last scan", "value": "1"} in facts
+
+    def test_teams_identical_when_no_new(self):
+        from apps.core.console.notifications.dispatcher import _build_teams_payload
+        sess = _alert_session()
+        payload = _build_teams_payload(sess, _GROUPED_SRC, "high")
+        assert all(f["name"] != "New since last scan" for f in payload["sections"][0]["facts"])
+
+
+# ---------------------------------------------------------------------------
 # H1 — alert idempotency on finalize replay (apps/core/engine/scans/pipeline)
 # ---------------------------------------------------------------------------
 

@@ -7,6 +7,20 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **"Since Your Last Scan" report block + alert line.** The PDF report now opens
+  (right under the Exposure Score) with what changed versus the domain's previous
+  scan — **N new / N resolved / N still-open** findings, plus a list of the new
+  issues (investigate first) and the resolved ones. The findings CSV gains a
+  **"New This Scan"** column flagging the same new issues, and Slack/Teams alerts
+  carry a **"N new since the last scan"** line/fact. **Why:** a point-in-time
+  snapshot doesn't answer the first question a returning reader asks — *"what's
+  different since last time?"*. The diff reuses the existing `ScanDelta` identity
+  key (`source:check_type:title`), picks the same non-subscan baseline as delta
+  detection, and respects the report's `min_severity` filter + hidden-title
+  suppression. Absent on a domain's first scan (no baseline), and the alert
+  line/fact is omitted when nothing is new, so those payloads stay byte-identical.
+
 ### Changed
 - **New "Data Leak" tool category.** The four tools that surface *leaked
   credentials/secrets* rather than *domain posture* — `hudson_rock` (infostealer

@@ -178,6 +178,30 @@
   </p>
 </div>
 
+{% if since_last_scan %}
+<div class="risk no-break" style="border-color:#5c7cfa;">
+  <div class="l" style="color:#5c7cfa;">Since Your Last Scan</div>
+  <p style="margin:8px 0 0;font-size:10px;line-height:1.5;color:#333;">Compared with the previous scan of {{ session.domain }} on {{ since_last_scan.previous_date|date:"Y-m-d" }}:
+    <strong style="color:#e03131;">{{ since_last_scan.new_count }} new</strong>,
+    <strong style="color:#2f9e44;">{{ since_last_scan.resolved_count }} resolved</strong>,
+    <strong style="color:#333;">{{ since_last_scan.still_open }} still open</strong>.
+  </p>
+  {% if since_last_scan.new %}
+  <p style="margin:8px 0 2px;font-size:9px;font-weight:bold;color:#e03131;">New this scan — investigate first:</p>
+  <ul style="margin:0;padding-left:14px;font-size:9px;line-height:1.45;color:#333;">
+    {% for f in since_last_scan.new %}<li><strong>{{ f.title }}</strong> ({{ f.severity|upper }})</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if since_last_scan.resolved %}
+  <p style="margin:8px 0 2px;font-size:9px;font-weight:bold;color:#2f9e44;">Resolved since last scan:</p>
+  <ul style="margin:0;padding-left:14px;font-size:9px;line-height:1.45;color:#333;">
+    {% for f in since_last_scan.resolved %}<li>{{ f.title }} ({{ f.severity|upper }})</li>{% endfor %}
+  </ul>
+  {% endif %}
+  <p style="margin:8px 0 0;font-size:8px;color:#888;">Changes are compared by issue type (tool, check, and title); a finding counts as "still open" when the same issue type appeared in both scans.</p>
+</div>
+{% endif %}
+
 {% if ai_summary %}
 <div class="risk no-break" style="border-color:#2f9e44;">
   <div class="l" style="color:#2f9e44;">Analyst Summary</div>

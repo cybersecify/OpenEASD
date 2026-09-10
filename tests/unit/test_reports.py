@@ -899,3 +899,113 @@ class TestAnalystSummaryBlock:
         with patch("apps.core.console.ai.models.AITriage.objects") as broken:
             broken.filter.side_effect = RuntimeError("db broke")
             assert _ai_context(session) == {}
+
+
+# ---------------------------------------------------------------------------
+# "Since Your Last Scan" delta block
+# ---------------------------------------------------------------------------
+
+class TestSinceLastScanBlock:
+    """The report shows what changed versus the previous scan of the same domain:
+    new / resolved / still-open findings. Absent on the first scan (no baseline),
+    and the diff ignores subscans (they run only a subset of tools) and respects
+    the report's min_severity filter + hidden-title suppression."""
+
+    def _capture_pdf_html(self, authed_client, session, qs=""):
+        captured = {}
+
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/{qs}")
+        assert res.status_code == 200
+        return captured["html"]
+
+    def _finding(self, session, title, severity, source, check_type, **kw):
+        from apps.core.data.findings.models import Finding
+        return Finding.objects.create(
+            session=session, source=source, check_type=check_type,
+            severity=severity, title=title, target="report.example.com",
+            description="desc", remediation="fix", status="open", **kw,
+        )
+
+    def _prev_session(self, domain="report.example.com", scan_type="full"):
+        from apps.core.engine.scans.models import ScanSession
+        return ScanSession.objects.create(
+            domain=domain, scan_type=scan_type, status="completed",
+            start_time=timezone.now() - timezone.timedelta(days=7),
+            end_time=timezone.now() - timezone.timedelta(days=7),
+        )
+
+    def test_absent_on_first_scan(self, authed_client, session, findings):
+        html = self._capture_pdf_html(authed_client, session)
+        assert "Since Your Last Scan" not in html
+
+    def test_new_and_resolved_and_still_open(self, authed_client, session):
+        prev = self._prev_session()
+        # previous: A (shared) + B (will be resolved)
+        self._finding(prev, "Shared issue", "high", "tls_checker", "tls_expiry")
+        self._finding(prev, "Resolved issue", "medium", "domain_security", "dmarc")
+        # current: A (shared, still open) + C (new)
+        self._finding(session, "Shared issue", "high", "tls_checker", "tls_expiry")
+        self._finding(session, "New issue", "critical", "nuclei", "cve")
+
+        html = self._capture_pdf_html(authed_client, session)
+        assert "Since Your Last Scan" in html
+        assert "1 new" in html
+        assert "1 resolved" in html
+        assert "1 still open" in html
+        assert "New issue" in html       # listed under "New this scan"
+        assert "Resolved issue" in html  # listed under "Resolved"
+
+    def test_from_helper_directly(self, db, session):
+        from apps.core.console.reports.views import _since_last_scan
+        prev = self._prev_session()
+        self._finding(prev, "Old one", "low", "web_checker", "cors")
+        self._finding(session, "Old one", "low", "web_checker", "cors")
+        self._finding(session, "Brand new", "high", "nmap", "cve")
+        result = _since_last_scan(session, ["critical", "high", "medium", "low", "info"])
+        assert result["new_count"] == 1
+        assert result["resolved_count"] == 0
+        assert result["still_open"] == 1
+        assert result["new"][0]["title"] == "Brand new"
+
+    def test_subscan_is_not_a_baseline(self, authed_client, session):
+        # A subscan of the same domain must not be chosen as the baseline, even if
+        # it's the most recent — it runs only a subset of tools.
+        sub = self._prev_session()
+        sub.scan_type = "subscan"
+        sub.start_time = timezone.now() - timezone.timedelta(hours=1)
+        sub.save()
+        self._finding(sub, "Subscan-only", "high", "nuclei", "cve")
+        self._finding(session, "Current", "high", "tls_checker", "tls_expiry")
+        html = self._capture_pdf_html(authed_client, session)
+        # No non-subscan prior scan exists → treated as the baseline (block absent).
+        assert "Since Your Last Scan" not in html
+
+    def test_respects_min_severity_filter(self, authed_client, session):
+        prev = self._prev_session()
+        self._finding(prev, "Shared high", "high", "tls_checker", "tls_expiry")
+        self._finding(session, "Shared high", "high", "tls_checker", "tls_expiry")
+        # A new LOW finding should be invisible when min_severity=high.
+        self._finding(session, "New low", "low", "web_checker", "cors")
+        html = self._capture_pdf_html(authed_client, session, qs="?min_severity=high")
+        assert "Since Your Last Scan" in html
+        assert "New low" not in html
+        assert "0 new" in html
+
+    def test_csv_flags_new_findings(self, authed_client, session):
+        prev = self._prev_session()
+        self._finding(prev, "Shared", "high", "tls_checker", "tls_expiry")
+        self._finding(session, "Shared", "high", "tls_checker", "tls_expiry")
+        self._finding(session, "Fresh", "critical", "nuclei", "cve")
+        content = authed_client.get(f"/reports/{session.uuid}/csv/").content.decode("utf-8")
+        reader = csv.reader(io.StringIO(content))
+        header = next(reader)
+        assert "New This Scan" in header
+        idx = header.index("New This Scan")
+        rows = {r[0]: r[idx] for r in reader if r}
+        assert rows["Fresh"] == "new"
+        assert rows["Shared"] == ""
