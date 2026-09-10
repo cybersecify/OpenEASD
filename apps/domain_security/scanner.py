@@ -450,28 +450,76 @@ def _check_dmarc(session, domain) -> list:
     return findings
 
 
+# Mail-provider fingerprints (in MX / SPF) → that provider's known DKIM
+# selectors. DKIM selectors are provider-specific and not otherwise discoverable
+# from the domain, so inferring the provider lets the check try the RIGHT
+# selector instead of only a generic guess list.
+_DKIM_PROVIDER_SELECTORS = [
+    ("Google Workspace", ("google.com", "googlemail.com", "_spf.google.com"), ["google"]),
+    ("Microsoft 365", ("mail.protection.outlook.com", "spf.protection.outlook.com"), ["selector1", "selector2"]),
+    ("Zoho", ("zoho.com", "zoho.eu", "zohomail"), ["zoho", "zmail"]),
+    ("Amazon SES", ("amazonses.com",), ["amazonses"]),
+    ("SendGrid", ("sendgrid.net",), ["s1", "s2"]),
+    ("Mailchimp/Mandrill", ("mcsv.net", "mandrillapp.com"), ["k1", "k2", "k3", "mandrill"]),
+    ("Fastmail", ("messagingengine.com",), ["fm1", "fm2", "fm3", "mesmtp"]),
+    ("Proofpoint", ("pphosted.com", "ppe-hosted.com"), ["selector1", "selector2"]),
+]
+
+
+def _infer_dkim_selectors(domain):
+    """Guess the mail provider from MX + SPF and return (provider, [selectors]).
+
+    Returns (None, []) when no known provider is matched. Never raises.
+    """
+    try:
+        mx = " ".join(_resolve(domain, "MX")).lower()
+        spf = " ".join(
+            r for r in _get_txt_record(domain) if r.lower().startswith("v=spf1")
+        ).lower()
+    except Exception:  # noqa: BLE001 — inference is best-effort
+        return None, []
+    haystack = f"{mx} {spf}"
+    for provider, fingerprints, selectors in _DKIM_PROVIDER_SELECTORS:
+        if any(fp in haystack for fp in fingerprints):
+            return provider, selectors
+    return None, []
+
+
 def _check_dkim(session, domain) -> list:
     findings = []
+    provider, inferred = _infer_dkim_selectors(domain)
+    # Try the inferred provider's selectors first, then the generic common list.
+    selectors = inferred + [s for s in DKIM_SELECTORS if s not in inferred]
     dkim_found = False
-    for selector in DKIM_SELECTORS:
+    for selector in selectors:
         records = _get_txt_record(f"{selector}._domainkey.{domain}")
         if any("v=DKIM1" in r for r in records):
             dkim_found = True
             break
 
     if not dkim_found:
+        if provider:
+            provider_line = (
+                f" Detected mail provider: {provider} — its known selectors were "
+                "checked along with common ones, so a missing record is more likely genuine."
+            )
+        else:
+            provider_line = (
+                " DKIM uses a per-provider selector that can't always be discovered "
+                "without knowing it, so this may be a lookup limitation rather than a "
+                "definitively missing record."
+            )
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="medium",
             title="DKIM could not be confirmed",
             description=(
                 f"DKIM could not be confirmed for {domain}: no DKIM record was found at "
-                "the common selectors checked. DKIM uses a per-provider selector that "
-                "can't always be discovered without knowing it, so this may be a lookup "
-                "limitation rather than a definitively missing record — verify against "
-                "your mail provider's published selector."
+                f"the selectors checked.{provider_line} Verify against your mail "
+                "provider's published selector."
             ),
             remediation="Configure DKIM signing with your email provider and publish the public key as a TXT record.",
+            extra={"mail_provider": provider, "selectors_checked": selectors},
         ))
 
     return findings

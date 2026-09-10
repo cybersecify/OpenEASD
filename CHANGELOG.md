@@ -7,6 +7,16 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **DKIM selector inference from MX/SPF.** DKIM selectors are per-provider and
+  not discoverable from the domain, so the old check tried only a fixed common
+  list. It now fingerprints the mail provider from MX and SPF records (Google
+  Workspace, Microsoft 365, Zoho, Amazon SES, SendGrid, Mailchimp, Fastmail,
+  Proofpoint) and checks that provider's known selectors first. This confirms
+  DKIM in more cases, and when it still can't, the "DKIM could not be confirmed"
+  finding names the detected provider and records the selectors checked — so a
+  missing record reads as more likely genuine.
+
 ### Removed
 - **Dead `apps/domain_security/checks/` package** (`email.py`, `dns.py`,
   `rdap.py`, `__init__.py`). Their `collect_and_analyze` functions were imported
