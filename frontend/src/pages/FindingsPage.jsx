@@ -4,6 +4,7 @@ import { Layout } from '../components/Layout.jsx';
 import { Badge } from '../components/Badge.jsx';
 import { Spinner } from '../components/Spinner.jsx';
 import { Pagination } from '../components/Pagination.jsx';
+import { FindingDetailModal } from '../components/FindingDetailModal.jsx';
 import { Card, CardContent } from '../components/ui/card.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { toast } from '../components/Notification.jsx';
@@ -53,6 +54,7 @@ export default function FindingsPage() {
   const [status,   setStatus]   = useState('open');
   const [domain,   setDomain]   = useState(params.get('domain') || '');
   const [page,     setPage]     = useState(1);
+  const [selected, setSelected] = useState(null);   // finding open in the detail modal
 
   const { data: domainsData } = useQuery({
     queryKey: ['/domains/'],
@@ -109,7 +111,13 @@ export default function FindingsPage() {
                     ) : findings.map(f => (
                       <TableRow key={f.id} className="hover:bg-hover transition-colors">
                         <TableCell className="px-4 py-3"><Badge value={f.severity} /></TableCell>
-                        <TableCell className="px-4 py-3 text-body font-medium max-w-xs truncate">{f.title}</TableCell>
+                        <TableCell className="px-4 py-3 max-w-xs">
+                          <button onClick={() => setSelected(f)}
+                            className="text-body font-medium hover:text-brand hover:underline text-left truncate max-w-full block"
+                            title="View details">
+                            {f.title}
+                          </button>
+                        </TableCell>
                         <TableCell className="px-4 py-3 font-mono text-dim text-xs">{f.target}</TableCell>
                         <TableCell className="px-4 py-3 text-xs">
                           {f.asset_id
@@ -137,6 +145,8 @@ export default function FindingsPage() {
           )}
         </Card>
       </div>
+
+      {selected && <FindingDetailModal finding={selected} onClose={() => setSelected(null)} />}
     </Layout>
   );
 }
