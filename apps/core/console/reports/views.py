@@ -360,6 +360,10 @@ def _group_findings_by_issue(findings):
                 "severity": f.severity,
                 "source": f.source,
                 "check_type": f.check_type,
+                # Sub-type for findings that share a coarse check_type (email
+                # controls all use check_type="email"); lets the report attach
+                # the right per-control copy.
+                "control": (f.extra or {}).get("control") if isinstance(f.extra, dict) else None,
                 "title": title,
                 "description": f.description,
                 "remediation": f.remediation,
@@ -407,11 +411,19 @@ def _group_findings_by_issue(findings):
         grp["cisa_kev"] = any(e.get("cisa_kev") for e in dict_extras)
         pctls = [e.get("epss_percentile") for e in dict_extras if e.get("epss_percentile") is not None]
         grp["epss_percentile"] = max(pctls) if pctls else None
-        # Plain-language business impact, shown on critical/high finding cards so
-        # a decision-maker (not just an engineer) understands what's at stake.
-        grp["business_impact"] = (
-            _BUSINESS_IMPACT.get(grp["check_type"]) or _BUSINESS_IMPACT_BY_SEV.get(grp["severity"], "")
-        ) if grp["severity"] in ("critical", "high") else ""
+        # Plain-language business impact for a decision-maker. Resolve via the
+        # effective key — the control for findings that share a coarse check_type
+        # (email), else the check_type. Specific per-control/check copy renders at
+        # ANY severity (many email-auth gaps are medium but still worth explaining);
+        # the generic severity fallback stays limited to critical/high.
+        effective_key = grp.get("control") or grp["check_type"]
+        specific = _BUSINESS_IMPACT.get(effective_key)
+        if specific:
+            grp["business_impact"] = specific
+        elif grp["severity"] in ("critical", "high"):
+            grp["business_impact"] = _BUSINESS_IMPACT_BY_SEV.get(grp["severity"], "")
+        else:
+            grp["business_impact"] = ""
         # Affected endpoints as a pill grid (3 per row). Capped at 50 per group
         # to prevent OOM when a single finding fires on thousands of URLs.
         endpoints = [(f.url.url if f.url else f.target) for f in grp["instances"]]
@@ -430,9 +442,15 @@ _BUSINESS_IMPACT = {
     "missing_csp": "A single injected script would run in your users' browsers (cross-site scripting).",
     "cve": "A publicly known vulnerability with a documented exploit is reachable from the internet.",
     "dnssec": "DNS answers for your domain can be forged, silently redirecting users to attacker servers.",
+    # Email controls — keyed by extra["control"] (all email findings share
+    # check_type="email"), resolved via the effective key below.
+    "spf": "Without a strict SPF policy, anyone can send email that appears to come from your domain.",
     "dmarc": "Anyone can send email that appears to come from your domain — brand and phishing risk.",
+    "dkim": "Recipients can't cryptographically verify your mail, so spoofed email is harder to reject.",
     "mta_sts": "Email to your mail servers can be forced down to plaintext and intercepted in transit.",
-    "rdap": "Your domain registration lapses soon — expiry means outage and a hijack window.",
+    # NOTE: no "rdap" entry — that check_type is shared by expiry AND the
+    # transfer/delete/update lock findings, so an expiry line here mis-renders on
+    # lock findings. Expiry findings carry their own dated description.
 }
 _BUSINESS_IMPACT_BY_SEV = {
     "critical": "Directly exploitable from the internet and high-impact — treat as urgent.",

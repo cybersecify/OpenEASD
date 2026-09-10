@@ -515,6 +515,25 @@ class TestTopRisksAndIntel:
         assert by_sev["critical"]["business_impact"]        # populated
         assert by_sev["low"]["business_impact"] == ""       # not on low
 
+    def test_email_control_business_impact_renders(self, db, session):
+        # Email findings all share check_type="email"; the per-control impact copy
+        # is keyed on extra["control"] and must render even at medium severity.
+        self._mk(session, source="domain_security", check_type="email", severity="medium",
+                 title="DMARC policy is none (monitoring only)", target="ex.com",
+                 extra={"control": "dmarc"})
+        grp = self._groups(session)[0]
+        assert "email that appears to come from your domain" in grp["business_impact"]
+
+    def test_rdap_lock_finding_has_no_expiry_line(self, db, session):
+        # The transfer/delete/update lock findings share check_type="rdap" with
+        # expiry findings — the expiry business-impact line must not render on them.
+        self._mk(session, source="domain_security", check_type="rdap", severity="medium",
+                 title="Domain transfer lock not enabled", target="ex.com",
+                 extra={"statuses": []})
+        grp = self._groups(session)[0]
+        assert "expiry" not in grp["business_impact"].lower()
+        assert grp["business_impact"] == ""   # medium + no specific copy → empty
+
     def test_report_renders_headline_and_snapshot(self, authed_client, session):
         self._mk(session, title="Unencrypted POSTGRESQL")
         captured = {}
