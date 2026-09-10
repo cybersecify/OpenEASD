@@ -10,7 +10,7 @@ class BreachCheckConfig(AppConfig):
         "label": "Breach Exposure (HIBP / XposedOrNot)",
         "runner": "apps.breach_check.scanner.run_breach_check",
         "phase": 1,
-        "phase_group": "Domain Intelligence",
+        "phase_group": "Data Leak",
         "requires": [],
         "produces_findings": True,
         # Passive: queries third-party breach datasets (XposedOrNot's public

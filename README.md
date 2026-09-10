@@ -188,16 +188,20 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 ── Domain Intelligence ──────────────────────────────────────────────────────
 Phase 1  Domain Security   - DNS, DNSSEC chain-of-trust, email
                              (SPF/DMARC/DKIM/MTA-STS/open-relay), RDAP checks
+Phase 1  Typosquat          - Lookalike / typosquat domain detection (passive;
+                             registered lookalikes via public DNS — phishing/brand abuse)
+Phase 1  DNS History        - Historical A/AAAA/MX records via a passive-DNS
+                             dataset (passive; BYO DNS_HISTORY_API_URL)
+
+── Data Leak ────────────────────────────────────────────────────────────────
 Phase 1  Hudson Rock        - Infostealer-log exposure via Hudson Rock's keyless
                              Cavalier API (aggregate counts only, no plaintext)
 Phase 1  GitHub Secrets      - Leaked secrets in public GitHub via gitleaks
                              (passive; BYO GITHUB_TOKEN, redacted before storage)
-Phase 1  Typosquat          - Lookalike / typosquat domain detection (passive;
-                             registered lookalikes via public DNS — phishing/brand abuse)
 Phase 1  Breach Check       - Data-breach exposure via XposedOrNot (free/keyless)
                              or Have I Been Pwned (BYO key); counts only, no PII
-Phase 1  DNS History        - Historical A/AAAA/MX records via a passive-DNS
-                             dataset (passive; BYO DNS_HISTORY_API_URL)
+Phase 11 JS Secrets         - Hardcoded secrets in fetched JavaScript via gitleaks
+                             (redacted before storage; runs after web crawl)
 
 ── Surface Enumeration ─────────────────────────────────────────────────────
 Phase 2  Subfinder         - Passive subdomain enumeration
@@ -227,7 +231,6 @@ Phase 9  Historical URLs   - Archived URL discovery via gau
 Phase 10 Katana            - Deep URL crawl on top of httpx
 Phase 11 Nuclei            - Web vulnerability scanning (community templates)
 Phase 11 Web Checker       - Security headers, cookies, CORS analysis
-Phase 11 JS Secrets        - Hardcoded secrets in JavaScript via gitleaks
 
 ── Prioritization ───────────────────────────────────────────────────────────
 Phase 12 CVE Intel         - Enrich CVE findings with EPSS + CISA KEV

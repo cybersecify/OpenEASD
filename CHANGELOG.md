@@ -7,6 +7,19 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **New "Data Leak" tool category.** The four tools that surface *leaked
+  credentials/secrets* rather than *domain posture* — `hudson_rock` (infostealer
+  logs), `breach_check` (breach exposure), `github_secrets` (secrets in public
+  GitHub), and `js_secrets` (secrets in fetched JS) — now group under a dedicated
+  `phase_group: "Data Leak"` instead of being mixed into "Domain Intelligence"
+  (the first three) and "Web Exposure" (`js_secrets`). **Why:** Domain
+  Intelligence had drifted into a catch-all; splitting leak-detection into its own
+  category makes the scan-start category picker, the report groupings, and the
+  "Did we leak keys / were staff logins stolen?" CEO questions line up with a
+  single, clearly-named bucket. Display-only regrouping — execution order
+  (`phase`), runners, and findings are unchanged.
+
 ### Added
 - **DKIM selector inference from MX/SPF.** DKIM selectors are per-provider and
   not discoverable from the domain, so the old check tried only a fixed common

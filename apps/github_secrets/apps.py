@@ -10,7 +10,7 @@ class GithubSecretsConfig(AppConfig):
         "label": "GitHub Secret Exposure (gitleaks)",
         "runner": "apps.github_secrets.scanner.run_github_secrets",
         "phase": 1,
-        "phase_group": "Domain Intelligence",
+        "phase_group": "Data Leak",
         "requires": ["gitleaks"],
         "produces_findings": True,
         # Passive: queries GitHub's OWN public code-search API (a third party),
