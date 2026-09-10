@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.14.2] — 2026-09-11
+
 ### Changed
 - **Faster releases — stop building the images twice.** On a release (main/tag
   push) the `docker` CI job built both images and then `publish` rebuilt+pushed
@@ -1509,7 +1511,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.14.1...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.14.2...HEAD
+[v2.14.2]: https://github.com/cybersecify/OpenEASD/compare/v2.14.1...v2.14.2
 [v2.14.1]: https://github.com/cybersecify/OpenEASD/compare/v2.14.0...v2.14.1
 [v2.14.0]: https://github.com/cybersecify/OpenEASD/compare/v2.13.0...v2.14.0
 [v2.13.0]: https://github.com/cybersecify/OpenEASD/compare/v2.12.0...v2.13.0
