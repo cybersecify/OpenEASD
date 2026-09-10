@@ -119,7 +119,9 @@ class TestCollector:
 
         with patch("apps.typosquat.collector.generate_candidates",
                    return_value=[{"candidate": "examp1e.com", "technique": "typo"}]), \
-             patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve):
+             patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
+             patch("apps.typosquat.collector.requests.get") as get:
+            get.return_value = type("R", (), {"text": "<html>hi</html>", "url": "https://examp1e.com/"})()
             results = collect(sess)
         assert len(results) == 1
         rec = results[0]
@@ -127,6 +129,43 @@ class TestCollector:
         assert rec["has_a"] is True
         assert rec["resolved_ips"] == ["93.184.216.34"]
         assert rec["technique"] == "typo"
+        # A-record lookalikes get a homepage probe (no login form / brand here).
+        assert rec["content_checked"] is True
+        assert rec["login_form"] is False
+
+    def test_login_form_and_brand_flagged_as_weaponized(self):
+        sess = _session("example.com")
+
+        def fake_resolve(name, rdtype):
+            if rdtype == "A":
+                return ["1.2.3.4"]
+            raise dns.resolver.NoAnswer()
+
+        html = "<html><form action='/login' class=signin>example bank</form></html>"
+        with patch("apps.typosquat.collector.generate_candidates",
+                   return_value=[{"candidate": "examp1e.com", "technique": "typo"}]), \
+             patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
+             patch("apps.typosquat.collector.requests.get") as get:
+            get.return_value = type("R", (), {"text": html, "url": "https://examp1e.com/"})()
+            rec = collect(sess)[0]
+        assert rec["login_form"] is True
+        assert rec["brand_mentioned"] is True   # "example" appears on the page
+
+    def test_content_fetch_failure_is_graceful(self):
+        sess = _session("example.com")
+
+        def fake_resolve(name, rdtype):
+            if rdtype == "A":
+                return ["1.2.3.4"]
+            raise dns.resolver.NoAnswer()
+
+        with patch("apps.typosquat.collector.generate_candidates",
+                   return_value=[{"candidate": "examp1e.com", "technique": "typo"}]), \
+             patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
+             patch("apps.typosquat.collector.requests.get", side_effect=Exception("boom")):
+            rec = collect(sess)[0]   # must not raise
+        assert rec["content_checked"] is False
+        assert rec["login_form"] is False
 
     def test_unregistered_nxdomain_skipped(self):
         sess = _session("example.com")
@@ -208,6 +247,33 @@ class TestAnalyzer:
                     "has_a": False, "has_mx": False, "has_ns": True,
                     "resolved_ips": []}]
         assert analyze(sess, results)[0].severity == "low"
+
+    def test_login_form_elevates_to_high(self):
+        sess = _session("example.com")
+        results = [{"candidate": "examp1e.com", "technique": "typo",
+                    "has_a": True, "has_mx": False, "has_ns": False,
+                    "resolved_ips": ["1.2.3.4"], "login_form": True,
+                    "content_checked": True}]
+        f = analyze(sess, results)[0]
+        assert f.severity == "high"
+        assert f.extra["login_form"] is True
+        assert "takedown" in f.description.lower()
+
+    def test_brand_mention_elevates_to_high(self):
+        sess = _session("example.com")
+        results = [{"candidate": "examp1e.com", "technique": "typo",
+                    "has_a": True, "has_mx": False, "has_ns": False,
+                    "resolved_ips": ["1.2.3.4"], "brand_mentioned": True,
+                    "brand_mention_count": 4, "content_checked": True}]
+        assert analyze(sess, results)[0].severity == "high"
+
+    def test_weaponizable_without_content_signal_stays_medium(self):
+        sess = _session("example.com")
+        results = [{"candidate": "examp1e.com", "technique": "typo",
+                    "has_a": True, "has_mx": False, "has_ns": False,
+                    "resolved_ips": ["1.2.3.4"], "content_checked": True,
+                    "login_form": False, "brand_mentioned": False}]
+        assert analyze(sess, results)[0].severity == "medium"
 
     def test_one_finding_per_candidate(self):
         sess = _session("example.com")
