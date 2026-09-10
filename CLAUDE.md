@@ -126,7 +126,8 @@ git describe --tags --abbrev=0
 ## Stack
 
 ### Backend
-- Django 5+ with plain Django views (no DRF, no Celery, no Redis)
+- Django 5.2 LTS with plain Django views (no DRF, no Celery, no Redis) — pinned to
+  the LTS line (`django>=5.2.17,<6.0`), not floated to non-LTS 6.x
 - **Django Ninja** REST API under `/api/` — Schema-based, auto-docs at `/api/docs`
 - **JWT Bearer auth** — access + refresh tokens via `djangorestframework-simplejwt` (ninja-jwt wrapper); token blacklist handled by simplejwt's built-in `OutstandingToken`/`BlacklistedToken` models
 - **DBOS** — durable-execution engine for scan execution AND all scheduling, backed by PostgreSQL (its checkpoint tables live in a `dbos` schema in the same DB). Scans are durable workflows whose phases are checkpointed steps, so a crashed/restarted worker RESUMES a scan instead of losing it. Scheduling is DBOS `@scheduled` cron workflows (daily scan, monitoring sweep, user-schedule sweep, stuck-scan watchdog, JWT token purge) registered by the `dbos_worker` process. Django-Q2 and APScheduler have been fully removed.

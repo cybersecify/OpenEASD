@@ -524,7 +524,7 @@ uv run pytest tests/
 ## Tech Stack
 
 **Backend:**
-- **Django 5**: Web framework
+- **Django 5.2 LTS**: Web framework
 - **Django Ninja**: REST API with OpenAPI docs
 - **DBOS**: Durable-execution engine — task queue + scheduler, Postgres-backed (crash-resumable scans)
 - **croniter**: Cron parsing for the DBOS user-schedule sweep
