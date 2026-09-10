@@ -1,6 +1,6 @@
 [project]
 name = "openeasd"
-version = "2.14.0"
+version = "2.14.1"
 description = "OpenEASD - Automated External Attack Surface Detection"
 readme = "README.md"
 requires-python = ">=3.12"
