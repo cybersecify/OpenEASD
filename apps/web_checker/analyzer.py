@@ -8,6 +8,7 @@ Finding categories:
   - Directory listing detection
 """
 
+import datetime
 import logging
 import re
 
@@ -437,6 +438,100 @@ def _directory_listing_findings(result: dict, session) -> list[Finding]:
         target=url,
         extra={"title": title, "url": url},
     )]
+
+
+# ---------------------------------------------------------------------------
+# Responsible-disclosure: security.txt (RFC 9116)
+# ---------------------------------------------------------------------------
+
+def _parse_security_txt_expires(raw: str) -> "datetime.datetime | None":
+    """Return the parsed Expires timestamp from a security.txt body, or None.
+
+    RFC 9116 Expires is a single ISO 8601 / RFC 3339 datetime. Trailing 'Z' is
+    normalised to +00:00; a naive value is assumed UTC. Unparseable → None."""
+    for line in raw.splitlines():
+        if line.lower().startswith("expires:"):
+            val = line.split(":", 1)[1].strip()
+            try:
+                dt = datetime.datetime.fromisoformat(val.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.timezone.utc)
+            return dt
+    return None
+
+
+def security_txt_findings(result: "dict | None", session) -> list[Finding]:
+    """Findings for the primary domain's security.txt (responsible disclosure).
+
+    - Absent (reached the server, no valid security.txt) → info: no published,
+      machine-readable way to report a vulnerability.
+    - Present but Expires is in the past → low: the policy has lapsed.
+
+    A present, unexpired security.txt raises nothing. Nothing is raised either
+    when ``result`` is None (apex had no probed web URL) or the apex was
+    unreachable (TLS/connection failure — we couldn't check, so we don't claim
+    it's missing)."""
+    if not result or not result.get("reachable"):
+        return []
+
+    host = result.get("host", session.domain)
+    url_fk = result.get("url_fk")
+    port_fk = result.get("port_fk")
+
+    if not result.get("found"):
+        return [Finding(
+            session=session,
+            source="web_checker",
+            check_type="missing_security_txt",
+            severity="info",
+            title=f"No security.txt on {host}",
+            description=(
+                f"{host} does not publish a security.txt file at "
+                f"/.well-known/security.txt (RFC 9116). There is no standard, "
+                f"machine-readable way for a security researcher to find out how "
+                f"to report a vulnerability, which can delay responsible disclosure."
+            ),
+            remediation=(
+                "Publish /.well-known/security.txt with at least a Contact: field "
+                "(a security email or reporting URL) and an Expires: field. "
+                "Example:\n  Contact: mailto:security@"
+                f"{session.domain}\n  Expires: 2027-01-01T00:00:00Z"
+            ),
+            url=url_fk,
+            port=port_fk,
+            target=host,
+            extra={"host": host, "checked": ["/.well-known/security.txt", "/security.txt"]},
+        )]
+
+    expires = _parse_security_txt_expires(result.get("raw", ""))
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if expires is not None and expires < now:
+        return [Finding(
+            session=session,
+            source="web_checker",
+            check_type="expired_security_txt",
+            severity="low",
+            title=f"Expired security.txt on {host}",
+            description=(
+                f"The security.txt at {result.get('location')} has an Expires date "
+                f"of {expires.date().isoformat()}, which has passed. RFC 9116 "
+                f"requires the file to be kept current; an expired policy signals "
+                f"it may no longer be monitored, undermining responsible disclosure."
+            ),
+            remediation=(
+                "Refresh the Expires: field in /.well-known/security.txt to a future "
+                "date and confirm the Contact: details are still monitored."
+            ),
+            url=url_fk,
+            port=port_fk,
+            target=host,
+            extra={"host": host, "location": result.get("location"),
+                   "expires": expires.isoformat()},
+        )]
+
+    return []
 
 
 # ---------------------------------------------------------------------------

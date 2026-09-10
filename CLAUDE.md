@@ -480,7 +480,7 @@ The registry (`apps/core/engine/workflows/registry.py`) auto-discovers all `tool
 | `apps/historical_urls/` | 9 | Web Exposure | No | Historical URL discovery via gau (Wayback Machine, OTX, Common Crawl, URLScan) |
 | `apps/katana/` | 10 | Web Exposure | No | Web crawling, endpoint discovery |
 | `apps/nuclei/` | 11 | Web Exposure | Yes | Web vuln scan (community templates) |
-| `apps/web_checker/` | 11 | Web Exposure | Yes | Security headers, cookies, CORS |
+| `apps/web_checker/` | 11 | Web Exposure | Yes | Security headers, cookies, CORS; + security.txt (RFC 9116) responsible-disclosure check on the apex |
 | `apps/js_secrets/` | 11 | Data Leak | Yes | Hardcoded-secret detection — fetches discovered `.js` assets and runs gitleaks over them; secret is redacted before storage |
 | `apps/cve_intel/` | 12 | Prioritization | No | Enriches CVE findings in place with EPSS scores + CISA KEV flags (no new findings) |
 
@@ -529,7 +529,7 @@ Phase 8  httpx              → URL (web probing, CDN-aware via SNI)
 Phase 9  historical_urls    → URL (gau — archived endpoints)
 Phase 10 katana             → URL (web crawling, endpoint discovery)
 Phase 11 nuclei             → Finding (web vulns via templates on URLs)
-Phase 11 web_checker        → Finding (headers, cookies, CORS on URLs)
+Phase 11 web_checker        → Finding (headers, cookies, CORS on URLs; + security.txt RFC 9116 on apex)
 Phase 11 js_secrets         → Finding (gitleaks over fetched .js assets — secret redacted)
 ```
 
@@ -849,7 +849,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_settings_security.py` | 16 | SECRET_KEY strength guard (DEBUG=False + insecure default) |
 | `tests/unit/test_insights_builder.py` | 4 | FindingTypeSummary prune only when aggregation_complete |
 | `tests/unit/test_exposure_score.py` | 38 | Exposure Score — formula (clean=0, weights, saturation cap), grade bands, trend delta (up/down/flat/no-baseline), builder populates ScanSummary, insights + dashboard API fields, PDF report exposure block |
-| `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
+| `tests/unit/test_web_checker.py` | 58 | Headers, cookies, CORS, disclosure, collector; security.txt (RFC 9116) — expires parsing, SPA-catch-all guard, missing=info/expired=low findings, reachable-vs-absent (unreachable ⇒ no false "missing"), apex-only collection + fail-graceful |
 | `tests/unit/test_passive_scan.py` | 21 | registry `active` classification, `is_passive_tool_set`, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
 | `tests/unit/test_workflow_runner.py` | 33 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism |
 | `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow with the complete 18-tool set (migration 0021), idempotent gap-fill |
@@ -875,6 +875,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1790 tests** (1738 fast + 52 slow domain_security)
+**Total: 1808 tests** (1756 fast + 52 slow domain_security)
 
 Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.
