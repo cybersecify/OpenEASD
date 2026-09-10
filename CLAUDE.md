@@ -212,7 +212,14 @@ docker compose up -d --build
   `OPENEASD_PROFILE` (default `auto`, from RAM) tunes this: `low` (<2GB or
   `OPENEASD_LOW_MEMORY=true`) runs tools sequentially + throttles nuclei + skips
   amass brute so ~1GB completes without OOM; `balanced` (2-8GB) is the old
-  default; `high` (≥8GB) raises LOCAL concurrency. Per-target request rate stays
+  default; `high` (≥8GB) raises LOCAL concurrency. **Exception:** a phase group
+  of only light, network-I/O-only tools (`runner._LOW_MEM_PARALLEL_SAFE` —
+  domain_security/domain_probe/typosquat/dns_history/hudson_rock/breach_check/
+  github_secrets) runs concurrently *even under low memory* (they never OOM like
+  nuclei/amass), so the phase-1 intelligence group stays fast on a 1GB box;
+  override via `SCAN_LOW_MEM_PARALLEL_SAFE`. `typosquat` also resolves its
+  candidates and probes homepages concurrently (`TYPOSQUAT_DNS_CONCURRENCY`=16 /
+  `TYPOSQUAT_FETCH_CONCURRENCY`=8) instead of serially. Per-target request rate stays
   capped across all profiles (politeness — a big box is no licence to hammer the
   target; higher rates just trip WAFs, which the coverage report flags). Add
   swap on 1GB hosts. Resolver + tuning in settings/base.py (`_resolve_profile`,
@@ -856,7 +863,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_ssh_checker.py` | 34 | SSH probe, host key, kex/cipher/MAC, auth, collector |
 | `tests/unit/test_subfinder.py` | 10 | JSON parser, dedup, hostname normalization |
 | `tests/unit/test_subscan.py` | 12 | Targeted re-scan of a single tool / subset |
-| `tests/unit/test_typosquat.py` | 34 | candidate generation (all 8 techniques, uniqueness, no-original, www-strip, cap/truncation-logged), passive DNS registration check (A/MX/NS, NXDOMAIN + timeout never raise), weaponization homepage probe (login form + brand mention flagged, fetch failure graceful), analyzer severity (A/MX → medium, NS-only → low, login-form/brand → high), scanner (saves + never-raises) |
+| `tests/unit/test_typosquat.py` | 36 | candidate generation (all 8 techniques, uniqueness, no-original, www-strip, cap/truncation-logged), passive DNS registration check (A/MX/NS, NXDOMAIN + timeout never raise), weaponization homepage probe (login form + brand mention flagged, fetch failure graceful), analyzer severity (A/MX → medium, NS-only → low, login-form/brand → high), scanner (saves + never-raises), concurrent collect (order-preserving, all-registered-checked, fetch cap) |
 | `tests/unit/test_takeover_check.py` | 35 | collector (missing binary, bad JSON, happy path), analyzer (vulnerable/non-vulnerable, FK link, dedup), scanner |
 | `tests/unit/test_tls_checker.py` | 87 | Cert parsing, ciphers, protocols, HSTS, collector, scanner, cipher enumeration |
 | `tests/unit/test_tools_healthcheck.py` | 14 | Tool binary preflight / health checks |
@@ -866,7 +873,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_exposure_score.py` | 38 | Exposure Score — formula (clean=0, weights, saturation cap), grade bands, trend delta (up/down/flat/no-baseline), builder populates ScanSummary, insights + dashboard API fields, PDF report exposure block |
 | `tests/unit/test_web_checker.py` | 58 | Headers, cookies, CORS, disclosure, collector; security.txt (RFC 9116) — expires parsing, SPA-catch-all guard, missing=info/expired=low findings, reachable-vs-absent (unreachable ⇒ no false "missing"), apex-only collection + fail-graceful |
 | `tests/unit/test_passive_scan.py` | 27 | registry `active` classification (domain_security passive / domain_probe active), `is_passive_tool_set`, Data Leak grouping, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
-| `tests/unit/test_workflow_runner.py` | 33 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism |
+| `tests/unit/test_workflow_runner.py` | 35 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism (concurrent same-phase; LOW_MEMORY serialises heavy phases but light phase-1 tools still parallel) |
 | `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow with the complete 18-tool set (migration 0021), idempotent gap-fill |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/unit/test_update_check.py` | 22 | Update-available check — version parse/compare, cached GitHub fetch, fail-graceful on timeout/HTTP-error/bad-payload, endpoint shape |
@@ -890,6 +897,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1837 tests** (1791 fast + 46 slow domain_security)
+**Total: 1842 tests** (1796 fast + 46 slow domain_security)
 
 Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.

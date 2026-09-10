@@ -118,14 +118,32 @@ def resolve_phase_groups(workflow, only_tools: list | None = None) -> list:
     return _group_tools_by_phase(tools)
 
 
+# Tools that are pure network I/O (DNS lookups / third-party API calls / small
+# HTTP fetches) with no large memory footprint — safe to run concurrently even
+# under LOW_MEMORY, unlike the RAM-hungry scanners (nuclei compiles ~13.5k
+# templates into memory, amass brute-forces). This is what lets the phase-1
+# intelligence group finish fast on a 1 GB box without risking an OOM. A group is
+# only parallelised under low memory when EVERY tool in it is on this list.
+_LOW_MEM_PARALLEL_SAFE = frozenset({
+    "domain_security", "domain_probe", "typosquat", "dns_history",
+    "hudson_rock", "breach_check", "github_secrets",
+})
+
+
 def run_one_phase_group(run, session, group: list, base_order: int) -> None:
-    """Execute a single phase group (sequential for one-tool groups or under
-    LOW_MEMORY, else concurrent). Extracted so the DBOS scan workflow can run
+    """Execute a single phase group. Sequential for one-tool groups; under
+    LOW_MEMORY sequential too UNLESS every tool in the group is a light,
+    network-I/O-only tool (``_LOW_MEM_PARALLEL_SAFE``) — those parallelise even on
+    a small box. Otherwise concurrent. Extracted so the DBOS scan workflow can run
     one checkpointed group at a time."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from django.conf import settings
 
-    if len(group) == 1 or getattr(settings, "LOW_MEMORY", False):
+    safe = getattr(settings, "SCAN_LOW_MEM_PARALLEL_SAFE", _LOW_MEM_PARALLEL_SAFE)
+    low_mem = getattr(settings, "LOW_MEMORY", False)
+    serialize = len(group) == 1 or (low_mem and not all(t in safe for t in group))
+
+    if serialize:
         for i, tool in enumerate(group):
             _run_single_step(run, session, tool, base_order + i)
         return

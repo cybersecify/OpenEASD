@@ -23,12 +23,21 @@ ToolBinaryMissing / ToolTimeout.
 
 import logging
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import dns.resolver
 import requests
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
+
+# Bounded concurrency for the two network-bound passes. Candidate resolution and
+# homepage probes are I/O-bound and independent, so a small thread pool collapses
+# hundreds of serial round-trips into a few rounds. Kept bounded (and hitting
+# only third-party lookalike DNS / sites, never the target) so it stays polite.
+_DNS_CONCURRENCY = getattr(settings, "TYPOSQUAT_DNS_CONCURRENCY", 16)
+_FETCH_CONCURRENCY = getattr(settings, "TYPOSQUAT_FETCH_CONCURRENCY", 8)
 
 # Cap on generated candidates AND the per-scan DNS-lookup budget (one candidate =
 # up to a few short lookups). Keeps a scan polite and bounded on domains whose
@@ -188,6 +197,18 @@ def _resolver() -> dns.resolver.Resolver:
     return r
 
 
+# One resolver per worker thread — dnspython Resolver isn't documented
+# thread-safe, and a thread-local avoids re-reading resolv.conf per candidate.
+_thread_local = threading.local()
+
+
+def _thread_resolver() -> dns.resolver.Resolver:
+    r = getattr(_thread_local, "resolver", None)
+    if r is None:
+        r = _thread_local.resolver = _resolver()
+    return r
+
+
 def _resolve(resolver, name: str, rdtype: str) -> list[str]:
     """Resolve ``name``/``rdtype``. Returns record strings, or [] on any failure
     (NXDOMAIN, no answer, timeout, resolver error). Never raises."""
@@ -271,22 +292,31 @@ def collect(session) -> list[dict]:
         logger.info("[typosquat:%s] no candidates generated for %r", session.id, apex)
         return []
 
-    resolver = _resolver()
-    results: list[dict] = []
-    for cand in candidates:
-        record = _check_candidate(resolver, cand["candidate"])
+    # Registration check — resolve candidates concurrently (I/O-bound). map()
+    # preserves input order, so results stay deterministic.
+    def _check(cand):
+        record = _check_candidate(_thread_resolver(), cand["candidate"])
         if record:
             record["technique"] = cand["technique"]
-            results.append(record)
+        return record
+
+    dns_workers = max(1, min(_DNS_CONCURRENCY, len(candidates)))
+    with ThreadPoolExecutor(max_workers=dns_workers) as executor:
+        results = [r for r in executor.map(_check, candidates) if r]
 
     # Weaponization pass: for registered lookalikes that serve web (have an A
-    # record), fetch the homepage to spot active phishing / impersonation. Capped.
+    # record), fetch the homepage to spot active phishing / impersonation. Capped,
+    # and probed concurrently — each _content_signals mutates its record in place.
     brand, _ = _split_apex(apex)
-    fetched = 0
-    for record in results:
-        if record.get("has_a") and fetched < CONTENT_MAX_FETCHES:
+    to_fetch = [r for r in results if r.get("has_a")][:CONTENT_MAX_FETCHES]
+    if to_fetch:
+        def _probe(record):
             record.update(_content_signals(record["candidate"], brand))
-            fetched += 1
+
+        fetch_workers = max(1, min(_FETCH_CONCURRENCY, len(to_fetch)))
+        with ThreadPoolExecutor(max_workers=fetch_workers) as executor:
+            list(executor.map(_probe, to_fetch))
+    fetched = len(to_fetch)
 
     logger.info(
         "[typosquat:%s] checked %d lookalike candidate(s) for %s — %d registered, "
