@@ -6,9 +6,9 @@ images:
   # switch to the floating :v2.1 major.minor tag + imagePullPolicy: Always to
   # auto-pick-up patch releases).
   - name: ghcr.io/cybersecify/openeasd-web
-    newTag: v2.14.1
+    newTag: v2.14.2
   - name: ghcr.io/cybersecify/openeasd-worker
-    newTag: v2.14.1
+    newTag: v2.14.2
 resources:
   - configmap.yaml
   - postgres.yaml
