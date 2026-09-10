@@ -736,6 +736,15 @@ class TestWorkflowsList:
         assert isinstance(workflows, list)
         assert any(w["name"] == "Smoke Workflow" for w in workflows)
 
+    def test_exposes_is_passive_for_dynamic_attestation(self, auth_client, workflow):
+        """Each workflow reports is_passive so the start form can drop the
+        attestation requirement for passive-only scans."""
+        workflows = auth_client.get("/api/workflows/").json()
+        assert all("is_passive" in w for w in workflows)
+        passive = next((w for w in workflows if w["name"] == "Passive Scan"), None)
+        if passive is not None:
+            assert passive["is_passive"] is True
+
     def test_requires_auth(self, client):
         assert client.get("/api/workflows/").status_code == 401
 

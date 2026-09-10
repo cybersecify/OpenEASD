@@ -16,6 +16,7 @@ from apps.core.engine.workflows.registry import (
     get_tool_phases,
     get_tool_produces_findings,
     get_tool_requires,
+    is_passive_tool_set,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,10 @@ def _serialize_workflow(workflow) -> dict:
         "name": workflow.name,
         "description": workflow.description,
         "is_default": workflow.is_default,
+        # Passive-only workflows send no packets to the target and need no
+        # DomainAuthorization for an immediate scan — drives the start form's
+        # dynamic attestation. Matches the scan-start gate's is_passive_tool_set.
+        "is_passive": is_passive_tool_set(workflow.enabled_tools()),
         "created_at": workflow.created_at.isoformat(),
         "updated_at": workflow.updated_at.isoformat(),
         "steps": steps,
