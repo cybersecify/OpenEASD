@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Badge } from './Badge.jsx';
+import { apiPost } from '../api/client.js';
+import { toast } from './Notification.jsx';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -7,9 +9,12 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog.jsx';
 
-// Read-only detail view for a single Finding. Both the Findings page and the
-// Scan Detail findings tab already carry the full row (description, remediation,
-// extra, …), so this renders from the passed object — no extra fetch.
+// Detail view for a single Finding, opened from the Scan Detail findings tab.
+// The row already carries the full record (description, remediation, extra, …),
+// so it renders from the passed object — no extra fetch. Finding status
+// (triage) is editable here, so lifecycle management lives with the scan.
+
+const STATUSES = ['open', 'acknowledged', 'in_progress', 'resolved', 'false_positive'];
 
 function fmtDateTime(iso) {
   if (!iso) return '—';
@@ -105,9 +110,24 @@ function ExtraDetails({ extra }) {
   );
 }
 
-export function FindingDetailModal({ finding, onClose }) {
+export function FindingDetailModal({ finding, onClose, onStatusChanged }) {
+  const [status, setStatus] = useState(finding?.status || 'open');
+  const [saving, setSaving] = useState(false);
   if (!finding) return null;
   const f = finding;
+
+  async function changeStatus(next) {
+    setStatus(next);
+    setSaving(true);
+    try {
+      await apiPost(`/scans/findings/${f.id}/status/`, { status: next });
+      toast.success('Status updated.');
+      onStatusChanged && onStatusChanged();
+    } catch (err) {
+      setStatus(f.status || 'open');   // revert on failure
+      toast.error(err.message || 'Failed to update status.');
+    } finally { setSaving(false); }
+  }
 
   return (
     <AlertDialog open onOpenChange={open => !open && onClose()}>
@@ -123,7 +143,12 @@ export function FindingDetailModal({ finding, onClose }) {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <Meta label="Source"><span className="font-mono text-xs">{f.source || '—'}</span></Meta>
             <Meta label="Check type"><span className="font-mono text-xs">{f.check_type || '—'}</span></Meta>
-            <Meta label="Status"><Badge value={f.status || 'open'} /></Meta>
+            <Meta label="Status">
+              <select value={status} onChange={e => changeStatus(e.target.value)} disabled={saving}
+                className="field text-xs py-0.5 px-1.5 w-auto">
+                {STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+              </select>
+            </Meta>
             <Meta label="Target"><span className="font-mono text-xs break-all">{f.target || '—'}</span></Meta>
             {f.asset_key && <Meta label="Asset"><span className="font-mono text-xs break-all">{f.asset_key}</span></Meta>}
             <Meta label="Discovered">{fmtDateTime(f.discovered_at)}</Meta>

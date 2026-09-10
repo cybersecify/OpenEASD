@@ -481,7 +481,11 @@ export default function ScanDetailPage() {
       )}
 
       {selectedFinding && (
-        <FindingDetailModal finding={selectedFinding} onClose={() => setSelectedFinding(null)} />
+        <FindingDetailModal
+          finding={selectedFinding}
+          onClose={() => setSelectedFinding(null)}
+          onStatusChanged={refetch}
+        />
       )}
     </Layout>
   );

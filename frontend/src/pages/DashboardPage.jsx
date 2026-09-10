@@ -28,39 +28,6 @@ function AssetCard({ label, value }) {
   );
 }
 
-const DI_SEV = [
-  ['critical', 'text-red-400   border-red-800   bg-red-900/20'],
-  ['high',     'text-orange-400 border-orange-800 bg-orange-900/20'],
-  ['medium',   'text-yellow-400 border-yellow-800 bg-yellow-900/20'],
-  ['low',      'text-blue-400  border-blue-800  bg-blue-900/20'],
-  ['info',     'text-gray-400  border-gray-700  bg-gray-800/40'],
-];
-
-// Featured card for the primary recon category. Clickable → findings.
-function DomainIntelligenceCard({ di, onOpen }) {
-  return (
-    <button onClick={onOpen}
-      className="w-full text-left rounded-xl border border-brand/30 bg-brand/10 p-5 hover:bg-brand/15 transition-colors flex items-center gap-5">
-      <div className="shrink-0">
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-brand/80">Primary category</div>
-        <div className="text-lit text-lg font-bold leading-tight">Domain Intelligence</div>
-        <div className="text-dim text-xs mt-0.5">{di.tool_count} passive &amp; DNS/email checks — the first recon layer</div>
-      </div>
-      <div className="flex items-baseline gap-1.5 ml-auto">
-        <span className="text-3xl font-bold text-brand leading-none">{di.total ?? 0}</span>
-        <span className="text-dim text-xs">findings</span>
-      </div>
-      <div className="flex flex-wrap gap-1.5 justify-end">
-        {DI_SEV.filter(([k]) => (di[k] ?? 0) > 0).map(([k, cls]) => (
-          <span key={k} className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${cls}`}>
-            {di[k]} {k}
-          </span>
-        ))}
-      </div>
-    </button>
-  );
-}
-
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { data, isLoading: loading, error } = useQuery({
@@ -75,9 +42,7 @@ export default function DashboardPage() {
   const {
     kpi_domains = 0, kpi_active_scans = 0, kpi_critical = 0, kpi_high = 0,
     kpi_subdomains = 0, kpi_ips = 0, kpi_ports = 0, kpi_urls = 0,
-    kpi_assets_active = 0, kpi_assets_gone = 0,
     domain_status = [], urgent_findings = [],
-    domain_intelligence = null,
   } = data;
 
   return (
@@ -87,10 +52,6 @@ export default function DashboardPage() {
           <h1 className="text-lit text-xl font-bold">Dashboard</h1>
           <p className="text-dim text-sm mt-0.5">Attack surface overview</p>
         </div>
-
-        {domain_intelligence && (
-          <DomainIntelligenceCard di={domain_intelligence} onOpen={() => navigate('/findings')} />
-        )}
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <KpiCard label="Domains"       value={kpi_domains}      colorCls="text-body border-rim bg-card" />
@@ -105,18 +66,6 @@ export default function DashboardPage() {
           <AssetCard label="Ports"      value={kpi_ports} />
           <AssetCard label="URLs"       value={kpi_urls} />
         </div>
-
-        <button onClick={() => navigate('/assets')}
-          className="w-full text-left bg-card border border-rim rounded-xl p-4 hover:bg-hover transition-colors flex items-center justify-between">
-          <div>
-            <div className="text-xs text-dim uppercase tracking-wider">Asset inventory</div>
-            <div className="text-body text-sm mt-0.5">
-              <span className="text-green-400 font-semibold">{kpi_assets_active}</span> active
-              <span className="text-dim"> · {kpi_assets_gone} gone</span>
-            </div>
-          </div>
-          <span className="text-dim text-xs">View all →</span>
-        </button>
 
         <Card className="overflow-hidden">
           <CardHeader className="border-b border-border px-4 py-3">
