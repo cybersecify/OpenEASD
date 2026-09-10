@@ -7,6 +7,14 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Renamed the "Surface Enumeration" tool category to "Asset Discovery."** More
+  accurate and standard: the phases-3–5 tools (`subfinder`, `amass`, `alterx`,
+  `asn_discovery`, `dnsx`, `takeover_check`, `cloud_assets`) discover the org's
+  external *assets* — subdomains, IP ranges, cloud storage. Parallels the existing
+  "Port Discovery" category and ties to the `asset_inventory` app. Display-only
+  `phase_group` rename.
+
 ### Removed
 - **Retired the `github_recon` tool.** The GitHub Org Recon tool (infra references —
   internal hostnames/subdomains, cloud-bucket URLs, API endpoints — in the org's

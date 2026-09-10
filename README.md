@@ -206,7 +206,7 @@ Phase 2  GitHub Secrets      - Leaked secrets in public GitHub via gitleaks
 Phase 2  Breach Check       - Data-breach exposure via XposedOrNot (free/keyless)
                              or Have I Been Pwned (BYO key); counts only, no PII
 
-── Surface Enumeration ─────────────────────────────────────────────────────
+── Asset Discovery ──────────────────────────────────────────────────────────
 Phase 3  Subfinder         - Passive subdomain enumeration
 Phase 3  Amass             - Active subdomain enumeration
 Phase 3  Alterx            - Subdomain permutation from discovered subdomains

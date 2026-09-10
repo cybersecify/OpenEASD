@@ -10,7 +10,7 @@ class AmassConfig(AppConfig):
         "label": "Amass",
         "runner": "apps.amass.scanner.run_amass",
         "phase": 3,
-        "phase_group": "Surface Enumeration",
+        "phase_group": "Asset Discovery",
         "requires": [],
         "produces_findings": False,
         "active": True,

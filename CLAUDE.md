@@ -488,13 +488,13 @@ guards that every registered tool appears in the output.
 | `apps/github_secrets/` | 2 | Credential Exposure | Yes | Leaked secrets in PUBLIC GitHub — searches GitHub's code-search API (org-scoped by default) for the target org's committed credentials, fetches the hits, runs gitleaks over them (same engine as `js_secrets`), REDACTS before storage (`check_type="exposed_secret"`, shared with js_secrets). Passive (queries GitHub, not the target); BYOK MANDATORY (`GITHUB_TOKEN` — code-search needs auth; no token → logged no-op); fail-graceful |
 | `apps/typosquat/` | 1 | Domain Intelligence | Yes | Lookalike / typosquat domain detection — generates lookalike candidates algorithmically (homoglyph/typo/omission/insertion/repetition/transposition/hyphenation/TLD-swap), checks which are registered via public DNS, then scores **weaponization**: registered web-serving lookalikes get a capped, fail-graceful homepage fetch for a login form (credential phishing) or brand mention (impersonation) → **high** (active impersonation, prioritise takedown); A/MX-only → medium; NS-only → low. Passive w.r.t. the target (contacts only the lookalike domains, never yours), no key, fail-graceful. Weaponization model ported from the standalone `tldsquatting` project |
 | `apps/breach_check/` | 2 | Credential Exposure | Yes | Data-breach exposure for the domain. BYOK: free keyless XposedOrNot catalog by default, authoritative Have I Been Pwned `breacheddomain` when `HIBP_API_KEY` set. Aggregate COUNTS + public breach metadata only — never email aliases/credentials. Passive, fail-graceful |
-| `apps/subfinder/` | 3 | Surface Enumeration | No | Passive subdomain enumeration |
-| `apps/amass/` | 3 | Surface Enumeration | No | Active subdomain enumeration |
-| `apps/asn_discovery/` | 3 | Surface Enumeration | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
-| `apps/alterx/` | 3 | Surface Enumeration | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
-| `apps/dnsx/` | 4 | Surface Enumeration | No | DNS resolution, public IP filtering |
-| `apps/takeover_check/` | 5 | Surface Enumeration | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
-| `apps/cloud_assets/` | 5 | Surface Enumeration | Yes | Public cloud bucket enumeration via cloud_enum (AWS S3 / Azure Blob / GCP Storage) |
+| `apps/subfinder/` | 3 | Asset Discovery | No | Passive subdomain enumeration |
+| `apps/amass/` | 3 | Asset Discovery | No | Active subdomain enumeration |
+| `apps/asn_discovery/` | 3 | Asset Discovery | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
+| `apps/alterx/` | 3 | Asset Discovery | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
+| `apps/dnsx/` | 4 | Asset Discovery | No | DNS resolution, public IP filtering |
+| `apps/takeover_check/` | 5 | Asset Discovery | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
+| `apps/cloud_assets/` | 5 | Asset Discovery | Yes | Public cloud bucket enumeration via cloud_enum (AWS S3 / Azure Blob / GCP Storage) |
 | `apps/naabu/` | 6 | Port Discovery | No | Port scanning (top 100 TCP) |
 | `apps/shodan/` | 6 | Port Discovery | Yes | Passive exposure intel from Shodan's own scan data — ports/services/CVEs per resolved IP. BYOK: free InternetDB tier (no key, no credits), full host API when `SHODAN_API_KEY` set (`SHODAN_MAX_IPS` caps the paid path). CVEs land in `extra["cve_ids"]` so `cve_intel` enriches them. Passive, fail-graceful |
 | `apps/core/engine/service_detection/` | 7 | Port Discovery | No | nmap -sV enriches Port.service + is_web |
