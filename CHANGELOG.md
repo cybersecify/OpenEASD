@@ -7,6 +7,15 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Faster releases — stop building the images twice.** On a release (main/tag
+  push) the `docker` CI job built both images and then `publish` rebuilt+pushed
+  them again, in series. `docker` is now **PR-only** (its role is the required
+  build gate on PRs, where it also warms the `type=gha` cache); on main/tag pushes
+  it's skipped and `publish` is the sole builder, reusing that cache. Removes a
+  redundant full worker build from the release critical path (~2–4 min/release).
+  No change to what ships or to the PR gate.
+
 ## [v2.14.1] — 2026-09-11
 
 ### Changed
