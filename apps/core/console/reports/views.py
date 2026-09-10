@@ -295,7 +295,11 @@ def export_findings_csv(request, session_uuid):
     severities, err = _parse_min_severity(request)
     if err:
         return err
-    findings = Finding.objects.filter(session=session, severity__in=severities).order_by("severity", "source")
+    findings = (
+        Finding.objects.filter(session=session, severity__in=severities)
+        .exclude(title__in=_REPORT_HIDDEN_TITLES)
+        .order_by("severity", "source")
+    )
 
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = (
@@ -537,6 +541,25 @@ def _render_pdf(html: str) -> bytes:
     return HTML(string=html).write_pdf()
 
 
+# Findings hidden from the buyer-facing report (PDF + CSV) — still stored and
+# shown in the app, just noise in a report: BIMI (marketing, not security),
+# the update-lock (lowest-value registrar lock), and the RDAP-lookup-failed
+# notice (surfaced instead as a coverage caveat).
+_REPORT_HIDDEN_TITLES = frozenset({
+    "BIMI not configured",
+    "Domain update lock not enabled",
+    "RDAP lookup failed",
+})
+
+# Passive tools that no-op without a data source / key — hidden from the report's
+# scope & methodology when unconfigured so the report doesn't imply they assessed
+# anything. Keyed by the credential that activates each.
+_REPORT_TOOL_REQUIRES = {
+    "github_secrets": "GITHUB_TOKEN",
+    "dns_history": "DNS_HISTORY_API_URL",
+}
+
+
 # The five questions a decision-maker actually asks, mapped to the findings that
 # answer them. `tools` = the scanners that assess this question, so we can say
 # "not checked" (tool didn't run) instead of a misleading "no issues found".
@@ -593,6 +616,10 @@ def export_scan_pdf(request, session_uuid):
     findings = Finding.objects.filter(session=session, severity__in=severities).select_related("port", "url").order_by(
         "severity", "-discovered_at"
     )
+    # RDAP failure is surfaced as a coverage caveat, not a finding — capture it
+    # before suppressing the hidden titles from the buyer report.
+    rdap_unavailable = findings.filter(title="RDAP lookup failed").exists()
+    findings = findings.exclude(title__in=_REPORT_HIDDEN_TITLES)
 
     # Severity counts. Reset the queryset ordering with .order_by() first: the
     # `findings` queryset is ordered by (severity, -discovered_at), and that
@@ -674,6 +701,16 @@ def export_scan_pdf(request, session_uuid):
     core_tools = {n for n, i in registry.items() if i.get("core")}
     active_tools = workflow_tools | core_tools
 
+    # Drop passive tools that were in the workflow but couldn't do anything for
+    # lack of a key/data source — they didn't actually assess the target, so the
+    # buyer report shouldn't list them as coverage (also keeps the CEO "Did we
+    # leak keys?" honest).
+    from apps.core.console.credentials.resolver import get_credential
+    active_tools = {
+        t for t in active_tools
+        if t not in _REPORT_TOOL_REQUIRES or get_credential(_REPORT_TOOL_REQUIRES[t])
+    }
+
     # Executive framing: the five questions a decision-maker asks, answered from
     # the findings (rendered as the report's opening summary).
     ceo_questions = _ceo_questions(issue_groups, active_tools)
@@ -745,6 +782,7 @@ def export_scan_pdf(request, session_uuid):
         "top_risks": top_risks,
         "headline_risk": top_risks[0] if top_risks else None,
         "coverage": _coverage_context(session),
+        "rdap_unavailable": rdap_unavailable,
         "asset_counts": asset_counts,
         "technologies": technologies,
         "methodology": methodology,

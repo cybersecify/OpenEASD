@@ -103,6 +103,22 @@ class TestExportFindingsCsv:
         assert "TLS expired" in content
         assert "No DMARC" in content
 
+    def test_hidden_titles_excluded_from_csv(self, authed_client, session):
+        from apps.core.data.findings.models import Finding
+        for t in ("BIMI not configured", "Domain update lock not enabled", "RDAP lookup failed"):
+            Finding.objects.create(session=session, source="domain_security",
+                                   target=session.domain, check_type="rdap",
+                                   severity="info", title=t, description="d", remediation="r")
+        Finding.objects.create(session=session, source="domain_security",
+                               target=session.domain, check_type="dnssec",
+                               severity="medium", title="DNSSEC not enabled",
+                               description="d", remediation="r")
+        content = authed_client.get(f"/reports/{session.uuid}/csv/").content.decode("utf-8")
+        assert "BIMI not configured" not in content
+        assert "Domain update lock not enabled" not in content
+        assert "RDAP lookup failed" not in content
+        assert "DNSSEC not enabled" in content   # a normal finding still exported
+
     def test_csv_empty_when_no_findings(self, authed_client, session):
         res = authed_client.get(f"/reports/{session.uuid}/csv/")
         content = res.content.decode("utf-8")
@@ -562,6 +578,39 @@ class TestTopRisksAndIntel:
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
         assert res.status_code == 200
         assert "Priority Actions" in captured["html"]
+
+    def test_hidden_findings_absent_from_pdf(self, authed_client, session):
+        self._mk(session, source="domain_security", check_type="email", severity="info",
+                 title="BIMI not configured", target="ex.com")
+        self._mk(session, title="Unencrypted POSTGRESQL")  # a normal finding
+        captured = {}
+        with patch("apps.core.console.reports.views._render_pdf",
+                   side_effect=lambda h: captured.update(html=h) or b"%PDF-1.7"):
+            authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert "BIMI not configured" not in captured["html"]
+        assert "Unencrypted POSTGRESQL" in captured["html"]
+
+    def test_rdap_failure_becomes_coverage_note(self, authed_client, session):
+        self._mk(session, source="domain_security", check_type="rdap", severity="info",
+                 title="RDAP lookup failed", target="ex.com")
+        captured = {}
+        with patch("apps.core.console.reports.views._render_pdf",
+                   side_effect=lambda h: captured.update(html=h) or b"%PDF-1.7"):
+            authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert "Registration Data Unavailable" in captured["html"]  # coverage caveat
+        assert "RDAP lookup failed" not in captured["html"]          # not a finding row
+
+    def test_unconfigured_tools_hidden_from_methodology(self, authed_client, session):
+        # github_secrets / dns_history no-op without a key/URL — the report must not
+        # list them as coverage (would imply an assessment that didn't happen).
+        self._mk(session, title="Unencrypted POSTGRESQL")
+        captured = {}
+        with patch("apps.core.console.credentials.resolver.get_credential", return_value=""), \
+             patch("apps.core.console.reports.views._render_pdf",
+                   side_effect=lambda h: captured.update(html=h) or b"%PDF-1.7"):
+            authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert "Historical DNS Records" not in captured["html"]   # dns_history hidden
+        assert "GitHub Secret Exposure" not in captured["html"]   # github_secrets hidden
         assert "KEV" in captured["html"]
 
 
