@@ -458,6 +458,9 @@ make dev
 # React app at http://localhost:5173
 ```
 
+Full local-dev guide (prerequisites, first-time setup, CI parity,
+troubleshooting): [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+
 ## CI/CD
 
 GitHub Actions runs on every push to `main` and `v*` tags:
