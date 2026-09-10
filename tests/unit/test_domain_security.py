@@ -153,6 +153,13 @@ class TestDNSChecks:
 
 @pytest.mark.django_db
 class TestEmailChecks:
+    @pytest.fixture(autouse=True)
+    def _no_real_dns(self):
+        # DKIM selector inference (and open-relay) resolve MX via _resolve; keep
+        # these mocked email tests off the network. Individual tests override it.
+        with patch("apps.domain_security.scanner._resolve", return_value=[]):
+            yield
+
     def _make_session(self, db):
         from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
@@ -262,6 +269,62 @@ class TestEmailChecks:
             findings = _check_email(session, "example.com")
         controls = {f.extra.get("control") for f in findings if isinstance(f.extra, dict)}
         assert {"spf", "dmarc", "dkim", "mta_sts"} <= controls
+
+
+# ---------------------------------------------------------------------------
+# DKIM selector inference (from MX / SPF)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestDkimInference:
+    def _make_session(self, db):
+        from apps.core.engine.scans.models import ScanSession
+        return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
+
+    def test_infers_google_from_mx(self):
+        from apps.domain_security.scanner import _infer_dkim_selectors
+        with patch("apps.domain_security.scanner._resolve", return_value=["10 aspmx.l.google.com."]), \
+             patch("apps.domain_security.scanner._get_txt_record", return_value=[]):
+            provider, sels = _infer_dkim_selectors("example.com")
+        assert provider == "Google Workspace"
+        assert "google" in sels
+
+    def test_infers_m365_from_spf(self):
+        from apps.domain_security.scanner import _infer_dkim_selectors
+        with patch("apps.domain_security.scanner._resolve", return_value=[]), \
+             patch("apps.domain_security.scanner._get_txt_record",
+                   return_value=["v=spf1 include:spf.protection.outlook.com -all"]):
+            provider, sels = _infer_dkim_selectors("example.com")
+        assert provider == "Microsoft 365"
+        assert sels == ["selector1", "selector2"]
+
+    def test_no_provider_match(self):
+        from apps.domain_security.scanner import _infer_dkim_selectors
+        with patch("apps.domain_security.scanner._resolve", return_value=["10 mail.acme.example."]), \
+             patch("apps.domain_security.scanner._get_txt_record", return_value=[]):
+            assert _infer_dkim_selectors("example.com") == (None, [])
+
+    def test_dkim_found_at_inferred_selector_no_finding(self, db):
+        from apps.domain_security.scanner import _check_dkim
+        session = self._make_session(db)
+
+        def txt(name):
+            return ["v=DKIM1; k=rsa; p=x"] if name.startswith("google._domainkey") else []
+
+        with patch("apps.domain_security.scanner._resolve", return_value=["1 aspmx.l.google.com."]), \
+             patch("apps.domain_security.scanner._get_txt_record", side_effect=txt):
+            findings = _check_dkim(session, "example.com")
+        assert findings == []   # confirmed via the inferred google selector
+
+    def test_dkim_finding_records_provider_and_selectors(self, db):
+        from apps.domain_security.scanner import _check_dkim
+        session = self._make_session(db)
+        with patch("apps.domain_security.scanner._resolve", return_value=["1 aspmx.l.google.com."]), \
+             patch("apps.domain_security.scanner._get_txt_record", return_value=[]):
+            f = _check_dkim(session, "example.com")[0]
+        assert f.extra["mail_provider"] == "Google Workspace"
+        assert f.extra["selectors_checked"][0] == "google"   # inferred selector tried first
+        assert "Google Workspace" in f.description
 
 
 # ---------------------------------------------------------------------------
