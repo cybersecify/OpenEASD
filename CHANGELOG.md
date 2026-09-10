@@ -7,6 +7,27 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.8.0] — 2026-09-10
+
+### Added
+- **Exposure Score surfaced in the UI (Dashboard + Insights).** The backend
+  already computed a per-scan Exposure Score (0–100, graded A–F) and returned it
+  on `/api/insights/` (`exposure` block) and `/api/dashboard/` (per-domain
+  `exposure_score`/`exposure_grade`), but the app never rendered it — it only
+  appeared in the PDF report. Added a shared `Exposure` component and wired it in:
+  a hero card on Insights (score, grade, trend vs. last scan) and an **Exposure**
+  column on the Dashboard Domain Status table. **Why:** it's the single best
+  at-a-glance risk metric; hiding it in the PDF wasted data the API already
+  provided. Frontend-only, no backend change. Trend is inverted on purpose —
+  higher exposure is worse, so an upward move renders red ("more exposure").
+
+### Fixed
+- **Reports page listed no scans.** `ReportsPage.jsx` read the paginated scans
+  response as `data.scans`, but the `/api/scans/` envelope keys the list under
+  `results` (as `ScansPage` already does), so the Reports page always showed
+  "No completed scans" and CSV/PDF export was unreachable from it. Read
+  `data.results`.
+
 ### Security
 - **weasyprint 69.0 → 70.0 (CVE-2026-55073).** pip-audit (the CI CVE gate)
   flagged a newly-disclosed vulnerability in weasyprint 69.0 — the PDF report
@@ -1156,7 +1177,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.7.0...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.8.0...HEAD
+[v2.8.0]: https://github.com/cybersecify/OpenEASD/compare/v2.7.0...v2.8.0
 [v2.7.0]: https://github.com/cybersecify/OpenEASD/compare/v2.6.0...v2.7.0
 [v2.6.0]: https://github.com/cybersecify/OpenEASD/compare/v2.5.0...v2.6.0
 [v2.5.0]: https://github.com/cybersecify/OpenEASD/compare/v2.4.2...v2.5.0
