@@ -194,6 +194,43 @@ class TestPassiveScanAuthorizationGate:
         })
         assert resp.status_code == 403
 
+    def test_passive_tools_subset_bypasses_authorization(self, auth_client, domain):
+        # A category-scoped scan of only passive tools on an unauthorized domain
+        # is accepted, and the run is restricted to those tools (subscan_tools).
+        captured = {}
+
+        def fake_create(domain, triggered_by="manual", workflow=None, tools=None):
+            captured["tools"] = tools
+            return type("S", (), {"uuid": "cat-uuid-1", "id": 7})()
+
+        with patch("apps.core.engine.scans.tasks.run_scan_task"), \
+             patch("apps.core.engine.scans.pipeline.create_scan_session", side_effect=fake_create):
+            resp = post_json(auth_client, "/api/scans/start/", {
+                "domain": "example.com",
+                "schedule_type": "now",
+                "tools": ["cve_intel"],  # passive
+            })
+        assert resp.status_code == 201, resp.content
+        assert captured["tools"] == ["cve_intel"]
+
+    def test_active_tools_subset_requires_authorization(self, auth_client, domain):
+        # Including an active tool (e.g. the Domain Intelligence category's
+        # domain_security) keeps the auth gate.
+        resp = post_json(auth_client, "/api/scans/start/", {
+            "domain": "example.com",
+            "schedule_type": "now",
+            "tools": ["typosquat", "domain_security"],
+        })
+        assert resp.status_code == 403
+
+    def test_unknown_tool_rejected(self, auth_client, domain):
+        resp = post_json(auth_client, "/api/scans/start/", {
+            "domain": "example.com",
+            "schedule_type": "now",
+            "tools": ["not_a_real_tool"],
+        })
+        assert resp.status_code == 400
+
 
 # ---------------------------------------------------------------------------
 # Subscan gate — active tools against a parent domain need authorization

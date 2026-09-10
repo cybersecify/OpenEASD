@@ -47,14 +47,32 @@ export default function ScanStartPage() {
     queryKey: ['/workflows/'],
     queryFn: () => apiGet('/workflows/'),
   });
+  const { data: toolsData } = useQuery({
+    queryKey: ['/workflows/tools/'],
+    queryFn: () => apiGet('/workflows/tools/'),
+  });
 
   const domains   = domainsData  || [];
   const workflows = workflowsData || [];
+  const allTools  = toolsData?.tools || [];
   const defaultWf = workflows.find(w => w.is_default);
   const passiveWf = workflows.find(w => w.name === 'Passive Scan')
                  || workflows.find(w => w.is_passive && !w.is_default);
 
+  // Categories (phase_group) ordered by earliest phase — Domain Intelligence first.
+  const categories = React.useMemo(() => {
+    const byGroup = new Map();
+    for (const t of allTools) {
+      const g = t.phase_group || 'Other';
+      if (!byGroup.has(g)) byGroup.set(g, { group: g, minPhase: t.phase ?? 99, tools: [] });
+      const e = byGroup.get(g); e.tools.push(t); e.minPhase = Math.min(e.minPhase, t.phase ?? 99);
+    }
+    return [...byGroup.values()].sort((a, b) => a.minPhase - b.minPhase);
+  }, [allTools]);
+
   const [scanType,   setScanType]  = useState('passive');   // 'passive' | 'full' | 'custom'
+  const [customMode, setCustomMode] = useState('category'); // 'category' | 'workflow'
+  const [selectedCats, setSelectedCats] = useState(['Domain Intelligence']);
   const [domain,     setDomain]    = useState(initDomain);
   const [workflowId, setWorkflow]  = useState('');
   const [scheduled,  setScheduled] = useState(false);
@@ -62,6 +80,12 @@ export default function ScanStartPage() {
   const [attested,   setAttested]  = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error,      setError]     = useState(null);
+
+  function toggleCat(g) {
+    setSelectedCats(prev => prev.includes(g) ? prev.filter(x => x !== g) : [...prev, g]);
+  }
+  // Tools of the ticked categories → the subset a category scan will run.
+  const selectedTools = allTools.filter(t => selectedCats.includes(t.phase_group));
 
   // If there's no passive workflow available, fall back to the full-scan preset.
   useEffect(() => {
@@ -73,21 +97,34 @@ export default function ScanStartPage() {
     if (scanType === 'custom' && defaultWf && !workflowId) setWorkflow(String(defaultWf.id));
   }, [scanType, defaultWf, workflowId]);
 
-  // Resolve the preset → the workflow that will actually run.
+  // Resolve the preset → the workflow that will actually run (workflow-based paths).
   const resolvedWf =
     scanType === 'passive' ? passiveWf
     : scanType === 'full'  ? defaultWf
     : (workflows.find(w => String(w.id) === workflowId) || defaultWf);
 
-  // Attestation is required unless the scan is passive-only AND runs now — the
-  // exact condition the API's scan-start gate uses to bypass DomainAuthorization.
-  const needsAttestation = !(resolvedWf?.is_passive && !scheduled);
+  // Is the selection passive-only? Passive preset → yes; full → no; custom by
+  // category → all selected tools passive; custom by workflow → the workflow's flag.
+  const isCategoryScan = scanType === 'custom' && customMode === 'category';
+  const selectionIsPassive =
+    scanType === 'passive' ? true
+    : scanType === 'full'  ? false
+    : isCategoryScan       ? (selectedTools.length > 0 && selectedTools.every(t => !t.active))
+    : !!resolvedWf?.is_passive;
+
+  // Attestation is required unless the selection is passive-only AND runs now —
+  // the exact condition the API's scan-start gate uses to bypass DomainAuthorization.
+  const needsAttestation = !(selectionIsPassive && !scheduled);
 
   async function handleSubmit(e) {
     e.preventDefault();
     const target = domain.trim().toLowerCase();
     if (!target) { setError('Enter a domain.'); return; }
     if (!HOSTNAME_RE.test(target)) { setError('Enter a valid domain name.'); return; }
+    if (isCategoryScan && selectedTools.length === 0) {
+      setError('Select at least one category.');
+      return;
+    }
     if (needsAttestation && !attested) {
       setError('Please confirm you have authority to scan this domain.');
       return;
@@ -109,7 +146,12 @@ export default function ScanStartPage() {
       }
 
       const body = { domain: target, schedule_type: scheduled ? 'once' : 'now' };
-      if (resolvedWf?.id) body.workflow_id = Number(resolvedWf.id);
+      if (isCategoryScan && !scheduled) {
+        // Category scan: run just the selected tools over the default workflow.
+        body.tools = selectedTools.map(t => t.key);
+      } else if (resolvedWf?.id) {
+        body.workflow_id = Number(resolvedWf.id);
+      }
       if (scheduled && schedTime) body.scheduled_at = schedTime;
       await apiPost('/scans/start/', body);
       navigate('/scans');
@@ -162,23 +204,52 @@ export default function ScanStartPage() {
                     <PresetCard
                       active={scanType === 'custom'} onClick={() => setScanType('custom')}
                       title="Custom"
-                      desc="Pick a saved workflow."
-                      scope={resolvedWf && scanType === 'custom' ? `${enabledToolCount(resolvedWf)} tools` : ' '}
+                      desc="Pick categories or a saved workflow."
+                      scope={scanType === 'custom'
+                        ? (isCategoryScan ? `${selectedTools.length} tools · ${selectedCats.length} categories`
+                                          : `${enabledToolCount(resolvedWf)} tools`)
+                        : ' '}
                       auth={{ needed: scanType === 'custom' ? needsAttestation : true }}
                     />
                   </div>
                 </div>
 
                 {scanType === 'custom' && (
-                  <div>
-                    <label className="block text-xs text-dim mb-1 font-medium">Workflow</label>
-                    <select value={workflowId} onChange={e => setWorkflow(e.target.value)} className="field">
-                      {workflows.map(w => (
-                        <option key={w.id} value={w.id}>
-                          {w.name}{w.is_default ? ' (default)' : ''}{w.is_passive ? ' · passive' : ''}
-                        </option>
+                  <div className="space-y-3 rounded-lg border border-rim p-3">
+                    <div className="inline-flex rounded-md border border-rim overflow-hidden text-xs">
+                      {['category', 'workflow'].map(m => (
+                        <button key={m} type="button" onClick={() => setCustomMode(m)}
+                          className={`px-3 py-1 ${customMode === m ? 'bg-brand/15 text-brand' : 'text-dim hover:text-body'}`}>
+                          {m === 'category' ? 'By category' : 'By workflow'}
+                        </button>
                       ))}
-                    </select>
+                    </div>
+
+                    {customMode === 'category' ? (
+                      <div className="space-y-1.5">
+                        {categories.map(({ group, tools }) => {
+                          const activeCount = tools.filter(t => t.active).length;
+                          return (
+                            <label key={group} className="flex items-center gap-2 text-sm text-body cursor-pointer">
+                              <input type="checkbox" checked={selectedCats.includes(group)}
+                                onChange={() => toggleCat(group)} className="accent-brand" />
+                              <span>{group}</span>
+                              <span className="text-dim text-xs">
+                                {tools.length} tools{activeCount === 0 ? ' · passive' : ''}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <select value={workflowId} onChange={e => setWorkflow(e.target.value)} className="field">
+                        {workflows.map(w => (
+                          <option key={w.id} value={w.id}>
+                            {w.name}{w.is_default ? ' (default)' : ''}{w.is_passive ? ' · passive' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                 )}
 

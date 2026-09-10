@@ -276,13 +276,18 @@ def _is_scan_active(domain: str) -> bool:
     ).exists()
 
 
-def create_scan_session(domain: str, triggered_by: str = "manual", workflow=None) -> "ScanSession | None":
+def create_scan_session(domain: str, triggered_by: str = "manual", workflow=None, tools=None) -> "ScanSession | None":
     """
     Atomically create a scan session if no active scan exists for the domain.
     Returns the new ScanSession or None if a scan is already active.
 
     If no workflow is specified, the default workflow is auto-assigned so all
     scans run through the dynamic workflow runner.
+
+    `tools`, when given, restricts the run to that tool subset (stored as
+    `subscan_tools`, which the runner honors via `only_tools`) — this is how a
+    category-scoped scan from the start form runs just the selected tools over
+    the resolved workflow. None runs the full workflow.
     """
     if workflow is None:
         from apps.core.engine.workflows.models import Workflow
@@ -304,6 +309,7 @@ def create_scan_session(domain: str, triggered_by: str = "manual", workflow=None
             return ScanSession.objects.create(
                 domain=domain, scan_type="full", status="pending",
                 triggered_by=triggered_by, workflow=workflow,
+                subscan_tools=tools,
             )
     except DatabaseError:
         if _is_scan_active(domain):
@@ -323,6 +329,7 @@ def create_scan_session(domain: str, triggered_by: str = "manual", workflow=None
                 return ScanSession.objects.create(
                     domain=domain, scan_type="full", status="pending",
                     triggered_by=triggered_by, workflow=workflow,
+                    subscan_tools=tools,
                 )
         except DatabaseError:
             logger.error(f"[create_scan_session] Retry failed for {domain} — skipping scan")
