@@ -9,7 +9,7 @@ class TakeoverCheckConfig(AppConfig):
         "label": "Subdomain Takeover Check (subzy)",
         "runner": "apps.takeover_check.scanner.run_takeover_check",
         "phase": 5,
-        "phase_group": "Asset Discovery",
+        "phase_group": "Asset Exposure",
         "requires": ["subfinder"],
         "produces_findings": True,
         "active": True,

@@ -8,6 +8,13 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Changed
+- **Split the exposure findings out of Asset Discovery into a new "Asset
+  Exposure" category.** `takeover_check` (subdomain takeover) and `cloud_assets`
+  (open cloud buckets) are *findings about exposed assets*, not discovery — so
+  they now group under **Asset Exposure** (phase 5), leaving **Asset Discovery**
+  (phases 3–4) as pure discovery: `subfinder`, `amass`, `alterx`, `asn_discovery`,
+  `dnsx`. Execution order is unchanged (both still run at phase 5); display-only
+  `phase_group` change. Also refreshed the stale phase-group table in DESIGN.md.
 - **Renamed the "Surface Enumeration" tool category to "Asset Discovery."** More
   accurate and standard: the phases-3–5 tools (`subfinder`, `amass`, `alterx`,
   `asn_discovery`, `dnsx`, `takeover_check`, `cloud_assets`) discover the org's

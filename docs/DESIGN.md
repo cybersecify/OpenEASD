@@ -182,12 +182,14 @@ full per-tool table is in [CLAUDE.md](../CLAUDE.md); by phase group:
 
 | Phase group | Phases | Tools |
 |---|---|---|
-| Domain Intelligence | 1 | domain_security, hudson_rock, dns_history, github_secrets, typosquat, breach_check |
-| Asset Discovery | 2–4 | subfinder, amass, asn_discovery, alterx, dnsx, takeover_check, cloud_assets |
-| Port Discovery | 5–6 | naabu, shodan, service_detection |
-| Network Exposure | 7 | nmap, tls_checker, ssh_checker, nuclei_network |
-| Web Exposure | 8–11 | httpx, historical_urls, katana, nuclei, web_checker, js_secrets |
-| Prioritization | 12 | cve_intel (enriches CVEs with EPSS + CISA-KEV in place) |
+| Domain Intelligence | 1, 13 | domain_security, domain_probe, typosquat, dns_history, asn_cluster |
+| Credential Exposure | 2 | breach_check, hudson_rock, github_secrets |
+| Asset Discovery | 3–4 | subfinder, amass, alterx, asn_discovery, dnsx |
+| Asset Exposure | 5 | takeover_check, cloud_assets |
+| Port Discovery | 6–7 | naabu, shodan, service_detection |
+| Network Exposure | 8 | nmap, tls_checker, ssh_checker, nuclei_network |
+| Web Exposure | 9–12 | httpx, historical_urls, katana, nuclei, web_checker, js_secrets |
+| Prioritization | 13 | cve_intel (enriches CVEs with EPSS + CISA-KEV in place) |
 
 Binaries: ProjectDiscovery tools (`subfinder`/`dnsx`/`naabu`/`httpx`/`katana`/
 `nuclei`) + `amass`, `gitleaks`, `subzy`, `gau` are pinned static binaries;
@@ -216,7 +218,7 @@ Phase 1   Domain Intelligence  → Finding (DNS/DNSSEC/email-auth/RDAP, domain_p
 Phase 2   Credential Exposure            → Finding (breach_check, hudson_rock infostealer, github_secrets)
 Phase 3   Asset Discovery  → Subdomain (subfinder/amass/alterx) + Finding (asn_discovery)
 Phase 4   dnsx                 → IPAddress (public-IP filter)
-Phase 5   takeover / cloud     → Finding (dangling DNS, open buckets)
+Phase 5   Asset Exposure       → Finding (takeover_check dangling DNS, cloud_assets open buckets)
 Phase 6   naabu / shodan       → Port + Finding (passive exposure)
 Phase 7   service_detection    → enriches Port.service + Port.is_web
 Phase 8   Network Exposure     → Finding (nmap CVE / tls / ssh / nuclei_network — non-web; run in parallel)

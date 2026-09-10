@@ -10,7 +10,7 @@ class CloudAssetsConfig(AppConfig):
         "label": "Cloud Asset Enumeration (cloud-enum)",
         "runner": "apps.cloud_assets.scanner.run_cloud_assets",
         "phase": 5,
-        "phase_group": "Asset Discovery",
+        "phase_group": "Asset Exposure",
         "requires": ["subfinder"],
         "produces_findings": True,
         "active": False,

@@ -493,8 +493,8 @@ guards that every registered tool appears in the output.
 | `apps/asn_discovery/` | 3 | Asset Discovery | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
 | `apps/alterx/` | 3 | Asset Discovery | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
 | `apps/dnsx/` | 4 | Asset Discovery | No | DNS resolution, public IP filtering |
-| `apps/takeover_check/` | 5 | Asset Discovery | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
-| `apps/cloud_assets/` | 5 | Asset Discovery | Yes | Public cloud bucket enumeration via cloud_enum (AWS S3 / Azure Blob / GCP Storage) |
+| `apps/takeover_check/` | 5 | Asset Exposure | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
+| `apps/cloud_assets/` | 5 | Asset Exposure | Yes | Public cloud bucket enumeration via cloud_enum (AWS S3 / Azure Blob / GCP Storage) |
 | `apps/naabu/` | 6 | Port Discovery | No | Port scanning (top 100 TCP) |
 | `apps/shodan/` | 6 | Port Discovery | Yes | Passive exposure intel from Shodan's own scan data — ports/services/CVEs per resolved IP. BYOK: free InternetDB tier (no key, no credits), full host API when `SHODAN_API_KEY` set (`SHODAN_MAX_IPS` caps the paid path). CVEs land in `extra["cve_ids"]` so `cve_intel` enriches them. Passive, fail-graceful |
 | `apps/core/engine/service_detection/` | 7 | Port Discovery | No | nmap -sV enriches Port.service + is_web |
