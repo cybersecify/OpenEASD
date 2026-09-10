@@ -464,7 +464,7 @@ troubleshooting): [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 ## CI/CD
 
 GitHub Actions runs on every push to `main` and `v*` tags:
-- **pytest**: fast test suite (~922 tests, excludes the 41 slow DNS/RDAP tests in `test_domain_security.py`)
+- **pytest**: fast test suite (~1,730 tests, excludes the 52 slow DNS/RDAP tests in `test_domain_security.py`)
 - **bandit**: Python SAST scan
 - **pip-audit**: dependency CVE scan
 - **Frontend build**: `npm ci && npm run build`
@@ -517,10 +517,10 @@ apps/my_tool/
 ## Running Tests
 
 ```bash
-# Fast tests (excludes slow DNS tests, ~922 tests)
+# Fast tests (excludes slow DNS tests, ~1,730 tests)
 uv run pytest tests/ --ignore=tests/unit/test_domain_security.py
 
-# All tests (~896 total)
+# All tests (~1,780 total, incl. the 52 slow DNS/RDAP tests)
 uv run pytest tests/
 ```
 
