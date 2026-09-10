@@ -183,7 +183,7 @@ full per-tool table is in [CLAUDE.md](../CLAUDE.md); by phase group:
 | Phase group | Phases | Tools |
 |---|---|---|
 | Domain Intelligence | 1 | domain_security, hudson_rock, dns_history, github_secrets, typosquat, breach_check |
-| Surface Enumeration | 2–4 | subfinder, amass, asn_discovery, alterx, dnsx, takeover_check, cloud_assets |
+| Asset Discovery | 2–4 | subfinder, amass, asn_discovery, alterx, dnsx, takeover_check, cloud_assets |
 | Port Discovery | 5–6 | naabu, shodan, service_detection |
 | Network Exposure | 7 | nmap, tls_checker, ssh_checker, nuclei_network |
 | Web Exposure | 8–11 | httpx, historical_urls, katana, nuclei, web_checker, js_secrets |
@@ -214,7 +214,7 @@ Deletion cascades top-down: deleting a Domain wipes all session data.
 ```
 Phase 1   Domain Intelligence  → Finding (DNS/DNSSEC/email-auth/RDAP, domain_probe, typosquat, dns_history)
 Phase 2   Credential Exposure            → Finding (breach_check, hudson_rock infostealer, github_secrets)
-Phase 3   Surface Enumeration  → Subdomain (subfinder/amass/alterx) + Finding (asn_discovery)
+Phase 3   Asset Discovery  → Subdomain (subfinder/amass/alterx) + Finding (asn_discovery)
 Phase 4   dnsx                 → IPAddress (public-IP filter)
 Phase 5   takeover / cloud     → Finding (dangling DNS, open buckets)
 Phase 6   naabu / shodan       → Port + Finding (passive exposure)

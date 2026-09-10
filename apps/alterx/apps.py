@@ -10,7 +10,7 @@ class AlterxConfig(AppConfig):
         "label": "Alterx (Subdomain Permutation)",
         "runner": "apps.alterx.scanner.run_alterx",
         "phase": 3,
-        "phase_group": "Surface Enumeration",
+        "phase_group": "Asset Discovery",
         "requires": ["subfinder"],
         "produces_findings": False,
         "active": False,
