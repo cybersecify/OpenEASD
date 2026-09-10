@@ -42,6 +42,7 @@ def _get_qualifying_findings(session, threshold_level: int) -> list:
                     "title": f.title,
                     "host": f.target,
                     "check_type": f.check_type,
+                    "source": f.source,
                 })
     except Exception as e:
         logger.warning(f"[alerts] Could not read findings: {e}")
@@ -77,6 +78,34 @@ def _get_triage_summary(session) -> "str | None":
         return None
 
 
+def _new_since_last_scan(session, findings) -> int:
+    """How many of the alerted findings are new since the previous scan.
+
+    Reads the ScanDelta rows already computed at finalize (``_detect_deltas``
+    runs before alerts dispatch) and counts the qualifying findings whose
+    identity key (``source:check_type:title``) was flagged new. Returns 0 when
+    there's no prior scan or nothing new — so the "new since last scan" line /
+    fact is omitted and the payload stays byte-identical to the no-delta case.
+    Never raises: a delta lookup can't fail an alert."""
+    try:
+        from apps.core.engine.scans.models import ScanDelta
+
+        new_keys = set(
+            ScanDelta.objects.filter(
+                session=session, change_type="new", change_category="finding"
+            ).values_list("item_identifier", flat=True)
+        )
+        if not new_keys:
+            return 0
+        return sum(
+            1 for f in findings
+            if f"{f['source']}:{f['check_type']}:{f['title']}" in new_keys
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("[alerts] new-finding delta lookup failed — omitting")
+        return 0
+
+
 # ---------------------------------------------------------------------------
 # Slack
 # ---------------------------------------------------------------------------
@@ -87,9 +116,16 @@ def _build_slack_payload(session, grouped: dict, threshold: str) -> dict:
     header = f":shield: *OpenEASD Alert* — `{session.domain}`"
     meta = f"Scan #{session.id} | {django_tz.now().strftime('%Y-%m-%d %H:%M')} UTC | threshold: {threshold}"
 
+    # "N new since the last scan" — appended only when there's a prior scan with
+    # new findings, so a baseline-less scan's payload is unchanged.
+    meta_text = f"{header}\n{meta}\n*{total} finding(s) found*"
+    new_count = _new_since_last_scan(session, [f for v in grouped.values() for f in v])
+    if new_count:
+        meta_text += f"\n:new: *{new_count} new since the last scan*"
+
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": f"Security Alert — {session.domain}"}},
-        {"type": "section", "text": {"type": "mrkdwn", "text": f"{header}\n{meta}\n*{total} finding(s) found*"}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": meta_text}},
         {"type": "divider"},
     ]
 
@@ -159,6 +195,9 @@ def _build_teams_payload(session, grouped: dict, threshold: str) -> dict:
     summary = _get_triage_summary(session)
     if summary:
         facts.append({"name": "Summary", "value": summary})
+    new_count = _new_since_last_scan(session, [f for v in grouped.values() for f in v])
+    if new_count:
+        facts.append({"name": "New since last scan", "value": str(new_count)})
     for sev in ["critical", "high", "medium", "low"]:
         items = grouped.get(sev, [])
         if not items:

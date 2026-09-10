@@ -301,6 +301,24 @@ def export_findings_csv(request, session_uuid):
         .order_by("severity", "source")
     )
 
+    # Keys (source:check_type:title) that weren't present in the previous scan,
+    # so each row can be flagged "new" — the CSV counterpart of the PDF's
+    # "Since Your Last Scan" block.
+    new_keys = set()
+    previous = _previous_baseline(session)
+    if previous is not None:
+        prev_keys = {
+            f"{r['source']}:{r['check_type']}:{r['title']}"
+            for r in Finding.objects.filter(session=previous, severity__in=severities)
+            .exclude(title__in=_REPORT_HIDDEN_TITLES)
+            .values("source", "check_type", "title")
+        }
+        cur_keys = {
+            f"{r['source']}:{r['check_type']}:{r['title']}"
+            for r in findings.values("source", "check_type", "title")
+        }
+        new_keys = cur_keys - prev_keys
+
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = (
         f'attachment; filename="findings_{session.domain}_{session.id}.csv"'
@@ -310,12 +328,15 @@ def export_findings_csv(request, session_uuid):
     writer.writerow([
         "Title", "Severity", "Source", "Check Type", "Status",
         "Target", "Description", "Remediation", "Assigned To", "Discovered At",
+        "New This Scan",
     ])
     for f in findings:
+        key = f"{f.source}:{f.check_type}:{f.title}"
         writer.writerow([
             f.title, f.severity, f.source, f.check_type, f.status,
             f.target, f.description, f.remediation, f.assigned_to,
             f.discovered_at.isoformat(),
+            "new" if key in new_keys else "",
         ])
 
     # Optional CTA — appended as a final row when both settings are configured.
@@ -606,6 +627,78 @@ def _ceo_questions(issue_groups, active_tools):
     return out
 
 
+def _previous_baseline(session):
+    """The scan to diff this one against: the most recent completed/partial scan
+    of the same domain that isn't a subscan (a subscan runs only a subset of
+    tools, so it would manufacture spurious deltas). Matches ScanDelta's choice.
+    Returns ``None`` when this is the domain's first scan.
+    """
+    return (
+        ScanSession.objects.filter(
+            domain=session.domain, status__in=["completed", "partial"]
+        )
+        .exclude(id=session.id)
+        .exclude(scan_type="subscan")
+        .order_by("-start_time")
+        .first()
+    )
+
+
+def _since_last_scan(session, severities):
+    """What changed vs the previous scan of this domain — new / resolved findings.
+
+    Diffs findings against the previous baseline by the same identity key as
+    ScanDelta (``source:check_type:title``). Carries severity + title so the
+    report can list what appeared and what cleared, and counts what persisted.
+    Scoped to the report's own ``min_severity`` filter and hidden-title
+    suppression so it never references findings the rest of the report hides.
+
+    Returns ``None`` on the first scan (no baseline) so the template block is
+    skipped entirely.
+    """
+    previous = _previous_baseline(session)
+    if previous is None:
+        return None
+
+    def _rows(s):
+        rows = {}
+        qs = (
+            Finding.objects.filter(session=s, severity__in=severities)
+            .exclude(title__in=_REPORT_HIDDEN_TITLES)
+            .values("source", "check_type", "title", "severity")
+        )
+        for f in qs:
+            key = f"{f['source']}:{f['check_type']}:{f['title']}"
+            rank = _SEVERITY_ORDER.index(f["severity"]) if f["severity"] in _SEVERITY_ORDER else 99
+            cur = rows.get(key)
+            # Keep the highest-severity representative when a key recurs.
+            if cur is None or rank < cur["_rank"]:
+                rows[key] = {"title": f["title"], "severity": f["severity"],
+                             "source": f["source"], "_rank": rank}
+        return rows
+
+    cur = _rows(session)
+    prev = _rows(previous)
+    cur_keys, prev_keys = set(cur), set(prev)
+
+    def _ranked(items):
+        rows = sorted(items, key=lambda d: d["_rank"])
+        for r in rows:
+            r.pop("_rank", None)
+        return rows
+
+    new = _ranked([cur[k] for k in cur_keys - prev_keys])
+    resolved = _ranked([prev[k] for k in prev_keys - cur_keys])
+    return {
+        "previous_date": previous.end_time or previous.start_time,
+        "new": new,
+        "resolved": resolved,
+        "new_count": len(new),
+        "resolved_count": len(resolved),
+        "still_open": len(cur_keys & prev_keys),
+    }
+
+
 @_report_auth_required
 def export_scan_pdf(request, session_uuid):
     """Export a scan report as PDF, optionally filtered by ?min_severity=."""
@@ -779,6 +872,7 @@ def export_scan_pdf(request, session_uuid):
         "exposure_score": exposure_score,
         "exposure_grade": exposure_grade,
         "exposure_trend": exposure_trend,
+        "since_last_scan": _since_last_scan(session, severities),
         "top_risks": top_risks,
         "headline_risk": top_risks[0] if top_risks else None,
         "coverage": _coverage_context(session),
