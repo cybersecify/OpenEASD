@@ -8,6 +8,15 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Changed
+- **Pinned Django to the 5.2 LTS line.** The dependency was `django>=5.2.17`, an
+  open lower bound that floated to the latest release — so on Python ≥3.12 it
+  resolved to **Django 6.1 (non-LTS)**, and the web + worker images had silently
+  been running 6.1. Changed the constraint to `django>=5.2.17,<6.0` so it stays on
+  the **5.2 LTS** line (security-supported into ~2028) and never jumps to a non-LTS
+  6.x by accident. `uv.lock` re-resolved 6.1 → 5.2.17. **Why:** LTS gives a long,
+  predictable security-support window — the same conservative-stability reasoning
+  behind pinning Python to 3.12. Moving to the next Django LTS (6.2) becomes a
+  deliberate bump, not a silent float. Full suite re-verified on 5.2.17.
 - **Standardized on Python 3.12 across every tier.** The web image and CI had
   drifted onto Python 3.14 (a `python:3.14-slim` web base + `setup-python: 3.14`)
   while the worker ran Ubuntu 24.04's Python 3.12 — so CI tested a Python the
