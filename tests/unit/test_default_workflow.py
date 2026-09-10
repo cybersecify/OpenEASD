@@ -10,6 +10,8 @@ _EXPECTED_FULL_SCAN = {
     "nuclei", "web_checker", "cve_intel",
     # added in 0023 so registry (21) == Full Scan == report tool count
     "asn_discovery", "js_secrets",
+    # added in 0031 — the active probes split out of domain_security
+    "domain_probe",
 }
 
 
@@ -75,7 +77,7 @@ def test_forward_is_idempotent_and_fills_gaps():
 
     tools = set(wf.steps.values_list("tool", flat=True))
     # 0021 restores its own canonical 18; asn_discovery/js_secrets are added by
-    # the separate migration 0023, so exclude them from this migration's check.
-    assert (_EXPECTED_FULL_SCAN - {"asn_discovery", "js_secrets"}) <= tools
+    # 0023 and domain_probe by 0031, so exclude those from this migration's check.
+    assert (_EXPECTED_FULL_SCAN - {"asn_discovery", "js_secrets", "domain_probe"}) <= tools
     # no duplicates introduced
     assert wf.steps.count() == len(set(wf.steps.values_list("tool", flat=True)))

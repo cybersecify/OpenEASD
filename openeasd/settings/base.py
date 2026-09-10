@@ -114,6 +114,7 @@ INSTALLED_APPS = [
     "ninja_jwt",
     "ninja_jwt.token_blacklist",
     "apps.domain_security",
+    "apps.domain_probe",
     "apps.hudson_rock",
     "apps.breach_check",
     "apps.dns_history",

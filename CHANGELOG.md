@@ -7,6 +7,23 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Split `domain_security` into a passive tool + a new active `domain_probe`.**
+  `domain_security` bundled passive lookups (DNS/DNSSEC/CAA/email-auth via public
+  resolvers, RDAP via rdap.org) with three checks that touch the target directly
+  (AXFR zone transfer against its nameservers, an SMTP open-relay probe against
+  its MX, and the MTA-STS policy-file fetch). Because of those three it was
+  classified **active** and could never run in a no-auth passive scan — so a
+  passive scan got *no* DNS/email intelligence at all. The active probes moved to
+  a new **`domain_probe`** tool (active, requires `DomainAuthorization`), leaving
+  `domain_security` **passive**. Now: the Passive Scan workflow includes
+  `domain_security` (DNS/DNSSEC/SPF/DMARC/DKIM/RDAP with no authorization), and
+  `domain_probe` joins the Full Scan (migration 0031). Registry tool count 28 → 29.
+  `domain_security` findings keep `source="domain_security"` (historical
+  continuity); the moved findings now carry `source="domain_probe"` with their
+  check_types unchanged (`dns`/`open_relay`/`email`), so CWE/report mappings still
+  resolve. The "Can someone spoof our email?" report question matches both sources.
+
 ### Added
 - **Per-finding "Recommended Next Steps" on hosted reports.** The PDF report's
   finding detail now carries a concrete, ordered remediation checklist per finding

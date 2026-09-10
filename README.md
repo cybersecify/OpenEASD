@@ -164,7 +164,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ## Features
 
-- **Automated pipeline**: 28-tool scan workflow from domain to findings
+- **Automated pipeline**: 29-tool scan workflow from domain to findings
 - **Network attack surface scanning**: CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
 - **CVE prioritisation**: EPSS exploit-probability scores + CISA KEV (known-exploited-in-the-wild) flags enrich CVE findings in place, so you triage by real-world risk rather than severity alone
 - **Dynamic workflows**: Create custom scan configurations, enable/disable tools per workflow
@@ -186,8 +186,11 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ```
 ── Domain Intelligence ──────────────────────────────────────────────────────
-Phase 1  Domain Security   - DNS, DNSSEC chain-of-trust, email
-                             (SPF/DMARC/DKIM/MTA-STS/open-relay), RDAP checks
+Phase 1  Domain Security   - DNS, DNSSEC chain-of-trust, email auth
+                             (SPF/DMARC/DKIM/TLS-RPT/BIMI), RDAP checks (passive;
+                             public resolvers + rdap.org — no auth needed)
+Phase 1  Domain Probes      - Active target probes (needs authorization): AXFR
+                             zone transfer, SMTP open-relay, MTA-STS policy fetch
 Phase 1  Typosquat          - Lookalike / typosquat domain detection (passive;
                              registered lookalikes via public DNS — phishing/brand abuse)
 Phase 1  DNS History        - Historical A/AAAA/MX records via a passive-DNS

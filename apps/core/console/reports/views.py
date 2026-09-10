@@ -35,6 +35,7 @@ _SCOPE_BY_SOURCE = {
     "nmap": "Network",
     "nuclei_network": "Network",
     "domain_security": "Email / DNS",
+    "domain_probe": "Email / DNS",
     "web_checker": "Web",
     "nuclei": "Web",
     "httpx": "Web",
@@ -725,8 +726,10 @@ _REPORT_TOOL_REQUIRES = {
 # answer them. `tools` = the scanners that assess this question, so we can say
 # "not checked" (tool didn't run) instead of a misleading "no issues found".
 _CEO_QUESTIONS = [
+    # Email-auth controls live in domain_security (SPF/DMARC/DKIM/TLS-RPT/BIMI);
+    # MTA-STS (check_type="email") is an active probe in domain_probe — match both.
     ("Can someone spoof our email?", {"domain_security"},
-     lambda g: g["source"] == "domain_security" and g["check_type"] == "email"),
+     lambda g: g["source"] in ("domain_security", "domain_probe") and g["check_type"] == "email"),
     ("Can we lose our domain?", {"domain_security"},
      lambda g: g["source"] == "domain_security" and g["check_type"] in ("rdap", "dnssec")),
     ("Are staff logins stolen?", {"hudson_rock", "breach_check"},

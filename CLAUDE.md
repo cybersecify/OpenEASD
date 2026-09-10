@@ -8,7 +8,7 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 - **Released**: v2.9.1 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
   `:v2.9.1` / `:v2.9` / `:latest` (web on python:3.12-slim, worker on Ubuntu 24.04/3.12 — both Python 3.12; Django 5.2 LTS). 3-tier deploy: `db` (postgres:17) + `web`
   (gunicorn, no tools) + `worker` (`dbos_worker` + scanner matrix, `NET_RAW`).
-- **Scope**: 28 registered scan tools across 12 pipeline phases; single-user
+- **Scope**: 29 registered scan tools across 12 pipeline phases; single-user
   (one admin, no RBAC) by design.
 - **Engine**: DBOS durable workflows on PostgreSQL — one multi-step `run_scan`
   workflow per scan (checkpoint/resume) + `@durable_task` for one-step tasks
@@ -120,7 +120,7 @@ git describe --tags --abbrev=0
 - Always use `uv run python` instead of `python` or `python3`
 - Always use `uv run manage.py` for Django management commands (e.g. `uv run manage.py check`)
 - Always use `uv run pytest` for running tests
-- The slow `tests/unit/test_domain_security.py` (41 tests) makes real DNS/RDAP calls — exclude it for fast CI runs:
+- The slow `tests/unit/test_domain_security.py` (46 tests) makes real DNS/RDAP calls — exclude it for fast CI runs:
   `uv run pytest tests/ --ignore=tests/unit/test_domain_security.py`
 
 ## Stack
@@ -451,11 +451,12 @@ The registry (`apps/core/engine/workflows/registry.py`) auto-discovers all `tool
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (28 registered tools)
+### Tool apps (29 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
-| `apps/domain_security/` | 1 | Domain Intelligence | Yes | DNS, email, RDAP checks |
+| `apps/domain_security/` | 1 | Domain Intelligence | Yes | **Passive** DNS/DNSSEC/CAA/wildcard/lame-delegation, email-auth (SPF/DMARC/DKIM/TLS-RPT/BIMI) via public resolvers, and RDAP (expiry/locks/status). No packets to the target — needs no authorization |
+| `apps/domain_probe/` | 1 | Domain Intelligence | Yes | **Active** domain probes split out of domain_security: AXFR zone transfer (nameservers), SMTP open-relay (MX:25), and MTA-STS policy fetch (`mta-sts.<domain>`). Touches the target directly → requires `DomainAuthorization` |
 | `apps/hudson_rock/` | 1 | Data Leak | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
 | `apps/dns_history/` | 1 | Domain Intelligence | Yes | Historical A/AAAA/MX records via a passive-DNS dataset — surfaces past hosting / stale records (info findings). Passive, BYO `DNS_HISTORY_API_URL` (no-op if unset), fail-graceful |
 | `apps/github_secrets/` | 1 | Data Leak | Yes | Leaked secrets in PUBLIC GitHub — searches GitHub's code-search API (org-scoped by default) for the target org's committed credentials, fetches the hits, runs gitleaks over them (same engine as `js_secrets`), REDACTS before storage (`check_type="exposed_secret"`, shared with js_secrets). Passive (queries GitHub, not the target); BYOK MANDATORY (`GITHUB_TOKEN` — code-search needs auth; no token → logged no-op); fail-graceful |
@@ -504,7 +505,8 @@ only joins the default Full Scan when a data migration appends it — see
 but not yet in the default set.)
 
 ```
-Phase 1  domain_security    → Finding (DNS/email/RDAP)
+Phase 1  domain_security    → Finding (DNS/DNSSEC/email-auth/RDAP — passive)
+Phase 1  domain_probe        → Finding (AXFR / open-relay / MTA-STS fetch — active)
 Phase 1  hudson_rock         → Finding (infostealer exposure via Hudson Rock — passive)
 Phase 1  dns_history         → Finding (historical A/AAAA/MX records via passive DNS — passive)
 Phase 1  github_secrets      → Finding (leaked secrets in public GitHub via gitleaks — passive, BYO token)
@@ -543,23 +545,27 @@ the registry via `get_tool_active()` and `is_passive_tool_set(tools)`.
   archives, cloud-provider bucket APIs, Shodan's own scan dataset, CVE/EPSS/KEV
   feeds. Sends **no packets to the target's own systems**. Needs **no
   `DomainAuthorization`**.
-  Passive tools: `subfinder`, `alterx`, `dnsx`, `historical_urls`,
-  `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`, `shodan`,
-  `typosquat`, `breach_check`, `github_secrets`, `github_recon`, `dns_history`.
+  Passive tools: `domain_security`, `subfinder`, `alterx`, `dnsx`,
+  `historical_urls`, `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`,
+  `shodan`, `typosquat`, `breach_check`, `github_secrets`, `github_recon`,
+  `dns_history`.
 - **Active** (`active=True`): probes the target directly (port scans, HTTP/TLS/SSH
   connections, crawling, vuln templates, AXFR/SMTP/mta-sts probes). **Requires
   `DomainAuthorization`.**
-  Active tools: `domain_security`, `amass`, `takeover_check`, `naabu`,
+  Active tools: `domain_probe`, `amass`, `takeover_check`, `naabu`,
   `service_detection`, `nmap`, `tls_checker`, `ssh_checker`, `nuclei_network`,
   `httpx`, `katana`, `nuclei`, `web_checker`.
 
 **Default is active.** `tool_meta` omitting `"active"` is treated as active — a
 missing flag can never let a scanner probe an unauthorized target.
 
-**`domain_security` is active, not passive**, despite being mostly DNS lookups: it
-also performs AXFR zone transfers, SMTP open-relay probes, and mta-sts policy
-fetches directly against the target. A tool with ANY code path that touches the
-target is active.
+**`domain_security` is now passive; its active probes live in `domain_probe`.**
+The passive tool does DNS/DNSSEC/CAA/email-auth via public resolvers and RDAP via
+rdap.org — no packets to the target. The active probes that DO touch the target —
+AXFR zone transfers, SMTP open-relay, and the MTA-STS policy-file fetch — were
+split into `apps/domain_probe` (active). A tool with ANY code path that touches
+the target is active; keeping those paths isolated lets the passive DNS/email/RDAP
+intelligence run in a no-auth passive scan.
 
 **Authorization rule (`apps/core/engine/scans/api.py`):** a `schedule_type="now"` scan
 whose resolved workflow contains **only passive tools** bypasses the
@@ -807,7 +813,8 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_cve_intel.py` | 24 | EPSS/KEV enrichment, CVE extraction (both finding shapes), feed-failure fallback |
 | `tests/unit/test_dnsx.py` | 21 | Public IP filter, analyzer, scanner |
 | `tests/unit/test_domain_authorization.py` | 10 | DomainAuthorization model + scan-entry gating |
-| `tests/unit/test_domain_security.py` | 52 | DNS/email/RDAP — **slow, real network** |
+| `tests/unit/test_domain_security.py` | 46 | Passive DNS/DNSSEC/email-auth/RDAP — **slow, real network** (active AXFR/open-relay/MTA-STS tests moved to test_domain_probe) |
+| `tests/unit/test_domain_probe.py` | 17 | Active domain probes — tool_meta (active/runner/group), AXFR zone transfer, MTA-STS policy fetch, SMTP open-relay (all mocked, source="domain_probe"), orchestrator stamps controls |
 | `tests/unit/test_domains.py` | 13 | Domain CRUD |
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
 | `tests/unit/test_httpx.py` | 16 | JSON parser, Port lookup, Subdomain link, honest UA, tech-detect flag + technology storage/dedup |
@@ -850,7 +857,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_insights_builder.py` | 4 | FindingTypeSummary prune only when aggregation_complete |
 | `tests/unit/test_exposure_score.py` | 38 | Exposure Score — formula (clean=0, weights, saturation cap), grade bands, trend delta (up/down/flat/no-baseline), builder populates ScanSummary, insights + dashboard API fields, PDF report exposure block |
 | `tests/unit/test_web_checker.py` | 58 | Headers, cookies, CORS, disclosure, collector; security.txt (RFC 9116) — expires parsing, SPA-catch-all guard, missing=info/expired=low findings, reachable-vs-absent (unreachable ⇒ no false "missing"), apex-only collection + fail-graceful |
-| `tests/unit/test_passive_scan.py` | 21 | registry `active` classification, `is_passive_tool_set`, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
+| `tests/unit/test_passive_scan.py` | 27 | registry `active` classification (domain_security passive / domain_probe active), `is_passive_tool_set`, Data Leak grouping, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
 | `tests/unit/test_workflow_runner.py` | 33 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism |
 | `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow with the complete 18-tool set (migration 0021), idempotent gap-fill |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
@@ -875,6 +882,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1813 tests** (1761 fast + 52 slow domain_security)
+**Total: 1825 tests** (1779 fast + 46 slow domain_security)
 
 Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.

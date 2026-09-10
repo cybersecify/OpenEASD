@@ -22,9 +22,12 @@ def post_json(client, path, data):
 _PASSIVE = {
     "subfinder", "alterx", "dnsx", "historical_urls",
     "cloud_assets", "cve_intel", "asn_discovery", "typosquat", "breach_check",
+    # domain_security is passive now that its active probes (AXFR/open-relay/
+    # MTA-STS fetch) were split out into domain_probe.
+    "domain_security",
 }
 _ACTIVE = {
-    "domain_security", "amass", "takeover_check", "naabu", "service_detection",
+    "domain_probe", "amass", "takeover_check", "naabu", "service_detection",
     "nmap", "tls_checker", "ssh_checker", "nuclei_network", "httpx",
     "katana", "nuclei", "web_checker",
 }
@@ -109,12 +112,18 @@ class TestIsPassiveToolSet:
         from apps.core.engine.workflows.registry import is_passive_tool_set
         assert is_passive_tool_set(["subfinder", "mystery_tool"]) is False
 
-    def test_domain_security_is_active(self):
-        # Regression guard: domain_security performs AXFR zone transfers, SMTP
-        # open-relay probes, and mta-sts policy fetches against the target, so it
-        # must never be classified passive despite being mostly DNS lookups.
+    def test_domain_security_is_passive(self):
+        # After the split, domain_security is passive (public-resolver DNS +
+        # email-auth + RDAP), so it may run in a no-auth passive scan.
         from apps.core.engine.workflows.registry import is_passive_tool_set
-        assert is_passive_tool_set(["domain_security"]) is False
+        assert is_passive_tool_set(["domain_security"]) is True
+
+    def test_domain_probe_is_active(self):
+        # Regression guard: domain_probe performs AXFR zone transfers, SMTP
+        # open-relay probes, and MTA-STS policy fetches against the target, so it
+        # must always be classified active (needs DomainAuthorization).
+        from apps.core.engine.workflows.registry import is_passive_tool_set
+        assert is_passive_tool_set(["domain_probe"]) is False
 
 
 # ---------------------------------------------------------------------------
@@ -240,12 +249,12 @@ class TestPassiveScanAuthorizationGate:
         assert captured["tools"] == ["cve_intel"]
 
     def test_active_tools_subset_requires_authorization(self, auth_client, domain):
-        # Including an active tool (e.g. the Domain Intelligence category's
-        # domain_security) keeps the auth gate.
+        # Including an active tool (e.g. domain_probe — AXFR/open-relay/MTA-STS)
+        # keeps the auth gate, even alongside passive tools.
         resp = post_json(auth_client, "/api/scans/start/", {
             "domain": "example.com",
             "schedule_type": "now",
-            "tools": ["typosquat", "domain_security"],
+            "tools": ["typosquat", "domain_probe"],
         })
         assert resp.status_code == 403
 
