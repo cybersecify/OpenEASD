@@ -7,6 +7,13 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Security
+- **weasyprint 69.0 → 70.0 (CVE-2026-55073).** pip-audit (the CI CVE gate)
+  flagged a newly-disclosed vulnerability in weasyprint 69.0 — the PDF report
+  renderer. Raised the floor to `weasyprint>=70` and refreshed `uv.lock` to the
+  fixed 70.0. PDF export verified unaffected; the report tests mock the renderer
+  so behaviour is unchanged.
+
 ## [v2.7.0] — 2026-09-09
 
 ### Fixed
