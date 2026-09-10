@@ -91,7 +91,7 @@ class TestDomainSecurityScanFlow:
         titles = [f.title for f in findings]
         assert "SPF record missing" in titles
         assert "DMARC record missing" in titles
-        assert "DKIM record not found" in titles
+        assert "DKIM could not be confirmed" in titles
 
         high_findings = [f for f in findings if f.severity == "high"]
         assert len(high_findings) >= 2

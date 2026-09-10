@@ -7,6 +7,25 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Domain Intelligence finding tuning (report roadmap, Edit bucket).**
+  - **DNSSEC** ("not enabled" and "chain of trust broken") and **MTA-STS** ("not
+    configured") dropped from **high → medium** — real hygiene gaps, but not
+    directly exploitable at high. (The DNSSEC "DS published but DNSKEY missing"
+    case stays high — it causes actual resolution failure.)
+  - **DKIM** finding reworded "DKIM record not found" → **"DKIM could not be
+    confirmed"** — DKIM uses a per-provider selector that can't always be
+    discovered, so absence at common selectors is a lookup limitation, not proof.
+
+### Fixed
+- **Email report copy now actually renders (completes the v2.10.x fix).** The
+  earlier per-control business-impact fix stamped `extra["control"]` in a
+  **dead** module (`checks/email.py`), while the live email checks live in
+  `scanner.py::_check_email` — so real email findings carried no `control` and
+  the copy still didn't render. Stamped the live path (spf/dmarc/dkim/mta_sts/
+  tls_rpt/bimi), with a regression test. (`checks/{email,dns,rdap}.py`
+  `collect_and_analyze` are dead code — flagged for a follow-up removal.)
+
 ### Added
 - **typosquat now scores weaponization, not just registration.** For registered
   lookalikes that serve web (have an A record), it fetches the homepage
