@@ -249,7 +249,7 @@ def _check_dnssec(session, domain) -> list:
     if not has_dnskey and not has_ds:
         return [Finding(
             session=session, source="domain_security", target=domain,
-            check_type="dnssec", severity="high",
+            check_type="dnssec", severity="medium",
             title="DNSSEC not enabled",
             description=(
                 f"{domain} has no DNSSEC configured. DNS responses can be forged — "
@@ -269,7 +269,7 @@ def _check_dnssec(session, domain) -> list:
     if has_dnskey and not has_ds:
         return [Finding(
             session=session, source="domain_security", target=domain,
-            check_type="dnssec", severity="high",
+            check_type="dnssec", severity="medium",
             title="DNSSEC chain of trust broken — DS record not published",
             description=(
                 f"{domain} has DNSKEY records but the DS record is not published at the "
@@ -463,8 +463,14 @@ def _check_dkim(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="medium",
-            title="DKIM record not found",
-            description=f"No DKIM record found for common selectors on {domain}.",
+            title="DKIM could not be confirmed",
+            description=(
+                f"DKIM could not be confirmed for {domain}: no DKIM record was found at "
+                "the common selectors checked. DKIM uses a per-provider selector that "
+                "can't always be discovered without knowing it, so this may be a lookup "
+                "limitation rather than a definitively missing record — verify against "
+                "your mail provider's published selector."
+            ),
             remediation="Configure DKIM signing with your email provider and publish the public key as a TXT record.",
         ))
 
@@ -486,7 +492,7 @@ def _check_mta_sts(session, domain) -> list:
     if not mta_sts_dns:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
-            severity="high",
+            severity="medium",
             title="MTA-STS not configured",
             description=(
                 f"{domain} has no MTA-STS policy. Email delivery to your mail server is not "
@@ -663,16 +669,28 @@ def _check_bimi(session, domain) -> list:
     return findings
 
 
+def _stamp_control(findings, control):
+    """Tag email findings with the control they concern (spf/dmarc/dkim/…).
+
+    All email findings share check_type="email", so the report keys its
+    per-control business-impact copy on extra["control"] instead. Without this
+    the copy silently doesn't render (the report resolves it via this key).
+    """
+    for f in findings:
+        f.extra = {**(f.extra or {}), "control": control}
+    return findings
+
+
 def _check_email(session, domain) -> list:
-    """Run all email security checks and return list of DomainFinding objects (not yet saved)."""
+    """Run all email security checks and return list of Finding objects (not yet saved)."""
     findings = []
-    findings += _check_spf(session, domain)
-    findings += _check_dmarc(session, domain)
-    findings += _check_dkim(session, domain)
-    findings += _check_mta_sts(session, domain)
-    findings += _check_open_relay(session, domain)
-    findings += _check_tls_rpt(session, domain)
-    findings += _check_bimi(session, domain)
+    findings += _stamp_control(_check_spf(session, domain), "spf")
+    findings += _stamp_control(_check_dmarc(session, domain), "dmarc")
+    findings += _stamp_control(_check_dkim(session, domain), "dkim")
+    findings += _stamp_control(_check_mta_sts(session, domain), "mta_sts")
+    findings += _stamp_control(_check_open_relay(session, domain), "open_relay")
+    findings += _stamp_control(_check_tls_rpt(session, domain), "tls_rpt")
+    findings += _stamp_control(_check_bimi(session, domain), "bimi")
     return findings
 
 

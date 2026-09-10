@@ -84,7 +84,7 @@ class TestDNSChecks:
         titles = [f.title for f in findings]
         assert "No NS records found" in titles
 
-    def test_dnssec_not_enabled_creates_high_finding(self, db):
+    def test_dnssec_not_enabled_creates_medium_finding(self, db):
         from apps.domain_security.scanner import _check_dnssec
         session = self._make_session(db)
 
@@ -95,7 +95,7 @@ class TestDNSChecks:
         assert len(findings) == 1
         f = findings[0]
         assert f.title == "DNSSEC not enabled"
-        assert f.severity == "high"
+        assert f.severity == "medium"
         assert f.check_type == "dnssec"
 
     def test_dnssec_broken_chain_dnskey_no_ds(self, db):
@@ -114,7 +114,7 @@ class TestDNSChecks:
         assert len(findings) == 1
         f = findings[0]
         assert "chain of trust broken" in f.title
-        assert f.severity == "high"
+        assert f.severity == "medium"
         assert f.extra == {"has_dnskey": True, "has_ds": False}
 
     def test_dnssec_broken_ds_no_dnskey(self, db):
@@ -250,7 +250,18 @@ class TestEmailChecks:
             findings = _check_email(session, "example.com")
 
         titles = [f.title for f in findings]
-        assert "DKIM record not found" in titles
+        assert "DKIM could not be confirmed" in titles
+
+    def test_email_findings_are_stamped_with_control(self, db):
+        # The LIVE email path must tag each finding with extra["control"], or the
+        # report's per-control business-impact copy silently won't render.
+        from apps.domain_security.scanner import _check_email
+        session = self._make_session(db)
+        with patch("apps.domain_security.scanner._get_txt_record", return_value=[]), \
+             patch("apps.domain_security.scanner._check_open_relay", return_value=[]):
+            findings = _check_email(session, "example.com")
+        controls = {f.extra.get("control") for f in findings if isinstance(f.extra, dict)}
+        assert {"spf", "dmarc", "dkim", "mta_sts"} <= controls
 
 
 # ---------------------------------------------------------------------------
@@ -636,7 +647,7 @@ class TestMTASTSChecks:
             findings = _check_mta_sts(session, "example.com")
 
         assert len(findings) == 1
-        assert findings[0].severity == "high"
+        assert findings[0].severity == "medium"
         assert "MTA-STS not configured" in findings[0].title
 
     def test_dns_record_present_but_policy_file_unreachable_creates_high_finding(self, db):
