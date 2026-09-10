@@ -8,6 +8,17 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Added
+- **Per-finding "Recommended Next Steps" on hosted reports.** The PDF report's
+  finding detail now carries a concrete, ordered remediation checklist per finding
+  type (e.g. HSTS → confirm HTTPS → add the header → submit to hstspreload.org),
+  on top of the existing Remediation prose. Covers the common web-header / cookie
+  / CORS / disclosure / security.txt / email-auth / TLS / SSH / takeover /
+  cloud-bucket / exposed-secret findings; unmapped types render nothing (no empty
+  block). **Gated on hosted reports only** — it renders when `REPORT_CTA_URL` is
+  configured (the same flag that marks a hosted deployment); self-hosters still
+  get the per-finding Remediation text. **Why:** turns "what's wrong" into "what
+  to do next," in copy-pasteable steps, for the reader who has to action the
+  report. Report-only — no scanning, model, or API change.
 - **security.txt (RFC 9116) responsible-disclosure check.** `web_checker` now
   checks whether the scan's **primary domain** publishes a `security.txt` at
   `/.well-known/security.txt` — the standard, machine-readable way a researcher

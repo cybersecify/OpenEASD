@@ -1009,3 +1009,75 @@ class TestSinceLastScanBlock:
         rows = {r[0]: r[idx] for r in reader if r}
         assert rows["Fresh"] == "new"
         assert rows["Shared"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Per-finding "Recommended Next Steps" (hosted reports only)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestNextStepsBlock:
+    """Concrete remediation checklists render in the PDF finding detail ONLY on
+    hosted reports (REPORT_CTA_URL configured). Self-hosters keep the Remediation
+    prose but not the numbered checklist. The mapping is keyed by effective key."""
+
+    def _capture(self, authed_client, session):
+        captured = {}
+
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert res.status_code == 200
+        return captured["html"]
+
+    def test_absent_when_not_hosted(self, authed_client, session, findings, settings):
+        settings.REPORT_CTA_URL = ""
+        html = self._capture(authed_client, session)
+        assert "Recommended Next Steps" not in html
+
+    def test_present_when_hosted(self, authed_client, session, findings, settings):
+        settings.REPORT_CTA_URL = "https://example.com/help"
+        settings.REPORT_CTA_TEXT = "Need help?"
+        html = self._capture(authed_client, session)
+        assert "Recommended Next Steps" in html
+        # The DMARC finding in the fixture maps to a concrete step.
+        assert "Publish" in html and "_dmarc" in html
+
+    def test_group_attaches_next_steps_for_mapped_check(self, db, session):
+        from apps.core.console.reports.views import _group_findings_by_issue
+        from apps.core.data.findings.models import Finding
+        f = Finding.objects.create(
+            session=session, source="web_checker", check_type="missing_hsts",
+            severity="medium", title="Missing Strict-Transport-Security on https://x",
+            description="d", remediation="r", target="https://x",
+        )
+        groups = _group_findings_by_issue([f])
+        assert groups[0]["next_steps"]  # non-empty
+        assert any("Strict-Transport-Security" in s for s in groups[0]["next_steps"])
+
+    def test_group_empty_next_steps_for_unmapped_check(self, db, session):
+        from apps.core.console.reports.views import _group_findings_by_issue
+        from apps.core.data.findings.models import Finding
+        f = Finding.objects.create(
+            session=session, source="some_tool", check_type="totally_unmapped_check",
+            severity="low", title="Odd thing", description="d", remediation="r",
+            target="x",
+        )
+        groups = _group_findings_by_issue([f])
+        assert groups[0]["next_steps"] == []
+
+    def test_email_control_keys_next_steps(self, db, session):
+        # Email findings share check_type="email"; next steps resolve via control.
+        from apps.core.console.reports.views import _group_findings_by_issue
+        from apps.core.data.findings.models import Finding
+        f = Finding.objects.create(
+            session=session, source="domain_security", check_type="email",
+            severity="medium", title="SPF record missing on example.com",
+            description="d", remediation="r", target="example.com",
+            extra={"control": "spf"},
+        )
+        groups = _group_findings_by_issue([f])
+        assert any("SPF" in s for s in groups[0]["next_steps"])
