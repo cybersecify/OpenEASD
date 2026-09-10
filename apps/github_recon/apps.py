@@ -9,7 +9,7 @@ class GithubReconConfig(AppConfig):
     tool_meta = {
         "label": "GitHub Org Recon",
         "runner": "apps.github_recon.scanner.run_github_recon",
-        "phase": 2,
+        "phase": 3,
         "phase_group": "Surface Enumeration",
         "requires": [],
         "produces_findings": True,

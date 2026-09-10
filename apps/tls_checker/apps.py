@@ -8,7 +8,7 @@ class TlsCheckerConfig(AppConfig):
     tool_meta = {
         "label": "TLS Checker",
         "runner": "apps.tls_checker.scanner.run_tls_check",
-        "phase": 7,
+        "phase": 8,
         "phase_group": "Network Exposure",
         "requires": ["naabu", "service_detection"],
         "produces_findings": True,

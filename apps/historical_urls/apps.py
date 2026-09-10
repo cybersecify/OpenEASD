@@ -9,7 +9,7 @@ class HistoricalUrlsConfig(AppConfig):
     tool_meta = {
         "label": "Historical URLs (gau)",
         "runner": "apps.historical_urls.scanner.run_historical_urls",
-        "phase": 9,
+        "phase": 10,
         "phase_group": "Web Exposure",
         "requires": ["httpx"],
         "produces_findings": False,

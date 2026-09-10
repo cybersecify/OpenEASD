@@ -8,7 +8,7 @@ class NucleiNetworkConfig(AppConfig):
     tool_meta = {
         "label": "Nuclei (Network Scan)",
         "runner": "apps.nuclei_network.scanner.run_nuclei_network",
-        "phase": 7,
+        "phase": 8,
         "phase_group": "Network Exposure",
         "requires": ["naabu", "service_detection"],
         "produces_findings": True,

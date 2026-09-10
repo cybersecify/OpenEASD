@@ -9,7 +9,7 @@ class BreachCheckConfig(AppConfig):
     tool_meta = {
         "label": "Breach Exposure (HIBP / XposedOrNot)",
         "runner": "apps.breach_check.scanner.run_breach_check",
-        "phase": 1,
+        "phase": 2,
         "phase_group": "Data Leak",
         "requires": [],
         "produces_findings": True,
