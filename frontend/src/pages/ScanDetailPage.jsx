@@ -5,6 +5,7 @@ import { Spinner } from '../components/Spinner.jsx';
 import { ConfirmButton } from '../components/ConfirmButton.jsx';
 import { toast } from '../components/Notification.jsx';
 import { Pagination } from '../components/Pagination.jsx';
+import { FindingDetailModal } from '../components/FindingDetailModal.jsx';
 import { Button } from '../components/ui/button.jsx';
 import { Card, CardContent } from '../components/ui/card.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
@@ -170,6 +171,7 @@ export default function ScanDetailPage() {
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(false);
   const [showSubScan, setShowSubScan] = useState(false);
+  const [selectedFinding, setSelectedFinding] = useState(null);
   const [schemeFilter, setSchemeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [minSev, setMinSev] = useState('info');
@@ -444,7 +446,13 @@ export default function ScanDetailPage() {
                         : paged.map(f => (
                           <TableRow key={f.id} id={`finding-${f.id}`} className="hover:bg-hover">
                             <TableCell className="px-4 py-3"><Badge value={f.severity} /></TableCell>
-                            <TableCell className="px-4 py-3 text-body font-medium max-w-xs truncate">{f.title}</TableCell>
+                            <TableCell className="px-4 py-3 max-w-xs">
+                              <button onClick={() => setSelectedFinding(f)}
+                                className="text-body font-medium hover:text-brand hover:underline text-left truncate max-w-full block"
+                                title="View details">
+                                {f.title}
+                              </button>
+                            </TableCell>
                             <TableCell className="px-4 py-3 font-mono text-dim text-xs">{f.target}</TableCell>
                             <TableCell className="px-4 py-3 text-dim text-xs">{f.source}</TableCell>
                           </TableRow>
@@ -470,6 +478,10 @@ export default function ScanDetailPage() {
           onClose={() => setShowSubScan(false)}
           onStarted={newUuid => navigate(`/scans/${newUuid}`)}
         />
+      )}
+
+      {selectedFinding && (
+        <FindingDetailModal finding={selectedFinding} onClose={() => setSelectedFinding(null)} />
       )}
     </Layout>
   );
