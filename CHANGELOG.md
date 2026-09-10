@@ -7,6 +7,13 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Removed
+- **Dead `apps/domain_security/checks/` package** (`email.py`, `dns.py`,
+  `rdap.py`, `__init__.py`). Their `collect_and_analyze` functions were imported
+  nowhere — the live domain-security logic is all in `scanner.py`. This is the
+  shadow that caused an earlier report-copy fix to land in dead code (the
+  duplicate email checks); removing it prevents a repeat.
+
 ## [v2.11.0] — 2026-09-10
 
 ### Changed
