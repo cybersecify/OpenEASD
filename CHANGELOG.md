@@ -18,8 +18,11 @@ commits to recover the reasoning.
   domain-root, per the RFC) so it fires at most once per scan instead of once per
   subdomain, and a 200 that's really an SPA catch-all HTML page is rejected (must
   carry a `Contact:` line, must not be HTML) so it never reports a false positive.
-  Folded into the existing `web_checker` tool — no new registration, tool-count,
-  or Full-Scan change. Fail-graceful (a fetch error is logged, never raised).
+  Cert validation stays on for this fetch (a security.txt over an untrusted cert
+  isn't trustworthy); a TLS/connection failure is treated as "couldn't check" and
+  reports nothing, never a false "missing". Folded into the existing `web_checker`
+  tool — no new registration, tool-count, or Full-Scan change. Fail-graceful (a
+  fetch error is logged, never raised).
 - **"Since Your Last Scan" report block + alert line.** The PDF report now opens
   (right under the Exposure Score) with what changed versus the domain's previous
   scan — **N new / N resolved / N still-open** findings, plus a list of the new

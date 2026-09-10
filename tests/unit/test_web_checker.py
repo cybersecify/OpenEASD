@@ -567,12 +567,21 @@ class TestSecurityTxtFindings:
         from apps.web_checker.analyzer import security_txt_findings
         assert security_txt_findings(None, self._session()) == []
 
+    def test_unreachable_no_finding(self):
+        # TLS/connection failure → we couldn't check → must NOT claim "missing".
+        from apps.web_checker.analyzer import security_txt_findings
+        out = security_txt_findings(
+            {"host": "example.com", "url_fk": None, "port_fk": None, "found": False,
+             "reachable": False, "location": None, "raw": "", "error": "SSLError"},
+            self._session())
+        assert out == []
+
     def test_missing_is_info_finding(self):
         from apps.web_checker.analyzer import security_txt_findings
         sess = self._session()
         out = security_txt_findings(
-            {"host": "example.com", "url_fk": None, "port_fk": None,
-             "found": False, "location": None, "raw": "", "error": None}, sess)
+            {"host": "example.com", "url_fk": None, "port_fk": None, "found": False,
+             "reachable": True, "location": None, "raw": "", "error": None}, sess)
         assert len(out) == 1
         assert out[0].check_type == "missing_security_txt"
         assert out[0].severity == "info"
@@ -582,7 +591,7 @@ class TestSecurityTxtFindings:
         sess = self._session()
         out = security_txt_findings(
             {"host": "example.com", "url_fk": None, "port_fk": None, "found": True,
-             "location": "https://example.com/.well-known/security.txt",
+             "reachable": True, "location": "https://example.com/.well-known/security.txt",
              "raw": "Contact: mailto:s@example.com\nExpires: 2999-01-01T00:00:00Z",
              "error": None}, sess)
         assert out == []
@@ -592,7 +601,7 @@ class TestSecurityTxtFindings:
         sess = self._session()
         out = security_txt_findings(
             {"host": "example.com", "url_fk": None, "port_fk": None, "found": True,
-             "location": "https://example.com/.well-known/security.txt",
+             "reachable": True, "location": "https://example.com/.well-known/security.txt",
              "raw": "Contact: mailto:s@example.com\nExpires: 2000-01-01T00:00:00Z",
              "error": None}, sess)
         assert len(out) == 1
@@ -632,6 +641,7 @@ class TestCollectSecurityTxt:
         with patch("apps.web_checker.collector.requests.get", return_value=mock_resp) as mget:
             result = collect_security_txt(sess)
         assert result["found"] is True
+        assert result["reachable"] is True
         assert result["location"].endswith("/.well-known/security.txt")
         assert mget.call_count == 1  # first path hit, no fallback needed
 
@@ -644,6 +654,7 @@ class TestCollectSecurityTxt:
         with patch("apps.web_checker.collector.requests.get", return_value=mock_resp) as mget:
             result = collect_security_txt(sess)
         assert result["found"] is False
+        assert result["reachable"] is True  # server answered (404) — definitively absent
         assert mget.call_count == 2  # tried /.well-known/ then /security.txt
 
     def test_fetch_error_is_graceful(self):
@@ -654,6 +665,7 @@ class TestCollectSecurityTxt:
                    side_effect=req.ConnectionError("refused")):
             result = collect_security_txt(sess)
         assert result["found"] is False
+        assert result["reachable"] is False  # couldn't reach → analyzer emits nothing
         assert result["error"] is not None
 
     def test_no_domain_returns_none(self):

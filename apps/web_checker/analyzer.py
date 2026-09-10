@@ -465,12 +465,15 @@ def _parse_security_txt_expires(raw: str) -> "datetime.datetime | None":
 def security_txt_findings(result: "dict | None", session) -> list[Finding]:
     """Findings for the primary domain's security.txt (responsible disclosure).
 
-    - Absent → info: no published, machine-readable way to report a vulnerability.
+    - Absent (reached the server, no valid security.txt) → info: no published,
+      machine-readable way to report a vulnerability.
     - Present but Expires is in the past → low: the policy has lapsed.
 
-    A present, unexpired security.txt raises nothing. ``result`` is None when the
-    apex had no probed web URL (nothing to assert) — also nothing."""
-    if not result:
+    A present, unexpired security.txt raises nothing. Nothing is raised either
+    when ``result`` is None (apex had no probed web URL) or the apex was
+    unreachable (TLS/connection failure — we couldn't check, so we don't claim
+    it's missing)."""
+    if not result or not result.get("reachable"):
         return []
 
     host = result.get("host", session.domain)

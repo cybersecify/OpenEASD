@@ -217,16 +217,22 @@ def collect_security_txt(session) -> dict | None:
     scheme = "https" if best.url.startswith("https://") else "http"
     base = f"{scheme}://{best.host}"
 
-    found, location, raw, error = False, None, "", None
+    # Certificate validation stays ON here (unlike the target-probing fetches
+    # above): a security.txt served over an untrusted cert isn't trustworthy, and
+    # the apex of a real org has valid TLS. A TLS/connection failure means we
+    # COULDN'T check (reachable=False) — the analyzer then reports nothing rather
+    # than a false "missing", keeping the scanner honest (tls_checker owns the
+    # cert finding).
+    found, reachable, location, raw, error = False, False, None, "", None
     for path in ("/.well-known/security.txt", "/security.txt"):
         try:
             resp = requests.get(
                 base + path,
                 timeout=REQUEST_TIMEOUT,
                 headers={"User-Agent": USER_AGENT},
-                verify=False,  # nosec B501 — scanning target hosts that may have self-signed certs
                 allow_redirects=True,
             )
+            reachable = True
             body = resp.text[:SECURITY_TXT_MAX] if resp.text else ""
             if _looks_like_security_txt(resp.status_code, body):
                 found, location, raw = True, base + path, body
@@ -237,13 +243,14 @@ def collect_security_txt(session) -> dict | None:
 
     logger.info(
         f"[web_checker:{session.id}] security.txt for {best.host}: "
-        f"{'found' if found else 'not found'}"
+        f"{'found' if found else ('not found' if reachable else 'unreachable')}"
     )
     return {
         "host": best.host,
         "url_fk": best,
         "port_fk": best.port,
         "found": found,
+        "reachable": reachable,
         "location": location,
         "raw": raw,
         "error": error,
