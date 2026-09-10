@@ -192,6 +192,29 @@
 </div>
 {% endif %}
 
+{% if ceo_questions %}
+<div class="h2">The Five Questions</div>
+<p class="lead">The questions a decision-maker actually asks, answered from this scan.</p>
+<table class="grid no-break">
+  <thead><tr><th style="width:58%;">Question</th><th style="width:42%;">Answer</th></tr></thead>
+  <tbody>
+    {% for q in ceo_questions %}
+    <tr>
+      <td><strong>{{ q.question }}</strong></td>
+      <td>
+        {% if q.status == "at_risk" %}<strong style="color:#e03131;">At risk</strong> — {{ q.issue_count }} finding{{ q.issue_count|pluralize }}
+        {% elif q.status == "attention" %}<strong style="color:#e8590c;">Needs attention</strong> — {{ q.issue_count }} finding{{ q.issue_count|pluralize }}
+        {% elif q.status == "clear" %}<strong style="color:#2f9e44;">No issues found</strong>
+        {% else %}<span style="color:#868e96;">Not assessed in this scan</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="lead" style="font-size:9px;color:#666;">"Not assessed" means the check for that question was not part of this scan's workflow — not that it is clear.</p>
+{% endif %}
+
 <p class="lead" style="font-style:italic;font-size:9px;color:#666;">This is a point-in-time snapshot of the externally observable attack surface, taken from the public internet. It does not include authenticated, internal, or manual testing, and an attack surface changes over time — treat it as a baseline, not a certificate.</p>
 
 {% if coverage %}

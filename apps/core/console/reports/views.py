@@ -537,6 +537,52 @@ def _render_pdf(html: str) -> bytes:
     return HTML(string=html).write_pdf()
 
 
+# The five questions a decision-maker actually asks, mapped to the findings that
+# answer them. `tools` = the scanners that assess this question, so we can say
+# "not checked" (tool didn't run) instead of a misleading "no issues found".
+_CEO_QUESTIONS = [
+    ("Can someone spoof our email?", {"domain_security"},
+     lambda g: g["source"] == "domain_security" and g["check_type"] == "email"),
+    ("Can we lose our domain?", {"domain_security"},
+     lambda g: g["source"] == "domain_security" and g["check_type"] in ("rdap", "dnssec")),
+    ("Are staff logins stolen?", {"hudson_rock", "breach_check"},
+     lambda g: g["source"] in ("hudson_rock", "breach_check")),
+    ("Is anyone impersonating us?", {"typosquat"},
+     lambda g: g["source"] == "typosquat"),
+    ("Did we leak keys?", {"js_secrets", "github_secrets"},
+     lambda g: g["source"] in ("js_secrets", "github_secrets") or g["check_type"] == "exposed_secret"),
+]
+
+
+def _ceo_questions(issue_groups, active_tools):
+    """Answer each executive question from the findings, so the report opens with
+    the business picture before the technical detail.
+
+    Status per question: at_risk (a critical/high finding), attention (only
+    medium/low/info), clear (the tool ran and found nothing), or not_checked
+    (the assessing tool wasn't in this scan) — the last avoids a false all-clear.
+    """
+    active = set(active_tools)
+    out = []
+    for question, tools, match in _CEO_QUESTIONS:
+        matched = [g for g in issue_groups if match(g)]
+        if matched:
+            has_high = any(g["severity"] in ("critical", "high") for g in matched)
+            status = "at_risk" if has_high else "attention"
+        elif tools & active:
+            status = "clear"
+        else:
+            status = "not_checked"
+        out.append({
+            "question": question,
+            "status": status,
+            "issue_count": len(matched),
+            "instance_count": sum(len(g["instances"]) for g in matched),
+            "issues": matched,
+        })
+    return out
+
+
 @_report_auth_required
 def export_scan_pdf(request, session_uuid):
     """Export a scan report as PDF, optionally filtered by ?min_severity=."""
@@ -627,6 +673,10 @@ def export_scan_pdf(request, session_uuid):
     )
     core_tools = {n for n, i in registry.items() if i.get("core")}
     active_tools = workflow_tools | core_tools
+
+    # Executive framing: the five questions a decision-maker asks, answered from
+    # the findings (rendered as the report's opening summary).
+    ceo_questions = _ceo_questions(issue_groups, active_tools)
     src_counts = {}
     for row in findings.order_by().values("source").annotate(n=Count("id")):
         src_counts[row["source"]] = row["n"]
@@ -688,6 +738,7 @@ def export_scan_pdf(request, session_uuid):
         "total_findings": len(issue_groups),   # headline = unique issue count
         "raw_total": raw_total,                # raw detections, shown only in the note
         "risk_rating": risk_rating,
+        "ceo_questions": ceo_questions,
         "exposure_score": exposure_score,
         "exposure_grade": exposure_grade,
         "exposure_trend": exposure_trend,
