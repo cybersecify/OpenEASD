@@ -13,5 +13,9 @@ class DomainSecurityConfig(AppConfig):
         "phase_group": "Domain Intelligence",
         "requires": [],
         "produces_findings": True,
-        "active": True,
+        # PASSIVE: DNS/DNSSEC/CAA/email-auth via public resolvers + RDAP via
+        # rdap.org — no packets to the target's own systems. The active probes
+        # (AXFR / open-relay / MTA-STS fetch) moved to apps.domain_probe, so this
+        # tool can run in a no-auth passive scan.
+        "active": False,
     }
