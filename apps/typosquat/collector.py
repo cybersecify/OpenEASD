@@ -22,8 +22,11 @@ ToolBinaryMissing / ToolTimeout.
 """
 
 import logging
+import re
 
 import dns.resolver
+import requests
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,16 @@ logger = logging.getLogger(__name__)
 # up to a few short lookups). Keeps a scan polite and bounded on domains whose
 # names generate a large permutation space.
 MAX_CANDIDATES = 300
+
+# Weaponization content probe (spec: distinguish an ACTIVE phishing lookalike
+# from a merely-registered one). For registered, web-serving lookalikes we fetch
+# the homepage over HTTPS and look for a login form / brand impersonation. This
+# contacts the THIRD-PARTY lookalike, never the user's own domain, so the tool
+# stays passive w.r.t. the authorization boundary (like cloud_enum probing
+# buckets). Capped + short-timeout + fail-graceful for politeness.
+CONTENT_MAX_FETCHES = 25          # homepages fetched per scan
+CONTENT_TIMEOUT = 6               # seconds per fetch
+_LOGIN_FORM_RE = re.compile(r"<form[^>]*(?:login|sign.?in|auth|password)[^>]*>", re.I)
 
 # Per-lookup DNS timeout / overall lifetime (seconds). Short — most candidates are
 # NXDOMAIN and resolve fast; we never want a hung resolver to stall a scan.
@@ -215,9 +228,40 @@ def _check_candidate(resolver, candidate: str) -> dict | None:
     }
 
 
+def _content_signals(candidate: str, brand: str) -> dict:
+    """Fetch a registered lookalike's homepage and look for weaponization signals:
+    a login form (credential-phishing) and mentions of the brand (impersonation).
+
+    Contacts only the lookalike domain, never the target. Never raises — any
+    fetch failure leaves content_checked=False and no signals.
+    """
+    out = {"content_checked": True, "login_form": False,
+           "brand_mentioned": False, "brand_mention_count": 0}
+    try:
+        ua = getattr(settings, "OPENEASD_USER_AGENT", "OpenEASD")
+        resp = requests.get(
+            f"https://{candidate}/", timeout=CONTENT_TIMEOUT,
+            headers={"User-Agent": ua}, allow_redirects=True,
+        )
+        html = resp.text or ""
+        out["login_form"] = bool(_LOGIN_FORM_RE.search(html))
+        b = (brand or "").lower()
+        if b:
+            count = html.lower().count(b)
+            out["brand_mention_count"] = count
+            # A mention on the page, OR a redirect landing on the real brand, is
+            # an impersonation signal.
+            out["brand_mentioned"] = count > 0 or b in (resp.url or "").lower()
+    except Exception:  # noqa: BLE001 — never let a lookalike fetch fail the scan
+        out["content_checked"] = False
+    return out
+
+
 def collect(session) -> list[dict]:
     """Generate lookalike candidates for the session's apex domain and return the
-    subset that is registered / weaponizable (via passive public DNS).
+    subset that is registered / weaponizable (via passive public DNS), enriched
+    with weaponization signals (login form / brand impersonation) for the
+    web-serving ones.
 
     Always returns a list; never raises.
     """
@@ -235,8 +279,18 @@ def collect(session) -> list[dict]:
             record["technique"] = cand["technique"]
             results.append(record)
 
+    # Weaponization pass: for registered lookalikes that serve web (have an A
+    # record), fetch the homepage to spot active phishing / impersonation. Capped.
+    brand, _ = _split_apex(apex)
+    fetched = 0
+    for record in results:
+        if record.get("has_a") and fetched < CONTENT_MAX_FETCHES:
+            record.update(_content_signals(record["candidate"], brand))
+            fetched += 1
+
     logger.info(
-        "[typosquat:%s] checked %d lookalike candidate(s) for %s — %d registered",
-        session.id, len(candidates), apex, len(results),
+        "[typosquat:%s] checked %d lookalike candidate(s) for %s — %d registered, "
+        "%d homepage(s) probed",
+        session.id, len(candidates), apex, len(results), fetched,
     )
     return results

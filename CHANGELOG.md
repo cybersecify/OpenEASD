@@ -7,6 +7,19 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **typosquat now scores weaponization, not just registration.** For registered
+  lookalikes that serve web (have an A record), it fetches the homepage
+  (capped, short-timeout, fail-graceful) and looks for a **login form**
+  (credential phishing) and **brand mentions** (impersonation). A lookalike with
+  either signal is now **high** severity ("active impersonation — prioritise a
+  takedown"), vs. `medium` for merely-registered and `low` for parked. This
+  distinguishes a parked name from an active phishing site, making the "lookalike
+  → takedown" workflow actionable. Ported from the standalone `tldsquatting`
+  project's threat model. Still passive w.r.t. the target (contacts only the
+  lookalike domain, never yours); `extra` now carries `login_form` /
+  `brand_mentioned` / `content_checked`.
+
 ## [v2.10.1] — 2026-09-10
 
 ### Fixed
