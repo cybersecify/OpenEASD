@@ -24,6 +24,22 @@ function CreateWorkflowForm({ onCreated }) {
   });
   const allTools = toolsData?.tools || [];
 
+  // Group tools by category (phase_group), ordered by the earliest phase in each
+  // group — so Domain Intelligence (phase 1) leads, matching scan execution order.
+  const groupedTools = React.useMemo(() => {
+    const byGroup = new Map();
+    for (const t of allTools) {
+      const g = t.phase_group || 'Other';
+      if (!byGroup.has(g)) byGroup.set(g, { group: g, minPhase: t.phase ?? 99, tools: [] });
+      const entry = byGroup.get(g);
+      entry.tools.push(t);
+      entry.minPhase = Math.min(entry.minPhase, t.phase ?? 99);
+    }
+    return [...byGroup.values()]
+      .map(e => ({ ...e, tools: e.tools.sort((a, b) => (a.phase ?? 99) - (b.phase ?? 99)) }))
+      .sort((a, b) => a.minPhase - b.minPhase);
+  }, [allTools]);
+
   function toggleTool(key) {
     setSel(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
   }
@@ -68,16 +84,23 @@ function CreateWorkflowForm({ onCreated }) {
                 <span className="text-xs text-dim">·</span>
                 <span className="text-xs text-dim italic">Service Detection is always included automatically — it identifies services on open ports (nmap -sV) and is required by TLS Checker, SSH Checker, and Nmap to work correctly</span>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {allTools.map(tool => (
-                  <label key={tool.key}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs cursor-pointer border transition-colors
-                      ${selected.includes(tool.key)
-                        ? 'bg-brand/10 border-brand/40 text-brand'
-                        : 'bg-canvas border-rim text-body hover:border-dim'}`}>
-                    <input type="checkbox" className="hidden" checked={selected.includes(tool.key)} onChange={() => toggleTool(tool.key)} />
-                    {tool.label || tool.key}
-                  </label>
+              <div className="space-y-3">
+                {groupedTools.map(({ group, tools }) => (
+                  <div key={group}>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-dim mb-1.5">{group}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {tools.map(tool => (
+                        <label key={tool.key}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs cursor-pointer border transition-colors
+                            ${selected.includes(tool.key)
+                              ? 'bg-brand/10 border-brand/40 text-brand'
+                              : 'bg-canvas border-rim text-body hover:border-dim'}`}>
+                          <input type="checkbox" className="hidden" checked={selected.includes(tool.key)} onChange={() => toggleTool(tool.key)} />
+                          {tool.label || tool.key}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>

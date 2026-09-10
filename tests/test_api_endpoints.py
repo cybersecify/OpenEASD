@@ -322,6 +322,15 @@ class TestDashboard:
         res = client.get("/api/dashboard/")
         assert res.status_code == 401
 
+    def test_features_domain_intelligence_category(self, auth_client, db):
+        """The dashboard surfaces the primary Domain Intelligence category card."""
+        res = auth_client.get("/api/dashboard/")
+        di = res.json()["domain_intelligence"]
+        assert di["category"] == "Domain Intelligence"
+        assert di["tool_count"] >= 1
+        for k in ("total", "critical", "high", "medium", "low", "info"):
+            assert k in di
+
 
 # ---------------------------------------------------------------------------
 # Domains
@@ -707,6 +716,13 @@ class TestWorkflowTools:
         data = res.json()
         assert "tools" in data
         assert "requires" in data
+
+    def test_tools_carry_phase_group_for_ui_categorization(self, auth_client):
+        """Each tool exposes its phase_group so the UI can group by category."""
+        tools = auth_client.get("/api/workflows/tools/").json()["tools"]
+        assert tools
+        assert all("phase_group" in t for t in tools)
+        assert any(t["phase_group"] == "Domain Intelligence" for t in tools)
 
     def test_requires_auth(self, client):
         assert client.get("/api/workflows/tools/").status_code == 401

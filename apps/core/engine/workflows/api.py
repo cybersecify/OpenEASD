@@ -12,6 +12,7 @@ from apps.core.engine.workflows.models import Workflow, WorkflowStep
 from apps.core.engine.workflows.registry import (
     get_registry,
     get_tool_choices,
+    get_tool_phase_groups,
     get_tool_phases,
     get_tool_produces_findings,
     get_tool_requires,
@@ -64,11 +65,13 @@ def _serialize_step_result(sr) -> dict:
 def list_tools(request):
     phases = get_tool_phases()
     produces = get_tool_produces_findings()
+    groups = get_tool_phase_groups()
     tools = [
         {
             "key": key,
             "label": label,
             "phase": phases.get(key, 99),
+            "phase_group": groups.get(key, ""),
             "produces_findings": produces.get(key, False),
         }
         for key, label in get_tool_choices()
