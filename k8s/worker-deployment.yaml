@@ -25,8 +25,8 @@ spec:
     spec:
       containers:
         - name: worker
-          image: ghcr.io/cybersecify/openeasd-worker:latest
-          imagePullPolicy: Always
+          image: ghcr.io/cybersecify/openeasd-worker
+          imagePullPolicy: IfNotPresent
           # Go through the role-aware entrypoint so the worker WAITS for the web
           # tier's migrations (migrate --check) before launching dbos_worker —
           # this replaces the shared-pod initContainer ordering now that web and

@@ -1,15 +1,17 @@
-# Dev-deployment override: run the CI-published :latest images instead of a local
-# build. Used by `just deploy-dev` for a quick dev deploy that consumes the real
-# GHCR artifacts. Production is unchanged — it uses the base docker-compose.yml
-# with pinned :vX.Y.Z images (published by the GitHub tag pipeline).
+# Dev-deployment override: run a CI-published GHCR image instead of a local build.
+# Used by `just deploy-dev` to smoke-test the REAL artifact before promoting it to
+# prod. The tag defaults to :latest but can be pinned to the exact release you're
+# about to ship — smoke-test that image, then promote the same tag:
 #
-#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --no-build --pull always
+#   OPENEASD_TAG=v2.14.0 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --no-build --pull always
+#
+# Production is unchanged — k8s pins the tag via k8s/kustomization.yaml (newTag).
 #
 services:
   web:
-    image: ghcr.io/cybersecify/openeasd-web:latest
+    image: ghcr.io/cybersecify/openeasd-web:${OPENEASD_TAG:-latest}
     pull_policy: always
 
   worker:
-    image: ghcr.io/cybersecify/openeasd-worker:latest
+    image: ghcr.io/cybersecify/openeasd-worker:${OPENEASD_TAG:-latest}
     pull_policy: always
