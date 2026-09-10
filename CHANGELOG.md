@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.12.0] — 2026-09-10
+
 ### Changed
 - **Faster phase-1 (Domain Intelligence) — concurrency where it was serial.** Two
   changes cut the phase from up-to-minutes toward seconds:
@@ -1435,7 +1437,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.11.0...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.12.0...HEAD
+[v2.12.0]: https://github.com/cybersecify/OpenEASD/compare/v2.11.0...v2.12.0
 [v2.11.0]: https://github.com/cybersecify/OpenEASD/compare/v2.10.1...v2.11.0
 [v2.10.1]: https://github.com/cybersecify/OpenEASD/compare/v2.10.0...v2.10.1
 [v2.10.0]: https://github.com/cybersecify/OpenEASD/compare/v2.9.1...v2.10.0
