@@ -198,7 +198,7 @@ Phase 1  DNS History        - Historical A/AAAA/MX records via a passive-DNS
 Phase 13 ASN Clustering     - Groups registered lookalikes by shared hosting ASN
                              (Team Cymru, passive) — coordinated phishing infra
 
-── Data Leak ────────────────────────────────────────────────────────────────
+── Credential Exposure ──────────────────────────────────────────────────────
 Phase 2  Hudson Rock        - Infostealer-log exposure via Hudson Rock's keyless
                              Cavalier API (aggregate counts only, no plaintext)
 Phase 2  GitHub Secrets      - Leaked secrets in public GitHub via gitleaks

@@ -8,13 +8,18 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Changed
-- **Pipeline renumbered to 13 phases — Data Leak is now a dedicated phase 2.**
-  The three domain-only Data Leak tools (`hudson_rock`, `breach_check`,
+- **Renamed the "Data Leak" tool category to "Credential Exposure."** More
+  accurate and better-parallel with the sibling "…Exposure" categories: the four
+  tools (`hudson_rock`, `breach_check`, `github_secrets`, `js_secrets`) surface
+  exposed *credentials and secrets* (infostealer logs, breached accounts, leaked
+  API keys/tokens), not general "data leaks." Display-only `phase_group` rename.
+- **Pipeline renumbered to 13 phases — Credential Exposure is now a dedicated phase 2.**
+  The three domain-only Credential Exposure tools (`hudson_rock`, `breach_check`,
   `github_secrets`) moved from phase 1 into their own **phase 2**, and every phase
   at or after the old phase 2 shifted **+1** (Surface Enumeration 2→3 … cve_intel
   12→13). `js_secrets` stays in the web-exposure phase (now 12) — it needs
-  discovered `.js` assets, so it can't run early; the Data Leak *category* still
-  spans phases 2 and 12. Execution order and all data dependencies are unchanged
+  discovered `.js` assets, so it can't run early; the Credential Exposure
+  *category* still spans phases 2 and 12. Execution order and all data dependencies are unchanged
   (the shift preserves relative ordering); only phase numbers changed. Phase
   numbers live in each tool's `tool_meta` (no migration). Docs + the generated
   `render_pipeline_diagram` reflect the new numbering.

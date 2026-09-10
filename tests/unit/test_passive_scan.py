@@ -72,16 +72,16 @@ class TestRegistryActiveFlag:
 # ---------------------------------------------------------------------------
 
 class TestPhaseGroupCategories:
-    # The leak-detection tools live in their own "Data Leak" category rather than
-    # being mixed into Domain Intelligence / Web Exposure.
-    _DATA_LEAK = {"hudson_rock", "breach_check", "github_secrets", "js_secrets"}
+    # The leak-detection tools live in their own "Credential Exposure" category
+    # rather than being mixed into Domain Intelligence / Web Exposure.
+    _CRED_EXPOSURE = {"hudson_rock", "breach_check", "github_secrets", "js_secrets"}
 
-    def test_data_leak_tools_grouped_together(self):
+    def test_credential_exposure_tools_grouped_together(self):
         from apps.core.engine.workflows.registry import get_tool_phase_groups
         groups = get_tool_phase_groups()
-        for tool in self._DATA_LEAK:
-            assert groups.get(tool) == "Data Leak", (
-                f"{tool} should be in the Data Leak phase_group, got {groups.get(tool)!r}"
+        for tool in self._CRED_EXPOSURE:
+            assert groups.get(tool) == "Credential Exposure", (
+                f"{tool} should be in the Credential Exposure phase_group, got {groups.get(tool)!r}"
             )
 
     def test_domain_intelligence_excludes_leak_tools(self):
@@ -89,7 +89,7 @@ class TestPhaseGroupCategories:
         from apps.core.engine.workflows.registry import get_tool_phase_groups
         groups = get_tool_phase_groups()
         di = {t for t, g in groups.items() if g == "Domain Intelligence"}
-        assert di.isdisjoint(self._DATA_LEAK)
+        assert di.isdisjoint(self._CRED_EXPOSURE)
         assert "domain_security" in di
 
 
