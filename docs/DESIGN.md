@@ -182,7 +182,8 @@ full per-tool table is in [CLAUDE.md](../CLAUDE.md); by phase group:
 
 | Phase group | Phases | Tools |
 |---|---|---|
-| Domain Intelligence | 1, 13 | domain_security, domain_probe, typosquat, dns_history, asn_cluster |
+| Domain Posture | 1 | domain_security, domain_probe, dns_history |
+| Brand Threat | 1, 13 | typosquat, asn_cluster |
 | Credential Exposure | 2 | breach_check, hudson_rock, github_secrets |
 | Asset Discovery | 3–4 | subfinder, amass, alterx, asn_discovery, dnsx |
 | Asset Exposure | 5 | takeover_check, cloud_assets |
@@ -214,7 +215,7 @@ Deletion cascades top-down: deleting a Domain wipes all session data.
 ### Pipeline phases
 
 ```
-Phase 1   Domain Intelligence  → Finding (DNS/DNSSEC/email-auth/RDAP, domain_probe, typosquat, dns_history)
+Phase 1   Domain Posture + Brand Threat → Finding (DNS/DNSSEC/email-auth/RDAP, domain_probe, dns_history; typosquat lookalikes)
 Phase 2   Credential Exposure            → Finding (breach_check, hudson_rock infostealer, github_secrets)
 Phase 3   Asset Discovery  → Subdomain (subfinder/amass/alterx) + Finding (asn_discovery)
 Phase 4   dnsx                 → IPAddress (public-IP filter)

@@ -12,7 +12,7 @@ class AsnClusterConfig(AppConfig):
         # Late phase: it correlates typosquat's already-written lookalike findings,
         # so it must run after phase 1. Sits with cve_intel in Prioritization order.
         "phase": 13,
-        "phase_group": "Domain Intelligence",
+        "phase_group": "Brand Threat",
         "requires": ["typosquat"],
         "produces_findings": True,
         # PASSIVE: IP→ASN via Team Cymru's keyless DNS service (a third party) —

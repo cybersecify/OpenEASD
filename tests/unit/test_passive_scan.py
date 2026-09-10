@@ -73,7 +73,7 @@ class TestRegistryActiveFlag:
 
 class TestPhaseGroupCategories:
     # The leak-detection tools live in their own "Credential Exposure" category
-    # rather than being mixed into Domain Intelligence / Web Exposure.
+    # rather than being mixed into Domain Posture / Web Exposure.
     _CRED_EXPOSURE = {"hudson_rock", "breach_check", "github_secrets"}
 
     def test_credential_exposure_tools_grouped_together(self):
@@ -84,11 +84,11 @@ class TestPhaseGroupCategories:
                 f"{tool} should be in the Credential Exposure phase_group, got {groups.get(tool)!r}"
             )
 
-    def test_domain_intelligence_excludes_leak_tools(self):
-        # Domain Intelligence keeps domain-posture tools only; leak tools moved out.
+    def test_domain_posture_excludes_leak_tools(self):
+        # Domain Posture keeps domain-posture tools only; leak tools moved out.
         from apps.core.engine.workflows.registry import get_tool_phase_groups
         groups = get_tool_phase_groups()
-        di = {t for t, g in groups.items() if g == "Domain Intelligence"}
+        di = {t for t, g in groups.items() if g == "Domain Posture"}
         assert di.isdisjoint(self._CRED_EXPOSURE)
         assert "domain_security" in di
 
