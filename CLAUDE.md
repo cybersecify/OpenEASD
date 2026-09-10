@@ -266,8 +266,20 @@ k8s/
   worker-deployment.yaml — openeasd-worker: DBOS worker (tier: worker, NET_RAW, no Service)
   service.yaml           — NodePort 30808 → 8000, selector tier: web ONLY
   ingress.yaml           — nginx Ingress; TLS annotations ready to uncomment
-  kustomization.yaml     — kubectl apply -k k8s/ (does NOT include secret.yaml)
+  kustomization.yaml     — kubectl apply -k k8s/ (does NOT include secret.yaml);
+                           pins the image tag via images[].newTag — the SINGLE
+                           source of truth for which version prod runs
 ```
+
+**Image pinning (deterministic promote + rollback):** the Deployments carry
+**bare image names** (`ghcr.io/cybersecify/openeasd-{web,worker}`, no tag); the
+version is set only by `kustomization.yaml` `images[].newTag`. To promote a
+release, smoke-test the published `:vX.Y.Z` image first (`OPENEASD_TAG=vX.Y.Z
+just deploy-dev`), then bump `newTag` to that version and `kubectl apply -k k8s/`.
+Rollback = set `newTag` back and re-apply. `imagePullPolicy: IfNotPresent` +
+immutable tags make this reproducible. Never pin prod to `:latest`. Enforced by
+`test_k8s_manifests.py::test_images_pinned_to_release_tag` (newTag must be `vX…`).
+See the full flow in `docs/DEVELOPMENT.md` (Ship it — verify, then promote).
 
 **Key constraints:**
 - `replicas: 1` on each Deployment by default. Postgres removes the SQLite single-writer limit, so `openeasd-worker` can scale to multiple replicas pulling the same DBOS queue (`kubectl scale deploy/openeasd-worker --replicas=N`) independently of `openeasd-web`

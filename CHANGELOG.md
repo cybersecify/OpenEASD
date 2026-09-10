@@ -7,6 +7,18 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Deterministic prod image pinning + a documented verify→promote flow.** The k8s
+  Deployments now use **bare image names**; the version is pinned in one place —
+  `k8s/kustomization.yaml` `images[].newTag` (bumped from a stale `v2.1.1` to the
+  current release) — with `imagePullPolicy: IfNotPresent`. Promotion is now a
+  deliberate, reversible act (bump `newTag` → apply; rollback = set it back),
+  instead of the non-deterministic `:latest` the Deployment fields previously
+  named. `docker-compose.dev.yml` takes an `OPENEASD_TAG` (default `latest`) so
+  `just deploy-dev` can **smoke-test the exact release image** before promoting —
+  closing the "native dev ≠ shipped artifact" gap. Full playbook added to
+  `docs/DEVELOPMENT.md` ("Ship it — verify in dev, then promote to prod").
+
 ## [v2.14.0] — 2026-09-11
 
 ### Changed

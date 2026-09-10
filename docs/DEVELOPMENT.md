@@ -115,6 +115,53 @@ just logs / just ps
 > On Apple Silicon, `just up` builds native arm64 images. `just deploy-dev` pulls
 > the published GHCR images, which are **amd64-only** — they'll run under emulation.
 
+## Ship it — verify in dev, then promote to prod
+
+The rule: **verify everything in dev; never debug on the live instance.** Prod
+only ever receives an already-verified, tagged image.
+
+**1 — Verify the code (native).** Build on a `feat/`/`fix/` branch with `just dev`,
+click through the feature at http://localhost:5173, run a scan on an *authorized*
+test domain, and confirm any new migrations apply (`uv run manage.py migrate`).
+Then the go/no-go gate:
+
+```bash
+just ci           # green here = green in GitHub CI. Don't proceed on red.
+```
+
+**2 — Merge + release.** PR → CI green → squash-merge. Accumulate features in the
+CHANGELOG `[Unreleased]` and cut **one** tagged release for the batch:
+
+```bash
+git tag vX.Y.Z && git push origin vX.Y.Z    # GHCR builds :vX.Y.Z (web + worker)
+```
+
+**3 — Smoke-test the REAL image (closes the "native ≠ image" gap).** Before
+touching prod, run the exact published artifact locally — this catches
+image-only issues (a missing binary in the worker image, entrypoint/env,
+migrations under the real image) that native dev can't:
+
+```bash
+OPENEASD_TAG=vX.Y.Z just deploy-dev     # pulls & runs ghcr.io/…:vX.Y.Z
+# → http://localhost:8000 : login, run one scan, check the feature. Then `just down`.
+```
+
+**4 — Promote.** Bump the **single source of truth** — `newTag` in
+`k8s/kustomization.yaml` — to the version you just smoke-tested, then apply:
+
+```bash
+# edit k8s/kustomization.yaml:  newTag: vX.Y.Z   (both web + worker)
+kubectl apply -k k8s/
+kubectl rollout restart deployment/openeasd-web deployment/openeasd-worker
+```
+
+**Rollback** is the same move in reverse: set `newTag` back to the previous
+version and re-apply. Because tags are immutable, this is deterministic — the
+`imagePullPolicy: IfNotPresent` deployments pull the new tag and cache it.
+
+> The k8s Deployments use **bare image names**; the tag is set *only* by
+> `kustomization.yaml` (`images[].newTag`). Bump it in one place to promote.
+
 ## Where things live
 
 | Concern | File |
