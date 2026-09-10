@@ -8,6 +8,19 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Added
+- **Lookalike ASN clustering — new `asn_cluster` tool.** Turns isolated
+  typosquat findings into a *campaign* signal: it reads the registered
+  `lookalike_domain` findings, resolves their IPs to autonomous systems via Team
+  Cymru's keyless DNS service, and groups lookalikes that share an ASN into a
+  single `lookalike_cluster` finding ("6 lookalikes all resolve into AS-NNNNN —
+  coordinated phishing infrastructure; take them down together"). A cluster with a
+  weaponized member (login form / brand impersonation, as flagged by typosquat) is
+  **high**, else **medium**; a lone lookalike per ASN raises nothing. **Passive**
+  (queries Team Cymru, never the target or the lookalikes), fail-graceful,
+  `requires: [typosquat]`, phase 12 (runs after typosquat's findings exist). Joins
+  Full Scan + Passive Scan (migration 0032); registry tool count 29 → 30. This is
+  the target-scoped slice of adversary-infrastructure correlation — it clusters
+  *your* lookalikes, not the whole internet.
 - **Deeper email-authentication checks in `domain_security`.** Beyond present/absent
   SPF/DMARC, the phase-1 passive check now catches the gaps that actually let mail
   be spoofed or silently unprotected:

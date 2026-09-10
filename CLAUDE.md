@@ -8,7 +8,7 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 - **Released**: v2.12.0 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
   `:v2.12.0` / `:v2.12` / `:latest` (web on python:3.12-slim, worker on Ubuntu 24.04/3.12 — both Python 3.12; Django 5.2 LTS). 3-tier deploy: `db` (postgres:17) + `web`
   (gunicorn, no tools) + `worker` (`dbos_worker` + scanner matrix, `NET_RAW`).
-- **Scope**: 29 registered scan tools across 12 pipeline phases; single-user
+- **Scope**: 30 registered scan tools across 12 pipeline phases; single-user
   (one admin, no RBAC) by design.
 - **Engine**: DBOS durable workflows on PostgreSQL — one multi-step `run_scan`
   workflow per scan (checkpoint/resume) + `@durable_task` for one-step tasks
@@ -465,7 +465,7 @@ a terminal tree (`--format text`), or JSON (`--format json`). Because it reads
 `tool_meta` live, it can never drift; a test (`test_render_pipeline_diagram.py`)
 guards that every registered tool appears in the output.
 
-### Tool apps (29 registered tools)
+### Tool apps (30 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
@@ -498,6 +498,7 @@ guards that every registered tool appears in the output.
 | `apps/web_checker/` | 11 | Web Exposure | Yes | Security headers, cookies, CORS; + security.txt (RFC 9116) responsible-disclosure check on the apex |
 | `apps/js_secrets/` | 11 | Data Leak | Yes | Hardcoded-secret detection — fetches discovered `.js` assets and runs gitleaks over them; secret is redacted before storage |
 | `apps/cve_intel/` | 12 | Prioritization | No | Enriches CVE findings in place with EPSS scores + CISA KEV flags (no new findings) |
+| `apps/asn_cluster/` | 12 | Domain Intelligence | Yes | Lookalike ASN clustering — reads typosquat's `lookalike_domain` findings, resolves their IPs to ASNs via Team Cymru (keyless DNS), and groups lookalikes sharing an autonomous system into `lookalike_cluster` campaign findings (weaponized member → high). Passive, fail-graceful, `requires: [typosquat]` |
 
 ### Tool app structure
 ```
@@ -562,7 +563,7 @@ the registry via `get_tool_active()` and `is_passive_tool_set(tools)`.
   Passive tools: `domain_security`, `subfinder`, `alterx`, `dnsx`,
   `historical_urls`, `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`,
   `shodan`, `typosquat`, `breach_check`, `github_secrets`, `github_recon`,
-  `dns_history`.
+  `dns_history`, `asn_cluster`.
 - **Active** (`active=True`): probes the target directly (port scans, HTTP/TLS/SSH
   connections, crawling, vuln templates, AXFR/SMTP/mta-sts probes). **Requires
   `DomainAuthorization`.**
@@ -865,6 +866,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_subfinder.py` | 10 | JSON parser, dedup, hostname normalization |
 | `tests/unit/test_subscan.py` | 12 | Targeted re-scan of a single tool / subset |
 | `tests/unit/test_typosquat.py` | 36 | candidate generation (all 8 techniques, uniqueness, no-original, www-strip, cap/truncation-logged), passive DNS registration check (A/MX/NS, NXDOMAIN + timeout never raise), weaponization homepage probe (login form + brand mention flagged, fetch failure graceful), analyzer severity (A/MX → medium, NS-only → low, login-form/brand → high), scanner (saves + never-raises), concurrent collect (order-preserving, all-registered-checked, fetch cap) |
+| `tests/unit/test_asn_cluster.py` | 13 | Lookalike ASN clustering — meta (passive/group), Team Cymru IP→ASN parse (asn/prefix/name, space-list ASN, non-IPv4 + DNS-failure → None), clustering (≥2 same-ASN → finding, single → none, weaponized → high, unresolved-IPs ignored), scanner (<2 lookalikes no-op, persists, skips IP-less, no lookup when nothing to cluster) |
 | `tests/unit/test_takeover_check.py` | 35 | collector (missing binary, bad JSON, happy path), analyzer (vulnerable/non-vulnerable, FK link, dedup), scanner |
 | `tests/unit/test_tls_checker.py` | 87 | Cert parsing, ciphers, protocols, HSTS, collector, scanner, cipher enumeration |
 | `tests/unit/test_tools_healthcheck.py` | 14 | Tool binary preflight / health checks |
@@ -898,6 +900,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1857 tests** (1811 fast + 46 slow domain_security)
+**Total: 1870 tests** (1824 fast + 46 slow domain_security)
 
 Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.

@@ -12,6 +12,8 @@ _EXPECTED_FULL_SCAN = {
     "asn_discovery", "js_secrets",
     # added in 0031 — the active probes split out of domain_security
     "domain_probe",
+    # added in 0032 — lookalike ASN clustering
+    "asn_cluster",
 }
 
 
@@ -77,7 +79,7 @@ def test_forward_is_idempotent_and_fills_gaps():
 
     tools = set(wf.steps.values_list("tool", flat=True))
     # 0021 restores its own canonical 18; asn_discovery/js_secrets are added by
-    # 0023 and domain_probe by 0031, so exclude those from this migration's check.
-    assert (_EXPECTED_FULL_SCAN - {"asn_discovery", "js_secrets", "domain_probe"}) <= tools
+    # 0023, domain_probe by 0031, asn_cluster by 0032 — exclude those here.
+    assert (_EXPECTED_FULL_SCAN - {"asn_discovery", "js_secrets", "domain_probe", "asn_cluster"}) <= tools
     # no duplicates introduced
     assert wf.steps.count() == len(set(wf.steps.values_list("tool", flat=True)))
