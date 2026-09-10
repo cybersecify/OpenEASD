@@ -7,6 +7,20 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.10.1] — 2026-09-10
+
+### Fixed
+- **SPA entry point is no longer cacheable (stale UI after deploy).** After
+  v2.10.0, prod still showed the old UI (Assets/Findings nav) because Cloudflare
+  had cached `index.html` (`max-age=3600`), so browsers loaded the previous
+  content-hashed JS bundle while the backend was already new. The SPA catch-all
+  now serves `index.html` with `Cache-Control: no-store` so the mutable entry
+  point always revalidates; content-hashed `/static/` assets keep their long
+  cache. Same class of fix as `/health` (which already set `no-store` after
+  Cloudflare cached `/api/version`). **Note:** a CDN that ignores origin
+  Cache-Control still needs its cache rule adjusted to bypass the HTML document,
+  and a one-time cache purge to clear the currently-stale copy.
+
 ## [v2.10.0] — 2026-09-10
 
 ### Changed
@@ -1247,7 +1261,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.10.0...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.10.1...HEAD
+[v2.10.1]: https://github.com/cybersecify/OpenEASD/compare/v2.10.0...v2.10.1
 [v2.10.0]: https://github.com/cybersecify/OpenEASD/compare/v2.9.1...v2.10.0
 [v2.9.1]: https://github.com/cybersecify/OpenEASD/compare/v2.9.0...v2.9.1
 [v2.9.0]: https://github.com/cybersecify/OpenEASD/compare/v2.8.0...v2.9.0
