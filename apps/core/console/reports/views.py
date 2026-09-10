@@ -44,7 +44,7 @@ _SCOPE_BY_SOURCE = {
 }
 _SCOPE_BY_CHECK = {
     "rdap": "Domain", "dns": "DNS", "caa": "DNS", "dnssec": "DNS",
-    "open_relay": "Email / DNS",
+    "open_relay": "Email / DNS", "lookalike_cluster": "Attack Surface",
 }
 
 # CWE mapping per check_type. Unmapped check types render "—".
@@ -121,6 +121,8 @@ _CWE_BY_CHECK = {
     # A registered lookalike domain is infrastructure built to be visually
     # confused with the org's real domain — the essence of CWE-451.
     "lookalike_domain": "CWE-451: User Interface (UI) Misrepresentation of Critical Information",
+    # asn_cluster — lookalikes sharing one ASN = coordinated impersonation infra.
+    "lookalike_cluster": "CWE-451: User Interface (UI) Misrepresentation of Critical Information",
     # github_recon — infra references (internal hostnames/subdomains, cloud-bucket
     # URLs, API endpoints) and the public-repo surface leaked in the org's PUBLIC
     # GitHub source. CWE-200 (Exposure of Sensitive Information to an Unauthorized
@@ -622,6 +624,11 @@ _NEXT_STEPS_BY_CHECK = {
         "Remove it from the code and load it from a secret manager or environment variable.",
         "Purge it from git history if it was committed.",
     ],
+    "lookalike_cluster": [
+        "Treat the clustered domains as one campaign — file takedowns together.",
+        "Report the shared network (the named ASN) to its hosting provider / registrar.",
+        "Add the ASN and domains to your monitoring/blocklists and watch for new lookalikes on it.",
+    ],
 }
 
 
@@ -734,8 +741,8 @@ _CEO_QUESTIONS = [
      lambda g: g["source"] == "domain_security" and g["check_type"] in ("rdap", "dnssec")),
     ("Are staff logins stolen?", {"hudson_rock", "breach_check"},
      lambda g: g["source"] in ("hudson_rock", "breach_check")),
-    ("Is anyone impersonating us?", {"typosquat"},
-     lambda g: g["source"] == "typosquat"),
+    ("Is anyone impersonating us?", {"typosquat", "asn_cluster"},
+     lambda g: g["source"] in ("typosquat", "asn_cluster")),
     ("Did we leak keys?", {"js_secrets", "github_secrets"},
      lambda g: g["source"] in ("js_secrets", "github_secrets") or g["check_type"] == "exposed_secret"),
 ]

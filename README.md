@@ -164,7 +164,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ## Features
 
-- **Automated pipeline**: 29-tool scan workflow from domain to findings
+- **Automated pipeline**: 30-tool scan workflow from domain to findings
 - **Network attack surface scanning**: CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
 - **CVE prioritisation**: EPSS exploit-probability scores + CISA KEV (known-exploited-in-the-wild) flags enrich CVE findings in place, so you triage by real-world risk rather than severity alone
 - **Dynamic workflows**: Create custom scan configurations, enable/disable tools per workflow
@@ -195,6 +195,8 @@ Phase 1  Typosquat          - Lookalike / typosquat domain detection (passive;
                              registered lookalikes via public DNS — phishing/brand abuse)
 Phase 1  DNS History        - Historical A/AAAA/MX records via a passive-DNS
                              dataset (passive; BYO DNS_HISTORY_API_URL)
+Phase 12 ASN Clustering     - Groups registered lookalikes by shared hosting ASN
+                             (Team Cymru, passive) — coordinated phishing infra
 
 ── Data Leak ────────────────────────────────────────────────────────────────
 Phase 1  Hudson Rock        - Infostealer-log exposure via Hudson Rock's keyless

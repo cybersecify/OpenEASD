@@ -25,6 +25,8 @@ _PASSIVE = {
     # domain_security is passive now that its active probes (AXFR/open-relay/
     # MTA-STS fetch) were split out into domain_probe.
     "domain_security",
+    # asn_cluster does IP→ASN via Team Cymru (third party) — never the target.
+    "asn_cluster",
 }
 _ACTIVE = {
     "domain_probe", "amass", "takeover_check", "naabu", "service_detection",
