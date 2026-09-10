@@ -7,6 +7,20 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.9.0] — 2026-09-10
+
+### Added
+- **In-app finding detail view.** Clicking a finding title now opens a detail
+  modal with the full **description**, **remediation**, and **vulnerability
+  intelligence** (CVE / CVSS / EPSS / CISA-KEV, pulled from the finding's
+  `extra`). Wired into both places findings are listed — the Findings page and
+  the Scan Detail findings tab — with titles rendered as clickable buttons.
+  **Why:** that detail already existed (it fills the PDF report) but was
+  unreachable in the app; you previously had to export CSV/PDF to see *why* a
+  finding matters or *how* to fix it. Frontend-only — the finding rows already
+  carry the full object, so the modal renders with no extra fetch. Built on the
+  existing `AlertDialog` primitive (Escape/backdrop close), with unit tests.
+
 ## [v2.8.0] — 2026-09-10
 
 ### Added
@@ -1177,7 +1191,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.8.0...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.9.0...HEAD
+[v2.9.0]: https://github.com/cybersecify/OpenEASD/compare/v2.8.0...v2.9.0
 [v2.8.0]: https://github.com/cybersecify/OpenEASD/compare/v2.7.0...v2.8.0
 [v2.7.0]: https://github.com/cybersecify/OpenEASD/compare/v2.6.0...v2.7.0
 [v2.6.0]: https://github.com/cybersecify/OpenEASD/compare/v2.5.0...v2.6.0
