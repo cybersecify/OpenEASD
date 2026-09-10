@@ -208,13 +208,26 @@ def _check_bimi(session, domain) -> list:
     return findings
 
 
+def _stamp(findings, control):
+    """Tag each finding with the email control it concerns (spf/dmarc/dkim/…).
+
+    All email findings share check_type="email", so the report can't tell them
+    apart by check_type. This stable `extra["control"]` key lets the report
+    attach the right per-control copy (business impact, and future CEO-question
+    grouping / next-step guidance) instead of the copy silently not rendering.
+    """
+    for f in findings:
+        f.extra = {**(f.extra or {}), "control": control}
+    return findings
+
+
 def collect_and_analyze(session, domain) -> list:
     """Run all email security checks and return list of DomainFinding objects (not yet saved)."""
     findings = []
-    findings += _check_spf(session, domain)
-    findings += _check_dmarc(session, domain)
-    findings += _check_dkim(session, domain)
-    findings += _check_mta_sts(session, domain)
-    findings += _check_tls_rpt(session, domain)
-    findings += _check_bimi(session, domain)
+    findings += _stamp(_check_spf(session, domain), "spf")
+    findings += _stamp(_check_dmarc(session, domain), "dmarc")
+    findings += _stamp(_check_dkim(session, domain), "dkim")
+    findings += _stamp(_check_mta_sts(session, domain), "mta_sts")
+    findings += _stamp(_check_tls_rpt(session, domain), "tls_rpt")
+    findings += _stamp(_check_bimi(session, domain), "bimi")
     return findings
