@@ -1,6 +1,6 @@
 """Dashboard API router."""
 
-from django.db.models import Count, Max
+from django.db.models import Max
 
 from ninja import Router
 
@@ -12,10 +12,6 @@ from apps.core.console.insights.models import ScanSummary
 from apps.core.data.assets.models import Subdomain, IPAddress, Port
 from apps.core.data.web_assets.models import URL
 from apps.core.data.asset_inventory.models import Asset
-from apps.core.engine.workflows.registry import get_tool_phase_groups
-
-# The primary recon category, surfaced as a featured card on the dashboard.
-PRIMARY_CATEGORY = "Domain Intelligence"
 
 router = Router(auth=JWTAuth())
 
@@ -106,28 +102,6 @@ def api_dashboard(request):
     assets_active = inventory.filter(status="active").count()
     assets_gone = inventory.filter(status="gone").count()
 
-    # Featured "Domain Intelligence" category card — findings from the primary
-    # recon category (its tools resolved from the registry, so it stays correct
-    # as tools are added/removed) on the latest completed scans, by severity.
-    di_sources = [t for t, g in get_tool_phase_groups().items() if g == PRIMARY_CATEGORY]
-    di_by_sev = {
-        row["severity"]: row["c"]
-        for row in Finding.objects
-        .filter(session_id__in=latest_completed_ids, source__in=di_sources)
-        .values("severity")
-        .annotate(c=Count("id"))
-    }
-    domain_intelligence = {
-        "category": PRIMARY_CATEGORY,
-        "tool_count": len(di_sources),
-        "total": sum(di_by_sev.values()),
-        "critical": di_by_sev.get("critical", 0),
-        "high": di_by_sev.get("high", 0),
-        "medium": di_by_sev.get("medium", 0),
-        "low": di_by_sev.get("low", 0),
-        "info": di_by_sev.get("info", 0),
-    }
-
     return {
         "kpi_domains": len(active_domains),
         "kpi_active_scans": running_count,
@@ -139,7 +113,6 @@ def api_dashboard(request):
         "kpi_ips": asset_counts["ips"],
         "kpi_ports": asset_counts["ports"],
         "kpi_urls": asset_counts["urls"],
-        "domain_intelligence": domain_intelligence,
         "domain_status": domain_status,
         "urgent_findings": [
             {

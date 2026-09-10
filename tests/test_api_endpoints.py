@@ -322,15 +322,6 @@ class TestDashboard:
         res = client.get("/api/dashboard/")
         assert res.status_code == 401
 
-    def test_features_domain_intelligence_category(self, auth_client, db):
-        """The dashboard surfaces the primary Domain Intelligence category card."""
-        res = auth_client.get("/api/dashboard/")
-        di = res.json()["domain_intelligence"]
-        assert di["category"] == "Domain Intelligence"
-        assert di["tool_count"] >= 1
-        for k in ("total", "critical", "high", "medium", "low", "info"):
-            assert k in di
-
 
 # ---------------------------------------------------------------------------
 # Domains
