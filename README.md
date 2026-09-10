@@ -212,7 +212,9 @@ Phase 3  Amass             - Active subdomain enumeration
 Phase 3  Alterx            - Subdomain permutation from discovered subdomains
 Phase 3  ASN Discovery     - Owned ASN/CIDR ranges via amass intel (reports only)
 Phase 4  DNSx              - DNS resolution, public IP filtering
-Phase 5  Takeover Check    - Subdomain takeover detection via subzy
+
+── Asset Exposure ───────────────────────────────────────────────────────────
+Phase 5  Takeover Check    - Subdomain takeover detection via subzy (dangling DNS)
 Phase 5  Cloud Assets      - Public S3/Azure/GCP bucket enumeration (cloud_enum)
 
 ── Port Discovery ───────────────────────────────────────────────────────────
