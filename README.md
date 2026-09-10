@@ -230,7 +230,7 @@ Phase 8  httpx             - Web probing, URL discovery, technology fingerprinti
 Phase 9  Historical URLs   - Archived URL discovery via gau
 Phase 10 Katana            - Deep URL crawl on top of httpx
 Phase 11 Nuclei            - Web vulnerability scanning (community templates)
-Phase 11 Web Checker       - Security headers, cookies, CORS analysis
+Phase 11 Web Checker       - Security headers, cookies, CORS; security.txt (RFC 9116)
 
 ── Prioritization ───────────────────────────────────────────────────────────
 Phase 12 CVE Intel         - Enrich CVE findings with EPSS + CISA KEV

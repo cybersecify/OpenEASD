@@ -8,6 +8,18 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Added
+- **security.txt (RFC 9116) responsible-disclosure check.** `web_checker` now
+  checks whether the scan's **primary domain** publishes a `security.txt` at
+  `/.well-known/security.txt` — the standard, machine-readable way a researcher
+  finds out how to report a vulnerability. Absent → **info** finding; present but
+  **expired** (`Expires:` in the past) → **low**; present and current → nothing.
+  **Why:** a missing or lapsed disclosure contact quietly delays every inbound
+  vulnerability report. Scoped to the apex/www origin only (the policy is
+  domain-root, per the RFC) so it fires at most once per scan instead of once per
+  subdomain, and a 200 that's really an SPA catch-all HTML page is rejected (must
+  carry a `Contact:` line, must not be HTML) so it never reports a false positive.
+  Folded into the existing `web_checker` tool — no new registration, tool-count,
+  or Full-Scan change. Fail-graceful (a fetch error is logged, never raised).
 - **"Since Your Last Scan" report block + alert line.** The PDF report now opens
   (right under the Exposure Score) with what changed versus the domain's previous
   scan — **N new / N resolved / N still-open** findings, plus a list of the new

@@ -103,6 +103,10 @@ _CWE_BY_CHECK = {
     "server_version_disclosure": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
     "server_poweredby_disclosure": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
     "directory_listing": "CWE-548: Exposure of Information Through Directory Listing",
+    # Responsible disclosure — no/lapsed machine-readable way to report a vuln.
+    # CWE-1059 captures the missing security-facing documentation/process.
+    "missing_security_txt": "CWE-1059: Insufficient Technical Documentation",
+    "expired_security_txt": "CWE-1059: Insufficient Technical Documentation",
     # Attack surface / cloud / secrets / intel
     "subdomain_takeover": "CWE-284: Improper Access Control",
     "open_cloud_bucket": "CWE-732: Incorrect Permission Assignment for Critical Resource",
