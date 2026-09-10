@@ -117,10 +117,14 @@ jobs:
         run: cd frontend && npm run build
 
   docker:
-    # One job (kept named "Docker Build" — a required status check) that builds
-    # both image targets. NOT a matrix: a matrix would report as
-    # "Docker Build (web)"/"(worker)" and the required "Docker Build" context
-    # would never report, permanently blocking the PR.
+    # PR-only build gate. On PRs this proves both images build and warms the
+    # type=gha cache; on main/tag pushes it's SKIPPED because the `publish` job
+    # rebuilds+pushes anyway (from that warm cache) — building here too would be a
+    # redundant full worker build on the release critical path. Kept as ONE job
+    # named "Docker Build" (a required status check); NOT a matrix, or the context
+    # would report as "Docker Build (web)"/"(worker)" and the required check would
+    # never report, permanently blocking the PR.
+    if: github.event_name == 'pull_request'
     name: Docker Build
     runs-on: ubuntu-24.04
 
@@ -153,7 +157,10 @@ jobs:
   publish:
     name: Publish to GHCR
     runs-on: ubuntu-24.04
-    needs: [test, frontend, docker]
+    # NOT `needs: docker` — docker is PR-only and would be skipped here, which
+    # would cascade-skip publish. publish is the sole builder on release and
+    # reuses the type=gha cache the PR's docker job warmed.
+    needs: [test, frontend]
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: read

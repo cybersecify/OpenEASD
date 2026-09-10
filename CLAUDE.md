@@ -109,8 +109,8 @@ git describe --tags --abbrev=0
 - **4 jobs:**
   - `test` — ruff (lint), pytest (fast, excludes `test_domain_security.py`) against a **`postgres:17-alpine` service container** (DB_* env) with a **coverage gate** (`--cov-fail-under=80`; config in `[tool.coverage.run]`, ~83% currently), bandit (SAST), pip-audit (CVE scan)
   - `frontend` — `npm ci`, `npm run test:run` (Vitest + Testing Library, happy-dom env), `npm run build`
-  - `docker` — matrix over the `web` + `worker` build targets, `docker buildx build` for `linux/amd64` (no push, cache check per target)
-  - `publish` — matrix over `web` + `worker`; builds `linux/amd64` and pushes to `ghcr.io/cybersecify/openeasd-web` and `-worker`
+  - `docker` — **PR-only** build gate (`if: github.event_name == 'pull_request'`): one job building both `web` + `worker` targets for `linux/amd64` (no push), warming the `type=gha` cache. **Skipped on main/tag pushes** — `publish` rebuilds+pushes from that warm cache there, so building here too would be a redundant full worker build on the release path.
+  - `publish` — matrix over `web` + `worker`; builds `linux/amd64` and pushes to `ghcr.io/cybersecify/openeasd-web` and `-worker`. `needs: [test, frontend]` only (NOT `docker`, which is PR-only and would cascade-skip publish); it's the sole image builder on release.
 - **Publish triggers:** every push to `main` (`:latest` tag) and `v*` git tags. A tag push emits both the full `:vX.Y.Z` (from `type=ref,event=tag`) and a floating `:vX.Y` major.minor tag (from `type=match,pattern=v\d+\.\d+`) so downstream can pin to a minor line and still get patch updates
 - Runner: `ubuntu-24.04`, Python 3.12, `uv sync --group dev` for deps, `libcairo2-dev gcc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0` system deps required (WeasyPrint PDF rendering)
 - `pip-audit --ignore-vuln PYSEC-2025-183` — disputed PyJWT weak-key-length CVE, no fix available
