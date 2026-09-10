@@ -7,6 +7,19 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Standardized on Python 3.12 across every tier.** The web image and CI had
+  drifted onto Python 3.14 (a `python:3.14-slim` web base + `setup-python: 3.14`)
+  while the worker ran Ubuntu 24.04's Python 3.12 — so CI tested a Python the
+  production scanner tier never ran, and vice-versa. Pinned everything to 3.12:
+  web image `python:3.14-slim` → `python:3.12-slim`, CI `setup-python` 3.14 →
+  3.12, `requires-python` `>=3.11` → `>=3.12`, `.python-version` 3.11 → 3.12
+  (local dev), and the `refresh-backports` workflow 3.11 → 3.12. **Why:** one
+  interpreter across dev, CI, web, and worker removes version skew — CI now
+  exercises the exact Python that ships in both prod images. 3.12 is the mature,
+  fully-wheel-supported choice already validated on the worker. `uv.lock`
+  refreshed (drops the 3.11-only resolution branch).
+
 ## [v2.9.0] — 2026-09-10
 
 ### Added
