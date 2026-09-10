@@ -828,6 +828,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_dnsx.py` | 21 | Public IP filter, analyzer, scanner |
 | `tests/unit/test_domain_authorization.py` | 10 | DomainAuthorization model + scan-entry gating |
 | `tests/unit/test_domain_security.py` | 46 | Passive DNS/DNSSEC/email-auth/RDAP — **slow, real network** (active AXFR/open-relay/MTA-STS tests moved to test_domain_probe) |
+| `tests/unit/test_domain_security_email.py` | 15 | Email-auth DEPTH (fast, mocked): SPF neutral/no-all/soft-fail/+all, RFC-7208 lookup-limit (>10 permerror / near-limit) + counter; DMARC p/quarantine, sp=none-not-misread-as-p=none regression, pct<100, missing rua, malformed pct |
 | `tests/unit/test_domain_probe.py` | 17 | Active domain probes — tool_meta (active/runner/group), AXFR zone transfer, MTA-STS policy fetch, SMTP open-relay (all mocked, source="domain_probe"), orchestrator stamps controls |
 | `tests/unit/test_domains.py` | 13 | Domain CRUD |
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
@@ -897,6 +898,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1842 tests** (1796 fast + 46 slow domain_security)
+**Total: 1857 tests** (1811 fast + 46 slow domain_security)
 
 Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.

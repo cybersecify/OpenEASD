@@ -7,6 +7,21 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **Deeper email-authentication checks in `domain_security`.** Beyond present/absent
+  SPF/DMARC, the phase-1 passive check now catches the gaps that actually let mail
+  be spoofed or silently unprotected:
+  - **SPF:** neutral `?all` and *no* `all` mechanism (both = no protection); and the
+    **RFC 7208 ten-DNS-lookup limit** — over 10 lookups SPF returns permerror and is
+    silently ignored (**high**), with a **near-limit** warning at 8–10 (nested
+    includes can tip it over).
+  - **DMARC:** subdomain policy `sp=none` under an enforcing `p=` (subdomains left
+    spoofable), partial enforcement `pct<100`, and missing `rua=` (no reporting
+    visibility).
+  - **Bug fix:** the old DMARC check used `"p=none" in record`, which substring-matches
+    `sp=none` — a `p=reject; sp=none` record was mis-reported as `p=none`. Now parsed
+    by tag. Passive, no new tool. Fast mocked tests in `test_domain_security_email.py`.
+
 ## [v2.12.0] — 2026-09-10
 
 ### Changed

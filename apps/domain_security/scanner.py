@@ -333,6 +333,27 @@ def _get_txt_record(domain) -> list:
         return []
 
 
+_SPF_LOOKUP_LIMIT = 10  # RFC 7208 §4.6.4 — over this, receivers return permerror.
+
+
+def _spf_lookup_count(spf: str) -> int:
+    """Count the DNS-lookup-causing mechanisms in an SPF record (include / a / mx /
+    ptr / exists / redirect). Top-level only — nested includes can push the real
+    total higher, so a count near the limit is still a risk."""
+    count = 0
+    for term in spf.split()[1:]:  # skip the "v=spf1" version token
+        t = term.lstrip("+-~?").lower()
+        if t.startswith(("include:", "exists:", "redirect=")):
+            count += 1
+        elif t == "a" or t.startswith(("a:", "a/")):
+            count += 1
+        elif t == "mx" or t.startswith(("mx:", "mx/")):
+            count += 1
+        elif t == "ptr" or t.startswith("ptr:"):
+            count += 1
+    return count
+
+
 def _check_spf(session, domain) -> list:
     findings = []
     txt_records = _get_txt_record(domain)
@@ -346,26 +367,84 @@ def _check_spf(session, domain) -> list:
             description=f"{domain} has no SPF record. Anyone can spoof email from this domain.",
             remediation="Add a TXT record: v=spf1 include:<your-mail-provider> -all",
         ))
-    else:
-        spf = spf_records[0]
-        if "~all" in spf:
-            findings.append(Finding(
+        return findings
+
+    spf = spf_records[0]
+
+    # Policy strength — the trailing `all` qualifier decides what happens to mail
+    # that isn't from an authorised sender.
+    if "+all" in spf:
+        findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
-                severity="medium",
-                title="SPF policy is soft fail (~all)",
-                description="SPF is set to ~all (soft fail). Spoofed emails may still be delivered.",
-                remediation="Change ~all to -all for strict enforcement.",
-                extra={"spf_record": spf},
-            ))
-        elif "+all" in spf:
-            findings.append(Finding(
+            severity="critical",
+            title="SPF policy allows all senders (+all)",
+            description="SPF +all means any server can send email as this domain.",
+            remediation="Change +all to -all immediately.",
+            extra={"spf_record": spf},
+        ))
+    elif "~all" in spf:
+        findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
-                severity="critical",
-                title="SPF policy allows all senders (+all)",
-                description="SPF +all means any server can send email as this domain.",
-                remediation="Change +all to -all immediately.",
-                extra={"spf_record": spf},
-            ))
+            severity="medium",
+            title="SPF policy is soft fail (~all)",
+            description="SPF is set to ~all (soft fail). Spoofed emails may still be delivered.",
+            remediation="Change ~all to -all for strict enforcement.",
+            extra={"spf_record": spf},
+        ))
+    elif "?all" in spf:
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
+            severity="medium",
+            title="SPF policy is neutral (?all)",
+            description=(
+                "SPF ?all provides no protection — receivers treat an unauthorised "
+                "sender's result as neutral, so spoofed mail is not rejected."
+            ),
+            remediation="Change ?all to -all for strict enforcement.",
+            extra={"spf_record": spf},
+        ))
+    elif not any(q in spf for q in ("-all", "~all", "+all", "?all")):
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
+            severity="medium",
+            title="SPF record has no 'all' mechanism",
+            description=(
+                "The SPF record has no trailing all mechanism, so it defaults to "
+                "neutral (?all) — unauthorised senders are not rejected."
+            ),
+            remediation="Append -all to the SPF record for strict enforcement.",
+            extra={"spf_record": spf},
+        ))
+
+    # RFC 7208 DNS-lookup limit — over 10 lookups, receivers return permerror and
+    # SPF is silently NOT applied (protection fails without any visible error).
+    lookups = _spf_lookup_count(spf)
+    if lookups > _SPF_LOOKUP_LIMIT:
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
+            severity="high",
+            title="SPF exceeds the 10 DNS-lookup limit",
+            description=(
+                f"The SPF record uses {lookups} DNS-lookup mechanisms; RFC 7208 caps "
+                "this at 10. Over the limit, receivers return permerror and SPF is not "
+                "applied — spoofing protection silently fails."
+            ),
+            remediation="Reduce include/a/mx/redirect mechanisms, or flatten includes.",
+            extra={"spf_record": spf, "lookups": lookups},
+        ))
+    elif lookups >= _SPF_LOOKUP_LIMIT - 2:
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
+            severity="medium",
+            title="SPF is near the 10 DNS-lookup limit",
+            description=(
+                f"The SPF record uses {lookups} top-level DNS-lookup mechanisms. Nested "
+                "includes can push the real total over the RFC 7208 limit of 10, at "
+                "which point SPF fails with permerror."
+            ),
+            remediation="Trim or flatten includes to stay well under 10 lookups.",
+            extra={"spf_record": spf, "lookups": lookups},
+        ))
 
     return findings
 
@@ -383,25 +462,87 @@ def _check_dmarc(session, domain) -> list:
             description=f"{domain} has no DMARC record. Email spoofing is not prevented.",
             remediation=f"Add a TXT record at _dmarc.{domain}: v=DMARC1; p=reject; rua=mailto:dmarc@{domain}",
         ))
-    else:
-        if "p=none" in dmarc:
-            findings.append(Finding(
+        return findings
+
+    # Parse the record into tags — substring checks ("p=none" in dmarc) are
+    # wrong: "p=none" is a substring of "sp=none", so p=reject; sp=none would be
+    # mis-read as p=none.
+    tags: dict[str, str] = {}
+    for part in dmarc.split(";"):
+        if "=" in part:
+            key, _, val = part.partition("=")
+            tags[key.strip().lower()] = val.strip()
+    policy = tags.get("p", "").lower()
+    subpolicy = tags.get("sp", "").lower()
+    rua = tags.get("rua", "")
+
+    # Policy strength.
+    if policy == "none":
+        findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
-                severity="medium",
-                title="DMARC policy is none (monitoring only)",
-                description="DMARC p=none means no action is taken on failing emails.",
-                remediation="Change DMARC policy to p=quarantine or p=reject.",
-                extra={"dmarc_record": dmarc},
-            ))
-        elif "p=quarantine" in dmarc:
-            findings.append(Finding(
+            severity="medium",
+            title="DMARC policy is none (monitoring only)",
+            description="DMARC p=none means no action is taken on failing emails.",
+            remediation="Change DMARC policy to p=quarantine or p=reject.",
+            extra={"dmarc_record": dmarc},
+        ))
+    elif policy == "quarantine":
+        findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
-                severity="low",
-                title="DMARC policy is quarantine (not reject)",
-                description="DMARC p=quarantine sends failing emails to spam. p=reject is stronger.",
-                remediation="Consider upgrading DMARC policy to p=reject.",
-                extra={"dmarc_record": dmarc},
-            ))
+            severity="low",
+            title="DMARC policy is quarantine (not reject)",
+            description="DMARC p=quarantine sends failing emails to spam. p=reject is stronger.",
+            remediation="Consider upgrading DMARC policy to p=reject.",
+            extra={"dmarc_record": dmarc},
+        ))
+
+    # Subdomain policy weaker than the domain policy — subdomains left spoofable.
+    if subpolicy == "none" and policy in ("quarantine", "reject"):
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
+            severity="medium",
+            title="DMARC subdomain policy is none (sp=none)",
+            description=(
+                f"{domain} enforces DMARC (p={policy}) but sets sp=none, so its "
+                "SUBDOMAINS are unprotected — an attacker can spoof mail from any "
+                "subdomain."
+            ),
+            remediation="Remove sp=none (subdomains inherit p) or set sp=reject.",
+            extra={"dmarc_record": dmarc},
+        ))
+
+    # Partial enforcement — pct<100 applies the policy to only some failing mail.
+    pct_raw = tags.get("pct", "")
+    try:
+        pct = int(pct_raw) if pct_raw else 100
+    except ValueError:
+        pct = 100
+    if pct < 100:
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
+            severity="low",
+            title="DMARC is only partially enforced (pct<100)",
+            description=(
+                f"DMARC pct={pct} applies the policy to only {pct}% of failing mail; "
+                "the rest is delivered, diluting protection."
+            ),
+            remediation="Set pct=100 (or omit pct, which defaults to 100).",
+            extra={"dmarc_record": dmarc, "pct": pct},
+        ))
+
+    # No aggregate reporting — no visibility into who is sending as the domain.
+    if not rua:
+        findings.append(Finding(
+            session=session, source="domain_security", target=domain, check_type="email",
+            severity="low",
+            title="DMARC has no aggregate reporting (rua)",
+            description=(
+                f"{domain}'s DMARC record has no rua= address, so there is no visibility "
+                "into who is sending — or spoofing — mail as this domain."
+            ),
+            remediation=f"Add rua=mailto:dmarc@{domain} to receive aggregate reports.",
+            extra={"dmarc_record": dmarc},
+        ))
 
     return findings
 
