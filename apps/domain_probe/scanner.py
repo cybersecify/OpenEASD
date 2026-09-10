@@ -105,6 +105,8 @@ def _check_zone_transfer(session, domain, ns_records) -> list:
                 ))
                 break
         except Exception:
+            # A refused / timed-out AXFR is the normal, secure case — not an
+            # error. Swallow it and move on to the next nameserver.
             pass
 
     return findings
@@ -248,6 +250,8 @@ def _check_open_relay(session, domain) -> list:
                     extra={"mx_host": mx_host, "domain": domain},
                 )]
     except Exception:
+        # A closed port / refused connection / SMTP error means no open relay —
+        # the expected, secure case. Not a finding, not an error.
         pass
 
     return []
