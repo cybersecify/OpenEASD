@@ -85,9 +85,9 @@ RUN go install github.com/lc/gau/v2/cmd/gau@${GAU_VERSION} \
     && (mv /go/bin/${TARGETOS}_${TARGETARCH}/gau /history-tools/ 2>/dev/null || mv /go/bin/gau /history-tools/)
 
 # ===========================================================================
-# WEB runtime — python:3.14-slim. UI/API + PDF reports. NO scanner tools.
+# WEB runtime — python:3.12-slim. UI/API + PDF reports. NO scanner tools.
 # ===========================================================================
-FROM python:3.14-slim AS web
+FROM python:3.12-slim AS web
 
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     VIRTUAL_ENV=/app/.venv PATH="/app/.venv/bin:/root/.local/bin:${PATH}" \
@@ -128,10 +128,10 @@ CMD ["gunicorn", "openeasd.wsgi:application", "--bind", "0.0.0.0:8000", "--worke
 # ===========================================================================
 # WORKER runtime — ubuntu:24.04. DBOS worker + full scanner matrix.
 # Ubuntu is deliberate: the tools were validated on it. No frontend/WeasyPrint.
-# It ships Ubuntu 24.04's Python (3.12) — the web image is on 3.14, an
-# intentional split (the worker's base is pinned to the OS the scanner tools were
-# validated on). The code targets requires-python >=3.11, so both are supported;
-# CI runs the suite on 3.14.
+# It ships Ubuntu 24.04's Python (3.12), matching the web image's python:3.12-slim
+# — both tiers run the same Python minor. The worker's base is pinned to the OS the
+# scanner tools were validated on. The code targets requires-python >=3.12, and CI
+# runs the suite on 3.12.
 # ===========================================================================
 FROM ubuntu:24.04 AS worker
 

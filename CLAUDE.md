@@ -6,7 +6,7 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 ## Status (v2.7.0 — 2026-09-09)
 
 - **Released**: v2.7.0 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
-  `:v2.7.0` / `:v2.7` / `:latest` (web on Python 3.14, worker on Ubuntu 24.04/3.12). 3-tier deploy: `db` (postgres:17) + `web`
+  `:v2.7.0` / `:v2.7` / `:latest` (web on python:3.12-slim, worker on Ubuntu 24.04/3.12 — both Python 3.12). 3-tier deploy: `db` (postgres:17) + `web`
   (gunicorn, no tools) + `worker` (`dbos_worker` + scanner matrix, `NET_RAW`).
 - **Scope**: 28 registered scan tools across 12 pipeline phases; single-user
   (one admin, no RBAC) by design.
