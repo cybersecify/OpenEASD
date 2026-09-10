@@ -471,11 +471,11 @@ guards that every registered tool appears in the output.
 |---|---|---|---|---|
 | `apps/domain_security/` | 1 | Domain Intelligence | Yes | **Passive** DNS/DNSSEC/CAA/wildcard/lame-delegation, email-auth (SPF/DMARC/DKIM/TLS-RPT/BIMI) via public resolvers, and RDAP (expiry/locks/status). No packets to the target — needs no authorization |
 | `apps/domain_probe/` | 1 | Domain Intelligence | Yes | **Active** domain probes split out of domain_security: AXFR zone transfer (nameservers), SMTP open-relay (MX:25), and MTA-STS policy fetch (`mta-sts.<domain>`). Touches the target directly → requires `DomainAuthorization` |
-| `apps/hudson_rock/` | 2 | Data Leak | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
+| `apps/hudson_rock/` | 2 | Credential Exposure | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
 | `apps/dns_history/` | 1 | Domain Intelligence | Yes | Historical A/AAAA/MX records via a passive-DNS dataset — surfaces past hosting / stale records (info findings). Passive, BYO `DNS_HISTORY_API_URL` (no-op if unset), fail-graceful |
-| `apps/github_secrets/` | 2 | Data Leak | Yes | Leaked secrets in PUBLIC GitHub — searches GitHub's code-search API (org-scoped by default) for the target org's committed credentials, fetches the hits, runs gitleaks over them (same engine as `js_secrets`), REDACTS before storage (`check_type="exposed_secret"`, shared with js_secrets). Passive (queries GitHub, not the target); BYOK MANDATORY (`GITHUB_TOKEN` — code-search needs auth; no token → logged no-op); fail-graceful |
+| `apps/github_secrets/` | 2 | Credential Exposure | Yes | Leaked secrets in PUBLIC GitHub — searches GitHub's code-search API (org-scoped by default) for the target org's committed credentials, fetches the hits, runs gitleaks over them (same engine as `js_secrets`), REDACTS before storage (`check_type="exposed_secret"`, shared with js_secrets). Passive (queries GitHub, not the target); BYOK MANDATORY (`GITHUB_TOKEN` — code-search needs auth; no token → logged no-op); fail-graceful |
 | `apps/typosquat/` | 1 | Domain Intelligence | Yes | Lookalike / typosquat domain detection — generates lookalike candidates algorithmically (homoglyph/typo/omission/insertion/repetition/transposition/hyphenation/TLD-swap), checks which are registered via public DNS, then scores **weaponization**: registered web-serving lookalikes get a capped, fail-graceful homepage fetch for a login form (credential phishing) or brand mention (impersonation) → **high** (active impersonation, prioritise takedown); A/MX-only → medium; NS-only → low. Passive w.r.t. the target (contacts only the lookalike domains, never yours), no key, fail-graceful. Weaponization model ported from the standalone `tldsquatting` project |
-| `apps/breach_check/` | 2 | Data Leak | Yes | Data-breach exposure for the domain. BYOK: free keyless XposedOrNot catalog by default, authoritative Have I Been Pwned `breacheddomain` when `HIBP_API_KEY` set. Aggregate COUNTS + public breach metadata only — never email aliases/credentials. Passive, fail-graceful |
+| `apps/breach_check/` | 2 | Credential Exposure | Yes | Data-breach exposure for the domain. BYOK: free keyless XposedOrNot catalog by default, authoritative Have I Been Pwned `breacheddomain` when `HIBP_API_KEY` set. Aggregate COUNTS + public breach metadata only — never email aliases/credentials. Passive, fail-graceful |
 | `apps/subfinder/` | 3 | Surface Enumeration | No | Passive subdomain enumeration |
 | `apps/amass/` | 3 | Surface Enumeration | No | Active subdomain enumeration |
 | `apps/asn_discovery/` | 3 | Surface Enumeration | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
@@ -496,7 +496,7 @@ guards that every registered tool appears in the output.
 | `apps/katana/` | 11 | Web Exposure | No | Web crawling, endpoint discovery |
 | `apps/nuclei/` | 12 | Web Exposure | Yes | Web vuln scan (community templates) |
 | `apps/web_checker/` | 12 | Web Exposure | Yes | Security headers, cookies, CORS; + security.txt (RFC 9116) responsible-disclosure check on the apex |
-| `apps/js_secrets/` | 12 | Data Leak | Yes | Hardcoded-secret detection — fetches discovered `.js` assets and runs gitleaks over them; secret is redacted before storage |
+| `apps/js_secrets/` | 12 | Credential Exposure | Yes | Hardcoded-secret detection — fetches discovered `.js` assets and runs gitleaks over them; secret is redacted before storage |
 | `apps/cve_intel/` | 13 | Prioritization | No | Enriches CVE findings in place with EPSS scores + CISA KEV flags (no new findings) |
 | `apps/asn_cluster/` | 13 | Domain Intelligence | Yes | Lookalike ASN clustering — reads typosquat's `lookalike_domain` findings, resolves their IPs to ASNs via Team Cymru (keyless DNS), and groups lookalikes sharing an autonomous system into `lookalike_cluster` campaign findings (weaponized member → high). Passive, fail-graceful, `requires: [typosquat]` |
 
@@ -524,7 +524,7 @@ Phase 1  domain_security    → Finding (DNS/DNSSEC/email-auth/RDAP — passive)
 Phase 1  domain_probe        → Finding (AXFR / open-relay / MTA-STS fetch — active)
 Phase 1  typosquat           → Finding (registered lookalike/typosquat domains via public DNS — passive)
 Phase 1  dns_history         → Finding (historical A/AAAA/MX records via passive DNS — passive)
-Phase 2  hudson_rock         → Finding (infostealer exposure via Hudson Rock — passive)      ┐ Data Leak
+Phase 2  hudson_rock         → Finding (infostealer exposure via Hudson Rock — passive)      ┐ Credential Exposure
 Phase 2  github_secrets      → Finding (leaked secrets in public GitHub via gitleaks — passive)│
 Phase 2  breach_check        → Finding (data-breach exposure: XposedOrNot / HIBP — passive)   ┘
 Phase 3  subfinder          → Subdomain (passive enumeration)
@@ -547,7 +547,7 @@ Phase 10 historical_urls    → URL (gau — archived endpoints)
 Phase 11 katana             → URL (web crawling, endpoint discovery)
 Phase 12 nuclei             → Finding (web vulns via templates on URLs)
 Phase 12 web_checker        → Finding (headers, cookies, CORS on URLs; + security.txt RFC 9116 on apex)
-Phase 12 js_secrets         → Finding (gitleaks over fetched .js assets — secret redacted)     [Data Leak]
+Phase 12 js_secrets         → Finding (gitleaks over fetched .js assets — secret redacted)     [Credential Exposure]
 Phase 13 cve_intel          → enriches CVE findings (EPSS + CISA KEV; no new findings)
 Phase 13 asn_cluster        → Finding (groups lookalikes by shared hosting ASN — passive)     [Domain Intelligence]
 ```
@@ -877,7 +877,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_insights_builder.py` | 4 | FindingTypeSummary prune only when aggregation_complete |
 | `tests/unit/test_exposure_score.py` | 38 | Exposure Score — formula (clean=0, weights, saturation cap), grade bands, trend delta (up/down/flat/no-baseline), builder populates ScanSummary, insights + dashboard API fields, PDF report exposure block |
 | `tests/unit/test_web_checker.py` | 58 | Headers, cookies, CORS, disclosure, collector; security.txt (RFC 9116) — expires parsing, SPA-catch-all guard, missing=info/expired=low findings, reachable-vs-absent (unreachable ⇒ no false "missing"), apex-only collection + fail-graceful |
-| `tests/unit/test_passive_scan.py` | 27 | registry `active` classification (domain_security passive / domain_probe active), `is_passive_tool_set`, Data Leak grouping, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
+| `tests/unit/test_passive_scan.py` | 27 | registry `active` classification (domain_security passive / domain_probe active), `is_passive_tool_set`, Credential Exposure grouping, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
 | `tests/unit/test_workflow_runner.py` | 35 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism (concurrent same-phase; LOW_MEMORY serialises heavy phases but light phase-1 tools still parallel) |
 | `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow with the complete 18-tool set (migration 0021), idempotent gap-fill |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |

@@ -213,7 +213,7 @@ Deletion cascades top-down: deleting a Domain wipes all session data.
 
 ```
 Phase 1   Domain Intelligence  → Finding (DNS/DNSSEC/email-auth/RDAP, domain_probe, typosquat, dns_history)
-Phase 2   Data Leak            → Finding (breach_check, hudson_rock infostealer, github_secrets)
+Phase 2   Credential Exposure            → Finding (breach_check, hudson_rock infostealer, github_secrets)
 Phase 3   Surface Enumeration  → Subdomain (subfinder/amass/alterx) + Finding (asn_discovery, github_recon)
 Phase 4   dnsx                 → IPAddress (public-IP filter)
 Phase 5   takeover / cloud     → Finding (dangling DNS, open buckets)
