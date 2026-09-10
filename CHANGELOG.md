@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.13.0] — 2026-09-11
+
 ### Added
 - **Lookalike ASN clustering — new `asn_cluster` tool.** Turns isolated
   typosquat findings into a *campaign* signal: it reads the registered
@@ -1465,7 +1467,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.12.0...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.13.0...HEAD
+[v2.13.0]: https://github.com/cybersecify/OpenEASD/compare/v2.12.0...v2.13.0
 [v2.12.0]: https://github.com/cybersecify/OpenEASD/compare/v2.11.0...v2.12.0
 [v2.11.0]: https://github.com/cybersecify/OpenEASD/compare/v2.10.1...v2.11.0
 [v2.10.1]: https://github.com/cybersecify/OpenEASD/compare/v2.10.0...v2.10.1
