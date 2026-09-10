@@ -8,8 +8,7 @@ PORT := 8001
 setup:
 	@echo "==> Syncing Python environment (uv)..."
 	uv sync --group dev
-	@echo "==> Running database migrations..."
-	@mkdir -p data
+	@echo "==> Running database migrations (needs PostgreSQL running)..."
 	uv run manage.py migrate
 	@echo "==> Installing frontend dependencies..."
 	cd frontend && npm install
@@ -57,11 +56,11 @@ createsuperuser:
 ## ── Code quality ────────────────────────────────────────────────────────────
 
 lint:
-	uv run ruff check apps/
+	uv run ruff check apps/ openeasd/ tests/
 
 format:
 	uv run black apps/
-	uv run ruff check apps/ --fix
+	uv run ruff check apps/ openeasd/ tests/ --fix
 
 test:
 	uv run pytest tests/ --ignore=tests/unit/test_domain_security.py
