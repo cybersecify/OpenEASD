@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.9.1] — 2026-09-10
+
 ### Changed
 - **Pinned Django to the 5.2 LTS line.** The dependency was `django>=5.2.17`, an
   open lower bound that floated to the latest release — so on Python ≥3.12 it
@@ -1213,7 +1215,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.9.0...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.9.1...HEAD
+[v2.9.1]: https://github.com/cybersecify/OpenEASD/compare/v2.9.0...v2.9.1
 [v2.9.0]: https://github.com/cybersecify/OpenEASD/compare/v2.8.0...v2.9.0
 [v2.8.0]: https://github.com/cybersecify/OpenEASD/compare/v2.7.0...v2.8.0
 [v2.7.0]: https://github.com/cybersecify/OpenEASD/compare/v2.6.0...v2.7.0
