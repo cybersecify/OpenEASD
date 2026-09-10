@@ -224,6 +224,13 @@
 </div>
 {% endif %}
 
+{% if rdap_unavailable %}
+<div class="risk no-break" style="border-color:#868e96;">
+  <div class="l" style="color:#868e96;">Scan Coverage — Registration Data Unavailable</div>
+  <p style="margin:6px 0 0;font-size:10px;line-height:1.5;">RDAP registration data could not be retrieved for {{ session.domain }}, so registrar, domain-expiry, and transfer/delete/update-lock checks could not be completed. This is a coverage gap, not a finding — re-run once RDAP is reachable for the domain's TLD.</p>
+</div>
+{% endif %}
+
 {% if top_risks %}
 <div class="h2">Priority Actions — Fix These First</div>
 <p class="lead">The highest-impact issues, ranked. Actively-exploited (CISA KEV) and internet-facing critical issues come first. The full list is in Section 3.</p>

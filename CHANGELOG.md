@@ -7,6 +7,19 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Trimmed the buyer-facing report (roadmap Delete/hide bucket).** These are
+  still stored and shown in the app — just removed from the exported PDF/CSV:
+  - **BIMI not configured** and **Domain update lock not enabled** findings are
+    suppressed from the report (marketing / lowest-value noise).
+  - **RDAP lookup failed** is no longer a finding in the report — it's surfaced
+    as a "Registration Data Unavailable" **coverage caveat** instead (the lookup
+    didn't fail *security*, it just couldn't be completed).
+  - **dns_history** and **github_secrets** are hidden from the report's Scope &
+    Methodology when unconfigured (no DNS-history URL / no GitHub token) — so the
+    report never implies a check that couldn't run. (Also keeps the "Did we leak
+    keys?" question honest when github_secrets is inert.)
+
 ### Added
 - **"The Five Questions" executive block in the PDF report.** The report now
   opens (in the Executive Summary) by answering the five questions a
