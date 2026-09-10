@@ -185,16 +185,18 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 ## Scan Pipeline
 
 ```
-── Domain Intelligence ──────────────────────────────────────────────────────
+── Domain Posture ───────────────────────────────────────────────────────────
 Phase 1  Domain Security   - DNS, DNSSEC chain-of-trust, email auth
                              (SPF/DMARC/DKIM/TLS-RPT/BIMI), RDAP checks (passive;
                              public resolvers + rdap.org — no auth needed)
 Phase 1  Domain Probes      - Active target probes (needs authorization): AXFR
                              zone transfer, SMTP open-relay, MTA-STS policy fetch
-Phase 1  Typosquat          - Lookalike / typosquat domain detection (passive;
-                             registered lookalikes via public DNS — phishing/brand abuse)
 Phase 1  DNS History        - Historical A/AAAA/MX records via a passive-DNS
                              dataset (passive; BYO DNS_HISTORY_API_URL)
+
+── Brand Threat ─────────────────────────────────────────────────────────────
+Phase 1  Typosquat          - Lookalike / typosquat domain detection (passive;
+                             registered lookalikes via public DNS — phishing/brand abuse)
 Phase 13 ASN Clustering     - Groups registered lookalikes by shared hosting ASN
                              (Team Cymru, passive) — coordinated phishing infra
 

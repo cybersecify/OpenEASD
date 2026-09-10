@@ -10,7 +10,7 @@ class TyposquatConfig(AppConfig):
         "label": "Lookalike / Typosquat Domains",
         "runner": "apps.typosquat.scanner.run_typosquat",
         "phase": 1,
-        "phase_group": "Domain Intelligence",
+        "phase_group": "Brand Threat",
         "requires": [],
         "produces_findings": True,
         # Passive: generates lookalike candidates algorithmically from the apex

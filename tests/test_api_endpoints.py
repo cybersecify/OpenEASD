@@ -722,7 +722,7 @@ class TestWorkflowTools:
         tools = auth_client.get("/api/workflows/tools/").json()["tools"]
         assert tools
         assert all("phase_group" in t for t in tools)
-        assert any(t["phase_group"] == "Domain Intelligence" for t in tools)
+        assert any(t["phase_group"] == "Domain Posture" for t in tools)
 
     def test_requires_auth(self, client):
         assert client.get("/api/workflows/tools/").status_code == 401

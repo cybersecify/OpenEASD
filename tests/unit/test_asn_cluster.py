@@ -35,7 +35,7 @@ class TestMeta:
 
     def test_phase_group(self):
         from apps.core.engine.workflows.registry import get_tool_phase_groups
-        assert get_tool_phase_groups().get("asn_cluster") == "Domain Intelligence"
+        assert get_tool_phase_groups().get("asn_cluster") == "Brand Threat"
 
 
 # ---------------------------------------------------------------------------

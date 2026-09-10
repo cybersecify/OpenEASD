@@ -10,7 +10,7 @@ class DomainSecurityConfig(AppConfig):
         "label": "Domain Security",
         "runner": "apps.domain_security.scanner.run_domain_security",
         "phase": 1,
-        "phase_group": "Domain Intelligence",
+        "phase_group": "Domain Posture",
         "requires": [],
         "produces_findings": True,
         # PASSIVE: DNS/DNSSEC/CAA/email-auth via public resolvers + RDAP via

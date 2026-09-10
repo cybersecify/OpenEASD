@@ -8,6 +8,13 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Changed
+- **Split "Domain Intelligence" into "Domain Posture" + "Brand Threat."** The old
+  category mixed two subjects: *your own domain's health* and *external
+  impersonation threats*. Now `domain_security`, `domain_probe`, `dns_history`
+  form **Domain Posture** (your DNS/email/RDAP health), and `typosquat` +
+  `asn_cluster` form **Brand Threat** (lookalike domains + coordinated
+  phishing-infra clusters). Split by subject (a tool-clean cut — no rewrites);
+  execution phases unchanged. 8 → 9 phase groups. Display-only `phase_group` change.
 - **Split the exposure findings out of Asset Discovery into a new "Asset
   Exposure" category.** `takeover_check` (subdomain takeover) and `cloud_assets`
   (open cloud buckets) are *findings about exposed assets*, not discovery — so
