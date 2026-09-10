@@ -55,7 +55,7 @@ export default function ReportsPage() {
     queryFn: () => apiGet(`/scans/?domain=${domain}&status=completed&page=${page}`),
   });
 
-  const scans = data?.scans ?? [];
+  const scans = data?.results ?? [];
   const domains = domainsData || [];
 
   async function handleDownload(uuid, kind) {
