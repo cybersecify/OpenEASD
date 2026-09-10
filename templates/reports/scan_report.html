@@ -424,6 +424,13 @@
   <div class="sect-lbl">Remediation</div>
   <div class="prose">{{ g.remediation }}</div>
   {% endif %}
+
+  {% if show_next_steps and g.next_steps %}
+  <div class="sect-lbl">Recommended Next Steps</div>
+  <ol class="prose" style="margin:4px 0 0;padding-left:18px;">
+    {% for step in g.next_steps %}<li style="margin:0 0 3px;">{{ step }}</li>{% endfor %}
+  </ol>
+  {% endif %}
 </div>
 {% endfor %}
 {% endfor %}

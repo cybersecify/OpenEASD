@@ -453,6 +453,8 @@ def _group_findings_by_issue(findings):
             grp["business_impact"] = _BUSINESS_IMPACT_BY_SEV.get(grp["severity"], "")
         else:
             grp["business_impact"] = ""
+        # Concrete remediation checklist (rendered on hosted reports only).
+        grp["next_steps"] = _NEXT_STEPS_BY_CHECK.get(effective_key, [])
         # Affected endpoints as a pill grid (3 per row). Capped at 50 per group
         # to prevent OOM when a single finding fires on thousands of URLs.
         endpoints = [(f.url.url if f.url else f.target) for f in grp["instances"]]
@@ -486,6 +488,140 @@ _BUSINESS_IMPACT_BY_SEV = {
     "high": "A serious weakness an external attacker can leverage.",
 }
 _SEV_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
+
+
+# Concrete, ordered "do this" steps per finding type — a remediation checklist,
+# not a paragraph. Keyed by effective key (the email `control` where findings
+# share the coarse check_type="email", else the check_type). Rendered in the
+# report's finding detail ONLY on hosted reports (REPORT_CTA configured) —
+# self-hosters still get the per-finding Remediation prose. Unmapped types render
+# nothing, so the block never shows an empty list.
+_NEXT_STEPS_BY_CHECK = {
+    # --- Web security headers (web_checker) ---
+    "missing_csp": [
+        "Ship a report-only policy first: `Content-Security-Policy-Report-Only: default-src 'self'; report-uri /csp-report`.",
+        "Review the reported violations for a week and fold legitimate origins into the policy.",
+        "Switch the header to enforcing (`Content-Security-Policy`) once violations are clean.",
+    ],
+    "missing_xfo": [
+        "Add `X-Frame-Options: DENY` (or `SAMEORIGIN` if the page is framed by your own origin).",
+        "Add a matching CSP directive for modern browsers: `Content-Security-Policy: frame-ancestors 'none'`.",
+        "Re-scan to confirm both headers are present on every page.",
+    ],
+    "missing_xcto": [
+        "Add `X-Content-Type-Options: nosniff` to all responses.",
+        "Confirm every response sets a correct `Content-Type` so nosniff doesn't break assets.",
+    ],
+    "missing_hsts": [
+        "Confirm the site is fully reachable over HTTPS.",
+        "Add `Strict-Transport-Security: max-age=31536000; includeSubDomains`.",
+        "Once stable across all subdomains, add `preload` and submit at hstspreload.org.",
+    ],
+    "weak_hsts": [
+        "Raise the HSTS `max-age` to at least 31536000 (one year).",
+        "Add `includeSubDomains` if every subdomain is HTTPS-only.",
+    ],
+    # --- Cookies (web_checker) ---
+    "cookie_missing_secure": [
+        "Set the `Secure` attribute on every cookie served over HTTPS.",
+        "For session cookies, combine with `HttpOnly` and `SameSite`.",
+    ],
+    "cookie_missing_httponly": [
+        "Set `HttpOnly` on any cookie that JavaScript does not need to read (session/auth cookies first).",
+    ],
+    "cookie_missing_samesite": [
+        "Set `SameSite=Lax` on cookies by default, or `Strict` for sensitive session cookies.",
+        "If a cookie must cross sites, use `SameSite=None; Secure` deliberately.",
+    ],
+    # --- CORS (web_checker) ---
+    "cors_wildcard_credentials": [
+        "Stop returning `Access-Control-Allow-Origin: *` together with `Access-Control-Allow-Credentials: true` — this combination is exploitable.",
+        "Echo back only origins from a server-side allowlist of trusted sites.",
+        "Re-test with an untrusted `Origin` header to confirm it is rejected.",
+    ],
+    "cors_origin_reflection": [
+        "Validate the `Origin` header against an allowlist instead of reflecting it.",
+        "Return no CORS headers for untrusted origins.",
+        "Re-test with a spoofed `Origin` to confirm it is not reflected.",
+    ],
+    "cors_wildcard": [
+        "Replace `Access-Control-Allow-Origin: *` with an explicit allowlist of trusted origins.",
+        "Scope the wildcard to only genuinely public, non-credentialed endpoints if it must stay.",
+    ],
+    # --- Disclosure / listing (web_checker) ---
+    "server_version_disclosure": [
+        "Suppress the version in the `Server` header (nginx: `server_tokens off;`, Apache: `ServerTokens Prod`).",
+        "Reload the web server and re-scan to confirm the version is gone.",
+    ],
+    "server_poweredby_disclosure": [
+        "Remove the `X-Powered-By` header (e.g. PHP `expose_php = Off`, Express `app.disable('x-powered-by')`).",
+    ],
+    "directory_listing": [
+        "Disable auto-indexing (nginx: `autoindex off;`, Apache: `Options -Indexes`).",
+        "Add an index file or return 403 for the exposed directories.",
+        "Review the listed files for anything sensitive that should be removed.",
+    ],
+    # --- Responsible disclosure (web_checker) ---
+    "missing_security_txt": [
+        "Create `/.well-known/security.txt` with at least `Contact:` (a monitored security email or reporting URL) and `Expires:`.",
+        "Serve it as `text/plain` over HTTPS.",
+        "Set a calendar reminder to refresh `Expires:` before it lapses.",
+    ],
+    "expired_security_txt": [
+        "Update the `Expires:` field to a future date.",
+        "Confirm the `Contact:` address/URL is still monitored.",
+    ],
+    # --- Email authentication (domain_security; keyed by control) ---
+    "spf": [
+        "Publish a single SPF TXT record listing every legitimate sender, ending in `-all` (hard fail).",
+        "Keep it to ≤10 DNS lookups; flatten include chains if needed.",
+    ],
+    "dmarc": [
+        "Publish `_dmarc` TXT starting at `v=DMARC1; p=none` with an `rua=` aggregate-report address.",
+        "Review the reports, then raise the policy to `p=quarantine` and finally `p=reject`.",
+    ],
+    "dkim": [
+        "Enable DKIM signing at your mail provider and publish the selector's public key in DNS.",
+        "Send a test message and confirm the signature verifies (`dkim=pass`).",
+    ],
+    # --- TLS (tls_checker) ---
+    "weak_cipher": [
+        "Disable the weak cipher suites and prefer AEAD suites (AES-GCM, ChaCha20-Poly1305).",
+        "Re-test with an SSL/TLS scanner to confirm only strong suites remain.",
+    ],
+    "no_forward_secrecy": [
+        "Enable ECDHE key-exchange cipher suites and prefer them in server order.",
+        "Disable static-RSA key exchange.",
+    ],
+    "cert_expired": [
+        "Reissue and install a current certificate immediately.",
+        "Automate renewal (ACME/Let's Encrypt or your CA's API) so it can't lapse again.",
+    ],
+    # --- SSH (ssh_checker) ---
+    "ssh_password_auth": [
+        "Deploy SSH keys for all operators, then set `PasswordAuthentication no` in sshd_config.",
+        "Reload sshd and confirm password login is refused.",
+    ],
+    "ssh_root_login": [
+        "Set `PermitRootLogin no` and use a sudo-capable named account instead.",
+        "Reload sshd and verify direct root login is rejected.",
+    ],
+    # --- Attack surface ---
+    "subdomain_takeover": [
+        "Remove the dangling DNS record, or reclaim the referenced resource at the provider.",
+        "Re-scan to confirm the subdomain no longer resolves to an unclaimed endpoint.",
+    ],
+    "open_cloud_bucket": [
+        "Remove public/anonymous access on the bucket and enable the provider's public-access block.",
+        "Audit the objects that were exposed for anything sensitive.",
+        "Set an alert for future public-access changes.",
+    ],
+    "exposed_secret": [
+        "Treat the secret as compromised: rotate/revoke it now.",
+        "Remove it from the code and load it from a secret manager or environment variable.",
+        "Purge it from git history if it was committed.",
+    ],
+}
 
 
 def _priority_score(grp) -> float:
@@ -894,6 +1030,10 @@ def export_scan_pdf(request, session_uuid):
         # Optional CTA — template renders the block only when both are truthy.
         "report_cta_url": getattr(settings, "REPORT_CTA_URL", "") or "",
         "report_cta_text": getattr(settings, "REPORT_CTA_TEXT", "") or "",
+        # Per-finding remediation checklists are a hosted-report extra — gated on
+        # the same REPORT_CTA_URL flag that marks a hosted deployment (self-hosters
+        # still get the per-finding Remediation prose).
+        "show_next_steps": bool(getattr(settings, "REPORT_CTA_URL", "") or ""),
         # Optional AI analyst summary — {} when absent, so the block never renders.
         **_ai_context(session),
     })
