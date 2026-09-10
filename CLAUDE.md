@@ -456,11 +456,11 @@ The registry (`apps/core/engine/workflows/registry.py`) auto-discovers all `tool
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
 | `apps/domain_security/` | 1 | Domain Intelligence | Yes | DNS, email, RDAP checks |
-| `apps/hudson_rock/` | 1 | Domain Intelligence | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
+| `apps/hudson_rock/` | 1 | Data Leak | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
 | `apps/dns_history/` | 1 | Domain Intelligence | Yes | Historical A/AAAA/MX records via a passive-DNS dataset — surfaces past hosting / stale records (info findings). Passive, BYO `DNS_HISTORY_API_URL` (no-op if unset), fail-graceful |
-| `apps/github_secrets/` | 1 | Domain Intelligence | Yes | Leaked secrets in PUBLIC GitHub — searches GitHub's code-search API (org-scoped by default) for the target org's committed credentials, fetches the hits, runs gitleaks over them (same engine as `js_secrets`), REDACTS before storage (`check_type="exposed_secret"`, shared with js_secrets). Passive (queries GitHub, not the target); BYOK MANDATORY (`GITHUB_TOKEN` — code-search needs auth; no token → logged no-op); fail-graceful |
+| `apps/github_secrets/` | 1 | Data Leak | Yes | Leaked secrets in PUBLIC GitHub — searches GitHub's code-search API (org-scoped by default) for the target org's committed credentials, fetches the hits, runs gitleaks over them (same engine as `js_secrets`), REDACTS before storage (`check_type="exposed_secret"`, shared with js_secrets). Passive (queries GitHub, not the target); BYOK MANDATORY (`GITHUB_TOKEN` — code-search needs auth; no token → logged no-op); fail-graceful |
 | `apps/typosquat/` | 1 | Domain Intelligence | Yes | Lookalike / typosquat domain detection — generates lookalike candidates algorithmically (homoglyph/typo/omission/insertion/repetition/transposition/hyphenation/TLD-swap), checks which are registered via public DNS, then scores **weaponization**: registered web-serving lookalikes get a capped, fail-graceful homepage fetch for a login form (credential phishing) or brand mention (impersonation) → **high** (active impersonation, prioritise takedown); A/MX-only → medium; NS-only → low. Passive w.r.t. the target (contacts only the lookalike domains, never yours), no key, fail-graceful. Weaponization model ported from the standalone `tldsquatting` project |
-| `apps/breach_check/` | 1 | Domain Intelligence | Yes | Data-breach exposure for the domain. BYOK: free keyless XposedOrNot catalog by default, authoritative Have I Been Pwned `breacheddomain` when `HIBP_API_KEY` set. Aggregate COUNTS + public breach metadata only — never email aliases/credentials. Passive, fail-graceful |
+| `apps/breach_check/` | 1 | Data Leak | Yes | Data-breach exposure for the domain. BYOK: free keyless XposedOrNot catalog by default, authoritative Have I Been Pwned `breacheddomain` when `HIBP_API_KEY` set. Aggregate COUNTS + public breach metadata only — never email aliases/credentials. Passive, fail-graceful |
 | `apps/subfinder/` | 2 | Surface Enumeration | No | Passive subdomain enumeration |
 | `apps/amass/` | 2 | Surface Enumeration | No | Active subdomain enumeration |
 | `apps/asn_discovery/` | 2 | Surface Enumeration | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
@@ -481,7 +481,7 @@ The registry (`apps/core/engine/workflows/registry.py`) auto-discovers all `tool
 | `apps/katana/` | 10 | Web Exposure | No | Web crawling, endpoint discovery |
 | `apps/nuclei/` | 11 | Web Exposure | Yes | Web vuln scan (community templates) |
 | `apps/web_checker/` | 11 | Web Exposure | Yes | Security headers, cookies, CORS |
-| `apps/js_secrets/` | 11 | Web Exposure | Yes | Hardcoded-secret detection — fetches discovered `.js` assets and runs gitleaks over them; secret is redacted before storage |
+| `apps/js_secrets/` | 11 | Data Leak | Yes | Hardcoded-secret detection — fetches discovered `.js` assets and runs gitleaks over them; secret is redacted before storage |
 | `apps/cve_intel/` | 12 | Prioritization | No | Enriches CVE findings in place with EPSS scores + CISA KEV flags (no new findings) |
 
 ### Tool app structure

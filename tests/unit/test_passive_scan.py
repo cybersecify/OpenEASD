@@ -63,6 +63,32 @@ class TestRegistryActiveFlag:
 
 
 # ---------------------------------------------------------------------------
+# phase_group categories (UI grouping)
+# ---------------------------------------------------------------------------
+
+class TestPhaseGroupCategories:
+    # The leak-detection tools live in their own "Data Leak" category rather than
+    # being mixed into Domain Intelligence / Web Exposure.
+    _DATA_LEAK = {"hudson_rock", "breach_check", "github_secrets", "js_secrets"}
+
+    def test_data_leak_tools_grouped_together(self):
+        from apps.core.engine.workflows.registry import get_tool_phase_groups
+        groups = get_tool_phase_groups()
+        for tool in self._DATA_LEAK:
+            assert groups.get(tool) == "Data Leak", (
+                f"{tool} should be in the Data Leak phase_group, got {groups.get(tool)!r}"
+            )
+
+    def test_domain_intelligence_excludes_leak_tools(self):
+        # Domain Intelligence keeps domain-posture tools only; leak tools moved out.
+        from apps.core.engine.workflows.registry import get_tool_phase_groups
+        groups = get_tool_phase_groups()
+        di = {t for t, g in groups.items() if g == "Domain Intelligence"}
+        assert di.isdisjoint(self._DATA_LEAK)
+        assert "domain_security" in di
+
+
+# ---------------------------------------------------------------------------
 # is_passive_tool_set helper
 # ---------------------------------------------------------------------------
 
