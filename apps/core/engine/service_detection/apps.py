@@ -8,7 +8,7 @@ class ServiceDetectionConfig(AppConfig):
     tool_meta = {
         "label": "Service Detection",
         "runner": "apps.core.engine.service_detection.detector.detect_services",
-        "phase": 6,
+        "phase": 7,
         "phase_group": "Port Discovery",
         "requires": ["naabu"],
         "produces_findings": False,

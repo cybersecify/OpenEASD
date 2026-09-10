@@ -195,50 +195,50 @@ Phase 1  Typosquat          - Lookalike / typosquat domain detection (passive;
                              registered lookalikes via public DNS — phishing/brand abuse)
 Phase 1  DNS History        - Historical A/AAAA/MX records via a passive-DNS
                              dataset (passive; BYO DNS_HISTORY_API_URL)
-Phase 12 ASN Clustering     - Groups registered lookalikes by shared hosting ASN
+Phase 13 ASN Clustering     - Groups registered lookalikes by shared hosting ASN
                              (Team Cymru, passive) — coordinated phishing infra
 
 ── Data Leak ────────────────────────────────────────────────────────────────
-Phase 1  Hudson Rock        - Infostealer-log exposure via Hudson Rock's keyless
+Phase 2  Hudson Rock        - Infostealer-log exposure via Hudson Rock's keyless
                              Cavalier API (aggregate counts only, no plaintext)
-Phase 1  GitHub Secrets      - Leaked secrets in public GitHub via gitleaks
+Phase 2  GitHub Secrets      - Leaked secrets in public GitHub via gitleaks
                              (passive; BYO GITHUB_TOKEN, redacted before storage)
-Phase 1  Breach Check       - Data-breach exposure via XposedOrNot (free/keyless)
+Phase 2  Breach Check       - Data-breach exposure via XposedOrNot (free/keyless)
                              or Have I Been Pwned (BYO key); counts only, no PII
-Phase 11 JS Secrets         - Hardcoded secrets in fetched JavaScript via gitleaks
+Phase 12 JS Secrets         - Hardcoded secrets in fetched JavaScript via gitleaks
                              (redacted before storage; runs after web crawl)
 
 ── Surface Enumeration ─────────────────────────────────────────────────────
-Phase 2  Subfinder         - Passive subdomain enumeration
-Phase 2  Amass             - Active subdomain enumeration
-Phase 2  Alterx            - Subdomain permutation from discovered subdomains
-Phase 2  ASN Discovery     - Owned ASN/CIDR ranges via amass intel (reports only)
-Phase 2  GitHub Org Recon  - Infra refs (internal hostnames, cloud buckets, API
+Phase 3  Subfinder         - Passive subdomain enumeration
+Phase 3  Amass             - Active subdomain enumeration
+Phase 3  Alterx            - Subdomain permutation from discovered subdomains
+Phase 3  ASN Discovery     - Owned ASN/CIDR ranges via amass intel (reports only)
+Phase 3  GitHub Org Recon  - Infra refs (internal hostnames, cloud buckets, API
                              endpoints) leaked in the org's public GitHub repos
                              (passive; official API — keyless, richer with a token)
-Phase 3  DNSx              - DNS resolution, public IP filtering
-Phase 4  Takeover Check    - Subdomain takeover detection via subzy
-Phase 4  Cloud Assets      - Public S3/Azure/GCP bucket enumeration (cloud_enum)
+Phase 4  DNSx              - DNS resolution, public IP filtering
+Phase 5  Takeover Check    - Subdomain takeover detection via subzy
+Phase 5  Cloud Assets      - Public S3/Azure/GCP bucket enumeration (cloud_enum)
 
 ── Port Discovery ───────────────────────────────────────────────────────────
-Phase 5  Naabu             - TCP port scanning (top 100; CDN edge IPs excluded)
-Phase 6  Service Detection - Classify ports as web/non-web via nmap -sV (auto)
+Phase 6  Naabu             - TCP port scanning (top 100; CDN edge IPs excluded)
+Phase 7  Service Detection - Classify ports as web/non-web via nmap -sV (auto)
 
 ── Network Exposure ─────────────────────────────────────────────────────────
-Phase 7  Nmap              - CVE scanning via NSE vulners (non-web ports)
-Phase 7  TLS Checker       - Certificate, cipher, and protocol analysis
-Phase 7  SSH Checker       - SSH configuration audit
-Phase 7  Nuclei Network    - Network protocol vuln templates (non-web ports)
+Phase 8  Nmap              - CVE scanning via NSE vulners (non-web ports)
+Phase 8  TLS Checker       - Certificate, cipher, and protocol analysis
+Phase 8  SSH Checker       - SSH configuration audit
+Phase 8  Nuclei Network    - Network protocol vuln templates (non-web ports)
 
 ── Web Exposure ─────────────────────────────────────────────────────────────
-Phase 8  httpx             - Web probing, URL discovery, technology fingerprinting
-Phase 9  Historical URLs   - Archived URL discovery via gau
-Phase 10 Katana            - Deep URL crawl on top of httpx
-Phase 11 Nuclei            - Web vulnerability scanning (community templates)
-Phase 11 Web Checker       - Security headers, cookies, CORS; security.txt (RFC 9116)
+Phase 9  httpx             - Web probing, URL discovery, technology fingerprinting
+Phase 10 Historical URLs   - Archived URL discovery via gau
+Phase 11 Katana            - Deep URL crawl on top of httpx
+Phase 12 Nuclei            - Web vulnerability scanning (community templates)
+Phase 12 Web Checker       - Security headers, cookies, CORS; security.txt (RFC 9116)
 
 ── Prioritization ───────────────────────────────────────────────────────────
-Phase 12 CVE Intel         - Enrich CVE findings with EPSS + CISA KEV
+Phase 13 CVE Intel         - Enrich CVE findings with EPSS + CISA KEV
 
 ── AI analysis (optional; off by default, bring-your-own Cloudflare) ──────────
 Post-scan Triage          - Rank findings by exploitability (CISA KEV + EPSS

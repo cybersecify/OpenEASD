@@ -9,7 +9,7 @@ class GithubSecretsConfig(AppConfig):
     tool_meta = {
         "label": "GitHub Secret Exposure (gitleaks)",
         "runner": "apps.github_secrets.scanner.run_github_secrets",
-        "phase": 1,
+        "phase": 2,
         "phase_group": "Data Leak",
         "requires": ["gitleaks"],
         "produces_findings": True,

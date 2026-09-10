@@ -8,7 +8,7 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 - **Released**: v2.13.0 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
   `:v2.13.0` / `:v2.13` / `:latest` (web on python:3.12-slim, worker on Ubuntu 24.04/3.12 — both Python 3.12; Django 5.2 LTS). 3-tier deploy: `db` (postgres:17) + `web`
   (gunicorn, no tools) + `worker` (`dbos_worker` + scanner matrix, `NET_RAW`).
-- **Scope**: 30 registered scan tools across 12 pipeline phases; single-user
+- **Scope**: 30 registered scan tools across 13 pipeline phases; single-user
   (one admin, no RBAC) by design.
 - **Engine**: DBOS durable workflows on PostgreSQL — one multi-step `run_scan`
   workflow per scan (checkpoint/resume) + `@durable_task` for one-step tasks
@@ -471,34 +471,34 @@ guards that every registered tool appears in the output.
 |---|---|---|---|---|
 | `apps/domain_security/` | 1 | Domain Intelligence | Yes | **Passive** DNS/DNSSEC/CAA/wildcard/lame-delegation, email-auth (SPF/DMARC/DKIM/TLS-RPT/BIMI) via public resolvers, and RDAP (expiry/locks/status). No packets to the target — needs no authorization |
 | `apps/domain_probe/` | 1 | Domain Intelligence | Yes | **Active** domain probes split out of domain_security: AXFR zone transfer (nameservers), SMTP open-relay (MX:25), and MTA-STS policy fetch (`mta-sts.<domain>`). Touches the target directly → requires `DomainAuthorization` |
-| `apps/hudson_rock/` | 1 | Data Leak | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
+| `apps/hudson_rock/` | 2 | Data Leak | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
 | `apps/dns_history/` | 1 | Domain Intelligence | Yes | Historical A/AAAA/MX records via a passive-DNS dataset — surfaces past hosting / stale records (info findings). Passive, BYO `DNS_HISTORY_API_URL` (no-op if unset), fail-graceful |
-| `apps/github_secrets/` | 1 | Data Leak | Yes | Leaked secrets in PUBLIC GitHub — searches GitHub's code-search API (org-scoped by default) for the target org's committed credentials, fetches the hits, runs gitleaks over them (same engine as `js_secrets`), REDACTS before storage (`check_type="exposed_secret"`, shared with js_secrets). Passive (queries GitHub, not the target); BYOK MANDATORY (`GITHUB_TOKEN` — code-search needs auth; no token → logged no-op); fail-graceful |
+| `apps/github_secrets/` | 2 | Data Leak | Yes | Leaked secrets in PUBLIC GitHub — searches GitHub's code-search API (org-scoped by default) for the target org's committed credentials, fetches the hits, runs gitleaks over them (same engine as `js_secrets`), REDACTS before storage (`check_type="exposed_secret"`, shared with js_secrets). Passive (queries GitHub, not the target); BYOK MANDATORY (`GITHUB_TOKEN` — code-search needs auth; no token → logged no-op); fail-graceful |
 | `apps/typosquat/` | 1 | Domain Intelligence | Yes | Lookalike / typosquat domain detection — generates lookalike candidates algorithmically (homoglyph/typo/omission/insertion/repetition/transposition/hyphenation/TLD-swap), checks which are registered via public DNS, then scores **weaponization**: registered web-serving lookalikes get a capped, fail-graceful homepage fetch for a login form (credential phishing) or brand mention (impersonation) → **high** (active impersonation, prioritise takedown); A/MX-only → medium; NS-only → low. Passive w.r.t. the target (contacts only the lookalike domains, never yours), no key, fail-graceful. Weaponization model ported from the standalone `tldsquatting` project |
-| `apps/breach_check/` | 1 | Data Leak | Yes | Data-breach exposure for the domain. BYOK: free keyless XposedOrNot catalog by default, authoritative Have I Been Pwned `breacheddomain` when `HIBP_API_KEY` set. Aggregate COUNTS + public breach metadata only — never email aliases/credentials. Passive, fail-graceful |
-| `apps/subfinder/` | 2 | Surface Enumeration | No | Passive subdomain enumeration |
-| `apps/amass/` | 2 | Surface Enumeration | No | Active subdomain enumeration |
-| `apps/asn_discovery/` | 2 | Surface Enumeration | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
-| `apps/alterx/` | 2 | Surface Enumeration | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
-| `apps/github_recon/` | 2 | Surface Enumeration | Yes | GitHub Org Recon — enumerates the target org's PUBLIC GitHub repos via GitHub's official REST API and surfaces exposed infra references (internal hostnames/subdomains, cloud-bucket URLs, API endpoints) in that public code/config. Two-tier BYO-token: keyless unauthenticated API (60 req/hr, request-capped) works out of the box, `GITHUB_TOKEN` raises to 5000 req/hr. Complements `js_secrets`/`github_secrets` (secrets) — this finds infra exposure. Passive (queries GitHub, never the target), fail-graceful |
-| `apps/dnsx/` | 3 | Surface Enumeration | No | DNS resolution, public IP filtering |
-| `apps/takeover_check/` | 4 | Surface Enumeration | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
-| `apps/cloud_assets/` | 4 | Surface Enumeration | Yes | Public cloud bucket enumeration via cloud_enum (AWS S3 / Azure Blob / GCP Storage) |
-| `apps/naabu/` | 5 | Port Discovery | No | Port scanning (top 100 TCP) |
-| `apps/shodan/` | 5 | Port Discovery | Yes | Passive exposure intel from Shodan's own scan data — ports/services/CVEs per resolved IP. BYOK: free InternetDB tier (no key, no credits), full host API when `SHODAN_API_KEY` set (`SHODAN_MAX_IPS` caps the paid path). CVEs land in `extra["cve_ids"]` so `cve_intel` enriches them. Passive, fail-graceful |
-| `apps/core/engine/service_detection/` | 6 | Port Discovery | No | nmap -sV enriches Port.service + is_web |
-| `apps/nmap/` | 7 | Network Exposure | Yes | NSE vulners CVE scan (non-web ports); backport-aware CVE matching (`backports.json` registry) |
-| `apps/tls_checker/` | 7 | Network Exposure | Yes | TLS/cert analysis + cipher suite enumeration via `nmap --script ssl-enum-ciphers` (all ports) |
-| `apps/ssh_checker/` | 7 | Network Exposure | Yes | SSH config analysis |
-| `apps/nuclei_network/` | 7 | Network Exposure | Yes | Network protocol vuln scan (319 templates, non-web) |
-| `apps/httpx/` | 8 | Web Exposure | No | Web probing, URL discovery, technology fingerprinting (`-tech-detect` → `URL.technologies`) |
-| `apps/historical_urls/` | 9 | Web Exposure | No | Historical URL discovery via gau (Wayback Machine, OTX, Common Crawl, URLScan) |
-| `apps/katana/` | 10 | Web Exposure | No | Web crawling, endpoint discovery |
-| `apps/nuclei/` | 11 | Web Exposure | Yes | Web vuln scan (community templates) |
-| `apps/web_checker/` | 11 | Web Exposure | Yes | Security headers, cookies, CORS; + security.txt (RFC 9116) responsible-disclosure check on the apex |
-| `apps/js_secrets/` | 11 | Data Leak | Yes | Hardcoded-secret detection — fetches discovered `.js` assets and runs gitleaks over them; secret is redacted before storage |
-| `apps/cve_intel/` | 12 | Prioritization | No | Enriches CVE findings in place with EPSS scores + CISA KEV flags (no new findings) |
-| `apps/asn_cluster/` | 12 | Domain Intelligence | Yes | Lookalike ASN clustering — reads typosquat's `lookalike_domain` findings, resolves their IPs to ASNs via Team Cymru (keyless DNS), and groups lookalikes sharing an autonomous system into `lookalike_cluster` campaign findings (weaponized member → high). Passive, fail-graceful, `requires: [typosquat]` |
+| `apps/breach_check/` | 2 | Data Leak | Yes | Data-breach exposure for the domain. BYOK: free keyless XposedOrNot catalog by default, authoritative Have I Been Pwned `breacheddomain` when `HIBP_API_KEY` set. Aggregate COUNTS + public breach metadata only — never email aliases/credentials. Passive, fail-graceful |
+| `apps/subfinder/` | 3 | Surface Enumeration | No | Passive subdomain enumeration |
+| `apps/amass/` | 3 | Surface Enumeration | No | Active subdomain enumeration |
+| `apps/asn_discovery/` | 3 | Surface Enumeration | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
+| `apps/alterx/` | 3 | Surface Enumeration | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
+| `apps/github_recon/` | 3 | Surface Enumeration | Yes | GitHub Org Recon — enumerates the target org's PUBLIC GitHub repos via GitHub's official REST API and surfaces exposed infra references (internal hostnames/subdomains, cloud-bucket URLs, API endpoints) in that public code/config. Two-tier BYO-token: keyless unauthenticated API (60 req/hr, request-capped) works out of the box, `GITHUB_TOKEN` raises to 5000 req/hr. Complements `js_secrets`/`github_secrets` (secrets) — this finds infra exposure. Passive (queries GitHub, never the target), fail-graceful |
+| `apps/dnsx/` | 4 | Surface Enumeration | No | DNS resolution, public IP filtering |
+| `apps/takeover_check/` | 5 | Surface Enumeration | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
+| `apps/cloud_assets/` | 5 | Surface Enumeration | Yes | Public cloud bucket enumeration via cloud_enum (AWS S3 / Azure Blob / GCP Storage) |
+| `apps/naabu/` | 6 | Port Discovery | No | Port scanning (top 100 TCP) |
+| `apps/shodan/` | 6 | Port Discovery | Yes | Passive exposure intel from Shodan's own scan data — ports/services/CVEs per resolved IP. BYOK: free InternetDB tier (no key, no credits), full host API when `SHODAN_API_KEY` set (`SHODAN_MAX_IPS` caps the paid path). CVEs land in `extra["cve_ids"]` so `cve_intel` enriches them. Passive, fail-graceful |
+| `apps/core/engine/service_detection/` | 7 | Port Discovery | No | nmap -sV enriches Port.service + is_web |
+| `apps/nmap/` | 8 | Network Exposure | Yes | NSE vulners CVE scan (non-web ports); backport-aware CVE matching (`backports.json` registry) |
+| `apps/tls_checker/` | 8 | Network Exposure | Yes | TLS/cert analysis + cipher suite enumeration via `nmap --script ssl-enum-ciphers` (all ports) |
+| `apps/ssh_checker/` | 8 | Network Exposure | Yes | SSH config analysis |
+| `apps/nuclei_network/` | 8 | Network Exposure | Yes | Network protocol vuln scan (319 templates, non-web) |
+| `apps/httpx/` | 9 | Web Exposure | No | Web probing, URL discovery, technology fingerprinting (`-tech-detect` → `URL.technologies`) |
+| `apps/historical_urls/` | 10 | Web Exposure | No | Historical URL discovery via gau (Wayback Machine, OTX, Common Crawl, URLScan) |
+| `apps/katana/` | 11 | Web Exposure | No | Web crawling, endpoint discovery |
+| `apps/nuclei/` | 12 | Web Exposure | Yes | Web vuln scan (community templates) |
+| `apps/web_checker/` | 12 | Web Exposure | Yes | Security headers, cookies, CORS; + security.txt (RFC 9116) responsible-disclosure check on the apex |
+| `apps/js_secrets/` | 12 | Data Leak | Yes | Hardcoded-secret detection — fetches discovered `.js` assets and runs gitleaks over them; secret is redacted before storage |
+| `apps/cve_intel/` | 13 | Prioritization | No | Enriches CVE findings in place with EPSS scores + CISA KEV flags (no new findings) |
+| `apps/asn_cluster/` | 13 | Domain Intelligence | Yes | Lookalike ASN clustering — reads typosquat's `lookalike_domain` findings, resolves their IPs to ASNs via Team Cymru (keyless DNS), and groups lookalikes sharing an autonomous system into `lookalike_cluster` campaign findings (weaponized member → high). Passive, fail-graceful, `requires: [typosquat]` |
 
 ### Tool app structure
 ```
@@ -522,32 +522,34 @@ but not yet in the default set.)
 ```
 Phase 1  domain_security    → Finding (DNS/DNSSEC/email-auth/RDAP — passive)
 Phase 1  domain_probe        → Finding (AXFR / open-relay / MTA-STS fetch — active)
-Phase 1  hudson_rock         → Finding (infostealer exposure via Hudson Rock — passive)
-Phase 1  dns_history         → Finding (historical A/AAAA/MX records via passive DNS — passive)
-Phase 1  github_secrets      → Finding (leaked secrets in public GitHub via gitleaks — passive, BYO token)
 Phase 1  typosquat           → Finding (registered lookalike/typosquat domains via public DNS — passive)
-Phase 1  breach_check        → Finding (data-breach exposure: XposedOrNot free / HIBP BYO-key — passive, counts only)
-Phase 2  subfinder          → Subdomain (passive enumeration)
-Phase 2  amass              → Subdomain (active enumeration)
-Phase 2  asn_discovery      → Finding (owned ASN/CIDR ranges via amass intel — informational)
-Phase 2  alterx             → Subdomain (permutation candidates from existing subdomains)
-Phase 2  github_recon       → Finding (infra refs in the org's PUBLIC GitHub repos — passive)
-Phase 3  dnsx               → IPAddress (public-only filter)
-Phase 4  takeover_check     → Finding (subzy — dangling DNS → unclaimed cloud)
-Phase 4  cloud_assets       → Finding (open S3/Azure/GCP buckets — cloud_enum)
-Phase 5  naabu              → Port (top 100 TCP scan)
-Phase 5  shodan             → Finding (passive exposure: ports/services/CVEs from Shodan's data)
-Phase 6  service_detection  → enriches Port.service + Port.is_web
-Phase 7  nmap               → Finding (CVEs on non-web ports, is_web=False)  ┐
-Phase 7  tls_checker        → Finding (cipher/cert/protocol on all ports)    │ parallel
-Phase 7  ssh_checker        → Finding (SSH config on service="ssh" ports)    │
-Phase 7  nuclei_network     → Finding (network protocol vulns, non-web ports)┘
-Phase 8  httpx              → URL (web probing, CDN-aware via SNI)
-Phase 9  historical_urls    → URL (gau — archived endpoints)
-Phase 10 katana             → URL (web crawling, endpoint discovery)
-Phase 11 nuclei             → Finding (web vulns via templates on URLs)
-Phase 11 web_checker        → Finding (headers, cookies, CORS on URLs; + security.txt RFC 9116 on apex)
-Phase 11 js_secrets         → Finding (gitleaks over fetched .js assets — secret redacted)
+Phase 1  dns_history         → Finding (historical A/AAAA/MX records via passive DNS — passive)
+Phase 2  hudson_rock         → Finding (infostealer exposure via Hudson Rock — passive)      ┐ Data Leak
+Phase 2  github_secrets      → Finding (leaked secrets in public GitHub via gitleaks — passive)│
+Phase 2  breach_check        → Finding (data-breach exposure: XposedOrNot / HIBP — passive)   ┘
+Phase 3  subfinder          → Subdomain (passive enumeration)
+Phase 3  amass              → Subdomain (active enumeration)
+Phase 3  asn_discovery      → Finding (owned ASN/CIDR ranges via amass intel — informational)
+Phase 3  alterx             → Subdomain (permutation candidates from existing subdomains)
+Phase 3  github_recon       → Finding (infra refs in the org's PUBLIC GitHub repos — passive)
+Phase 4  dnsx               → IPAddress (public-only filter)
+Phase 5  takeover_check     → Finding (subzy — dangling DNS → unclaimed cloud)
+Phase 5  cloud_assets       → Finding (open S3/Azure/GCP buckets — cloud_enum)
+Phase 6  naabu              → Port (top 100 TCP scan)
+Phase 6  shodan             → Finding (passive exposure: ports/services/CVEs from Shodan's data)
+Phase 7  service_detection  → enriches Port.service + Port.is_web
+Phase 8  nmap               → Finding (CVEs on non-web ports, is_web=False)  ┐
+Phase 8  tls_checker        → Finding (cipher/cert/protocol on all ports)    │ parallel
+Phase 8  ssh_checker        → Finding (SSH config on service="ssh" ports)    │
+Phase 8  nuclei_network     → Finding (network protocol vulns, non-web ports)┘
+Phase 9  httpx              → URL (web probing, CDN-aware via SNI)
+Phase 10 historical_urls    → URL (gau — archived endpoints)
+Phase 11 katana             → URL (web crawling, endpoint discovery)
+Phase 12 nuclei             → Finding (web vulns via templates on URLs)
+Phase 12 web_checker        → Finding (headers, cookies, CORS on URLs; + security.txt RFC 9116 on apex)
+Phase 12 js_secrets         → Finding (gitleaks over fetched .js assets — secret redacted)     [Data Leak]
+Phase 13 cve_intel          → enriches CVE findings (EPSS + CISA KEV; no new findings)
+Phase 13 asn_cluster        → Finding (groups lookalikes by shared hosting ASN — passive)     [Domain Intelligence]
 ```
 
 ### Passive vs active scan modes (the authorization boundary)
@@ -644,7 +646,7 @@ every Cloudflare call → AIInvocation audit row (metadata only, never prompt/re
 
 ### Pipeline + workflow rules
 
-The architecture is a **pipeline** (12 phases) built out of **durable workflows**
+The architecture is a **pipeline** (13 phases) built out of **durable workflows**
 (DBOS). Pipeline outside, workflows inside, Postgres between them. These are the
 same 14-point rules the sibling `cybersecify/backend` follows; OpenEASD adopts the
 foundational ones and consciously differs on the *choreography* ones (it's
@@ -652,7 +654,7 @@ foundational ones and consciously differs on the *choreography* ones (it's
 row notes OpenEASD's stance. Full plan + status: `docs/specs/2026-09-07-producer-queue-consumer-hardening.md`.
 
 **Design**
-1. **Draw the pipeline before writing a workflow** — name the phase, the rows it stores, what triggers the next. ✅ (12 phases in DESIGN.md)
+1. **Draw the pipeline before writing a workflow** — name the phase, the rows it stores, what triggers the next. ✅ (13 phases in DESIGN.md)
 2. **Stages talk through stored data, never workflow calls** — a tool writes rows, the next phase reads them. ✅ (the empty-`models.py` rule)
 3. **One workflow per unit of work** — ⚠️ *deliberate deviation*: OpenEASD runs one multi-step `run_scan` per scan (orchestrated), not per-unit; retry granularity is per phase-group (checkpointed step).
 4. **Every workflow idempotent** (delete-then-insert / upsert, not append) — 🟡 partial: alerts ✅ (H1), phase-step idempotency is **H5**.

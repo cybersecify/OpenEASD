@@ -9,7 +9,7 @@ class AlterxConfig(AppConfig):
     tool_meta = {
         "label": "Alterx (Subdomain Permutation)",
         "runner": "apps.alterx.scanner.run_alterx",
-        "phase": 2,
+        "phase": 3,
         "phase_group": "Surface Enumeration",
         "requires": ["subfinder"],
         "produces_findings": False,

@@ -9,7 +9,7 @@ class HudsonRockConfig(AppConfig):
     tool_meta = {
         "label": "Infostealer Exposure (Hudson Rock)",
         "runner": "apps.hudson_rock.scanner.run_hudson_rock",
-        "phase": 1,
+        "phase": 2,
         "phase_group": "Data Leak",
         "requires": [],
         "produces_findings": True,

@@ -9,7 +9,7 @@ class ShodanConfig(AppConfig):
     tool_meta = {
         "label": "Shodan Exposure (passive)",
         "runner": "apps.shodan.scanner.run_shodan",
-        "phase": 5,
+        "phase": 6,
         "phase_group": "Port Discovery",
         "requires": [],
         "produces_findings": True,

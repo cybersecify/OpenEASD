@@ -9,7 +9,7 @@ class CloudAssetsConfig(AppConfig):
     tool_meta = {
         "label": "Cloud Asset Enumeration (cloud-enum)",
         "runner": "apps.cloud_assets.scanner.run_cloud_assets",
-        "phase": 4,
+        "phase": 5,
         "phase_group": "Surface Enumeration",
         "requires": ["subfinder"],
         "produces_findings": True,

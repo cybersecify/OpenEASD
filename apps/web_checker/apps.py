@@ -8,7 +8,7 @@ class WebCheckerConfig(AppConfig):
     tool_meta = {
         "label": "Web Checker",
         "runner": "apps.web_checker.scanner.run_web_check",
-        "phase": 11,
+        "phase": 12,
         "phase_group": "Web Exposure",
         "requires": ["httpx"],
         "produces_findings": True,

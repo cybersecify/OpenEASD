@@ -11,7 +11,7 @@ class AsnClusterConfig(AppConfig):
         "runner": "apps.asn_cluster.scanner.run_asn_cluster",
         # Late phase: it correlates typosquat's already-written lookalike findings,
         # so it must run after phase 1. Sits with cve_intel in Prioritization order.
-        "phase": 12,
+        "phase": 13,
         "phase_group": "Domain Intelligence",
         "requires": ["typosquat"],
         "produces_findings": True,
