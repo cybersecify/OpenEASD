@@ -7,6 +7,18 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **`render_pipeline_diagram` management command — a generated, drift-proof
+  pipeline diagram.** Renders the whole scan pipeline (every phase group, tool,
+  passive/active classification, and dependency) straight from the tool registry
+  as self-contained HTML (`-o file.html`), a terminal tree (`--format text`), or
+  JSON (`--format json`). **Why:** a hand-drawn diagram silently goes stale the
+  moment a tool moves; this reads `AppConfig.tool_meta` live, so it always matches
+  the code, and it stamps the build version + git sha + render time so a reader
+  can tell how current it is. A drift-guard test asserts every registered tool
+  appears in the output. Passive/active is colour-coded to the `DomainAuthorization`
+  boundary (green = passive, amber = active).
+
 ### Changed
 - **Split `domain_security` into a passive tool + a new active `domain_probe`.**
   `domain_security` bundled passive lookups (DNS/DNSSEC/CAA/email-auth via public

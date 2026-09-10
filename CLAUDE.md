@@ -451,6 +451,13 @@ The registry (`apps/core/engine/workflows/registry.py`) auto-discovers all `tool
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
+**Pipeline diagram (generated, drift-proof):** `manage.py render_pipeline_diagram`
+renders the whole pipeline — every phase group, tool, passive/active flag, and
+dependency — straight from the registry as self-contained HTML (`-o file.html`),
+a terminal tree (`--format text`), or JSON (`--format json`). Because it reads
+`tool_meta` live, it can never drift; a test (`test_render_pipeline_diagram.py`)
+guards that every registered tool appears in the output.
+
 ### Tool apps (29 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
@@ -828,6 +835,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_k8s_manifests.py` | 66 | k8s manifest structure — split web/worker Deployments, tier labels, Service→web-only selector, envFrom order, probes + probe-host, worker NET_RAW/role/entrypoint, no-PVC, kustomization |
 | `tests/unit/test_katana.py` | 19 | JSONL parser, Port/Subdomain FK links, scanner orchestrator, honest UA |
 | `tests/unit/test_management_commands.py` | 11 | `verify_tools` + other management commands |
+| `tests/unit/test_render_pipeline_diagram.py` | 12 | `render_pipeline_diagram` — build_structure covers every registry tool (drift guard), counts consistent, groups min-phase ordered, active flags match registry, html/text/json renderers + `-o` file write |
 | `tests/unit/test_monitoring.py` | 17 | sync_domain_monitoring_jobs, per-domain monitoring, authorization gate |
 | `tests/unit/test_naabu.py` | 10 | JSON parser, FK to IPAddress |
 | `tests/unit/test_nmap.py` | 26 |
@@ -882,6 +890,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1825 tests** (1779 fast + 46 slow domain_security)
+**Total: 1837 tests** (1791 fast + 46 slow domain_security)
 
 Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.
