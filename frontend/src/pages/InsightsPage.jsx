@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '../api/client.js';
+import { ExposureCard } from '../components/Exposure.jsx';
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -64,6 +65,7 @@ export default function InsightsPage() {
     kpi_open_critical = 0, kpi_open_high = 0, kpi_new = 0, kpi_fixed = 0,
     scan_trend = [], delta_trend = [], top_hosts = [], top_finding_types = [],
     severity_distribution = {}, top_services = [], asset_growth = [],
+    exposure = null,
   } = data;
 
   return (
@@ -73,6 +75,8 @@ export default function InsightsPage() {
           <h1 className="text-lit text-xl font-bold">Insights</h1>
           <p className="text-dim text-sm mt-0.5">Trends and security metrics across all scans</p>
         </div>
+
+        <ExposureCard exposure={exposure} />
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <KpiCard label="Open Critical"   value={kpi_open_critical} colorCls="text-red-400 border-red-800 bg-red-900/10" />
