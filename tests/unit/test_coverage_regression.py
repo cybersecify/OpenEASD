@@ -173,6 +173,21 @@ class TestCoverageRegressionReport:
 
 
 @pytest.mark.django_db
+class TestCountAllFindings:
+    def test_propagates_db_error_not_fake_zero(self):
+        # F4: a DB error while counting must NOT be swallowed into 0 (which reads
+        # as a clean scan) — it propagates so finalize fails honestly.
+        from unittest.mock import patch
+        from django.db import DatabaseError
+        from apps.core.engine.scans.pipeline import _count_all_findings
+        s = _session()
+        with patch("apps.core.data.findings.models.Finding.objects.filter",
+                   side_effect=DatabaseError("boom")):
+            with pytest.raises(DatabaseError):
+                _count_all_findings(s)
+
+
+@pytest.mark.django_db
 class TestFinalizeReplayIdempotency:
     """F1: finalize is a replayable DBOS step. Running it twice (a worker crash
     after side effects but before the step checkpoints, then resume) must NOT

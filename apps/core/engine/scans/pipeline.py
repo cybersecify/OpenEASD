@@ -172,19 +172,21 @@ def _check_coverage_regression(session):
 
 
 def _count_all_findings(session) -> int:
-    try:
-        from apps.core.data.findings.models import Finding
-        # Exclude the scan_coverage meta-warning — it's a finalize-generated
-        # marker, not a real attack-surface finding. Excluding it keeps the count
-        # stable across a finalize replay (F1): on the first pass the warning
-        # doesn't exist yet, so a replay would otherwise count N+1.
-        return (
-            Finding.objects.filter(session=session)
-            .exclude(source="scan_coverage")
-            .count()
-        )
-    except Exception:
-        return 0
+    from apps.core.data.findings.models import Finding
+    # Exclude the scan_coverage meta-warning — it's a finalize-generated marker,
+    # not a real attack-surface finding. Excluding it keeps the count stable
+    # across a finalize replay (F1): on the first pass the warning doesn't exist
+    # yet, so a replay would otherwise count N+1.
+    #
+    # No broad `except -> return 0` (F4): a DB error must NOT masquerade as
+    # "0 findings / clean". Let it propagate so finalize fails honestly (the
+    # reaper, the only other caller, guards its own call so a hiccup there can't
+    # abort the watchdog sweep).
+    return (
+        Finding.objects.filter(session=session)
+        .exclude(source="scan_coverage")
+        .count()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -401,7 +403,7 @@ def _seed_apex_into_assets(session) -> None:
                 if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
                     continue
                 public_ips.append((ip_str, ip.version))
-        except Exception:
+        except Exception:  # noqa: BLE001
             # NXDOMAIN, no answer, timeout — all benign; just leave IPs unresolved.
             continue
 

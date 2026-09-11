@@ -9,8 +9,11 @@ class AsnClusterConfig(AppConfig):
     tool_meta = {
         "label": "Lookalike ASN Clustering",
         "runner": "apps.asn_cluster.scanner.run_asn_cluster",
-        # Late phase: it correlates typosquat's already-written lookalike findings,
-        # so it must run after phase 1. Sits with cve_intel in Prioritization order.
+        # Late phase (runs with cve_intel in phase 13): it correlates typosquat's
+        # already-written lookalike findings, so it must run after phase 1. It is
+        # grouped under "Brand Threat" (with typosquat), not cve_intel's
+        # "Prioritization" — phase (execution order) and phase_group (display
+        # category) are independent axes.
         "phase": 13,
         "phase_group": "Brand Threat",
         "requires": ["typosquat"],

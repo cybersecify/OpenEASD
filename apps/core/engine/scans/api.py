@@ -581,12 +581,12 @@ def scan_status(request, session_uuid: uuid.UUID):
         "urls": URL.objects.filter(session=session).count(),
     }
 
-    step_results = []
-    try:
-        run = session.workflow_run
-        step_results = list(run.step_results.order_by("order"))
-    except Exception:
-        pass
+    # No broad try/except here (F5): a pending scan simply has no WorkflowRun yet,
+    # so query for it rather than catching RelatedObjectDoesNotExist — that way a
+    # real DB error surfaces instead of being silently swallowed into "no steps".
+    from apps.core.engine.workflows.models import WorkflowRun
+    run = WorkflowRun.objects.filter(session=session).order_by("-id").first()
+    step_results = list(run.step_results.order_by("order")) if run is not None else []
 
     return {
         "session": {
@@ -678,7 +678,7 @@ def list_scheduled(request):
                 j["next_run_time"] or datetime.datetime.max.replace(tzinfo=datetime.timezone.utc),
             )
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 — broad by design: log and return what we have
         logger.exception("[list_scheduled] Failed to fetch scheduled jobs")
 
     return [
