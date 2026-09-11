@@ -8,6 +8,16 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Added
+- **Persistent Issue register — cross-scan finding identity (finding-centric PR2).**
+  New `findings.Issue` model (mirrors `asset_inventory`): one row per
+  `(domain, source, check_type, title, target)`, carrying `first_seen`/`last_seen`
+  and — the point — a **persistent triage `status`**. A fail-graceful finalize
+  rollup upserts issues from each completed full scan, so a **dismissal
+  (`false_positive`/`acknowledged`) now survives a re-scan** instead of resetting
+  to `open` every run; a `resolved` issue that reappears is re-opened (regression).
+  Grounded on the asset layer via `Issue.asset`. Backend/model only — the
+  Findings/Issues register UI is the next step. Spec:
+  `docs/specs/2026-09-12-finding-centric-ui-direction.md`.
 - **Assets inventory UI restored (asset-centric grounding).** Re-introduces the
   persistent **Assets** page (list) + **Asset detail** page over the existing
   `/api/assets/` layer, with a nav entry and `/assets` + `/assets/:id` routes.
