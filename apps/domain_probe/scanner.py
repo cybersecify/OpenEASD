@@ -266,10 +266,16 @@ def run_domain_probe(session) -> list:
     domain = session.domain
     logger.info(f"[domain_probe:{session.id}] Starting active probes for {domain}")
 
-    findings = []
-    findings += _check_zone_transfer(session, domain, _resolve(domain, "NS"))
-    findings += _stamp_control(_check_mta_sts(session, domain), "mta_sts")
-    findings += _stamp_control(_check_open_relay(session, domain), "open_relay")
+    # Fail-graceful like the passive Domain Posture siblings: a probe error
+    # (AXFR/SMTP/MTA-STS) must never propagate and fail the whole scan.
+    try:
+        findings = []
+        findings += _check_zone_transfer(session, domain, _resolve(domain, "NS"))
+        findings += _stamp_control(_check_mta_sts(session, domain), "mta_sts")
+        findings += _stamp_control(_check_open_relay(session, domain), "open_relay")
+    except Exception:  # noqa: BLE001 — never let this tool fail a scan
+        logger.exception("[domain_probe:%s] unexpected error — skipping", session.id)
+        return []
 
     if findings:
         Finding.objects.bulk_create(findings)

@@ -2,6 +2,7 @@ from django.apps import AppConfig
 
 
 class CveIntelConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
     name = "apps.cve_intel"
     label = "cve_intel"
     verbose_name = "CVE Intel (EPSS + KEV)"

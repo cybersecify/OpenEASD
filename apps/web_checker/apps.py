@@ -2,6 +2,7 @@ from django.apps import AppConfig
 
 
 class WebCheckerConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
     name = "apps.web_checker"
     label = "web_checker"
     verbose_name = "Web Checker"

@@ -879,10 +879,17 @@ def run_domain_security(session) -> list:
     domain = session.domain
     logger.info(f"[domain_security:{session.id}] Starting checks for {domain}")
 
-    findings = []
-    findings += _check_dns(session, domain)
-    findings += _check_email(session, domain)
-    findings += _check_rdap(session, domain)
+    # Fail-graceful like the other passive Domain Posture / intel tools
+    # (breach_check, hudson_rock, dns_history): a DNS/RDAP hiccup must never
+    # propagate and fail the whole scan — skip with zero findings instead.
+    try:
+        findings = []
+        findings += _check_dns(session, domain)
+        findings += _check_email(session, domain)
+        findings += _check_rdap(session, domain)
+    except Exception:  # noqa: BLE001 — never let this tool fail a scan
+        logger.exception("[domain_security:%s] unexpected error — skipping", session.id)
+        return []
 
     if findings:
         Finding.objects.bulk_create(findings)

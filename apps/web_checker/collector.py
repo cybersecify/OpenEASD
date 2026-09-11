@@ -15,6 +15,7 @@ import re
 
 import requests
 import urllib3
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,11 @@ logger = logging.getLogger(__name__)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 REQUEST_TIMEOUT = 10  # seconds
-USER_AGENT = "openeasd-web-checker/1.0"
+# Honest scanner identity — use the shared UA so a target can allowlist us, same
+# as httpx/katana/nuclei (was a tool-specific string; the only tool that diverged).
+USER_AGENT = getattr(
+    settings, "OPENEASD_USER_AGENT", "OpenEASD/1.0 (+https://cybersecify.com/openeasd)"
+)
 BODY_SNIPPET_SIZE = 4096  # chars to read for directory listing check
 SECURITY_TXT_MAX = 8192  # chars to read from a security.txt response
 _TITLE_RE = re.compile(r"<title>(.*?)</title>", re.IGNORECASE | re.DOTALL)

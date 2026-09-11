@@ -7,6 +7,26 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Fixed
+- **Tool consistency pass (F-tool1 / F-tool4 / config drift).** Aligned a few
+  tool apps with the conventions their siblings already follow:
+  - `domain_security` and `domain_probe` now wrap collect+analyze in
+    `try/except → return []` so an unexpected DNS/RDAP/probe error can never
+    propagate and fail the whole scan — matching their passive Domain-Posture
+    siblings (`breach_check`/`hudson_rock`/`dns_history`).
+  - `web_checker` now sends the shared honest User-Agent
+    (`settings.OPENEASD_USER_AGENT`) instead of a tool-specific string — it was
+    the only tool that diverged, so a target allowlisting the scanner now sees a
+    consistent UA across httpx/katana/nuclei/web_checker.
+  - Added the missing `default_auto_field` to six tool `apps.py`
+    (`cve_intel`, `nuclei_network`, `ssh_checker`, `takeover_check`,
+    `tls_checker`, `web_checker`). No migrations (these apps define no models).
+  - Deliberately **not** changed: `cloud_assets` — it's a binary tool whose
+    phase-sibling `takeover_check` *propagates* a missing-binary/timeout to a
+    "partial" scan (labeled-partials principle), so whether it should swallow
+    (additive) or propagate is a policy call tracked separately (F-tool2/F-tool3
+    in `docs/CODING_STANDARDS.md`).
+
 ### Security
 - **Fail fast on the default DB password in production (F-sec1).** `DB_PASSWORD`
   defaulted to `"openeasd"` with nothing stopping a `DEBUG=False` deploy from
