@@ -130,17 +130,51 @@ _KEYBOARD = {
 }
 
 
-def _split_apex(domain: str) -> tuple[str, str]:
-    """Split an apex domain into (name, tld). A leading ``www.`` is stripped.
+# Common multi-label public suffixes — ccTLD second-level registries. NOT the
+# full ~9k-entry Public Suffix List: a curated set of the ones real targets use,
+# which keeps us dependency-free (tldextract fetches the PSL over the network by
+# default — a scanner worker shouldn't). Override/extend via
+# settings.TYPOSQUAT_MULTI_LABEL_SUFFIXES.
+_MULTI_LABEL_SUFFIXES = (
+    "co.uk", "org.uk", "gov.uk", "ac.uk", "me.uk", "net.uk", "ltd.uk", "plc.uk", "sch.uk",
+    "com.au", "net.au", "org.au", "edu.au", "gov.au", "id.au",
+    "co.nz", "net.nz", "org.nz", "govt.nz",
+    "co.za", "org.za", "net.za", "web.za",
+    "co.in", "net.in", "org.in", "firm.in", "gen.in", "ind.in",
+    "co.jp", "or.jp", "ne.jp", "ac.jp", "go.jp",
+    "com.br", "net.br", "org.br", "gov.br",
+    "com.cn", "net.cn", "org.cn", "gov.cn",
+    "co.kr", "or.kr",
+    "com.sg", "com.my", "com.hk", "com.tw", "com.mx", "com.tr", "com.ar",
+    "com.ua", "com.ph", "com.pk", "com.ng", "co.id", "co.th", "com.vn", "com.sa",
+)
 
-    Uses a simple last-dot split: ``example.com`` → ``("example", "com")``. For a
-    multi-label public suffix (``example.co.uk``) the ``name`` keeps the inner
-    label(s); techniques mutate ``name`` and TLD swaps replace only the final
-    label. This is deliberately conservative — good enough for candidate seeding.
+
+def _split_apex(domain: str) -> tuple[str, str]:
+    """Split an apex domain into (registrable_name, public_suffix).
+
+    ``example.com`` → ``("example", "com")``; ``example.co.uk`` →
+    ``("example", "co.uk")``. A leading ``www.`` is stripped.
+
+    Multi-label public suffixes (ccTLD second-level registries) are recognised
+    from ``_MULTI_LABEL_SUFFIXES`` so char-mutation and TLD-swap operate on the
+    registrable label, not a partial suffix. The old last-dot split turned
+    ``example.co.uk`` into name=``example.co`` / tld=``uk`` and emitted garbage
+    candidates like ``example.co.net`` that never resolve — so ccTLD targets got
+    effectively no lookalike detection. Curated, not the full PSL — good enough
+    for candidate seeding.
     """
     d = (domain or "").strip().lower().rstrip(".")
     if d.startswith("www."):
         d = d[4:]
+
+    suffixes = getattr(settings, "TYPOSQUAT_MULTI_LABEL_SUFFIXES", _MULTI_LABEL_SUFFIXES)
+    for suffix in suffixes:
+        if d.endswith("." + suffix):
+            head = d[: -(len(suffix) + 1)]      # everything before ".<suffix>"
+            name = head.rsplit(".", 1)[-1]       # registrable label (drop sub-labels)
+            return (name, suffix) if name else (d, "")
+
     name, _, tld = d.rpartition(".")
     if not name:  # no dot at all — treat whole thing as the name, no tld
         return d, ""

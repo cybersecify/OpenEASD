@@ -8,6 +8,16 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Fixed
+- **typosquat now handles multi-label ccTLD domains (PSL/ccTLD).** The apex was
+  split by a naive last dot, so `example.co.uk` became name=`example.co` /
+  tld=`uk` — TLD-swap then emitted garbage like `example.co.com` (which never
+  resolves) and char-mutations mangled the suffix, so **ccTLD targets got
+  effectively no lookalike detection**. `_split_apex` now recognises common
+  multi-label public suffixes (`co.uk`, `com.au`, `co.in`, …) and splits on the
+  registrable label, so `example.co.uk` → `("example", "co.uk")` and TLD-swap
+  yields real lookalikes (`example.com`, `example.net`, …). Curated set (not the
+  full ~9k-entry PSL — keeps the worker dependency-free and offline); extend via
+  `TYPOSQUAT_MULTI_LABEL_SUFFIXES`.
 - **Review cleanup: honest error handling + de-duplication (F4 / F5 / F-dup / comments).**
   - **F4** — `_count_all_findings` no longer swallows a DB error into `0`
     ("clean"): the error propagates so finalize fails honestly, and the stuck-scan
@@ -125,9 +135,8 @@ commits to recover the reasoning.
     registrar/parking ASNs — AWS/Cloudflare/Google/Namecheap/etc.) where
     millions of unrelated domains co-locate, *unless* the cluster contains a
     weaponized member. Overridable via `ASN_CLUSTER_GENERIC_ASNS`.
-  - Known limitation still open: the apex is split by last-dot, not the Public
-    Suffix List, so TLD-swap candidates are wrong for multi-label ccTLDs
-    (`example.co.uk` → `example.co.com`). Tracked separately.
+  - (The multi-label-ccTLD apex-split limitation noted here originally is now
+    fixed — see "typosquat now handles multi-label ccTLD domains" below.)
 
 ## [v2.15.0] — 2026-09-11
 

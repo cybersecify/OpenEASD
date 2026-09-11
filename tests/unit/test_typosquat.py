@@ -85,6 +85,32 @@ class TestGenerateCandidates:
         assert names & {"example.net"}
         assert not (names & {"www.example.com"})
 
+    def test_split_apex_handles_multi_label_suffix(self):
+        from apps.typosquat.collector import _split_apex
+        assert _split_apex("example.com") == ("example", "com")
+        assert _split_apex("example.co.uk") == ("example", "co.uk")
+        assert _split_apex("mybank.com.au") == ("mybank", "com.au")
+        assert _split_apex("www.example.co.uk") == ("example", "co.uk")
+
+    def test_cctld_tld_swap_uses_registrable_name(self):
+        # PSL/ccTLD: the old last-dot split produced garbage like "example.co.net";
+        # the whole public suffix must be swapped, yielding real lookalikes.
+        names = {c["candidate"] for c in generate_candidates("example.co.uk")
+                 if c["technique"] == "tld_swap"}
+        assert {"example.com", "example.net", "example.org"} <= names
+        assert not any(n.startswith("example.co.") for n in names)  # no example.co.<tld> garbage
+
+    def test_cctld_char_mutation_keeps_full_suffix(self):
+        # Character techniques mutate the registrable label and keep the full
+        # ".co.uk" suffix — the old last-dot split mutated the "co" label too.
+        # Use set-intersection (like the other technique tests) rather than
+        # `"host" in names`, which CodeQL misreads as URL-substring sanitization.
+        names = {c["candidate"] for c in generate_candidates("example.co.uk")}
+        assert names & {"xample.co.uk"}     # omission on "example", suffix intact
+        assert names & {"e-xample.co.uk"}   # hyphenation on "example", suffix intact
+        # Garbage the old bug produced (mutating the "co" label) must be absent.
+        assert not (names & {"example.c.uk", "exampleco.uk"})
+
     def test_empty_domain_returns_empty(self):
         assert generate_candidates("") == []
 
