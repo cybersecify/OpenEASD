@@ -186,5 +186,8 @@ api.add_router("/credentials", credentials_router)
 from apps.core.console.ai.api import router as ai_router
 api.add_router("/ai", ai_router)
 
+from apps.core.data.findings.api import router as issues_router
+api.add_router("/issues", issues_router)
+
 from apps.core.data.asset_inventory.api import router as assets_router
 api.add_router("/assets", assets_router)

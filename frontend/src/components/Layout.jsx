@@ -7,9 +7,10 @@ import BuildInfo from './BuildInfo.jsx';
 
 const NAV = [
   { label: 'Dashboard',      path: '/' },
+  { label: 'Findings',       path: '/findings' },
+  { label: 'Assets',         path: '/assets' },
   { label: 'Domains',        path: '/domains' },
   { label: 'Scans',          path: '/scans' },
-  { label: 'Assets',         path: '/assets' },
   { label: 'Workflows',      path: '/workflows' },
   { label: 'Insights',       path: '/insights' },
   { label: 'Reports',        path: '/reports' },
