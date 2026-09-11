@@ -409,12 +409,16 @@ blockers. Fixed items are struck through with the PR that closed them.
   classmethod — one source of truth for a security gate, so a future change
   (e.g. authorization expiry) lands in one place. The passive-set predicate was
   already shared (`is_passive_tool_set`).
-- **F4 — `_count_all_findings` returns 0 on any DB error** → a transient failure
-  reports "0 findings" into `total_findings` and the reaper, reading as "clean."
-  (`pipeline.py:159`)
-- **F5 — uncommented `except: pass` blocks** swallow failures in the status
-  endpoint (`scans/api.py:588`), scheduled-list (`:681`), and apex-seed DNS
-  (`pipeline.py:377`). Add `# noqa: BLE001` + a reason, or log.
+- **F4 — ~~`_count_all_findings` returns 0 on any DB error~~ — FIXED (#457).**
+  Dropped the `except → return 0` swallow: a count failure now propagates so
+  finalize fails honestly instead of recording "0 findings / completed". The
+  reaper (the only other caller) guards its own recount so a hiccup there leaves
+  `total_findings` unchanged (never a fake 0) rather than aborting the sweep.
+- **F5 — ~~uncommented `except: pass` blocks~~ — FIXED (#457).** The status
+  endpoint's bare `except` was removed entirely (query for the `WorkflowRun`
+  instead of catching `RelatedObjectDoesNotExist`, so a real DB error surfaces);
+  the scheduled-list and apex-seed broad catches — which already log / carry a
+  reason — got the `# noqa: BLE001` tag to match the convention.
 - **F6 — ~~two 404 body shapes~~ — FIXED (#456).** Added a Ninja `Http404`
   exception handler so a `get_object_or_404` miss renders the standard
   `{"error":{"code":"NOT_FOUND",…}}` envelope instead of Ninja's default
@@ -462,13 +466,18 @@ blockers. Fixed items are struck through with the PR that closed them.
   (`credentials/models.py:24`)
 - **F8 — Python-side full-table aggregation** in `_detect_deltas` /
   `_compute_coverage` is fine now but should move DB-side as finding volume grows.
-- **F-dup — severity orderings defined 4× independently** (`SEVERITY_LEVELS`,
-  `SEVERITY_RANK`, `_SEVERITY_ORDER`, `_SEV_RANK`) and the
-  `source:check_type:title` identity key is built inline in three places.
-  Consolidate into shared helpers.
-- **F-misc — stale comments / config drift**: `nuclei` timeout comments say
-  "30m→2h" but the value is 6h; `asn_cluster` comment says "Prioritization" but
-  `phase_group="Brand Threat"`; ~~several tool `apps.py` omit
-  `default_auto_field`~~ (FIXED #448 — the 6 that omitted it now set it);
-  `Badge.jsx` lists status keys twice; `axiosInstance.js` imports `router.jsx`
-  (near-circular — prefer a navigation callback).
+- **F-dup — severity orderings** — mostly already consolidated in
+  `apps/core/constants.py` (`SEVERITY_RANK` / `SEVERITY_LEVELS`, imported by
+  scans/insights/dispatcher). The last straggler, `ai/context.py`'s private
+  `_SEVERITY_ORDER`, now uses the shared `SEVERITY_RANK` too (FIXED #457). Still
+  open: the `source:check_type:title` identity key is built inline in three
+  places (reports/views.py ×2, dispatcher.py) — a small shared helper.
+- **F-misc — stale comments / config drift**: ~~`nuclei` timeout comments say
+  "30m→2h" but the value is 6h~~ (FIXED #457); ~~`asn_cluster` comment says
+  "Prioritization" but `phase_group="Brand Threat"`~~ (FIXED #457); ~~several
+  tool `apps.py` omit `default_auto_field`~~ (FIXED #448); ~~`Badge.jsx` lists
+  status keys twice~~ (FIXED #457 — `KNOWN` is derived from the variant map);
+  `axiosInstance.js` imports `router.jsx` (near-circular — prefer a navigation
+  callback; its own PR). *Separately surfaced:* the nuclei wall-clock cap is 6h
+  while the worker/watchdog budget is ~4h — a real value question, not a comment
+  tidy; left for a dedicated look.

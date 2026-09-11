@@ -254,8 +254,18 @@ def reap_stuck_scans():
         # total_findings is still 0 even though completed steps wrote Findings.
         # Recompute it here so reaped scans show their real count, not 0.
         from apps.core.engine.scans.pipeline import _count_all_findings
-        session.total_findings = _count_all_findings(session)
-        session.save(update_fields=["status", "end_time", "total_findings"])
+        save_fields = ["status", "end_time"]
+        try:
+            session.total_findings = _count_all_findings(session)
+            save_fields.append("total_findings")
+        except Exception:  # noqa: BLE001 — a count hiccup must not abort the sweep
+            # Leave total_findings as-is (don't fake a 0); the scan is already
+            # labeled partial/failed, so a stale count here isn't misread as clean.
+            logger.warning(
+                "[watchdog] could not recount findings for scan %s — leaving total_findings unchanged",
+                session.id, exc_info=True,
+            )
+        session.save(update_fields=save_fields)
 
         if new_status == "partial":
             partial_count += 1

@@ -8,6 +8,21 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Fixed
+- **Review cleanup: honest error handling + de-duplication (F4 / F5 / F-dup / comments).**
+  - **F4** — `_count_all_findings` no longer swallows a DB error into `0`
+    ("clean"): the error propagates so finalize fails honestly, and the stuck-scan
+    reaper guards its own recount so a hiccup leaves `total_findings` unchanged
+    rather than aborting the watchdog sweep or faking a 0.
+  - **F5** — the scan-status endpoint's bare `except: pass` is gone (it now
+    queries for the `WorkflowRun` instead of catching "no run yet", so a real DB
+    error surfaces); two other broad catches that already log / carry a reason
+    got the `# noqa: BLE001` convention tag.
+  - **F-dup** — `ai/context.py` dropped its private `_SEVERITY_ORDER` in favour of
+    the shared `apps.core.constants.SEVERITY_RANK` (behavior-preserving ordering).
+  - **Comments / frontend:** corrected the stale nuclei wall-clock-cap comment
+    (6h, not "2h"), the `asn_cluster` phase-vs-phase_group comment, and made
+    `Badge.jsx` derive its known-status set from the variant map (one source of
+    truth).
 - **Consistent 404 response shape across the API (F6).** `get_object_or_404`
   misses rendered Django Ninja's default `{"detail": "Not Found"}`, a second
   shape alongside the `{"error": {"code", "message"}}` envelope every
