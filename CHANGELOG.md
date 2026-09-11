@@ -8,6 +8,15 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Added
+- **Findings register UI — the finding-centric primary surface (PR3).** New
+  **Findings** page (nav + `/findings`) and `/api/issues/` API (list ranked by
+  severity, `summary`, and a `status` endpoint) over the persistent `Issue`
+  register. It's a cross-scan issue list — filter by status/severity/domain/
+  search — where inline triage **patches `Issue.status`, so a dismissal persists
+  across scans** (the whole point of PR2). Targets link to their asset; the
+  empty state and header explicitly note "empty ≠ clean — check Scans for
+  coverage." This is the visible finding-centric turn, grounded on the asset
+  layer (PR1) and the persistent identity (PR2).
 - **Persistent Issue register — cross-scan finding identity (finding-centric PR2).**
   New `findings.Issue` model (mirrors `asset_inventory`): one row per
   `(domain, source, check_type, title, target)`, carrying `first_seen`/`last_seen`

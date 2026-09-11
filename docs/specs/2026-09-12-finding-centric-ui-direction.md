@@ -7,7 +7,8 @@
 > - PR2 — ✅ **persistent finding identity** (cross-scan `Issue` register +
 >   finalize rollup). *The make-or-break prerequisite for finding-centric* — done:
 >   status now persists across scans, dismissals stick.
-> - PR3 — **Findings/Issues register UI** as the primary triage surface.
+> - PR3 — ✅ **Findings/Issues register UI** as the primary triage surface
+>   (`/findings` + `/api/issues/`; triage patches `Issue.status`, so it persists).
 > - PR4 — dashboard cross-links + a "changes since last scan" feed.
 >
 > **This decision supersedes #406** ("make the UI strictly scan-centric"), which
