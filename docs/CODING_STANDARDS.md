@@ -378,9 +378,11 @@ blockers. Fixed items are struck through with the PR that closed them.
 - **F-sec2 — SECRET_KEY guard is skipped whenever `"pytest" in sys.modules`.** Any
   runtime that transitively imports pytest bypasses the production check.
   (`base.py:18,51`)
-- **F-sec3 — `?token=<JWT>` query-param auth on report endpoints** leaks JWTs into
-  history/Referer/access-logs. Documented as deprecated; still live.
-  (`apps/core/console/reports/views.py:276`)
+- **F-sec3 — ~~`?token=<JWT>` query-param auth on report endpoints~~ — FIXED
+  (#451).** Removed the query-param fallback in `_report_auth_required`; report
+  endpoints now authenticate only via Django session or the `Authorization:
+  Bearer` header (both SPA report pages already send the header via fetch+Blob,
+  so nothing depended on it). A token in the query string is now ignored.
 
 ### Medium — consistency / robustness
 

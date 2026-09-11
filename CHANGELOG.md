@@ -34,6 +34,13 @@ commits to recover the reasoning.
     `dns.resolver.resolve` calls.
 
 ### Security
+- **Removed the `?token=<JWT>` query-param auth on report endpoints (F-sec3).**
+  The CSV/PDF report views accepted a JWT in the query string, which leaks into
+  browser history, `Referer` headers, server access logs, and proxy caches.
+  `_report_auth_required` now authenticates only via Django session or the
+  `Authorization: Bearer` header — both SPA report pages already send the header
+  (fetch+Blob, never in the URL), so nothing depended on the query-param path; a
+  token in the query string is now ignored.
 - **Fail fast on the default DB password in production (F-sec1).** `DB_PASSWORD`
   defaulted to `"openeasd"` with nothing stopping a `DEBUG=False` deploy from
   booting on it — a trivial foothold on the database that holds every scan
