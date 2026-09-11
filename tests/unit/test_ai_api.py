@@ -270,6 +270,20 @@ class TestTriageRun:
         enqueue.assert_called_once_with(sess.id)
         assert AITriage.objects.get(session=sess).status == "running"
 
+    def test_rerun_after_completed_triage_reenqueues(self, auth_client, settings):
+        # F2: a finished (non-running) triage can be re-run — the endpoint
+        # re-marks it running and enqueues a fresh workflow. Previously the DBOS
+        # return-existing dedupe made the re-enqueue a silent no-op.
+        from apps.core.console.ai.models import AITriage
+        _activate(settings)
+        sess = _finished_session()
+        AITriage.objects.create(session=sess, status="complete")  # a prior run finished
+        with patch("apps.core.console.ai.tasks.enqueue_triage") as enqueue:
+            resp = _post(auth_client, f"/api/ai/triage/{sess.uuid}/run/", {})
+        assert resp.status_code == 200
+        enqueue.assert_called_once_with(sess.id)
+        assert AITriage.objects.get(session=sess).status == "running"
+
 
 @pytest.mark.django_db
 class TestTriageTask:
