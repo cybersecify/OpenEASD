@@ -405,12 +405,12 @@ blockers. Fixed items are struck through with the PR that closed them.
   (`breach_check`/`hudson_rock`/`dns_history`). `cloud_assets` is **not** wrapped:
   it's a binary tool and follows the binary-tool contract instead (propagate →
   "partial", like its sibling `takeover_check`) — resolved in F-tool3 below.
-- **F-tool2 — configured `_DNS_TIMEOUT` is honored in only one check** in
-  `domain_security`; most `dns.resolver.resolve` calls use the default resolver
-  with no explicit timeout. (`domain_security/scanner.py`) **Deferred** from #448:
-  the slow real-network `test_domain_security.py` patches `scanner.dns` with
-  fixed-signature fakes, so adding a `lifetime=` kwarg needs validating against
-  that suite — its own PR.
+- **F-tool2 — ~~configured `_DNS_TIMEOUT` honored in only one check~~ — FIXED
+  (#450).** Added `lifetime=_DNS_TIMEOUT` to all six `dns.resolver.resolve` calls
+  in `domain_security` (was applied only to the lame-delegation `dns.query.udp`);
+  a slow/hung authoritative server can no longer stall a scan past the configured
+  bound. The two DNSSEC test mocks bound to `scanner.dns.resolver.resolve` now
+  take `**kwargs` to tolerate the new arg.
 - **F-tool3 — ~~`cloud_assets` skips on missing binary~~ — FIXED (#449).**
   Dropped the upfront `shutil.which → []` silent skip; a missing/timed-out
   `cloud_enum` now raises `ToolBinaryMissing`/`ToolTimeout` and propagates (the

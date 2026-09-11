@@ -102,7 +102,7 @@ class TestDNSChecks:
         from apps.domain_security.scanner import _check_dnssec
         session = self._make_session(db)
 
-        def mock_resolve(domain, rdtype):
+        def mock_resolve(domain, rdtype, **kwargs):  # **kwargs tolerates lifetime=
             if rdtype == "DNSKEY":
                 return [MagicMock()]
             raise Exception("no DS")
@@ -121,7 +121,7 @@ class TestDNSChecks:
         from apps.domain_security.scanner import _check_dnssec
         session = self._make_session(db)
 
-        def mock_resolve(domain, rdtype):
+        def mock_resolve(domain, rdtype, **kwargs):  # **kwargs tolerates lifetime=
             if rdtype == "DS":
                 return [MagicMock()]
             raise Exception("no DNSKEY")
