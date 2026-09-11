@@ -8,6 +8,12 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Fixed
+- **Consistent 404 response shape across the API (F6).** `get_object_or_404`
+  misses rendered Django Ninja's default `{"detail": "Not Found"}`, a second
+  shape alongside the `{"error": {"code", "message"}}` envelope every
+  `HttpError` uses. Added a single `Http404` exception handler so all 404s —
+  current and future `get_object_or_404` call sites — render the standard
+  envelope (`{"error": {"code": "NOT_FOUND", …}}`).
 - **Phase-group execution resumes cleanly after a crash (F1b).** The per-phase
   DBOS step re-runs the *whole* group on a crash-resume, but within-group
   execution wasn't idempotent — a resume re-created `WorkflowStepResult` rows
