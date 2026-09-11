@@ -415,9 +415,11 @@ blockers. Fixed items are struck through with the PR that closed them.
 - **F5 — uncommented `except: pass` blocks** swallow failures in the status
   endpoint (`scans/api.py:588`), scheduled-list (`:681`), and apex-seed DNS
   (`pipeline.py:377`). Add `# noqa: BLE001` + a reason, or log.
-- **F6 — two 404 body shapes**: `get_object_or_404` renders `{"detail":...}` while
-  `HttpError(404,…)` renders the `{"error":{...}}` envelope. Standardize on the
-  envelope.
+- **F6 — ~~two 404 body shapes~~ — FIXED (#456).** Added a Ninja `Http404`
+  exception handler so a `get_object_or_404` miss renders the standard
+  `{"error":{"code":"NOT_FOUND",…}}` envelope instead of Ninja's default
+  `{"detail":"Not Found"}`. One handler covers every current and future
+  `get_object_or_404` call site — no per-endpoint rewrites.
 - **F-tool1 — ~~`domain_security`/`domain_probe` orchestrators have no top-level
   try/except~~ — FIXED (#448).** Both now wrap collect+analyze in
   `try/except → return []`, matching their passive Domain-Posture siblings

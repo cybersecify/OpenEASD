@@ -514,7 +514,13 @@ class TestScanDetail:
         assert "subdomains" in data
 
     def test_not_found(self, auth_client):
-        assert auth_client.get("/api/scans/00000000-0000-0000-0000-000000000000/").status_code == 404
+        res = auth_client.get("/api/scans/00000000-0000-0000-0000-000000000000/")
+        assert res.status_code == 404
+        # F6: a get_object_or_404 miss renders the standard error envelope, not
+        # Ninja's default {"detail": "Not Found"}.
+        body = res.json()
+        assert body["error"]["code"] == "NOT_FOUND"
+        assert "detail" not in body
 
     def test_no_n_plus_one_on_findings(self, auth_client, django_assert_max_num_queries, scan):
         """scan_detail must not issue one query per finding to resolve session.uuid."""

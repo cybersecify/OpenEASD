@@ -1,7 +1,7 @@
 """Central Django Ninja API instance for OpenEASD."""
 
 from django.conf import settings
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError, ValidationError
 from ninja_jwt.routers.obtain import obtain_pair_router   # POST /pair, POST /refresh
@@ -30,6 +30,17 @@ def http_error_handler(request, exc):
     return JsonResponse(
         {"error": {"code": code, "message": str(exc.message)}},
         status=exc.status_code,
+    )
+
+
+@api.exception_handler(Http404)
+def not_found_handler(request, exc):
+    # get_object_or_404 raises django Http404, which Ninja renders as
+    # {"detail": "Not Found"} by default — a second 404 shape alongside
+    # HttpError(404, …). Render the standard envelope so every 404 matches (F6).
+    return JsonResponse(
+        {"error": {"code": "NOT_FOUND", "message": "Not found"}},
+        status=404,
     )
 
 
