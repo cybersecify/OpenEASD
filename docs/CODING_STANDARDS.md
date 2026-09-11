@@ -365,10 +365,13 @@ blockers. Fixed items are struck through with the PR that closed them.
   replay duplicates nothing and `total_findings` stays stable. `build_insights`
   (`update_or_create` + prune) and the asset rollup (`get_or_create`) were
   verified already replay-safe.
-- **F1b — within-group tool execution is not idempotent.** `base_order` derives
-  from `WorkflowStepResult.count()+1`; a crash mid-group re-runs the whole group
-  and re-creates StepResults + re-executes already-run tools. Checkpointing is
-  only at the group boundary. (`pipeline.py:594-607`)
+- **F1b — ~~within-group tool execution is not idempotent~~ — FIXED (#455).**
+  `_run_single_step` is now idempotent on `(run, tool)`: on a crash-resume (the
+  phase-group DBOS step re-runs the whole group) a tool that already reached a
+  terminal state is skipped, and a non-terminal ("running"/"pending") row is
+  reused instead of duplicated. `run_one_phase_group` also skips already-terminal
+  tools up front so they aren't re-dispatched. Within-group execution now resumes
+  cleanly, not just at the group boundary.
 - **F7 — ~~notification config GET returns raw webhook URLs~~ — FIXED (#445).**
   `_serialize_config` now returns presence booleans + a `db|env|none` source per
   channel and never the URL; `save_config` adopts the None=unchanged /

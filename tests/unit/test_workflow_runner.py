@@ -371,6 +371,44 @@ class TestWorkflowModel:
 
 
 # ---------------------------------------------------------------------------
+# Phase-group resume idempotency (F1b)
+# ---------------------------------------------------------------------------
+
+class TestPhaseGroupResume:
+    """A crash-resume re-runs the whole phase-group DBOS step, so within-group
+    execution must be idempotent: completed tools aren't re-executed and
+    StepResults aren't duplicated."""
+
+    def test_resume_skips_completed_tool_and_does_not_duplicate(self, transactional_db, run):
+        from apps.core.engine.workflows.runner import run_one_phase_group
+        runner = _mock_runner(return_value=[])
+        group = ["subfinder"]
+        with _patch_get_runner({"subfinder": runner}):
+            run_one_phase_group(run, run.session, group, base_order=1)
+            assert runner.call_count == 1
+            assert WorkflowStepResult.objects.filter(run=run, tool="subfinder").count() == 1
+            # Simulate the DBOS step re-running the same group after a crash-resume.
+            run_one_phase_group(run, run.session, group, base_order=2)
+        assert runner.call_count == 1  # NOT re-executed
+        rows = WorkflowStepResult.objects.filter(run=run, tool="subfinder")
+        assert rows.count() == 1       # NOT duplicated
+        assert rows.first().status == "completed"
+
+    def test_single_step_reuses_stale_running_row(self, transactional_db, run):
+        # A crash left a non-terminal "running" row; re-running reuses it (the
+        # tool genuinely didn't finish) instead of stacking a duplicate.
+        from apps.core.engine.workflows.runner import _run_single_step
+        WorkflowStepResult.objects.create(run=run, tool="subfinder", order=1, status="running")
+        runner = _mock_runner(return_value=[])
+        with _patch_get_runner({"subfinder": runner}):
+            _run_single_step(run, run.session, "subfinder", 1)
+        rows = WorkflowStepResult.objects.filter(run=run, tool="subfinder")
+        assert rows.count() == 1
+        assert rows.first().status == "completed"
+        assert runner.call_count == 1
+
+
+# ---------------------------------------------------------------------------
 # WorkflowStepResult
 # ---------------------------------------------------------------------------
 

@@ -8,6 +8,14 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Fixed
+- **Phase-group execution resumes cleanly after a crash (F1b).** The per-phase
+  DBOS step re-runs the *whole* group on a crash-resume, but within-group
+  execution wasn't idempotent — a resume re-created `WorkflowStepResult` rows
+  (no `(run, tool)` unique constraint) and re-executed tools that had already
+  finished. `_run_single_step` now skips a tool that already reached a terminal
+  state and reuses a non-terminal (crashed "running") row instead of duplicating
+  it; `run_one_phase_group` skips already-terminal tools up front. Checkpointing
+  is no longer only at the group boundary.
 - **Manual AI re-triage actually re-runs now (F2).** The `ai_triage` durable task
   deduped on `triage-{session_id}` with `return-existing`, so a second manual
   re-triage returned the prior *completed* workflow and silently did nothing —
