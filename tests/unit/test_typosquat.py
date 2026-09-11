@@ -103,13 +103,13 @@ class TestGenerateCandidates:
     def test_cctld_char_mutation_keeps_full_suffix(self):
         # Character techniques mutate the registrable label and keep the full
         # ".co.uk" suffix — the old last-dot split mutated the "co" label too.
+        # Use set-intersection (like the other technique tests) rather than
+        # `"host" in names`, which CodeQL misreads as URL-substring sanitization.
         names = {c["candidate"] for c in generate_candidates("example.co.uk")}
-        assert "xample.co.uk" in names      # omission on "example", suffix intact
-        assert "e-xample.co.uk" in names    # hyphenation on "example", suffix intact
-        # Garbage the old bug produced (mutating the "co" label) must be absent —
-        # exact set-membership checks, not host-substring matching.
-        assert "example.c.uk" not in names
-        assert "exampleco.uk" not in names
+        assert names & {"xample.co.uk"}     # omission on "example", suffix intact
+        assert names & {"e-xample.co.uk"}   # hyphenation on "example", suffix intact
+        # Garbage the old bug produced (mutating the "co" label) must be absent.
+        assert not (names & {"example.c.uk", "exampleco.uk"})
 
     def test_empty_domain_returns_empty(self):
         assert generate_candidates("") == []
