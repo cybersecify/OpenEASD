@@ -101,11 +101,15 @@ class TestGenerateCandidates:
         assert not any(n.startswith("example.co.") for n in names)  # no example.co.<tld> garbage
 
     def test_cctld_char_mutation_keeps_full_suffix(self):
-        # Character techniques mutate the registrable label and keep ".co.uk".
+        # Character techniques mutate the registrable label and keep the full
+        # ".co.uk" suffix — the old last-dot split mutated the "co" label too.
         names = {c["candidate"] for c in generate_candidates("example.co.uk")}
-        assert "xample.co.uk" in names          # omission on "example"
-        assert not any(".co.uk" not in n and n.endswith(".uk") for n in names
-                       if n.startswith("exampl"))  # suffix never mangled to bare .uk
+        assert "xample.co.uk" in names      # omission on "example", suffix intact
+        assert "e-xample.co.uk" in names    # hyphenation on "example", suffix intact
+        # Garbage the old bug produced (mutating the "co" label) must be absent —
+        # exact set-membership checks, not host-substring matching.
+        assert "example.c.uk" not in names
+        assert "exampleco.uk" not in names
 
     def test_empty_domain_returns_empty(self):
         assert generate_candidates("") == []
