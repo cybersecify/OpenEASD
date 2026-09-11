@@ -23,5 +23,6 @@ from .base import (  # noqa: E402,F401
     _PROFILE_TUNING,
     _resolve_profile,
     _security_settings,
+    _validate_db_password,
     _validate_secret_key,
 )

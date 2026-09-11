@@ -197,6 +197,27 @@ ASGI_APPLICATION = "openeasd.asgi.application"
 # durable scan execution and so scans can run with real concurrency (no more
 # single-writer lock). Configure via DB_* env vars; DATABASE_URL wins if set.
 _DATABASE_URL = config("DATABASE_URL", default="")
+_DB_PASSWORD = config("DB_PASSWORD", default="openeasd")  # only used on the DB_* path
+
+
+def _validate_db_password(using_database_url: bool, db_password: str, debug: bool) -> None:
+    """Fail fast in production on the well-known default DB password.
+
+    Mirrors _validate_secret_key. Only the DB_* path carries a default
+    ('openeasd'); DATABASE_URL supplies its own credentials, so it's exempt.
+    A shipped default password is a trivial foothold on the database that holds
+    every scan result AND the encrypted BYOK credentials. DEBUG builds keep the
+    default for local dev.
+    """
+    if not debug and not using_database_url and db_password == "openeasd":
+        raise ImproperlyConfigured(
+            "DB_PASSWORD is still the insecure default 'openeasd' while DEBUG=False. "
+            "Set a strong DB_PASSWORD (or a full DATABASE_URL) via the environment. "
+            "This database holds all scan results and encrypted BYOK credentials, "
+            "so the well-known default leaves them open to anyone who can reach it."
+        )
+
+
 if _DATABASE_URL:
     import dj_database_url  # type: ignore
 
@@ -207,12 +228,18 @@ else:
             "ENGINE": "django.db.backends.postgresql",
             "NAME": config("DB_NAME", default="openeasd"),
             "USER": config("DB_USER", default="openeasd"),
-            "PASSWORD": config("DB_PASSWORD", default="openeasd"),
+            "PASSWORD": _DB_PASSWORD,
             "HOST": config("DB_HOST", default="127.0.0.1"),
             "PORT": config("DB_PORT", default="5432"),
             "CONN_MAX_AGE": config("DB_CONN_MAX_AGE", default=600, cast=int),
         }
     }
+
+# Skip under the test runner for the same reason as the SECRET_KEY guard: pytest
+# imports settings before any env hook can set one, and CI sets real DB_* values.
+# The logic is covered by unit + subprocess tests.
+if "pytest" not in sys.modules:
+    _validate_db_password(bool(_DATABASE_URL), _DB_PASSWORD, DEBUG)
 
 # DBOS durable-execution system database. Checkpoints scan workflows/steps so a
 # crashed or restarted worker RESUMES a scan instead of losing it (retiring the
