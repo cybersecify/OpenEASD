@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.15.0] — 2026-09-11
+
 ### Changed
 - **Split "Domain Intelligence" into "Domain Posture" + "Brand Threat."** The old
   category mixed two subjects: *your own domain's health* and *external
@@ -1549,7 +1551,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.14.2...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.15.0...HEAD
+[v2.15.0]: https://github.com/cybersecify/OpenEASD/compare/v2.14.2...v2.15.0
 [v2.14.2]: https://github.com/cybersecify/OpenEASD/compare/v2.14.1...v2.14.2
 [v2.14.1]: https://github.com/cybersecify/OpenEASD/compare/v2.14.0...v2.14.1
 [v2.14.0]: https://github.com/cybersecify/OpenEASD/compare/v2.13.0...v2.14.0
