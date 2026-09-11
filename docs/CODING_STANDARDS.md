@@ -352,23 +352,26 @@ milestones with semver. Run `just ci` before every PR.
 
 Grounded in a full-tree review (2026-09-11). Ordered by priority. These are the
 deltas between this document and the current code — fix-forward candidates, not
-blockers.
+blockers. Fixed items are struck through with the PR that closed them.
 
 ### High — correctness / security
 
-- **F1 — finalize is not replay-idempotent except for alerts.**
-  `finalize_session_by_id` is a replayable DBOS step, but only `_dispatch_alerts`
-  has a replay guard. On replay, `_detect_deltas`, `_check_coverage_regression`,
-  `build_insights`, and the asset rollup re-run and can duplicate rows.
-  (`apps/core/engine/scans/pipeline.py:238-261`)
+- **F1 — ~~finalize is not replay-idempotent except for alerts~~ — FIXED (#444).**
+  `_detect_deltas` and `_check_coverage_regression` now delete-then-insert, and
+  `_count_all_findings` excludes the `scan_coverage` meta-warning, so a finalize
+  replay duplicates nothing and `total_findings` stays stable. `build_insights`
+  (`update_or_create` + prune) and the asset rollup (`get_or_create`) were
+  verified already replay-safe.
 - **F1b — within-group tool execution is not idempotent.** `base_order` derives
   from `WorkflowStepResult.count()+1`; a crash mid-group re-runs the whole group
   and re-creates StepResults + re-executes already-run tools. Checkpointing is
   only at the group boundary. (`pipeline.py:594-607`)
-- **F7 — notification config GET returns raw webhook URLs.**
-  `_serialize_config` returns `slack_webhook_url`/`teams_webhook_url` in plaintext,
-  violating the write-only/presence-boolean discipline used everywhere else.
-  (`apps/core/console/notifications/api.py:36-38`)
+- **F7 — ~~notification config GET returns raw webhook URLs~~ — FIXED (#445).**
+  `_serialize_config` now returns presence booleans + a `db|env|none` source per
+  channel and never the URL; `save_config` adopts the None=unchanged /
+  ""=clear / value=set write semantics so the threshold can be saved without
+  wiping a stored webhook the UI can no longer read back. Matches
+  `/api/credentials/` and `/api/ai/config/`.
 - **F-sec1 — weak default DB credentials ship silently.** `DB_PASSWORD` defaults
   to `"openeasd"` with no fail-fast guard (unlike `SECRET_KEY`).
   (`openeasd/settings/base.py:210`)

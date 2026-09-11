@@ -18,23 +18,66 @@ const THRESHOLD_OPTIONS = [
   { label: 'Low and above',    value: 'low' },
 ];
 
+function sourceBadge(source) {
+  // source: 'db' | 'env' | 'none'. Values are never returned by the API — this
+  // only reflects whether a webhook is set and where it resolves from.
+  if (source === 'db')  return <Badge value="active"   label="Set (UI)" />;
+  if (source === 'env') return <Badge value="info"     label="From env var" />;
+  return <Badge value="inactive" label="Not set" />;
+}
+
+function WebhookField({ label, placeholder, help, source, value, onChange, onTest, testing, onClear, busy }) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-xs font-semibold text-dim uppercase tracking-wider">{label}</label>
+        {sourceBadge(source)}
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="url"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={source === 'none' ? placeholder : 'Set — enter a new URL to replace'}
+          className="field flex-1"
+          autoComplete="off"
+        />
+        <Button type="button" variant="outline" size="sm" onClick={onTest}
+          disabled={(source === 'none' && !value.trim()) || testing}>
+          {testing ? 'Sending…' : 'Test'}
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={onClear}
+          disabled={busy || source !== 'db'}>
+          Clear
+        </Button>
+      </div>
+      <p className="text-xs text-dim">{help}</p>
+    </div>
+  );
+}
+
 function SettingsCard({ config, onSaved }) {
-  const [slack, setSlack]       = useState(config?.slack_webhook_url  ?? '');
-  const [teams, setTeams]       = useState(config?.teams_webhook_url  ?? '');
+  const [slack, setSlack]       = useState('');
+  const [teams, setTeams]       = useState('');
   const [threshold, setThreshold] = useState(config?.severity_threshold ?? 'high');
   const [saving, setSaving]     = useState(false);
   const [testing, setTesting]   = useState(null); // 'slack' | 'teams' | null
+  const slackSource = config?.slack_source ?? 'none';
+  const teamsSource = config?.teams_source ?? 'none';
 
   async function handleSave(e) {
     e.preventDefault();
     setSaving(true);
     try {
-      await apiPost('/notifications/config/', {
-        slack_webhook_url:  slack.trim(),
-        teams_webhook_url:  teams.trim(),
-        severity_threshold: threshold,
-      });
+      // Always send the threshold; send a webhook only when the user typed a new
+      // one (omitted = unchanged server-side), so saving the threshold never
+      // clobbers a stored URL we can't read back.
+      const payload = { severity_threshold: threshold };
+      if (slack.trim()) payload.slack_webhook_url = slack.trim();
+      if (teams.trim()) payload.teams_webhook_url = teams.trim();
+      await apiPost('/notifications/config/', payload);
       toast.success('Notification settings saved.');
+      setSlack(''); setTeams('');
       onSaved();
     } catch (err) {
       toast.error(err.message || 'Failed to save settings.');
@@ -43,9 +86,25 @@ function SettingsCard({ config, onSaved }) {
     }
   }
 
+  async function handleClear(channel) {
+    setSaving(true);
+    try {
+      await apiPost('/notifications/config/', { [`${channel}_webhook_url`]: '' });
+      toast.success(`${channel === 'slack' ? 'Slack' : 'Teams'} webhook cleared.`);
+      channel === 'slack' ? setSlack('') : setTeams('');
+      onSaved();
+    } catch (err) {
+      toast.error(err.message || `Failed to clear ${channel} webhook.`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleTest(channel) {
     setTesting(channel);
     try {
+      // The test endpoint uses the STORED webhook, so a configured channel can be
+      // tested without re-entering the URL.
       await apiPost('/notifications/test/', { channel });
       toast.success(`Test ${channel === 'slack' ? 'Slack' : 'Teams'} message sent — check your channel.`);
     } catch (err) {
@@ -62,53 +121,30 @@ function SettingsCard({ config, onSaved }) {
       </CardHeader>
       <CardContent className="px-5 py-5">
         <form onSubmit={handleSave} className="space-y-5">
-          {/* Slack */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-dim uppercase tracking-wider">Slack Incoming Webhook URL</label>
-            <div className="flex gap-2">
-              <input
-                type="url"
-                value={slack}
-                onChange={e => setSlack(e.target.value)}
-                placeholder="https://hooks.slack.com/services/…"
-                className="field flex-1"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => handleTest('slack')}
-                disabled={!slack.trim() || testing === 'slack'}
-              >
-                {testing === 'slack' ? 'Sending…' : 'Test'}
-              </Button>
-            </div>
-            <p className="text-xs text-dim">Create at <span className="font-mono">api.slack.com/apps</span> → Incoming Webhooks</p>
-          </div>
-
-          {/* Teams */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-dim uppercase tracking-wider">Microsoft Teams Webhook URL</label>
-            <div className="flex gap-2">
-              <input
-                type="url"
-                value={teams}
-                onChange={e => setTeams(e.target.value)}
-                placeholder="https://outlook.office.com/webhook/…"
-                className="field flex-1"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => handleTest('teams')}
-                disabled={!teams.trim() || testing === 'teams'}
-              >
-                {testing === 'teams' ? 'Sending…' : 'Test'}
-              </Button>
-            </div>
-            <p className="text-xs text-dim">Create via Power Automate → Post to a channel when a webhook request is received</p>
-          </div>
+          <WebhookField
+            label="Slack Incoming Webhook URL"
+            placeholder="https://hooks.slack.com/services/…"
+            help="Create at api.slack.com/apps → Incoming Webhooks. The stored URL is never displayed."
+            source={slackSource}
+            value={slack}
+            onChange={setSlack}
+            onTest={() => handleTest('slack')}
+            testing={testing === 'slack'}
+            onClear={() => handleClear('slack')}
+            busy={saving}
+          />
+          <WebhookField
+            label="Microsoft Teams Webhook URL"
+            placeholder="https://outlook.office.com/webhook/…"
+            help="Create via Power Automate → Post to a channel when a webhook request is received. The stored URL is never displayed."
+            source={teamsSource}
+            value={teams}
+            onChange={setTeams}
+            onTest={() => handleTest('teams')}
+            testing={testing === 'teams'}
+            onClear={() => handleClear('teams')}
+            busy={saving}
+          />
 
           {/* Threshold */}
           <div className="space-y-1.5">

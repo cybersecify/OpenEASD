@@ -170,6 +170,72 @@ class TestNotificationsConfigAPI:
         resp = client.post("/api/notifications/config/", data={}, content_type="application/json")
         assert resp.status_code == 401
 
+    def test_get_config_never_returns_webhook_urls(self, client, db):
+        """F7: webhook URLs are secrets — GET must surface presence + source only,
+        never the stored URL (anyone holding the URL can post into the channel)."""
+        from apps.core.console.notifications.models import NotificationConfig
+        cfg = NotificationConfig.get()
+        cfg.slack_webhook_url = "https://hooks.slack.com/services/SECRET"
+        cfg.teams_webhook_url = "https://outlook.office.com/webhook/SECRET"
+        cfg.save()
+
+        headers = self._auth_headers(client)
+        resp = client.get("/api/notifications/config/", **headers)
+        data = resp.json()
+
+        assert "slack_webhook_url" not in data
+        assert "teams_webhook_url" not in data
+        assert "SECRET" not in resp.content.decode()
+        assert data["slack_configured"] is True
+        assert data["teams_configured"] is True
+        assert data["slack_source"] == "db"
+        assert data["teams_source"] == "db"
+
+    def test_source_is_env_when_only_env_set(self, client, db, settings):
+        settings.SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/FROM-ENV"
+        headers = self._auth_headers(client)
+        data = client.get("/api/notifications/config/", **headers).json()
+        assert data["slack_configured"] is True
+        assert data["slack_source"] == "env"
+        assert "FROM-ENV" not in client.get("/api/notifications/config/", **headers).content.decode()
+
+    def test_threshold_only_save_preserves_webhooks(self, client, db):
+        """None = unchanged: saving the threshold alone must NOT wipe a stored
+        webhook the UI can no longer read back (the core reason for None-semantics)."""
+        from apps.core.console.notifications.models import NotificationConfig
+        cfg = NotificationConfig.get()
+        cfg.slack_webhook_url = "https://hooks.slack.com/services/KEEP"
+        cfg.save()
+
+        headers = self._auth_headers(client)
+        resp = client.post(
+            "/api/notifications/config/",
+            data={"severity_threshold": "low"},
+            content_type="application/json",
+            **headers,
+        )
+        assert resp.status_code == 200
+        cfg = NotificationConfig.get()
+        assert cfg.slack_webhook_url == "https://hooks.slack.com/services/KEEP"
+        assert cfg.severity_threshold == "low"
+
+    def test_empty_string_clears_webhook(self, client, db):
+        from apps.core.console.notifications.models import NotificationConfig
+        cfg = NotificationConfig.get()
+        cfg.slack_webhook_url = "https://hooks.slack.com/services/BYE"
+        cfg.save()
+
+        headers = self._auth_headers(client)
+        resp = client.post(
+            "/api/notifications/config/",
+            data={"slack_webhook_url": ""},
+            content_type="application/json",
+            **headers,
+        )
+        assert resp.status_code == 200
+        assert NotificationConfig.get().slack_webhook_url == ""
+        assert resp.json()["slack_source"] == "none"
+
 
 # ---------------------------------------------------------------------------
 # Notifications API — test endpoint
