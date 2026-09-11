@@ -7,6 +7,29 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Fixed
+- **Brand-threat false positives (typosquat + asn_cluster).** Triaging a real
+  amnic.com report showed the Brand Threat category badly over-calling: a
+  legitimate ccTLD registry (amnic.net = the Armenia Network Information Centre)
+  flagged as "active impersonation", and parked lookalikes sharing an AWS/
+  Cloudflare/Namecheap IP reported as a "coordinated phishing infrastructure"
+  cluster. Three tuning fixes, no new tools:
+  - **typosquat now gates "high" on a login form only.** A brand-name string on
+    the page is a *review signal* (kept in the description), not proof of
+    impersonation — short brand strings legitimately appear in unrelated
+    organizations' own names. Brand-mention-alone no longer escalates to high.
+  - **typosquat detects domain parking** (known parking/for-sale anycast IPs +
+    sale boilerplate on the homepage) and caps a parked lookalike at **low** —
+    registrar-default A/MX records are speculation, not the buyer's phishing
+    infrastructure. A confirmed login form still outranks the parked signal.
+  - **asn_cluster skips generic networks** (hyperscale clouds, major CDNs,
+    registrar/parking ASNs — AWS/Cloudflare/Google/Namecheap/etc.) where
+    millions of unrelated domains co-locate, *unless* the cluster contains a
+    weaponized member. Overridable via `ASN_CLUSTER_GENERIC_ASNS`.
+  - Known limitation still open: the apex is split by last-dot, not the Public
+    Suffix List, so TLD-swap candidates are wrong for multi-label ccTLDs
+    (`example.co.uk` → `example.co.com`). Tracked separately.
+
 ## [v2.15.0] — 2026-09-11
 
 ### Changed
