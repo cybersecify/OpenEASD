@@ -34,6 +34,14 @@ commits to recover the reasoning.
     `dns.resolver.resolve` calls.
 
 ### Security
+- **Centralized the domain-authorization gate into one predicate (F3).** The
+  "is this domain authorized for active scanning?" check
+  (`DomainAuthorization.objects.filter(domain__name=X).exists()`) was hand-copied
+  in three places — the scan-start gate, the subscan gate, and the AI agent's
+  `gate_subscan_tools`. For a security gate, three copies are a drift hazard; they
+  now all call a single `DomainAuthorization.is_authorized(domain)` classmethod,
+  so any future change (e.g. authorization expiry) applies everywhere at once.
+  Behavior-preserving.
 - **Production guards skip only under the pytest runner, not mere importability
   (F-sec2).** The SECRET_KEY and default-DB-password fail-fast guards skipped
   whenever `"pytest" in sys.modules` — so any process that transitively imported

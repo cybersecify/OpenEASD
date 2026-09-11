@@ -28,6 +28,18 @@ class TestDomainAuthorizationModel:
         assert auth.auth_type == "owner"
         assert auth.authorized_by == "Alice Smith"
 
+    def test_is_authorized_single_source_of_truth(self, domain):
+        # F3: the scan-start, subscan, and AI-agent gates all resolve "may active
+        # tools scan this domain?" through this one classmethod.
+        from apps.core.data.domains.models import DomainAuthorization
+        assert DomainAuthorization.is_authorized(domain.name) is False
+        assert DomainAuthorization.is_authorized("never-seen.example") is False
+        DomainAuthorization.objects.create(
+            domain=domain, auth_type="owner",
+            authorized_at=datetime.date(2026, 1, 15), authorized_by="Alice Smith",
+        )
+        assert DomainAuthorization.is_authorized(domain.name) is True
+
     def test_cascade_delete(self, domain):
         from apps.core.data.domains.models import DomainAuthorization
         DomainAuthorization.objects.create(

@@ -321,7 +321,7 @@ def start_scan(request, data: ScanStartRequest):
     # otherwise the workflow's tools are used. Scheduled scans always keep the gate.
     if not _is_passive_only_scan(data.schedule_type, workflow, tools=tools):
         from apps.core.data.domains.models import DomainAuthorization
-        if not DomainAuthorization.objects.filter(domain__name=domain).exists():
+        if not DomainAuthorization.is_authorized(domain):
             raise HttpError(403, "Domain is not authorized for scanning")
 
     if data.schedule_type == "now":
@@ -648,7 +648,7 @@ def start_subscan(request, session_uuid: uuid.UUID, data: SubScanRequest):
     if not is_passive_tool_set(data.tools):
         from apps.core.data.domains.models import DomainAuthorization
         parent = get_object_or_404(ScanSession, uuid=str(session_uuid))
-        if not DomainAuthorization.objects.filter(domain__name=parent.domain).exists():
+        if not DomainAuthorization.is_authorized(parent.domain):
             raise HttpError(403, "Domain is not authorized for scanning")
 
     session = create_subscan_session(str(session_uuid), tools=data.tools)
