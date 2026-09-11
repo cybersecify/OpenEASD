@@ -21,11 +21,13 @@ commits to recover the reasoning.
   - Added the missing `default_auto_field` to six tool `apps.py`
     (`cve_intel`, `nuclei_network`, `ssh_checker`, `takeover_check`,
     `tls_checker`, `web_checker`). No migrations (these apps define no models).
-  - Deliberately **not** changed: `cloud_assets` — it's a binary tool whose
-    phase-sibling `takeover_check` *propagates* a missing-binary/timeout to a
-    "partial" scan (labeled-partials principle), so whether it should swallow
-    (additive) or propagate is a policy call tracked separately (F-tool2/F-tool3
-    in `docs/CODING_STANDARDS.md`).
+  - `cloud_assets` now **propagates** a missing/timed-out `cloud_enum` (F-tool3):
+    dropped the upfront `shutil.which → []` silent skip, so the binary-missing
+    case raises `ToolBinaryMissing` like every other binary collector and the
+    runner marks the scan "partial" instead of a fake "clean". Ruling: binary
+    tools propagate, matching `takeover_check` — restoring the intent of the
+    earlier "tool failures no longer hidden behind `completed`" change. (F-tool2,
+    the domain_security DNS-timeout fix, is still deferred to its own PR.)
 
 ### Security
 - **Fail fast on the default DB password in production (F-sec1).** `DB_PASSWORD`

@@ -402,21 +402,23 @@ blockers. Fixed items are struck through with the PR that closed them.
 - **F-tool1 — ~~`domain_security`/`domain_probe` orchestrators have no top-level
   try/except~~ — FIXED (#448).** Both now wrap collect+analyze in
   `try/except → return []`, matching their passive Domain-Posture siblings
-  (`breach_check`/`hudson_rock`/`dns_history`). `cloud_assets` was deliberately
-  **excluded**: it's a binary tool, and its phase-sibling `takeover_check`
-  *propagates* `ToolBinaryMissing`/`ToolTimeout` → "partial" (labeled-partials
-  principle). Whether `cloud_assets` should swallow (additive) or propagate
-  (honest-partial) is an open policy call — tracked, not guessed.
+  (`breach_check`/`hudson_rock`/`dns_history`). `cloud_assets` is **not** wrapped:
+  it's a binary tool and follows the binary-tool contract instead (propagate →
+  "partial", like its sibling `takeover_check`) — resolved in F-tool3 below.
 - **F-tool2 — configured `_DNS_TIMEOUT` is honored in only one check** in
   `domain_security`; most `dns.resolver.resolve` calls use the default resolver
   with no explicit timeout. (`domain_security/scanner.py`) **Deferred** from #448:
   the slow real-network `test_domain_security.py` patches `scanner.dns` with
   fixed-signature fakes, so adding a `lifetime=` kwarg needs validating against
   that suite — its own PR.
-- **F-tool3 — `cloud_assets` skips on missing binary** (`shutil.which → []`)
-  instead of raising `ToolBinaryMissing` like every other binary collector —
-  inconsistent binary-missing contract. (`cloud_assets/collector.py:21-23`)
-  **Open**, coupled to the F-tool1 policy call above (raise→partial vs skip).
+- **F-tool3 — ~~`cloud_assets` skips on missing binary~~ — FIXED (#449).**
+  Dropped the upfront `shutil.which → []` silent skip; a missing/timed-out
+  `cloud_enum` now raises `ToolBinaryMissing`/`ToolTimeout` and propagates (the
+  scanner has no swallowing wrapper), so the runner marks the scan "partial"
+  instead of a fake "clean". **Ruling:** binary tools propagate, matching
+  `takeover_check` — this also restores the intent of the earlier "tool failures
+  no longer hidden behind `completed`" change, which had listed `cloud_assets`
+  among the raisers.
 - **F-tool4 — ~~`web_checker` hardcodes its own User-Agent~~ — FIXED (#448).**
   Now uses `settings.OPENEASD_USER_AGENT`, the shared honest UA.
 - **F9 — local fixtures shadow `conftest.py`** in `test_api_endpoints.py` and
