@@ -11,10 +11,13 @@ from apps.core.console.api.auth import JWTAuth
 from apps.core.engine.workflows.models import Workflow, WorkflowStep
 from apps.core.engine.workflows.registry import (
     get_registry,
+    get_tool_active,
     get_tool_choices,
+    get_tool_phase_groups,
     get_tool_phases,
     get_tool_produces_findings,
     get_tool_requires,
+    is_passive_tool_set,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,6 +45,10 @@ def _serialize_workflow(workflow) -> dict:
         "name": workflow.name,
         "description": workflow.description,
         "is_default": workflow.is_default,
+        # Passive-only workflows send no packets to the target and need no
+        # DomainAuthorization for an immediate scan — drives the start form's
+        # dynamic attestation. Matches the scan-start gate's is_passive_tool_set.
+        "is_passive": is_passive_tool_set(workflow.enabled_tools()),
         "created_at": workflow.created_at.isoformat(),
         "updated_at": workflow.updated_at.isoformat(),
         "steps": steps,
@@ -64,12 +71,19 @@ def _serialize_step_result(sr) -> dict:
 def list_tools(request):
     phases = get_tool_phases()
     produces = get_tool_produces_findings()
+    groups = get_tool_phase_groups()
+    active = get_tool_active()
     tools = [
         {
             "key": key,
             "label": label,
             "phase": phases.get(key, 99),
+            "phase_group": groups.get(key, ""),
             "produces_findings": produces.get(key, False),
+            # active = probes the target directly (needs authorization); passive
+            # tools use only public/third-party data. Drives the start form's
+            # dynamic attestation for a category selection.
+            "active": active.get(key, True),
         }
         for key, label in get_tool_choices()
     ]

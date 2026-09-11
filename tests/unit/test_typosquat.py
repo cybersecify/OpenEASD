@@ -85,6 +85,32 @@ class TestGenerateCandidates:
         assert names & {"example.net"}
         assert not (names & {"www.example.com"})
 
+    def test_split_apex_handles_multi_label_suffix(self):
+        from apps.typosquat.collector import _split_apex
+        assert _split_apex("example.com") == ("example", "com")
+        assert _split_apex("example.co.uk") == ("example", "co.uk")
+        assert _split_apex("mybank.com.au") == ("mybank", "com.au")
+        assert _split_apex("www.example.co.uk") == ("example", "co.uk")
+
+    def test_cctld_tld_swap_uses_registrable_name(self):
+        # PSL/ccTLD: the old last-dot split produced garbage like "example.co.net";
+        # the whole public suffix must be swapped, yielding real lookalikes.
+        names = {c["candidate"] for c in generate_candidates("example.co.uk")
+                 if c["technique"] == "tld_swap"}
+        assert {"example.com", "example.net", "example.org"} <= names
+        assert not any(n.startswith("example.co.") for n in names)  # no example.co.<tld> garbage
+
+    def test_cctld_char_mutation_keeps_full_suffix(self):
+        # Character techniques mutate the registrable label and keep the full
+        # ".co.uk" suffix — the old last-dot split mutated the "co" label too.
+        # Use set-intersection (like the other technique tests) rather than
+        # `"host" in names`, which CodeQL misreads as URL-substring sanitization.
+        names = {c["candidate"] for c in generate_candidates("example.co.uk")}
+        assert names & {"xample.co.uk"}     # omission on "example", suffix intact
+        assert names & {"e-xample.co.uk"}   # hyphenation on "example", suffix intact
+        # Garbage the old bug produced (mutating the "co" label) must be absent.
+        assert not (names & {"example.c.uk", "exampleco.uk"})
+
     def test_empty_domain_returns_empty(self):
         assert generate_candidates("") == []
 
@@ -119,7 +145,9 @@ class TestCollector:
 
         with patch("apps.typosquat.collector.generate_candidates",
                    return_value=[{"candidate": "examp1e.com", "technique": "typo"}]), \
-             patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve):
+             patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
+             patch("apps.typosquat.collector.requests.get") as get:
+            get.return_value = type("R", (), {"text": "<html>hi</html>", "url": "https://examp1e.com/"})()
             results = collect(sess)
         assert len(results) == 1
         rec = results[0]
@@ -127,6 +155,43 @@ class TestCollector:
         assert rec["has_a"] is True
         assert rec["resolved_ips"] == ["93.184.216.34"]
         assert rec["technique"] == "typo"
+        # A-record lookalikes get a homepage probe (no login form / brand here).
+        assert rec["content_checked"] is True
+        assert rec["login_form"] is False
+
+    def test_login_form_and_brand_flagged_as_weaponized(self):
+        sess = _session("example.com")
+
+        def fake_resolve(name, rdtype):
+            if rdtype == "A":
+                return ["1.2.3.4"]
+            raise dns.resolver.NoAnswer()
+
+        html = "<html><form action='/login' class=signin>example bank</form></html>"
+        with patch("apps.typosquat.collector.generate_candidates",
+                   return_value=[{"candidate": "examp1e.com", "technique": "typo"}]), \
+             patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
+             patch("apps.typosquat.collector.requests.get") as get:
+            get.return_value = type("R", (), {"text": html, "url": "https://examp1e.com/"})()
+            rec = collect(sess)[0]
+        assert rec["login_form"] is True
+        assert rec["brand_mentioned"] is True   # "example" appears on the page
+
+    def test_content_fetch_failure_is_graceful(self):
+        sess = _session("example.com")
+
+        def fake_resolve(name, rdtype):
+            if rdtype == "A":
+                return ["1.2.3.4"]
+            raise dns.resolver.NoAnswer()
+
+        with patch("apps.typosquat.collector.generate_candidates",
+                   return_value=[{"candidate": "examp1e.com", "technique": "typo"}]), \
+             patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
+             patch("apps.typosquat.collector.requests.get", side_effect=Exception("boom")):
+            rec = collect(sess)[0]   # must not raise
+        assert rec["content_checked"] is False
+        assert rec["login_form"] is False
 
     def test_unregistered_nxdomain_skipped(self):
         sess = _session("example.com")
@@ -209,6 +274,60 @@ class TestAnalyzer:
                     "resolved_ips": []}]
         assert analyze(sess, results)[0].severity == "low"
 
+    def test_login_form_elevates_to_high(self):
+        sess = _session("example.com")
+        results = [{"candidate": "examp1e.com", "technique": "typo",
+                    "has_a": True, "has_mx": False, "has_ns": False,
+                    "resolved_ips": ["1.2.3.4"], "login_form": True,
+                    "content_checked": True}]
+        f = analyze(sess, results)[0]
+        assert f.severity == "high"
+        assert f.extra["login_form"] is True
+        assert "takedown" in f.description.lower()
+
+    def test_brand_mention_alone_stays_medium(self):
+        # A brand string on the page is a review signal, not proof of
+        # impersonation — short brands collide with unrelated orgs' real names
+        # (e.g. a scan for "amnic" hit the Armenia Network Information Centre).
+        sess = _session("example.com")
+        results = [{"candidate": "examp1e.com", "technique": "typo",
+                    "has_a": True, "has_mx": False, "has_ns": False,
+                    "resolved_ips": ["1.2.3.4"], "brand_mentioned": True,
+                    "brand_mention_count": 4, "content_checked": True}]
+        f = analyze(sess, results)[0]
+        assert f.severity == "medium"
+        assert "review it manually" in f.description
+
+    def test_parked_lookalike_is_low_even_with_a_and_mx(self):
+        # Parking-lot A/MX records are registrar defaults, not the buyer's
+        # phishing infrastructure.
+        sess = _session("example.com")
+        results = [{"candidate": "examp1e.com", "technique": "typo",
+                    "has_a": True, "has_mx": True, "has_ns": False,
+                    "resolved_ips": ["76.223.54.146"], "parked": True,
+                    "content_checked": True}]
+        f = analyze(sess, results)[0]
+        assert f.severity == "low"
+        assert "parking" in f.description.lower()
+        assert f.extra["parked"] is True
+
+    def test_login_form_on_parked_page_still_high(self):
+        # A confirmed phishing page outranks the parked signal.
+        sess = _session("example.com")
+        results = [{"candidate": "examp1e.com", "technique": "typo",
+                    "has_a": True, "has_mx": False, "has_ns": False,
+                    "resolved_ips": ["1.2.3.4"], "parked": True,
+                    "login_form": True, "content_checked": True}]
+        assert analyze(sess, results)[0].severity == "high"
+
+    def test_weaponizable_without_content_signal_stays_medium(self):
+        sess = _session("example.com")
+        results = [{"candidate": "examp1e.com", "technique": "typo",
+                    "has_a": True, "has_mx": False, "has_ns": False,
+                    "resolved_ips": ["1.2.3.4"], "content_checked": True,
+                    "login_form": False, "brand_mentioned": False}]
+        assert analyze(sess, results)[0].severity == "medium"
+
     def test_one_finding_per_candidate(self):
         sess = _session("example.com")
         results = [
@@ -255,3 +374,54 @@ class TestScanner:
         sess = _session("example.com")
         with patch("apps.typosquat.scanner.collect", side_effect=RuntimeError("boom")):
             assert run_typosquat(sess) == []  # swallowed — must never fail a scan
+
+
+@pytest.mark.django_db
+class TestCollectorConcurrency:
+    """The registration + homepage passes run concurrently (ThreadPoolExecutor)
+    but must stay deterministic: results follow candidate order, and every
+    registered candidate is still checked."""
+
+    def test_results_preserve_candidate_order(self):
+        from apps.typosquat import collector
+        sess = _session("example.com")
+        cands = [
+            {"candidate": "aaa.com", "technique": "typo"},
+            {"candidate": "bbb.com", "technique": "typo"},
+            {"candidate": "ccc.com", "technique": "typo"},
+        ]
+
+        # aaa + ccc register (A record), bbb is NXDOMAIN → dropped.
+        def fake_resolve(name, rdtype):
+            if name in ("aaa.com", "ccc.com") and rdtype == "A":
+                return ["1.2.3.4"]
+            return []
+
+        with patch("apps.typosquat.collector.generate_candidates", return_value=cands), \
+             patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
+             patch("apps.typosquat.collector.requests.get") as get:
+            get.return_value.text = "<html></html>"
+            get.return_value.url = "https://x/"
+            results = collector.collect(sess)
+
+        assert [r["candidate"] for r in results] == ["aaa.com", "ccc.com"]
+
+    def test_all_registered_candidates_checked_when_many(self):
+        from apps.typosquat import collector
+        sess = _session("example.com")
+        cands = [{"candidate": f"c{i}.com", "technique": "typo"} for i in range(50)]
+
+        def fake_resolve(name, rdtype):
+            return ["1.2.3.4"] if rdtype == "A" else []  # all register
+
+        with patch("apps.typosquat.collector.generate_candidates", return_value=cands), \
+             patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
+             patch("apps.typosquat.collector.requests.get") as get:
+            get.return_value.text = "<html></html>"
+            get.return_value.url = "https://x/"
+            results = collector.collect(sess)
+
+        assert len(results) == 50
+        assert {r["candidate"] for r in results} == {f"c{i}.com" for i in range(50)}
+        # homepage fetches capped at CONTENT_MAX_FETCHES
+        assert sum(1 for r in results if r.get("content_checked")) == collector.CONTENT_MAX_FETCHES

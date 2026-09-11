@@ -1,6 +1,7 @@
 import React from 'react';
 import { Layout } from '../components/Layout.jsx';
 import { Badge } from '../components/Badge.jsx';
+import { ExposureBadge } from '../components/Exposure.jsx';
 import { Spinner } from '../components/Spinner.jsx';
 import { Button } from '../components/ui/button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
@@ -41,7 +42,6 @@ export default function DashboardPage() {
   const {
     kpi_domains = 0, kpi_active_scans = 0, kpi_critical = 0, kpi_high = 0,
     kpi_subdomains = 0, kpi_ips = 0, kpi_ports = 0, kpi_urls = 0,
-    kpi_assets_active = 0, kpi_assets_gone = 0,
     domain_status = [], urgent_findings = [],
   } = data;
 
@@ -67,18 +67,6 @@ export default function DashboardPage() {
           <AssetCard label="URLs"       value={kpi_urls} />
         </div>
 
-        <button onClick={() => navigate('/assets')}
-          className="w-full text-left bg-card border border-rim rounded-xl p-4 hover:bg-hover transition-colors flex items-center justify-between">
-          <div>
-            <div className="text-xs text-dim uppercase tracking-wider">Asset inventory</div>
-            <div className="text-body text-sm mt-0.5">
-              <span className="text-green-400 font-semibold">{kpi_assets_active}</span> active
-              <span className="text-dim"> · {kpi_assets_gone} gone</span>
-            </div>
-          </div>
-          <span className="text-dim text-xs">View all →</span>
-        </button>
-
         <Card className="overflow-hidden">
           <CardHeader className="border-b border-border px-4 py-3">
             <CardTitle className="text-sm font-semibold">Domain Status</CardTitle>
@@ -88,18 +76,19 @@ export default function DashboardPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    {['Domain', 'Status', 'Last Scan', 'Critical', 'High', 'Actions'].map(h => (
+                    {['Domain', 'Status', 'Exposure', 'Last Scan', 'Critical', 'High', 'Actions'].map(h => (
                       <TableHead key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-dim whitespace-nowrap">{h}</TableHead>
                     ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {domain_status.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="px-4 py-8 text-center text-dim">No domains yet.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={7} className="px-4 py-8 text-center text-dim">No domains yet.</TableCell></TableRow>
                   ) : domain_status.map(d => (
                     <TableRow key={d.id} className="hover:bg-hover transition-colors">
                       <TableCell className="px-4 py-3 text-lit font-mono font-medium">{d.domain}</TableCell>
                       <TableCell className="px-4 py-3"><Badge value={d.scan_status || 'idle'} /></TableCell>
+                      <TableCell className="px-4 py-3"><ExposureBadge score={d.exposure_score} grade={d.exposure_grade} /></TableCell>
                       <TableCell className="px-4 py-3 text-dim">{d.last_scan ? new Date(d.last_scan).toLocaleDateString() : '—'}</TableCell>
                       <TableCell className="px-4 py-3 text-red-400 font-semibold">{d.critical ?? 0}</TableCell>
                       <TableCell className="px-4 py-3 text-orange-400 font-semibold">{d.high ?? 0}</TableCell>

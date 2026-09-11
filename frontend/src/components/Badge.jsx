@@ -2,44 +2,42 @@ import React from 'react';
 import { cva } from 'class-variance-authority';
 import { cn } from '../lib/utils.js';
 
+const VARIANT_CLASSES = {
+  critical:       'bg-red-900/40 text-red-400 border-red-800',
+  high:           'bg-orange-900/40 text-orange-400 border-orange-800',
+  medium:         'bg-yellow-900/40 text-yellow-400 border-yellow-800',
+  low:            'bg-blue-900/40 text-blue-400 border-blue-800',
+  info:           'bg-gray-800/60 text-gray-400 border-gray-700',
+  pending:        'bg-gray-800/60 text-gray-400 border-gray-700',
+  running:        'bg-blue-900/40 text-blue-400 border-blue-800',
+  completed:      'bg-green-900/40 text-green-400 border-green-800',
+  partial:        'bg-amber-900/40 text-amber-400 border-amber-800',
+  failed:         'bg-red-900/40 text-red-400 border-red-800',
+  cancelled:      'bg-gray-800/60 text-gray-400 border-gray-700',
+  scheduled:      'bg-yellow-900/40 text-yellow-400 border-yellow-800',
+  open:           'bg-red-900/40 text-red-400 border-red-800',
+  acknowledged:   'bg-yellow-900/40 text-yellow-400 border-yellow-800',
+  in_progress:    'bg-blue-900/40 text-blue-400 border-blue-800',
+  resolved:       'bg-green-900/40 text-green-400 border-green-800',
+  false_positive: 'bg-gray-800/60 text-gray-400 border-gray-700',
+  active:         'bg-green-900/40 text-green-400 border-green-800',
+  inactive:       'bg-gray-800/60 text-gray-400 border-gray-700',
+  idle:           'bg-gray-800/60 text-gray-400 border-gray-700',
+  web:            'bg-blue-900/40 text-blue-400 border-blue-800',
+  fallback:       'bg-gray-800/60 text-gray-400 border-gray-700',
+};
+
 const badgeVariants = cva(
   'inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold capitalize border',
   {
-    variants: {
-      variant: {
-        critical:       'bg-red-900/40 text-red-400 border-red-800',
-        high:           'bg-orange-900/40 text-orange-400 border-orange-800',
-        medium:         'bg-yellow-900/40 text-yellow-400 border-yellow-800',
-        low:            'bg-blue-900/40 text-blue-400 border-blue-800',
-        info:           'bg-gray-800/60 text-gray-400 border-gray-700',
-        pending:        'bg-gray-800/60 text-gray-400 border-gray-700',
-        running:        'bg-blue-900/40 text-blue-400 border-blue-800',
-        completed:      'bg-green-900/40 text-green-400 border-green-800',
-        partial:        'bg-amber-900/40 text-amber-400 border-amber-800',
-        failed:         'bg-red-900/40 text-red-400 border-red-800',
-        cancelled:      'bg-gray-800/60 text-gray-400 border-gray-700',
-        scheduled:      'bg-yellow-900/40 text-yellow-400 border-yellow-800',
-        open:           'bg-red-900/40 text-red-400 border-red-800',
-        acknowledged:   'bg-yellow-900/40 text-yellow-400 border-yellow-800',
-        in_progress:    'bg-blue-900/40 text-blue-400 border-blue-800',
-        resolved:       'bg-green-900/40 text-green-400 border-green-800',
-        false_positive: 'bg-gray-800/60 text-gray-400 border-gray-700',
-        active:         'bg-green-900/40 text-green-400 border-green-800',
-        inactive:       'bg-gray-800/60 text-gray-400 border-gray-700',
-        idle:           'bg-gray-800/60 text-gray-400 border-gray-700',
-        web:            'bg-blue-900/40 text-blue-400 border-blue-800',
-        fallback:       'bg-gray-800/60 text-gray-400 border-gray-700',
-      },
-    },
+    variants: { variant: VARIANT_CLASSES },
     defaultVariants: { variant: 'fallback' },
   }
 );
 
-const KNOWN = new Set([
-  'critical','high','medium','low','info','pending','running','completed','partial','failed',
-  'cancelled','scheduled','open','acknowledged','in_progress','resolved',
-  'false_positive','active','inactive','idle','web',
-]);
+// Derived from the variant map — single source of truth, so adding a variant
+// above is recognized automatically (no second hand-maintained list to drift).
+const KNOWN = new Set(Object.keys(VARIANT_CLASSES).filter(k => k !== 'fallback'));
 
 export function Badge({ value, label }) {
   const key     = value ?? '—';

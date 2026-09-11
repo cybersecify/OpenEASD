@@ -13,7 +13,7 @@ from pathlib import Path
 from django.core.exceptions import ImproperlyConfigured
 from decouple import config
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEY = config("SECRET_KEY", default="django-insecure-change-me-in-production")
 
@@ -44,11 +44,21 @@ def _validate_secret_key(secret_key: str, debug: bool) -> None:
         )
 
 
-# Skip enforcement under the test runner: pytest-django imports settings before
-# any conftest/env hook can set a key, and token-signing key strength is
-# irrelevant to tests. The logic itself is covered by unit tests that call
-# _validate_secret_key directly.
-if "pytest" not in sys.modules:
+def _under_pytest() -> bool:
+    """True only when the pytest runner is the actual process entrypoint.
+
+    The production fail-fast guards below skip under the test runner: pytest-django
+    imports settings before any conftest/env hook can provide real secrets, and
+    key/password strength is irrelevant to tests. We detect the *runner* via
+    ``sys.argv[0]`` rather than ``"pytest" in sys.modules`` (F-sec2) — a transitive
+    import of pytest in a production process (a dependency, a debug shell) must
+    never disable a security guard. The subprocess wiring tests run ``python -c``
+    (argv[0] != pytest), so the guards still fire there and prove it.
+    """
+    return os.path.basename(sys.argv[0] or "").startswith(("pytest", "py.test"))
+
+
+if not _under_pytest():
     _validate_secret_key(SECRET_KEY, DEBUG)
 
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
@@ -114,6 +124,8 @@ INSTALLED_APPS = [
     "ninja_jwt",
     "ninja_jwt.token_blacklist",
     "apps.domain_security",
+    "apps.domain_probe",
+    "apps.asn_cluster",
     "apps.hudson_rock",
     "apps.breach_check",
     "apps.dns_history",
@@ -139,7 +151,6 @@ INSTALLED_APPS = [
     "apps.shodan",
     "apps.typosquat",
     "apps.github_secrets",
-    "apps.github_recon",
     "apps.cve_intel",
 ]
 
@@ -196,6 +207,27 @@ ASGI_APPLICATION = "openeasd.asgi.application"
 # durable scan execution and so scans can run with real concurrency (no more
 # single-writer lock). Configure via DB_* env vars; DATABASE_URL wins if set.
 _DATABASE_URL = config("DATABASE_URL", default="")
+_DB_PASSWORD = config("DB_PASSWORD", default="openeasd")  # only used on the DB_* path
+
+
+def _validate_db_password(using_database_url: bool, db_password: str, debug: bool) -> None:
+    """Fail fast in production on the well-known default DB password.
+
+    Mirrors _validate_secret_key. Only the DB_* path carries a default
+    ('openeasd'); DATABASE_URL supplies its own credentials, so it's exempt.
+    A shipped default password is a trivial foothold on the database that holds
+    every scan result AND the encrypted BYOK credentials. DEBUG builds keep the
+    default for local dev.
+    """
+    if not debug and not using_database_url and db_password == "openeasd":
+        raise ImproperlyConfigured(
+            "DB_PASSWORD is still the insecure default 'openeasd' while DEBUG=False. "
+            "Set a strong DB_PASSWORD (or a full DATABASE_URL) via the environment. "
+            "This database holds all scan results and encrypted BYOK credentials, "
+            "so the well-known default leaves them open to anyone who can reach it."
+        )
+
+
 if _DATABASE_URL:
     import dj_database_url  # type: ignore
 
@@ -206,12 +238,17 @@ else:
             "ENGINE": "django.db.backends.postgresql",
             "NAME": config("DB_NAME", default="openeasd"),
             "USER": config("DB_USER", default="openeasd"),
-            "PASSWORD": config("DB_PASSWORD", default="openeasd"),
+            "PASSWORD": _DB_PASSWORD,
             "HOST": config("DB_HOST", default="127.0.0.1"),
             "PORT": config("DB_PORT", default="5432"),
             "CONN_MAX_AGE": config("DB_CONN_MAX_AGE", default=600, cast=int),
         }
     }
+
+# Skip under the test runner for the same reason as the SECRET_KEY guard (see
+# _under_pytest — runner-entrypoint detection, not mere importability).
+if not _under_pytest():
+    _validate_db_password(bool(_DATABASE_URL), _DB_PASSWORD, DEBUG)
 
 # DBOS durable-execution system database. Checkpoints scan workflows/steps so a
 # crashed or restarted worker RESUMES a scan instead of losing it (retiring the

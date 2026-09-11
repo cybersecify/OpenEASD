@@ -9,8 +9,8 @@ class AmassConfig(AppConfig):
     tool_meta = {
         "label": "Amass",
         "runner": "apps.amass.scanner.run_amass",
-        "phase": 2,
-        "phase_group": "Surface Enumeration",
+        "phase": 3,
+        "phase_group": "Asset Discovery",
         "requires": [],
         "produces_findings": False,
         "active": True,

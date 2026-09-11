@@ -84,7 +84,7 @@ class TestDNSChecks:
         titles = [f.title for f in findings]
         assert "No NS records found" in titles
 
-    def test_dnssec_not_enabled_creates_high_finding(self, db):
+    def test_dnssec_not_enabled_creates_medium_finding(self, db):
         from apps.domain_security.scanner import _check_dnssec
         session = self._make_session(db)
 
@@ -95,14 +95,14 @@ class TestDNSChecks:
         assert len(findings) == 1
         f = findings[0]
         assert f.title == "DNSSEC not enabled"
-        assert f.severity == "high"
+        assert f.severity == "medium"
         assert f.check_type == "dnssec"
 
     def test_dnssec_broken_chain_dnskey_no_ds(self, db):
         from apps.domain_security.scanner import _check_dnssec
         session = self._make_session(db)
 
-        def mock_resolve(domain, rdtype):
+        def mock_resolve(domain, rdtype, **kwargs):  # **kwargs tolerates lifetime=
             if rdtype == "DNSKEY":
                 return [MagicMock()]
             raise Exception("no DS")
@@ -114,14 +114,14 @@ class TestDNSChecks:
         assert len(findings) == 1
         f = findings[0]
         assert "chain of trust broken" in f.title
-        assert f.severity == "high"
+        assert f.severity == "medium"
         assert f.extra == {"has_dnskey": True, "has_ds": False}
 
     def test_dnssec_broken_ds_no_dnskey(self, db):
         from apps.domain_security.scanner import _check_dnssec
         session = self._make_session(db)
 
-        def mock_resolve(domain, rdtype):
+        def mock_resolve(domain, rdtype, **kwargs):  # **kwargs tolerates lifetime=
             if rdtype == "DS":
                 return [MagicMock()]
             raise Exception("no DNSKEY")
@@ -153,6 +153,13 @@ class TestDNSChecks:
 
 @pytest.mark.django_db
 class TestEmailChecks:
+    @pytest.fixture(autouse=True)
+    def _no_real_dns(self):
+        # DKIM selector inference (and open-relay) resolve MX via _resolve; keep
+        # these mocked email tests off the network. Individual tests override it.
+        with patch("apps.domain_security.scanner._resolve", return_value=[]):
+            yield
+
     def _make_session(self, db):
         from apps.core.engine.scans.models import ScanSession
         return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
@@ -250,7 +257,77 @@ class TestEmailChecks:
             findings = _check_email(session, "example.com")
 
         titles = [f.title for f in findings]
-        assert "DKIM record not found" in titles
+        assert "DKIM could not be confirmed" in titles
+
+    def test_email_findings_are_stamped_with_control(self, db):
+        # The LIVE email path must tag each finding with extra["control"], or the
+        # report's per-control business-impact copy silently won't render.
+        # (MTA-STS / open-relay moved to apps.domain_probe.)
+        from apps.domain_security.scanner import _check_email
+        session = self._make_session(db)
+        with patch("apps.domain_security.scanner._get_txt_record", return_value=[]):
+            findings = _check_email(session, "example.com")
+        controls = {f.extra.get("control") for f in findings if isinstance(f.extra, dict)}
+        assert {"spf", "dmarc", "dkim"} <= controls
+        # The active-probe controls must NOT be produced by the passive tool.
+        assert "mta_sts" not in controls
+        assert "open_relay" not in controls
+
+
+# ---------------------------------------------------------------------------
+# DKIM selector inference (from MX / SPF)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestDkimInference:
+    def _make_session(self, db):
+        from apps.core.engine.scans.models import ScanSession
+        return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
+
+    def test_infers_google_from_mx(self):
+        from apps.domain_security.scanner import _infer_dkim_selectors
+        with patch("apps.domain_security.scanner._resolve", return_value=["10 aspmx.l.google.com."]), \
+             patch("apps.domain_security.scanner._get_txt_record", return_value=[]):
+            provider, sels = _infer_dkim_selectors("example.com")
+        assert provider == "Google Workspace"
+        assert "google" in sels
+
+    def test_infers_m365_from_spf(self):
+        from apps.domain_security.scanner import _infer_dkim_selectors
+        with patch("apps.domain_security.scanner._resolve", return_value=[]), \
+             patch("apps.domain_security.scanner._get_txt_record",
+                   return_value=["v=spf1 include:spf.protection.outlook.com -all"]):
+            provider, sels = _infer_dkim_selectors("example.com")
+        assert provider == "Microsoft 365"
+        assert sels == ["selector1", "selector2"]
+
+    def test_no_provider_match(self):
+        from apps.domain_security.scanner import _infer_dkim_selectors
+        with patch("apps.domain_security.scanner._resolve", return_value=["10 mail.acme.example."]), \
+             patch("apps.domain_security.scanner._get_txt_record", return_value=[]):
+            assert _infer_dkim_selectors("example.com") == (None, [])
+
+    def test_dkim_found_at_inferred_selector_no_finding(self, db):
+        from apps.domain_security.scanner import _check_dkim
+        session = self._make_session(db)
+
+        def txt(name):
+            return ["v=DKIM1; k=rsa; p=x"] if name.startswith("google._domainkey") else []
+
+        with patch("apps.domain_security.scanner._resolve", return_value=["1 aspmx.l.google.com."]), \
+             patch("apps.domain_security.scanner._get_txt_record", side_effect=txt):
+            findings = _check_dkim(session, "example.com")
+        assert findings == []   # confirmed via the inferred google selector
+
+    def test_dkim_finding_records_provider_and_selectors(self, db):
+        from apps.domain_security.scanner import _check_dkim
+        session = self._make_session(db)
+        with patch("apps.domain_security.scanner._resolve", return_value=["1 aspmx.l.google.com."]), \
+             patch("apps.domain_security.scanner._get_txt_record", return_value=[]):
+            f = _check_dkim(session, "example.com")[0]
+        assert f.extra["mail_provider"] == "Google Workspace"
+        assert f.extra["selectors_checked"][0] == "google"   # inferred selector tried first
+        assert "Google Workspace" in f.description
 
 
 # ---------------------------------------------------------------------------
@@ -559,220 +636,6 @@ class TestWildcardChecks:
             findings = _check_wildcard(session, "example.com")
 
         assert len(findings) == 0
-
-
-# ---------------------------------------------------------------------------
-# Zone Transfer (AXFR) checks
-# ---------------------------------------------------------------------------
-
-@pytest.mark.django_db
-class TestZoneTransferChecks:
-    def _make_session(self, db):
-        from apps.core.engine.scans.models import ScanSession
-        return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
-
-    def _mock_ns(self, ns_host="ns1.example.com"):
-        ns = MagicMock()
-        ns.target = MagicMock()
-        ns.target.__str__ = lambda s: f"{ns_host}."
-        return [ns]
-
-    def test_zone_transfer_allowed_creates_critical_finding(self, db):
-        from apps.domain_security.scanner import _check_zone_transfer
-        session = self._make_session(db)
-
-        ns_records = self._mock_ns()
-        mock_zone = MagicMock()
-        mock_zone.nodes = {"node1": None, "node2": None}
-
-        with patch("apps.domain_security.scanner.dns") as mock_dns:
-            mock_dns.resolver.resolve.return_value = [MagicMock(address="1.2.3.4")]
-            with patch("apps.domain_security.scanner.dns.zone.from_xfr", return_value=mock_zone):
-                with patch("apps.domain_security.scanner.dns.query.xfr"):
-                    findings = _check_zone_transfer(session, "example.com", ns_records)
-
-        assert len(findings) == 1
-        assert findings[0].severity == "critical"
-        assert "zone transfer allowed" in findings[0].title.lower()
-
-    def test_zone_transfer_refused_no_finding(self, db):
-        from apps.domain_security.scanner import _check_zone_transfer
-        session = self._make_session(db)
-
-        ns_records = self._mock_ns()
-
-        with patch("apps.domain_security.scanner.dns") as mock_dns:
-            mock_dns.resolver.resolve.return_value = [MagicMock(address="1.2.3.4")]
-            with patch("apps.domain_security.scanner.dns.zone.from_xfr",
-                       side_effect=Exception("Transfer refused")):
-                with patch("apps.domain_security.scanner.dns.query.xfr"):
-                    findings = _check_zone_transfer(session, "example.com", ns_records)
-
-        assert len(findings) == 0
-
-
-# ---------------------------------------------------------------------------
-# MTA-STS checks
-# ---------------------------------------------------------------------------
-
-@pytest.mark.django_db
-class TestMTASTSChecks:
-    def _make_session(self, db):
-        from apps.core.engine.scans.models import ScanSession
-        return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
-
-    def _mock_policy(self, mode):
-        """Return a mock requests.Response with the given MTA-STS policy mode."""
-        resp = MagicMock()
-        resp.text = f"version: STSv1\nmode: {mode}\nmx: mail.example.com\nmax_age: 86400"
-        resp.raise_for_status = MagicMock()
-        return resp
-
-    def test_missing_mta_sts_dns_creates_high_finding(self, db):
-        from apps.domain_security.scanner import _check_mta_sts
-        session = self._make_session(db)
-
-        with patch("apps.domain_security.scanner._get_txt_record", return_value=[]):
-            findings = _check_mta_sts(session, "example.com")
-
-        assert len(findings) == 1
-        assert findings[0].severity == "high"
-        assert "MTA-STS not configured" in findings[0].title
-
-    def test_dns_record_present_but_policy_file_unreachable_creates_high_finding(self, db):
-        from apps.domain_security.scanner import _check_mta_sts
-        session = self._make_session(db)
-
-        with patch("apps.domain_security.scanner._get_txt_record", return_value=["v=STSv1; id=20240101"]), \
-             patch("apps.domain_security.scanner.requests.get", side_effect=Exception("connection refused")):
-            findings = _check_mta_sts(session, "example.com")
-
-        assert len(findings) == 1
-        assert findings[0].severity == "high"
-        assert "not reachable" in findings[0].title
-
-    def test_policy_mode_testing_creates_medium_finding(self, db):
-        from apps.domain_security.scanner import _check_mta_sts
-        session = self._make_session(db)
-
-        with patch("apps.domain_security.scanner._get_txt_record", return_value=["v=STSv1; id=20240101"]), \
-             patch("apps.domain_security.scanner.requests.get", return_value=self._mock_policy("testing")):
-            findings = _check_mta_sts(session, "example.com")
-
-        assert len(findings) == 1
-        assert findings[0].severity == "medium"
-        assert "testing" in findings[0].title
-
-    def test_policy_mode_none_creates_medium_finding(self, db):
-        from apps.domain_security.scanner import _check_mta_sts
-        session = self._make_session(db)
-
-        with patch("apps.domain_security.scanner._get_txt_record", return_value=["v=STSv1; id=20240101"]), \
-             patch("apps.domain_security.scanner.requests.get", return_value=self._mock_policy("none")):
-            findings = _check_mta_sts(session, "example.com")
-
-        assert len(findings) == 1
-        assert findings[0].severity == "medium"
-
-    def test_policy_mode_enforce_no_finding(self, db):
-        from apps.domain_security.scanner import _check_mta_sts
-        session = self._make_session(db)
-
-        with patch("apps.domain_security.scanner._get_txt_record", return_value=["v=STSv1; id=20240101"]), \
-             patch("apps.domain_security.scanner.requests.get", return_value=self._mock_policy("enforce")):
-            findings = _check_mta_sts(session, "example.com")
-
-        assert len(findings) == 0
-
-
-# ---------------------------------------------------------------------------
-# Open relay checks
-# ---------------------------------------------------------------------------
-
-@pytest.mark.django_db
-class TestOpenRelayChecks:
-    def _make_session(self, db):
-        from apps.core.engine.scans.models import ScanSession
-        return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
-
-    def _mock_mx(self, hostname="mail.example.com", preference=10):
-        mx = MagicMock()
-        mx.preference = preference
-        mx.exchange = MagicMock()
-        mx.exchange.__str__ = lambda self: hostname
-        return [mx]
-
-    def test_no_mx_records_returns_empty(self, db):
-        from apps.domain_security.scanner import _check_open_relay
-        session = self._make_session(db)
-
-        with patch("apps.domain_security.scanner._resolve", return_value=[]):
-            findings = _check_open_relay(session, "example.com")
-
-        assert findings == []
-
-    def test_open_relay_confirmed_creates_critical_finding(self, db):
-        from apps.domain_security.scanner import _check_open_relay
-        session = self._make_session(db)
-
-        smtp_mock = MagicMock()
-        smtp_mock.__enter__ = MagicMock(return_value=smtp_mock)
-        smtp_mock.__exit__ = MagicMock(return_value=False)
-        smtp_mock.ehlo.return_value = (250, b"ok")
-        smtp_mock.mail.return_value = (250, b"ok")
-        smtp_mock.rcpt.return_value = (250, b"ok")  # relay accepted
-
-        with patch("apps.domain_security.scanner._resolve", return_value=self._mock_mx()), \
-             patch("apps.domain_security.scanner.smtplib.SMTP", return_value=smtp_mock):
-            findings = _check_open_relay(session, "example.com")
-
-        assert len(findings) == 1
-        assert findings[0].severity == "critical"
-        assert findings[0].check_type == "open_relay"
-        assert "Open mail relay" in findings[0].title
-
-    def test_relay_rejected_returns_empty(self, db):
-        from apps.domain_security.scanner import _check_open_relay
-        session = self._make_session(db)
-
-        smtp_mock = MagicMock()
-        smtp_mock.__enter__ = MagicMock(return_value=smtp_mock)
-        smtp_mock.__exit__ = MagicMock(return_value=False)
-        smtp_mock.ehlo.return_value = (250, b"ok")
-        smtp_mock.mail.return_value = (250, b"ok")
-        smtp_mock.rcpt.return_value = (554, b"relay denied")  # rejected
-
-        with patch("apps.domain_security.scanner._resolve", return_value=self._mock_mx()), \
-             patch("apps.domain_security.scanner.smtplib.SMTP", return_value=smtp_mock):
-            findings = _check_open_relay(session, "example.com")
-
-        assert findings == []
-
-    def test_smtp_connection_refused_returns_empty(self, db):
-        from apps.domain_security.scanner import _check_open_relay
-        session = self._make_session(db)
-
-        with patch("apps.domain_security.scanner._resolve", return_value=self._mock_mx()), \
-             patch("apps.domain_security.scanner.smtplib.SMTP", side_effect=ConnectionRefusedError):
-            findings = _check_open_relay(session, "example.com")
-
-        assert findings == []
-
-    def test_mail_from_rejected_returns_empty(self, db):
-        from apps.domain_security.scanner import _check_open_relay
-        session = self._make_session(db)
-
-        smtp_mock = MagicMock()
-        smtp_mock.__enter__ = MagicMock(return_value=smtp_mock)
-        smtp_mock.__exit__ = MagicMock(return_value=False)
-        smtp_mock.ehlo.return_value = (250, b"ok")
-        smtp_mock.mail.return_value = (550, b"not allowed")  # MAIL FROM rejected
-
-        with patch("apps.domain_security.scanner._resolve", return_value=self._mock_mx()), \
-             patch("apps.domain_security.scanner.smtplib.SMTP", return_value=smtp_mock):
-            findings = _check_open_relay(session, "example.com")
-
-        assert findings == []
 
 
 # ---------------------------------------------------------------------------

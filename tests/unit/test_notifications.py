@@ -170,6 +170,72 @@ class TestNotificationsConfigAPI:
         resp = client.post("/api/notifications/config/", data={}, content_type="application/json")
         assert resp.status_code == 401
 
+    def test_get_config_never_returns_webhook_urls(self, client, db):
+        """F7: webhook URLs are secrets — GET must surface presence + source only,
+        never the stored URL (anyone holding the URL can post into the channel)."""
+        from apps.core.console.notifications.models import NotificationConfig
+        cfg = NotificationConfig.get()
+        cfg.slack_webhook_url = "https://hooks.slack.com/services/SECRET"
+        cfg.teams_webhook_url = "https://outlook.office.com/webhook/SECRET"
+        cfg.save()
+
+        headers = self._auth_headers(client)
+        resp = client.get("/api/notifications/config/", **headers)
+        data = resp.json()
+
+        assert "slack_webhook_url" not in data
+        assert "teams_webhook_url" not in data
+        assert "SECRET" not in resp.content.decode()
+        assert data["slack_configured"] is True
+        assert data["teams_configured"] is True
+        assert data["slack_source"] == "db"
+        assert data["teams_source"] == "db"
+
+    def test_source_is_env_when_only_env_set(self, client, db, settings):
+        settings.SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/FROM-ENV"
+        headers = self._auth_headers(client)
+        data = client.get("/api/notifications/config/", **headers).json()
+        assert data["slack_configured"] is True
+        assert data["slack_source"] == "env"
+        assert "FROM-ENV" not in client.get("/api/notifications/config/", **headers).content.decode()
+
+    def test_threshold_only_save_preserves_webhooks(self, client, db):
+        """None = unchanged: saving the threshold alone must NOT wipe a stored
+        webhook the UI can no longer read back (the core reason for None-semantics)."""
+        from apps.core.console.notifications.models import NotificationConfig
+        cfg = NotificationConfig.get()
+        cfg.slack_webhook_url = "https://hooks.slack.com/services/KEEP"
+        cfg.save()
+
+        headers = self._auth_headers(client)
+        resp = client.post(
+            "/api/notifications/config/",
+            data={"severity_threshold": "low"},
+            content_type="application/json",
+            **headers,
+        )
+        assert resp.status_code == 200
+        cfg = NotificationConfig.get()
+        assert cfg.slack_webhook_url == "https://hooks.slack.com/services/KEEP"
+        assert cfg.severity_threshold == "low"
+
+    def test_empty_string_clears_webhook(self, client, db):
+        from apps.core.console.notifications.models import NotificationConfig
+        cfg = NotificationConfig.get()
+        cfg.slack_webhook_url = "https://hooks.slack.com/services/BYE"
+        cfg.save()
+
+        headers = self._auth_headers(client)
+        resp = client.post(
+            "/api/notifications/config/",
+            data={"slack_webhook_url": ""},
+            content_type="application/json",
+            **headers,
+        )
+        assert resp.status_code == 200
+        assert NotificationConfig.get().slack_webhook_url == ""
+        assert resp.json()["slack_source"] == "none"
+
 
 # ---------------------------------------------------------------------------
 # Notifications API — test endpoint
@@ -366,6 +432,69 @@ class TestAlertAiSummary:
         sess = _alert_session()
         payload = _build_teams_payload(sess, _GROUPED, "high")
         assert [f["name"] for f in payload["sections"][0]["facts"]] == ["HIGH"]
+
+
+# ---------------------------------------------------------------------------
+# "New since last scan" delta in alert payloads
+# ---------------------------------------------------------------------------
+
+_GROUPED_SRC = {"high": [
+    {"title": "TLS expired", "check_type": "tls_expiry", "target": "example.com", "source": "tls_checker"},
+    {"title": "Open SSH", "check_type": "ssh", "target": "example.com", "source": "ssh_checker"},
+]}
+
+
+@pytest.mark.django_db
+class TestAlertNewSinceLastScan:
+    def _delta(self, session, source, check_type, title):
+        from apps.core.engine.scans.models import ScanDelta
+        ScanDelta.objects.create(
+            session=session, change_type="new", change_category="finding",
+            item_identifier=f"{source}:{check_type}:{title}",
+        )
+
+    def test_zero_when_no_deltas(self):
+        from apps.core.console.notifications.dispatcher import _new_since_last_scan
+        sess = _alert_session()
+        flat = [f for v in _GROUPED_SRC.values() for f in v]
+        assert _new_since_last_scan(sess, flat) == 0
+
+    def test_counts_only_alerted_new_findings(self):
+        from apps.core.console.notifications.dispatcher import _new_since_last_scan
+        sess = _alert_session()
+        self._delta(sess, "tls_checker", "tls_expiry", "TLS expired")   # in alert set
+        self._delta(sess, "nuclei", "cve", "Some CVE")                  # new but below threshold / not alerted
+        flat = [f for v in _GROUPED_SRC.values() for f in v]
+        assert _new_since_last_scan(sess, flat) == 1
+
+    def test_slack_payload_identical_when_no_new(self):
+        from apps.core.console.notifications.dispatcher import _build_slack_payload
+        sess = _alert_session()
+        payload = _build_slack_payload(sess, _GROUPED_SRC, "high")
+        assert all("new since the last scan" not in str(b) for b in payload["blocks"])
+
+    def test_slack_meta_gains_new_line(self):
+        from apps.core.console.notifications.dispatcher import _build_slack_payload
+        sess = _alert_session()
+        self._delta(sess, "tls_checker", "tls_expiry", "TLS expired")
+        payload = _build_slack_payload(sess, _GROUPED_SRC, "high")
+        # No extra block — it rides on the existing meta section.
+        assert len(payload["blocks"]) == 4
+        assert "1 new since the last scan" in payload["blocks"][1]["text"]["text"]
+
+    def test_teams_gains_new_fact(self):
+        from apps.core.console.notifications.dispatcher import _build_teams_payload
+        sess = _alert_session()
+        self._delta(sess, "tls_checker", "tls_expiry", "TLS expired")
+        payload = _build_teams_payload(sess, _GROUPED_SRC, "high")
+        facts = payload["sections"][0]["facts"]
+        assert {"name": "New since last scan", "value": "1"} in facts
+
+    def test_teams_identical_when_no_new(self):
+        from apps.core.console.notifications.dispatcher import _build_teams_payload
+        sess = _alert_session()
+        payload = _build_teams_payload(sess, _GROUPED_SRC, "high")
+        assert all(f["name"] != "New since last scan" for f in payload["sections"][0]["facts"])
 
 
 # ---------------------------------------------------------------------------

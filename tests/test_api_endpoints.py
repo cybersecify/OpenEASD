@@ -100,6 +100,15 @@ class TestHealthEndpoint:
         assert res.status_code == 200
 
 
+class TestSpaCaching:
+    def test_spa_entry_point_is_not_cached(self, client):
+        # index.html references content-hashed bundles; a CDN caching it serves a
+        # stale UI after a deploy (Cloudflare did this post-v2.10.0). Must be no-store.
+        res = client.get("/dashboard")
+        assert res.status_code == 200
+        assert "no-store" in res.headers.get("Cache-Control", "")
+
+
 # ---------------------------------------------------------------------------
 # Auth endpoints
 # ---------------------------------------------------------------------------
@@ -505,7 +514,13 @@ class TestScanDetail:
         assert "subdomains" in data
 
     def test_not_found(self, auth_client):
-        assert auth_client.get("/api/scans/00000000-0000-0000-0000-000000000000/").status_code == 404
+        res = auth_client.get("/api/scans/00000000-0000-0000-0000-000000000000/")
+        assert res.status_code == 404
+        # F6: a get_object_or_404 miss renders the standard error envelope, not
+        # Ninja's default {"detail": "Not Found"}.
+        body = res.json()
+        assert body["error"]["code"] == "NOT_FOUND"
+        assert "detail" not in body
 
     def test_no_n_plus_one_on_findings(self, auth_client, django_assert_max_num_queries, scan):
         """scan_detail must not issue one query per finding to resolve session.uuid."""
@@ -708,6 +723,13 @@ class TestWorkflowTools:
         assert "tools" in data
         assert "requires" in data
 
+    def test_tools_carry_phase_group_for_ui_categorization(self, auth_client):
+        """Each tool exposes its phase_group so the UI can group by category."""
+        tools = auth_client.get("/api/workflows/tools/").json()["tools"]
+        assert tools
+        assert all("phase_group" in t for t in tools)
+        assert any(t["phase_group"] == "Domain Posture" for t in tools)
+
     def test_requires_auth(self, client):
         assert client.get("/api/workflows/tools/").status_code == 401
 
@@ -719,6 +741,15 @@ class TestWorkflowsList:
         workflows = res.json()
         assert isinstance(workflows, list)
         assert any(w["name"] == "Smoke Workflow" for w in workflows)
+
+    def test_exposes_is_passive_for_dynamic_attestation(self, auth_client, workflow):
+        """Each workflow reports is_passive so the start form can drop the
+        attestation requirement for passive-only scans."""
+        workflows = auth_client.get("/api/workflows/").json()
+        assert all("is_passive" in w for w in workflows)
+        passive = next((w for w in workflows if w["name"] == "Passive Scan"), None)
+        if passive is not None:
+            assert passive["is_passive"] is True
 
     def test_requires_auth(self, client):
         assert client.get("/api/workflows/").status_code == 401

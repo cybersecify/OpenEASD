@@ -9,7 +9,7 @@ class KatanaConfig(AppConfig):
     tool_meta = {
         "label": "Katana",
         "runner": "apps.katana.scanner.run_katana",
-        "phase": 10,
+        "phase": 11,
         "phase_group": "Web Exposure",
         "requires": ["httpx"],
         "produces_findings": False,

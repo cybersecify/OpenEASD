@@ -103,6 +103,22 @@ class TestExportFindingsCsv:
         assert "TLS expired" in content
         assert "No DMARC" in content
 
+    def test_hidden_titles_excluded_from_csv(self, authed_client, session):
+        from apps.core.data.findings.models import Finding
+        for t in ("BIMI not configured", "Domain update lock not enabled", "RDAP lookup failed"):
+            Finding.objects.create(session=session, source="domain_security",
+                                   target=session.domain, check_type="rdap",
+                                   severity="info", title=t, description="d", remediation="r")
+        Finding.objects.create(session=session, source="domain_security",
+                               target=session.domain, check_type="dnssec",
+                               severity="medium", title="DNSSEC not enabled",
+                               description="d", remediation="r")
+        content = authed_client.get(f"/reports/{session.uuid}/csv/").content.decode("utf-8")
+        assert "BIMI not configured" not in content
+        assert "Domain update lock not enabled" not in content
+        assert "RDAP lookup failed" not in content
+        assert "DNSSEC not enabled" in content   # a normal finding still exported
+
     def test_csv_empty_when_no_findings(self, authed_client, session):
         res = authed_client.get(f"/reports/{session.uuid}/csv/")
         content = res.content.decode("utf-8")
@@ -122,9 +138,14 @@ class TestExportFindingsCsv:
                     HTTP_AUTHORIZATION=f"Bearer {token}")
         assert res.status_code == 200
 
-    def test_garbage_token_rejected(self, session, findings):
+    def test_query_param_token_ignored(self, session, findings, user):
+        # F-sec3: the ?token= query-param auth path was removed (it leaked JWTs
+        # into history/Referer/logs). Even a VALID token in the URL must NOT grant
+        # access — only the Authorization header (or a session) does.
+        from ninja_jwt.tokens import AccessToken
         c = Client()
-        res = c.get(f"/reports/{session.uuid}/csv/?token=not.a.jwt")
+        token = str(AccessToken.for_user(user))
+        res = c.get(f"/reports/{session.uuid}/csv/?token={token}")
         assert res.status_code in (302, 301)  # redirect to /login, not 200
 
     def test_deactivated_user_token_rejected(self, session, findings, user):
@@ -515,6 +536,25 @@ class TestTopRisksAndIntel:
         assert by_sev["critical"]["business_impact"]        # populated
         assert by_sev["low"]["business_impact"] == ""       # not on low
 
+    def test_email_control_business_impact_renders(self, db, session):
+        # Email findings all share check_type="email"; the per-control impact copy
+        # is keyed on extra["control"] and must render even at medium severity.
+        self._mk(session, source="domain_security", check_type="email", severity="medium",
+                 title="DMARC policy is none (monitoring only)", target="ex.com",
+                 extra={"control": "dmarc"})
+        grp = self._groups(session)[0]
+        assert "email that appears to come from your domain" in grp["business_impact"]
+
+    def test_rdap_lock_finding_has_no_expiry_line(self, db, session):
+        # The transfer/delete/update lock findings share check_type="rdap" with
+        # expiry findings — the expiry business-impact line must not render on them.
+        self._mk(session, source="domain_security", check_type="rdap", severity="medium",
+                 title="Domain transfer lock not enabled", target="ex.com",
+                 extra={"statuses": []})
+        grp = self._groups(session)[0]
+        assert "expiry" not in grp["business_impact"].lower()
+        assert grp["business_impact"] == ""   # medium + no specific copy → empty
+
     def test_report_renders_headline_and_snapshot(self, authed_client, session):
         self._mk(session, title="Unencrypted POSTGRESQL")
         captured = {}
@@ -543,6 +583,39 @@ class TestTopRisksAndIntel:
             res = authed_client.get(f"/reports/{session.uuid}/pdf/")
         assert res.status_code == 200
         assert "Priority Actions" in captured["html"]
+
+    def test_hidden_findings_absent_from_pdf(self, authed_client, session):
+        self._mk(session, source="domain_security", check_type="email", severity="info",
+                 title="BIMI not configured", target="ex.com")
+        self._mk(session, title="Unencrypted POSTGRESQL")  # a normal finding
+        captured = {}
+        with patch("apps.core.console.reports.views._render_pdf",
+                   side_effect=lambda h: captured.update(html=h) or b"%PDF-1.7"):
+            authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert "BIMI not configured" not in captured["html"]
+        assert "Unencrypted POSTGRESQL" in captured["html"]
+
+    def test_rdap_failure_becomes_coverage_note(self, authed_client, session):
+        self._mk(session, source="domain_security", check_type="rdap", severity="info",
+                 title="RDAP lookup failed", target="ex.com")
+        captured = {}
+        with patch("apps.core.console.reports.views._render_pdf",
+                   side_effect=lambda h: captured.update(html=h) or b"%PDF-1.7"):
+            authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert "Registration Data Unavailable" in captured["html"]  # coverage caveat
+        assert "RDAP lookup failed" not in captured["html"]          # not a finding row
+
+    def test_unconfigured_tools_hidden_from_methodology(self, authed_client, session):
+        # github_secrets / dns_history no-op without a key/URL — the report must not
+        # list them as coverage (would imply an assessment that didn't happen).
+        self._mk(session, title="Unencrypted POSTGRESQL")
+        captured = {}
+        with patch("apps.core.console.credentials.resolver.get_credential", return_value=""), \
+             patch("apps.core.console.reports.views._render_pdf",
+                   side_effect=lambda h: captured.update(html=h) or b"%PDF-1.7"):
+            authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert "Historical DNS Records" not in captured["html"]   # dns_history hidden
+        assert "GitHub Secret Exposure" not in captured["html"]   # github_secrets hidden
         assert "KEV" in captured["html"]
 
 
@@ -728,6 +801,45 @@ def test_every_emitted_check_type_has_cwe_mapping():
 
 
 # ---------------------------------------------------------------------------
+# The Five Questions (CEO-question executive framing)
+# ---------------------------------------------------------------------------
+
+class TestCeoQuestions:
+    def _g(self, source, check_type, severity="high", n=1):
+        return {"source": source, "check_type": check_type,
+                "severity": severity, "instances": [object()] * n}
+
+    def _by_q(self, groups, active):
+        from apps.core.console.reports.views import _ceo_questions
+        return {q["question"]: q for q in _ceo_questions(groups, active)}
+
+    def test_email_finding_maps_to_spoof_question(self):
+        qs = self._by_q([self._g("domain_security", "email")], {"domain_security"})
+        assert qs["Can someone spoof our email?"]["status"] == "at_risk"
+
+    def test_dnssec_rdap_maps_to_lose_domain(self):
+        qs = self._by_q([self._g("domain_security", "dnssec", "medium")], {"domain_security"})
+        assert qs["Can we lose our domain?"]["status"] == "attention"
+
+    def test_typosquat_maps_to_impersonation(self):
+        qs = self._by_q([self._g("typosquat", "lookalike_domain", "medium")], {"typosquat"})
+        assert qs["Is anyone impersonating us?"]["status"] == "attention"
+
+    def test_tool_not_run_is_not_checked(self):
+        # No breach tools in the scan → honest "not checked", not a false all-clear.
+        qs = self._by_q([], set())
+        assert qs["Are staff logins stolen?"]["status"] == "not_checked"
+
+    def test_tool_ran_no_findings_is_clear(self):
+        qs = self._by_q([], {"breach_check"})
+        assert qs["Are staff logins stolen?"]["status"] == "clear"
+
+    def test_all_five_questions_present(self):
+        qs = self._by_q([], {"domain_security"})
+        assert len(qs) == 5
+
+
+# ---------------------------------------------------------------------------
 # AI Analyst Summary block (apps/core/console/ai integration)
 # ---------------------------------------------------------------------------
 
@@ -792,3 +904,185 @@ class TestAnalystSummaryBlock:
         with patch("apps.core.console.ai.models.AITriage.objects") as broken:
             broken.filter.side_effect = RuntimeError("db broke")
             assert _ai_context(session) == {}
+
+
+# ---------------------------------------------------------------------------
+# "Since Your Last Scan" delta block
+# ---------------------------------------------------------------------------
+
+class TestSinceLastScanBlock:
+    """The report shows what changed versus the previous scan of the same domain:
+    new / resolved / still-open findings. Absent on the first scan (no baseline),
+    and the diff ignores subscans (they run only a subset of tools) and respects
+    the report's min_severity filter + hidden-title suppression."""
+
+    def _capture_pdf_html(self, authed_client, session, qs=""):
+        captured = {}
+
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/{qs}")
+        assert res.status_code == 200
+        return captured["html"]
+
+    def _finding(self, session, title, severity, source, check_type, **kw):
+        from apps.core.data.findings.models import Finding
+        return Finding.objects.create(
+            session=session, source=source, check_type=check_type,
+            severity=severity, title=title, target="report.example.com",
+            description="desc", remediation="fix", status="open", **kw,
+        )
+
+    def _prev_session(self, domain="report.example.com", scan_type="full"):
+        from apps.core.engine.scans.models import ScanSession
+        return ScanSession.objects.create(
+            domain=domain, scan_type=scan_type, status="completed",
+            start_time=timezone.now() - timezone.timedelta(days=7),
+            end_time=timezone.now() - timezone.timedelta(days=7),
+        )
+
+    def test_absent_on_first_scan(self, authed_client, session, findings):
+        html = self._capture_pdf_html(authed_client, session)
+        assert "Since Your Last Scan" not in html
+
+    def test_new_and_resolved_and_still_open(self, authed_client, session):
+        prev = self._prev_session()
+        # previous: A (shared) + B (will be resolved)
+        self._finding(prev, "Shared issue", "high", "tls_checker", "tls_expiry")
+        self._finding(prev, "Resolved issue", "medium", "domain_security", "dmarc")
+        # current: A (shared, still open) + C (new)
+        self._finding(session, "Shared issue", "high", "tls_checker", "tls_expiry")
+        self._finding(session, "New issue", "critical", "nuclei", "cve")
+
+        html = self._capture_pdf_html(authed_client, session)
+        assert "Since Your Last Scan" in html
+        assert "1 new" in html
+        assert "1 resolved" in html
+        assert "1 still open" in html
+        assert "New issue" in html       # listed under "New this scan"
+        assert "Resolved issue" in html  # listed under "Resolved"
+
+    def test_from_helper_directly(self, db, session):
+        from apps.core.console.reports.views import _since_last_scan
+        prev = self._prev_session()
+        self._finding(prev, "Old one", "low", "web_checker", "cors")
+        self._finding(session, "Old one", "low", "web_checker", "cors")
+        self._finding(session, "Brand new", "high", "nmap", "cve")
+        result = _since_last_scan(session, ["critical", "high", "medium", "low", "info"])
+        assert result["new_count"] == 1
+        assert result["resolved_count"] == 0
+        assert result["still_open"] == 1
+        assert result["new"][0]["title"] == "Brand new"
+
+    def test_subscan_is_not_a_baseline(self, authed_client, session):
+        # A subscan of the same domain must not be chosen as the baseline, even if
+        # it's the most recent — it runs only a subset of tools.
+        sub = self._prev_session()
+        sub.scan_type = "subscan"
+        sub.start_time = timezone.now() - timezone.timedelta(hours=1)
+        sub.save()
+        self._finding(sub, "Subscan-only", "high", "nuclei", "cve")
+        self._finding(session, "Current", "high", "tls_checker", "tls_expiry")
+        html = self._capture_pdf_html(authed_client, session)
+        # No non-subscan prior scan exists → treated as the baseline (block absent).
+        assert "Since Your Last Scan" not in html
+
+    def test_respects_min_severity_filter(self, authed_client, session):
+        prev = self._prev_session()
+        self._finding(prev, "Shared high", "high", "tls_checker", "tls_expiry")
+        self._finding(session, "Shared high", "high", "tls_checker", "tls_expiry")
+        # A new LOW finding should be invisible when min_severity=high.
+        self._finding(session, "New low", "low", "web_checker", "cors")
+        html = self._capture_pdf_html(authed_client, session, qs="?min_severity=high")
+        assert "Since Your Last Scan" in html
+        assert "New low" not in html
+        assert "0 new" in html
+
+    def test_csv_flags_new_findings(self, authed_client, session):
+        prev = self._prev_session()
+        self._finding(prev, "Shared", "high", "tls_checker", "tls_expiry")
+        self._finding(session, "Shared", "high", "tls_checker", "tls_expiry")
+        self._finding(session, "Fresh", "critical", "nuclei", "cve")
+        content = authed_client.get(f"/reports/{session.uuid}/csv/").content.decode("utf-8")
+        reader = csv.reader(io.StringIO(content))
+        header = next(reader)
+        assert "New This Scan" in header
+        idx = header.index("New This Scan")
+        rows = {r[0]: r[idx] for r in reader if r}
+        assert rows["Fresh"] == "new"
+        assert rows["Shared"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Per-finding "Recommended Next Steps" (hosted reports only)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestNextStepsBlock:
+    """Concrete remediation checklists render in the PDF finding detail ONLY on
+    hosted reports (REPORT_CTA_URL configured). Self-hosters keep the Remediation
+    prose but not the numbered checklist. The mapping is keyed by effective key."""
+
+    def _capture(self, authed_client, session):
+        captured = {}
+
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert res.status_code == 200
+        return captured["html"]
+
+    def test_absent_when_not_hosted(self, authed_client, session, findings, settings):
+        settings.REPORT_CTA_URL = ""
+        html = self._capture(authed_client, session)
+        assert "Recommended Next Steps" not in html
+
+    def test_present_when_hosted(self, authed_client, session, findings, settings):
+        settings.REPORT_CTA_URL = "https://example.com/help"
+        settings.REPORT_CTA_TEXT = "Need help?"
+        html = self._capture(authed_client, session)
+        assert "Recommended Next Steps" in html
+        # The DMARC finding in the fixture maps to a concrete step.
+        assert "Publish" in html and "_dmarc" in html
+
+    def test_group_attaches_next_steps_for_mapped_check(self, db, session):
+        from apps.core.console.reports.views import _group_findings_by_issue
+        from apps.core.data.findings.models import Finding
+        f = Finding.objects.create(
+            session=session, source="web_checker", check_type="missing_hsts",
+            severity="medium", title="Missing Strict-Transport-Security on https://x",
+            description="d", remediation="r", target="https://x",
+        )
+        groups = _group_findings_by_issue([f])
+        assert groups[0]["next_steps"]  # non-empty
+        assert any("Strict-Transport-Security" in s for s in groups[0]["next_steps"])
+
+    def test_group_empty_next_steps_for_unmapped_check(self, db, session):
+        from apps.core.console.reports.views import _group_findings_by_issue
+        from apps.core.data.findings.models import Finding
+        f = Finding.objects.create(
+            session=session, source="some_tool", check_type="totally_unmapped_check",
+            severity="low", title="Odd thing", description="d", remediation="r",
+            target="x",
+        )
+        groups = _group_findings_by_issue([f])
+        assert groups[0]["next_steps"] == []
+
+    def test_email_control_keys_next_steps(self, db, session):
+        # Email findings share check_type="email"; next steps resolve via control.
+        from apps.core.console.reports.views import _group_findings_by_issue
+        from apps.core.data.findings.models import Finding
+        f = Finding.objects.create(
+            session=session, source="domain_security", check_type="email",
+            severity="medium", title="SPF record missing on example.com",
+            description="d", remediation="r", target="example.com",
+            extra={"control": "spf"},
+        )
+        groups = _group_findings_by_issue([f])
+        assert any("SPF" in s for s in groups[0]["next_steps"])

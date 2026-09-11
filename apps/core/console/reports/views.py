@@ -35,6 +35,7 @@ _SCOPE_BY_SOURCE = {
     "nmap": "Network",
     "nuclei_network": "Network",
     "domain_security": "Email / DNS",
+    "domain_probe": "Email / DNS",
     "web_checker": "Web",
     "nuclei": "Web",
     "httpx": "Web",
@@ -43,7 +44,7 @@ _SCOPE_BY_SOURCE = {
 }
 _SCOPE_BY_CHECK = {
     "rdap": "Domain", "dns": "DNS", "caa": "DNS", "dnssec": "DNS",
-    "open_relay": "Email / DNS",
+    "open_relay": "Email / DNS", "lookalike_cluster": "Attack Surface",
 }
 
 # CWE mapping per check_type. Unmapped check types render "—".
@@ -103,6 +104,10 @@ _CWE_BY_CHECK = {
     "server_version_disclosure": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
     "server_poweredby_disclosure": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
     "directory_listing": "CWE-548: Exposure of Information Through Directory Listing",
+    # Responsible disclosure — no/lapsed machine-readable way to report a vuln.
+    # CWE-1059 captures the missing security-facing documentation/process.
+    "missing_security_txt": "CWE-1059: Insufficient Technical Documentation",
+    "expired_security_txt": "CWE-1059: Insufficient Technical Documentation",
     # Attack surface / cloud / secrets / intel
     "subdomain_takeover": "CWE-284: Improper Access Control",
     "open_cloud_bucket": "CWE-732: Incorrect Permission Assignment for Critical Resource",
@@ -116,13 +121,8 @@ _CWE_BY_CHECK = {
     # A registered lookalike domain is infrastructure built to be visually
     # confused with the org's real domain — the essence of CWE-451.
     "lookalike_domain": "CWE-451: User Interface (UI) Misrepresentation of Critical Information",
-    # github_recon — infra references (internal hostnames/subdomains, cloud-bucket
-    # URLs, API endpoints) and the public-repo surface leaked in the org's PUBLIC
-    # GitHub source. CWE-200 (Exposure of Sensitive Information to an Unauthorized
-    # Actor) is the exact category: the data is not itself a vuln, but exposing it
-    # hands an attacker recon they should have had to work for.
-    "github_infra_exposure": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
-    "github_public_repos": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
+    # asn_cluster — lookalikes sharing one ASN = coordinated impersonation infra.
+    "lookalike_cluster": "CWE-451: User Interface (UI) Misrepresentation of Critical Information",
 }
 
 
@@ -255,14 +255,14 @@ def _report_auth_required(view_func):
     """Accept auth in this order:
 
     1. Django session (request.user already authenticated)
-    2. ``Authorization: Bearer <token>`` header — preferred; React SPA uses
-       this via fetch + Blob for downloads
-    3. ``?token=<token>`` query param — DEPRECATED, retained for backward
-       compatibility only and slated for removal in a future release
+    2. ``Authorization: Bearer <token>`` header — the React SPA uses this via
+       fetch + Blob for downloads
 
-    The ``?token=`` path leaks JWTs into browser history, ``Referer`` headers,
-    server access logs, and proxy caches. The frontend no longer generates
-    such URLs; only manually constructed links exercise this path.
+    A ``?token=<token>`` query-param fallback was removed (F-sec3): it leaked
+    JWTs into browser history, ``Referer`` headers, server access logs, and
+    proxy caches. The frontend never generated such URLs (both report pages send
+    the Bearer header), so nothing depends on it — a token in the query string is
+    now ignored.
     """
     @functools.wraps(view_func)
     def wrapper(request, *args, **kwargs):
@@ -270,10 +270,7 @@ def _report_auth_required(view_func):
             return view_func(request, *args, **kwargs)
 
         auth_header = request.headers.get('Authorization', '')
-        if auth_header.startswith('Bearer '):
-            token = auth_header[7:]
-        else:
-            token = request.GET.get('token', '')
+        token = auth_header[7:] if auth_header.startswith('Bearer ') else ''
 
         if token:
             try:
@@ -295,7 +292,29 @@ def export_findings_csv(request, session_uuid):
     severities, err = _parse_min_severity(request)
     if err:
         return err
-    findings = Finding.objects.filter(session=session, severity__in=severities).order_by("severity", "source")
+    findings = (
+        Finding.objects.filter(session=session, severity__in=severities)
+        .exclude(title__in=_REPORT_HIDDEN_TITLES)
+        .order_by("severity", "source")
+    )
+
+    # Keys (source:check_type:title) that weren't present in the previous scan,
+    # so each row can be flagged "new" — the CSV counterpart of the PDF's
+    # "Since Your Last Scan" block.
+    new_keys = set()
+    previous = _previous_baseline(session)
+    if previous is not None:
+        prev_keys = {
+            f"{r['source']}:{r['check_type']}:{r['title']}"
+            for r in Finding.objects.filter(session=previous, severity__in=severities)
+            .exclude(title__in=_REPORT_HIDDEN_TITLES)
+            .values("source", "check_type", "title")
+        }
+        cur_keys = {
+            f"{r['source']}:{r['check_type']}:{r['title']}"
+            for r in findings.values("source", "check_type", "title")
+        }
+        new_keys = cur_keys - prev_keys
 
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = (
@@ -306,12 +325,15 @@ def export_findings_csv(request, session_uuid):
     writer.writerow([
         "Title", "Severity", "Source", "Check Type", "Status",
         "Target", "Description", "Remediation", "Assigned To", "Discovered At",
+        "New This Scan",
     ])
     for f in findings:
+        key = f"{f.source}:{f.check_type}:{f.title}"
         writer.writerow([
             f.title, f.severity, f.source, f.check_type, f.status,
             f.target, f.description, f.remediation, f.assigned_to,
             f.discovered_at.isoformat(),
+            "new" if key in new_keys else "",
         ])
 
     # Optional CTA — appended as a final row when both settings are configured.
@@ -360,6 +382,10 @@ def _group_findings_by_issue(findings):
                 "severity": f.severity,
                 "source": f.source,
                 "check_type": f.check_type,
+                # Sub-type for findings that share a coarse check_type (email
+                # controls all use check_type="email"); lets the report attach
+                # the right per-control copy.
+                "control": (f.extra or {}).get("control") if isinstance(f.extra, dict) else None,
                 "title": title,
                 "description": f.description,
                 "remediation": f.remediation,
@@ -407,11 +433,21 @@ def _group_findings_by_issue(findings):
         grp["cisa_kev"] = any(e.get("cisa_kev") for e in dict_extras)
         pctls = [e.get("epss_percentile") for e in dict_extras if e.get("epss_percentile") is not None]
         grp["epss_percentile"] = max(pctls) if pctls else None
-        # Plain-language business impact, shown on critical/high finding cards so
-        # a decision-maker (not just an engineer) understands what's at stake.
-        grp["business_impact"] = (
-            _BUSINESS_IMPACT.get(grp["check_type"]) or _BUSINESS_IMPACT_BY_SEV.get(grp["severity"], "")
-        ) if grp["severity"] in ("critical", "high") else ""
+        # Plain-language business impact for a decision-maker. Resolve via the
+        # effective key — the control for findings that share a coarse check_type
+        # (email), else the check_type. Specific per-control/check copy renders at
+        # ANY severity (many email-auth gaps are medium but still worth explaining);
+        # the generic severity fallback stays limited to critical/high.
+        effective_key = grp.get("control") or grp["check_type"]
+        specific = _BUSINESS_IMPACT.get(effective_key)
+        if specific:
+            grp["business_impact"] = specific
+        elif grp["severity"] in ("critical", "high"):
+            grp["business_impact"] = _BUSINESS_IMPACT_BY_SEV.get(grp["severity"], "")
+        else:
+            grp["business_impact"] = ""
+        # Concrete remediation checklist (rendered on hosted reports only).
+        grp["next_steps"] = _NEXT_STEPS_BY_CHECK.get(effective_key, [])
         # Affected endpoints as a pill grid (3 per row). Capped at 50 per group
         # to prevent OOM when a single finding fires on thousands of URLs.
         endpoints = [(f.url.url if f.url else f.target) for f in grp["instances"]]
@@ -430,15 +466,160 @@ _BUSINESS_IMPACT = {
     "missing_csp": "A single injected script would run in your users' browsers (cross-site scripting).",
     "cve": "A publicly known vulnerability with a documented exploit is reachable from the internet.",
     "dnssec": "DNS answers for your domain can be forged, silently redirecting users to attacker servers.",
+    # Email controls — keyed by extra["control"] (all email findings share
+    # check_type="email"), resolved via the effective key below.
+    "spf": "Without a strict SPF policy, anyone can send email that appears to come from your domain.",
     "dmarc": "Anyone can send email that appears to come from your domain — brand and phishing risk.",
+    "dkim": "Recipients can't cryptographically verify your mail, so spoofed email is harder to reject.",
     "mta_sts": "Email to your mail servers can be forced down to plaintext and intercepted in transit.",
-    "rdap": "Your domain registration lapses soon — expiry means outage and a hijack window.",
+    # NOTE: no "rdap" entry — that check_type is shared by expiry AND the
+    # transfer/delete/update lock findings, so an expiry line here mis-renders on
+    # lock findings. Expiry findings carry their own dated description.
 }
 _BUSINESS_IMPACT_BY_SEV = {
     "critical": "Directly exploitable from the internet and high-impact — treat as urgent.",
     "high": "A serious weakness an external attacker can leverage.",
 }
 _SEV_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
+
+
+# Concrete, ordered "do this" steps per finding type — a remediation checklist,
+# not a paragraph. Keyed by effective key (the email `control` where findings
+# share the coarse check_type="email", else the check_type). Rendered in the
+# report's finding detail ONLY on hosted reports (REPORT_CTA configured) —
+# self-hosters still get the per-finding Remediation prose. Unmapped types render
+# nothing, so the block never shows an empty list.
+_NEXT_STEPS_BY_CHECK = {
+    # --- Web security headers (web_checker) ---
+    "missing_csp": [
+        "Ship a report-only policy first: `Content-Security-Policy-Report-Only: default-src 'self'; report-uri /csp-report`.",
+        "Review the reported violations for a week and fold legitimate origins into the policy.",
+        "Switch the header to enforcing (`Content-Security-Policy`) once violations are clean.",
+    ],
+    "missing_xfo": [
+        "Add `X-Frame-Options: DENY` (or `SAMEORIGIN` if the page is framed by your own origin).",
+        "Add a matching CSP directive for modern browsers: `Content-Security-Policy: frame-ancestors 'none'`.",
+        "Re-scan to confirm both headers are present on every page.",
+    ],
+    "missing_xcto": [
+        "Add `X-Content-Type-Options: nosniff` to all responses.",
+        "Confirm every response sets a correct `Content-Type` so nosniff doesn't break assets.",
+    ],
+    "missing_hsts": [
+        "Confirm the site is fully reachable over HTTPS.",
+        "Add `Strict-Transport-Security: max-age=31536000; includeSubDomains`.",
+        "Once stable across all subdomains, add `preload` and submit at hstspreload.org.",
+    ],
+    "weak_hsts": [
+        "Raise the HSTS `max-age` to at least 31536000 (one year).",
+        "Add `includeSubDomains` if every subdomain is HTTPS-only.",
+    ],
+    # --- Cookies (web_checker) ---
+    "cookie_missing_secure": [
+        "Set the `Secure` attribute on every cookie served over HTTPS.",
+        "For session cookies, combine with `HttpOnly` and `SameSite`.",
+    ],
+    "cookie_missing_httponly": [
+        "Set `HttpOnly` on any cookie that JavaScript does not need to read (session/auth cookies first).",
+    ],
+    "cookie_missing_samesite": [
+        "Set `SameSite=Lax` on cookies by default, or `Strict` for sensitive session cookies.",
+        "If a cookie must cross sites, use `SameSite=None; Secure` deliberately.",
+    ],
+    # --- CORS (web_checker) ---
+    "cors_wildcard_credentials": [
+        "Stop returning `Access-Control-Allow-Origin: *` together with `Access-Control-Allow-Credentials: true` — this combination is exploitable.",
+        "Echo back only origins from a server-side allowlist of trusted sites.",
+        "Re-test with an untrusted `Origin` header to confirm it is rejected.",
+    ],
+    "cors_origin_reflection": [
+        "Validate the `Origin` header against an allowlist instead of reflecting it.",
+        "Return no CORS headers for untrusted origins.",
+        "Re-test with a spoofed `Origin` to confirm it is not reflected.",
+    ],
+    "cors_wildcard": [
+        "Replace `Access-Control-Allow-Origin: *` with an explicit allowlist of trusted origins.",
+        "Scope the wildcard to only genuinely public, non-credentialed endpoints if it must stay.",
+    ],
+    # --- Disclosure / listing (web_checker) ---
+    "server_version_disclosure": [
+        "Suppress the version in the `Server` header (nginx: `server_tokens off;`, Apache: `ServerTokens Prod`).",
+        "Reload the web server and re-scan to confirm the version is gone.",
+    ],
+    "server_poweredby_disclosure": [
+        "Remove the `X-Powered-By` header (e.g. PHP `expose_php = Off`, Express `app.disable('x-powered-by')`).",
+    ],
+    "directory_listing": [
+        "Disable auto-indexing (nginx: `autoindex off;`, Apache: `Options -Indexes`).",
+        "Add an index file or return 403 for the exposed directories.",
+        "Review the listed files for anything sensitive that should be removed.",
+    ],
+    # --- Responsible disclosure (web_checker) ---
+    "missing_security_txt": [
+        "Create `/.well-known/security.txt` with at least `Contact:` (a monitored security email or reporting URL) and `Expires:`.",
+        "Serve it as `text/plain` over HTTPS.",
+        "Set a calendar reminder to refresh `Expires:` before it lapses.",
+    ],
+    "expired_security_txt": [
+        "Update the `Expires:` field to a future date.",
+        "Confirm the `Contact:` address/URL is still monitored.",
+    ],
+    # --- Email authentication (domain_security; keyed by control) ---
+    "spf": [
+        "Publish a single SPF TXT record listing every legitimate sender, ending in `-all` (hard fail).",
+        "Keep it to ≤10 DNS lookups; flatten include chains if needed.",
+    ],
+    "dmarc": [
+        "Publish `_dmarc` TXT starting at `v=DMARC1; p=none` with an `rua=` aggregate-report address.",
+        "Review the reports, then raise the policy to `p=quarantine` and finally `p=reject`.",
+    ],
+    "dkim": [
+        "Enable DKIM signing at your mail provider and publish the selector's public key in DNS.",
+        "Send a test message and confirm the signature verifies (`dkim=pass`).",
+    ],
+    # --- TLS (tls_checker) ---
+    "weak_cipher": [
+        "Disable the weak cipher suites and prefer AEAD suites (AES-GCM, ChaCha20-Poly1305).",
+        "Re-test with an SSL/TLS scanner to confirm only strong suites remain.",
+    ],
+    "no_forward_secrecy": [
+        "Enable ECDHE key-exchange cipher suites and prefer them in server order.",
+        "Disable static-RSA key exchange.",
+    ],
+    "cert_expired": [
+        "Reissue and install a current certificate immediately.",
+        "Automate renewal (ACME/Let's Encrypt or your CA's API) so it can't lapse again.",
+    ],
+    # --- SSH (ssh_checker) ---
+    "ssh_password_auth": [
+        "Deploy SSH keys for all operators, then set `PasswordAuthentication no` in sshd_config.",
+        "Reload sshd and confirm password login is refused.",
+    ],
+    "ssh_root_login": [
+        "Set `PermitRootLogin no` and use a sudo-capable named account instead.",
+        "Reload sshd and verify direct root login is rejected.",
+    ],
+    # --- Attack surface ---
+    "subdomain_takeover": [
+        "Remove the dangling DNS record, or reclaim the referenced resource at the provider.",
+        "Re-scan to confirm the subdomain no longer resolves to an unclaimed endpoint.",
+    ],
+    "open_cloud_bucket": [
+        "Remove public/anonymous access on the bucket and enable the provider's public-access block.",
+        "Audit the objects that were exposed for anything sensitive.",
+        "Set an alert for future public-access changes.",
+    ],
+    "exposed_secret": [
+        "Treat the secret as compromised: rotate/revoke it now.",
+        "Remove it from the code and load it from a secret manager or environment variable.",
+        "Purge it from git history if it was committed.",
+    ],
+    "lookalike_cluster": [
+        "Treat the clustered domains as one campaign — file takedowns together.",
+        "Report the shared network (the named ASN) to its hosting provider / registrar.",
+        "Add the ASN and domains to your monitoring/blocklists and watch for new lookalikes on it.",
+    ],
+}
 
 
 def _priority_score(grp) -> float:
@@ -519,6 +700,145 @@ def _render_pdf(html: str) -> bytes:
     return HTML(string=html).write_pdf()
 
 
+# Findings hidden from the buyer-facing report (PDF + CSV) — still stored and
+# shown in the app, just noise in a report: BIMI (marketing, not security),
+# the update-lock (lowest-value registrar lock), and the RDAP-lookup-failed
+# notice (surfaced instead as a coverage caveat).
+_REPORT_HIDDEN_TITLES = frozenset({
+    "BIMI not configured",
+    "Domain update lock not enabled",
+    "RDAP lookup failed",
+})
+
+# Passive tools that no-op without a data source / key — hidden from the report's
+# scope & methodology when unconfigured so the report doesn't imply they assessed
+# anything. Keyed by the credential that activates each.
+_REPORT_TOOL_REQUIRES = {
+    "github_secrets": "GITHUB_TOKEN",
+    "dns_history": "DNS_HISTORY_API_URL",
+}
+
+
+# The five questions a decision-maker actually asks, mapped to the findings that
+# answer them. `tools` = the scanners that assess this question, so we can say
+# "not checked" (tool didn't run) instead of a misleading "no issues found".
+_CEO_QUESTIONS = [
+    # Email-auth controls live in domain_security (SPF/DMARC/DKIM/TLS-RPT/BIMI);
+    # MTA-STS (check_type="email") is an active probe in domain_probe — match both.
+    ("Can someone spoof our email?", {"domain_security"},
+     lambda g: g["source"] in ("domain_security", "domain_probe") and g["check_type"] == "email"),
+    ("Can we lose our domain?", {"domain_security"},
+     lambda g: g["source"] == "domain_security" and g["check_type"] in ("rdap", "dnssec")),
+    ("Are staff logins stolen?", {"hudson_rock", "breach_check"},
+     lambda g: g["source"] in ("hudson_rock", "breach_check")),
+    ("Is anyone impersonating us?", {"typosquat", "asn_cluster"},
+     lambda g: g["source"] in ("typosquat", "asn_cluster")),
+    ("Did we leak keys?", {"js_secrets", "github_secrets"},
+     lambda g: g["source"] in ("js_secrets", "github_secrets") or g["check_type"] == "exposed_secret"),
+]
+
+
+def _ceo_questions(issue_groups, active_tools):
+    """Answer each executive question from the findings, so the report opens with
+    the business picture before the technical detail.
+
+    Status per question: at_risk (a critical/high finding), attention (only
+    medium/low/info), clear (the tool ran and found nothing), or not_checked
+    (the assessing tool wasn't in this scan) — the last avoids a false all-clear.
+    """
+    active = set(active_tools)
+    out = []
+    for question, tools, match in _CEO_QUESTIONS:
+        matched = [g for g in issue_groups if match(g)]
+        if matched:
+            has_high = any(g["severity"] in ("critical", "high") for g in matched)
+            status = "at_risk" if has_high else "attention"
+        elif tools & active:
+            status = "clear"
+        else:
+            status = "not_checked"
+        out.append({
+            "question": question,
+            "status": status,
+            "issue_count": len(matched),
+            "instance_count": sum(len(g["instances"]) for g in matched),
+            "issues": matched,
+        })
+    return out
+
+
+def _previous_baseline(session):
+    """The scan to diff this one against: the most recent completed/partial scan
+    of the same domain that isn't a subscan (a subscan runs only a subset of
+    tools, so it would manufacture spurious deltas). Matches ScanDelta's choice.
+    Returns ``None`` when this is the domain's first scan.
+    """
+    return (
+        ScanSession.objects.filter(
+            domain=session.domain, status__in=["completed", "partial"]
+        )
+        .exclude(id=session.id)
+        .exclude(scan_type="subscan")
+        .order_by("-start_time")
+        .first()
+    )
+
+
+def _since_last_scan(session, severities):
+    """What changed vs the previous scan of this domain — new / resolved findings.
+
+    Diffs findings against the previous baseline by the same identity key as
+    ScanDelta (``source:check_type:title``). Carries severity + title so the
+    report can list what appeared and what cleared, and counts what persisted.
+    Scoped to the report's own ``min_severity`` filter and hidden-title
+    suppression so it never references findings the rest of the report hides.
+
+    Returns ``None`` on the first scan (no baseline) so the template block is
+    skipped entirely.
+    """
+    previous = _previous_baseline(session)
+    if previous is None:
+        return None
+
+    def _rows(s):
+        rows = {}
+        qs = (
+            Finding.objects.filter(session=s, severity__in=severities)
+            .exclude(title__in=_REPORT_HIDDEN_TITLES)
+            .values("source", "check_type", "title", "severity")
+        )
+        for f in qs:
+            key = f"{f['source']}:{f['check_type']}:{f['title']}"
+            rank = _SEVERITY_ORDER.index(f["severity"]) if f["severity"] in _SEVERITY_ORDER else 99
+            cur = rows.get(key)
+            # Keep the highest-severity representative when a key recurs.
+            if cur is None or rank < cur["_rank"]:
+                rows[key] = {"title": f["title"], "severity": f["severity"],
+                             "source": f["source"], "_rank": rank}
+        return rows
+
+    cur = _rows(session)
+    prev = _rows(previous)
+    cur_keys, prev_keys = set(cur), set(prev)
+
+    def _ranked(items):
+        rows = sorted(items, key=lambda d: d["_rank"])
+        for r in rows:
+            r.pop("_rank", None)
+        return rows
+
+    new = _ranked([cur[k] for k in cur_keys - prev_keys])
+    resolved = _ranked([prev[k] for k in prev_keys - cur_keys])
+    return {
+        "previous_date": previous.end_time or previous.start_time,
+        "new": new,
+        "resolved": resolved,
+        "new_count": len(new),
+        "resolved_count": len(resolved),
+        "still_open": len(cur_keys & prev_keys),
+    }
+
+
 @_report_auth_required
 def export_scan_pdf(request, session_uuid):
     """Export a scan report as PDF, optionally filtered by ?min_severity=."""
@@ -529,6 +849,10 @@ def export_scan_pdf(request, session_uuid):
     findings = Finding.objects.filter(session=session, severity__in=severities).select_related("port", "url").order_by(
         "severity", "-discovered_at"
     )
+    # RDAP failure is surfaced as a coverage caveat, not a finding — capture it
+    # before suppressing the hidden titles from the buyer report.
+    rdap_unavailable = findings.filter(title="RDAP lookup failed").exists()
+    findings = findings.exclude(title__in=_REPORT_HIDDEN_TITLES)
 
     # Severity counts. Reset the queryset ordering with .order_by() first: the
     # `findings` queryset is ordered by (severity, -discovered_at), and that
@@ -609,6 +933,20 @@ def export_scan_pdf(request, session_uuid):
     )
     core_tools = {n for n, i in registry.items() if i.get("core")}
     active_tools = workflow_tools | core_tools
+
+    # Drop passive tools that were in the workflow but couldn't do anything for
+    # lack of a key/data source — they didn't actually assess the target, so the
+    # buyer report shouldn't list them as coverage (also keeps the CEO "Did we
+    # leak keys?" honest).
+    from apps.core.console.credentials.resolver import get_credential
+    active_tools = {
+        t for t in active_tools
+        if t not in _REPORT_TOOL_REQUIRES or get_credential(_REPORT_TOOL_REQUIRES[t])
+    }
+
+    # Executive framing: the five questions a decision-maker asks, answered from
+    # the findings (rendered as the report's opening summary).
+    ceo_questions = _ceo_questions(issue_groups, active_tools)
     src_counts = {}
     for row in findings.order_by().values("source").annotate(n=Count("id")):
         src_counts[row["source"]] = row["n"]
@@ -670,12 +1008,15 @@ def export_scan_pdf(request, session_uuid):
         "total_findings": len(issue_groups),   # headline = unique issue count
         "raw_total": raw_total,                # raw detections, shown only in the note
         "risk_rating": risk_rating,
+        "ceo_questions": ceo_questions,
         "exposure_score": exposure_score,
         "exposure_grade": exposure_grade,
         "exposure_trend": exposure_trend,
+        "since_last_scan": _since_last_scan(session, severities),
         "top_risks": top_risks,
         "headline_risk": top_risks[0] if top_risks else None,
         "coverage": _coverage_context(session),
+        "rdap_unavailable": rdap_unavailable,
         "asset_counts": asset_counts,
         "technologies": technologies,
         "methodology": methodology,
@@ -689,6 +1030,10 @@ def export_scan_pdf(request, session_uuid):
         # Optional CTA — template renders the block only when both are truthy.
         "report_cta_url": getattr(settings, "REPORT_CTA_URL", "") or "",
         "report_cta_text": getattr(settings, "REPORT_CTA_TEXT", "") or "",
+        # Per-finding remediation checklists are a hosted-report extra — gated on
+        # the same REPORT_CTA_URL flag that marks a hosted deployment (self-hosters
+        # still get the per-finding Remediation prose).
+        "show_next_steps": bool(getattr(settings, "REPORT_CTA_URL", "") or ""),
         # Optional AI analyst summary — {} when absent, so the block never renders.
         **_ai_context(session),
     })

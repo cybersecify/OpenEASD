@@ -80,7 +80,9 @@ def test_real_tasks_are_durable_tasks_with_expected_names():
 
     assert isinstance(workflows.ai_triage, DurableTask)
     assert workflows.ai_triage.name == "ai_triage"
-    assert workflows.ai_triage._dedupe == "triage-{0}"
+    # No dedupe (F2): a triage-{id} return-existing id blocked manual re-runs.
+    # Each manual run enqueues a fresh workflow; concurrency is guarded in the API.
+    assert workflows.ai_triage._dedupe is None
 
     assert isinstance(workflows.agent_step, DurableTask)
     assert workflows.agent_step.name == "agent_step"

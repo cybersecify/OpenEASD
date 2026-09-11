@@ -164,7 +164,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ## Features
 
-- **Automated pipeline**: 28-tool scan workflow from domain to findings
+- **Automated pipeline**: 29-tool scan workflow from domain to findings
 - **Network attack surface scanning**: CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
 - **CVE prioritisation**: EPSS exploit-probability scores + CISA KEV (known-exploited-in-the-wild) flags enrich CVE findings in place, so you triage by real-world risk rather than severity alone
 - **Dynamic workflows**: Create custom scan configurations, enable/disable tools per workflow
@@ -185,52 +185,60 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 ## Scan Pipeline
 
 ```
-── Domain Intelligence ──────────────────────────────────────────────────────
-Phase 1  Domain Security   - DNS, DNSSEC chain-of-trust, email
-                             (SPF/DMARC/DKIM/MTA-STS/open-relay), RDAP checks
-Phase 1  Hudson Rock        - Infostealer-log exposure via Hudson Rock's keyless
-                             Cavalier API (aggregate counts only, no plaintext)
-Phase 1  GitHub Secrets      - Leaked secrets in public GitHub via gitleaks
-                             (passive; BYO GITHUB_TOKEN, redacted before storage)
-Phase 1  Typosquat          - Lookalike / typosquat domain detection (passive;
-                             registered lookalikes via public DNS — phishing/brand abuse)
-Phase 1  Breach Check       - Data-breach exposure via XposedOrNot (free/keyless)
-                             or Have I Been Pwned (BYO key); counts only, no PII
+── Domain Posture ───────────────────────────────────────────────────────────
+Phase 1  Domain Security   - DNS, DNSSEC chain-of-trust, email auth
+                             (SPF/DMARC/DKIM/TLS-RPT/BIMI), RDAP checks (passive;
+                             public resolvers + rdap.org — no auth needed)
+Phase 1  Domain Probes      - Active target probes (needs authorization): AXFR
+                             zone transfer, SMTP open-relay, MTA-STS policy fetch
 Phase 1  DNS History        - Historical A/AAAA/MX records via a passive-DNS
                              dataset (passive; BYO DNS_HISTORY_API_URL)
 
-── Surface Enumeration ─────────────────────────────────────────────────────
-Phase 2  Subfinder         - Passive subdomain enumeration
-Phase 2  Amass             - Active subdomain enumeration
-Phase 2  Alterx            - Subdomain permutation from discovered subdomains
-Phase 2  ASN Discovery     - Owned ASN/CIDR ranges via amass intel (reports only)
-Phase 2  GitHub Org Recon  - Infra refs (internal hostnames, cloud buckets, API
-                             endpoints) leaked in the org's public GitHub repos
-                             (passive; official API — keyless, richer with a token)
-Phase 3  DNSx              - DNS resolution, public IP filtering
-Phase 4  Takeover Check    - Subdomain takeover detection via subzy
-Phase 4  Cloud Assets      - Public S3/Azure/GCP bucket enumeration (cloud_enum)
+── Brand Threat ─────────────────────────────────────────────────────────────
+Phase 1  Typosquat          - Lookalike / typosquat domain detection (passive;
+                             registered lookalikes via public DNS — phishing/brand abuse)
+Phase 13 ASN Clustering     - Groups registered lookalikes by shared hosting ASN
+                             (Team Cymru, passive) — coordinated phishing infra
+
+── Credential Exposure ──────────────────────────────────────────────────────
+Phase 2  Hudson Rock        - Infostealer-log exposure via Hudson Rock's keyless
+                             Cavalier API (aggregate counts only, no plaintext)
+Phase 2  GitHub Secrets      - Leaked secrets in public GitHub via gitleaks
+                             (passive; BYO GITHUB_TOKEN, redacted before storage)
+Phase 2  Breach Check       - Data-breach exposure via XposedOrNot (free/keyless)
+                             or Have I Been Pwned (BYO key); counts only, no PII
+
+── Asset Discovery ──────────────────────────────────────────────────────────
+Phase 3  Subfinder         - Passive subdomain enumeration
+Phase 3  Amass             - Active subdomain enumeration
+Phase 3  Alterx            - Subdomain permutation from discovered subdomains
+Phase 3  ASN Discovery     - Owned ASN/CIDR ranges via amass intel (reports only)
+Phase 4  DNSx              - DNS resolution, public IP filtering
+
+── Asset Exposure ───────────────────────────────────────────────────────────
+Phase 5  Takeover Check    - Subdomain takeover detection via subzy (dangling DNS)
+Phase 5  Cloud Assets      - Public S3/Azure/GCP bucket enumeration (cloud_enum)
 
 ── Port Discovery ───────────────────────────────────────────────────────────
-Phase 5  Naabu             - TCP port scanning (top 100; CDN edge IPs excluded)
-Phase 6  Service Detection - Classify ports as web/non-web via nmap -sV (auto)
+Phase 6  Naabu             - TCP port scanning (top 100; CDN edge IPs excluded)
+Phase 7  Service Detection - Classify ports as web/non-web via nmap -sV (auto)
 
 ── Network Exposure ─────────────────────────────────────────────────────────
-Phase 7  Nmap              - CVE scanning via NSE vulners (non-web ports)
-Phase 7  TLS Checker       - Certificate, cipher, and protocol analysis
-Phase 7  SSH Checker       - SSH configuration audit
-Phase 7  Nuclei Network    - Network protocol vuln templates (non-web ports)
+Phase 8  Nmap              - CVE scanning via NSE vulners (non-web ports)
+Phase 8  TLS Checker       - Certificate, cipher, and protocol analysis
+Phase 8  SSH Checker       - SSH configuration audit
+Phase 8  Nuclei Network    - Network protocol vuln templates (non-web ports)
 
 ── Web Exposure ─────────────────────────────────────────────────────────────
-Phase 8  httpx             - Web probing, URL discovery, technology fingerprinting
-Phase 9  Historical URLs   - Archived URL discovery via gau
-Phase 10 Katana            - Deep URL crawl on top of httpx
-Phase 11 Nuclei            - Web vulnerability scanning (community templates)
-Phase 11 Web Checker       - Security headers, cookies, CORS analysis
-Phase 11 JS Secrets        - Hardcoded secrets in JavaScript via gitleaks
+Phase 9  httpx             - Web probing, URL discovery, technology fingerprinting
+Phase 10 Historical URLs   - Archived URL discovery via gau
+Phase 11 Katana            - Deep URL crawl on top of httpx
+Phase 12 Nuclei            - Web vulnerability scanning (community templates)
+Phase 12 Web Checker       - Security headers, cookies, CORS; security.txt (RFC 9116)
+Phase 12 JS Secrets        - Hardcoded secrets in fetched JavaScript via gitleaks
 
 ── Prioritization ───────────────────────────────────────────────────────────
-Phase 12 CVE Intel         - Enrich CVE findings with EPSS + CISA KEV
+Phase 13 CVE Intel         - Enrich CVE findings with EPSS + CISA KEV
 
 ── AI analysis (optional; off by default, bring-your-own Cloudflare) ──────────
 Post-scan Triage          - Rank findings by exploitability (CISA KEV + EPSS
@@ -458,10 +466,13 @@ make dev
 # React app at http://localhost:5173
 ```
 
+Full local-dev guide (prerequisites, first-time setup, CI parity,
+troubleshooting): [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+
 ## CI/CD
 
 GitHub Actions runs on every push to `main` and `v*` tags:
-- **pytest**: fast test suite (~922 tests, excludes the 41 slow DNS/RDAP tests in `test_domain_security.py`)
+- **pytest**: fast test suite (~1,730 tests, excludes the 52 slow DNS/RDAP tests in `test_domain_security.py`)
 - **bandit**: Python SAST scan
 - **pip-audit**: dependency CVE scan
 - **Frontend build**: `npm ci && npm run build`
@@ -498,7 +509,7 @@ class MyToolConfig(AppConfig):
     }
 ```
 
-Then add `"apps.my_tool"` to `INSTALLED_APPS` in `openeasd/settings.py`. The tool auto-registers in the workflow system.
+Then add `"apps.my_tool"` to `INSTALLED_APPS` in `openeasd/settings/base.py`. The tool auto-registers in the workflow system.
 
 ### Tool App Structure
 
@@ -514,17 +525,17 @@ apps/my_tool/
 ## Running Tests
 
 ```bash
-# Fast tests (excludes slow DNS tests, ~922 tests)
+# Fast tests (excludes slow DNS tests, ~1,730 tests)
 uv run pytest tests/ --ignore=tests/unit/test_domain_security.py
 
-# All tests (~896 total)
+# All tests (~1,780 total, incl. the 52 slow DNS/RDAP tests)
 uv run pytest tests/
 ```
 
 ## Tech Stack
 
 **Backend:**
-- **Django 5**: Web framework
+- **Django 5.2 LTS**: Web framework
 - **Django Ninja**: REST API with OpenAPI docs
 - **DBOS**: Durable-execution engine — task queue + scheduler, Postgres-backed (crash-resumable scans)
 - **croniter**: Cron parsing for the DBOS user-schedule sweep

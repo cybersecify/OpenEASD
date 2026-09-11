@@ -2,13 +2,14 @@ from django.apps import AppConfig
 
 
 class SshCheckerConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
     name = "apps.ssh_checker"
     label = "ssh_checker"
     verbose_name = "SSH Checker"
     tool_meta = {
         "label": "SSH Checker",
         "runner": "apps.ssh_checker.scanner.run_ssh_check",
-        "phase": 7,
+        "phase": 8,
         "phase_group": "Network Exposure",
         "requires": ["naabu", "service_detection"],
         "produces_findings": True,

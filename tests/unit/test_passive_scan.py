@@ -22,9 +22,14 @@ def post_json(client, path, data):
 _PASSIVE = {
     "subfinder", "alterx", "dnsx", "historical_urls",
     "cloud_assets", "cve_intel", "asn_discovery", "typosquat", "breach_check",
+    # domain_security is passive now that its active probes (AXFR/open-relay/
+    # MTA-STS fetch) were split out into domain_probe.
+    "domain_security",
+    # asn_cluster does IP→ASN via Team Cymru (third party) — never the target.
+    "asn_cluster",
 }
 _ACTIVE = {
-    "domain_security", "amass", "takeover_check", "naabu", "service_detection",
+    "domain_probe", "amass", "takeover_check", "naabu", "service_detection",
     "nmap", "tls_checker", "ssh_checker", "nuclei_network", "httpx",
     "katana", "nuclei", "web_checker",
 }
@@ -63,6 +68,32 @@ class TestRegistryActiveFlag:
 
 
 # ---------------------------------------------------------------------------
+# phase_group categories (UI grouping)
+# ---------------------------------------------------------------------------
+
+class TestPhaseGroupCategories:
+    # The leak-detection tools live in their own "Credential Exposure" category
+    # rather than being mixed into Domain Posture / Web Exposure.
+    _CRED_EXPOSURE = {"hudson_rock", "breach_check", "github_secrets"}
+
+    def test_credential_exposure_tools_grouped_together(self):
+        from apps.core.engine.workflows.registry import get_tool_phase_groups
+        groups = get_tool_phase_groups()
+        for tool in self._CRED_EXPOSURE:
+            assert groups.get(tool) == "Credential Exposure", (
+                f"{tool} should be in the Credential Exposure phase_group, got {groups.get(tool)!r}"
+            )
+
+    def test_domain_posture_excludes_leak_tools(self):
+        # Domain Posture keeps domain-posture tools only; leak tools moved out.
+        from apps.core.engine.workflows.registry import get_tool_phase_groups
+        groups = get_tool_phase_groups()
+        di = {t for t, g in groups.items() if g == "Domain Posture"}
+        assert di.isdisjoint(self._CRED_EXPOSURE)
+        assert "domain_security" in di
+
+
+# ---------------------------------------------------------------------------
 # is_passive_tool_set helper
 # ---------------------------------------------------------------------------
 
@@ -83,12 +114,18 @@ class TestIsPassiveToolSet:
         from apps.core.engine.workflows.registry import is_passive_tool_set
         assert is_passive_tool_set(["subfinder", "mystery_tool"]) is False
 
-    def test_domain_security_is_active(self):
-        # Regression guard: domain_security performs AXFR zone transfers, SMTP
-        # open-relay probes, and mta-sts policy fetches against the target, so it
-        # must never be classified passive despite being mostly DNS lookups.
+    def test_domain_security_is_passive(self):
+        # After the split, domain_security is passive (public-resolver DNS +
+        # email-auth + RDAP), so it may run in a no-auth passive scan.
         from apps.core.engine.workflows.registry import is_passive_tool_set
-        assert is_passive_tool_set(["domain_security"]) is False
+        assert is_passive_tool_set(["domain_security"]) is True
+
+    def test_domain_probe_is_active(self):
+        # Regression guard: domain_probe performs AXFR zone transfers, SMTP
+        # open-relay probes, and MTA-STS policy fetches against the target, so it
+        # must always be classified active (needs DomainAuthorization).
+        from apps.core.engine.workflows.registry import is_passive_tool_set
+        assert is_passive_tool_set(["domain_probe"]) is False
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +230,43 @@ class TestPassiveScanAuthorizationGate:
             "workflow_id": self._passive_workflow_id(),
         })
         assert resp.status_code == 403
+
+    def test_passive_tools_subset_bypasses_authorization(self, auth_client, domain):
+        # A category-scoped scan of only passive tools on an unauthorized domain
+        # is accepted, and the run is restricted to those tools (subscan_tools).
+        captured = {}
+
+        def fake_create(domain, triggered_by="manual", workflow=None, tools=None):
+            captured["tools"] = tools
+            return type("S", (), {"uuid": "cat-uuid-1", "id": 7})()
+
+        with patch("apps.core.engine.scans.tasks.run_scan_task"), \
+             patch("apps.core.engine.scans.pipeline.create_scan_session", side_effect=fake_create):
+            resp = post_json(auth_client, "/api/scans/start/", {
+                "domain": "example.com",
+                "schedule_type": "now",
+                "tools": ["cve_intel"],  # passive
+            })
+        assert resp.status_code == 201, resp.content
+        assert captured["tools"] == ["cve_intel"]
+
+    def test_active_tools_subset_requires_authorization(self, auth_client, domain):
+        # Including an active tool (e.g. domain_probe — AXFR/open-relay/MTA-STS)
+        # keeps the auth gate, even alongside passive tools.
+        resp = post_json(auth_client, "/api/scans/start/", {
+            "domain": "example.com",
+            "schedule_type": "now",
+            "tools": ["typosquat", "domain_probe"],
+        })
+        assert resp.status_code == 403
+
+    def test_unknown_tool_rejected(self, auth_client, domain):
+        resp = post_json(auth_client, "/api/scans/start/", {
+            "domain": "example.com",
+            "schedule_type": "now",
+            "tools": ["not_a_real_tool"],
+        })
+        assert resp.status_code == 400
 
 
 # ---------------------------------------------------------------------------

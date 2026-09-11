@@ -24,7 +24,7 @@ RUN npm run build
 # ---------------------------------------------------------------------------
 # Stage 2: download pre-built security tool binaries (static Go)
 # ---------------------------------------------------------------------------
-FROM debian:12-slim AS tools-builder
+FROM debian:13-slim AS tools-builder
 
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -113,7 +113,13 @@ COPY config/ config/
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 COPY --from=frontend-builder /build/frontend/dist/ frontend/dist/
-RUN SECRET_KEY=build-time-placeholder python manage.py collectstatic --noinput
+# Build-time placeholders for the production fail-fast guards (settings/base.py):
+# collectstatic imports settings but never touches the DB or signs tokens, so
+# these never leave this RUN layer. SECRET_KEY clears the SECRET_KEY guard;
+# DB_PASSWORD clears the default-password guard. Real values are supplied at
+# runtime by compose / k8s.
+RUN SECRET_KEY=build-time-placeholder DB_PASSWORD=build-time-placeholder \
+    python manage.py collectstatic --noinput
 
 ARG OPENEASD_VERSION=dev
 ARG OPENEASD_GIT_SHA=unknown
@@ -128,6 +134,10 @@ CMD ["gunicorn", "openeasd.wsgi:application", "--bind", "0.0.0.0:8000", "--worke
 # ===========================================================================
 # WORKER runtime — ubuntu:24.04. DBOS worker + full scanner matrix.
 # Ubuntu is deliberate: the tools were validated on it. No frontend/WeasyPrint.
+# It ships Ubuntu 24.04's Python (3.12), matching the web image's python:3.12-slim
+# — both tiers run the same Python minor. The worker's base is pinned to the OS the
+# scanner tools were validated on. The code targets requires-python >=3.12, and CI
+# runs the suite on 3.12.
 # ===========================================================================
 FROM ubuntu:24.04 AS worker
 

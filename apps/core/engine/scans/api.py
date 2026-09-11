@@ -216,21 +216,28 @@ def _get_vuln_counts(session) -> dict:
     return counts
 
 
-def _is_passive_only_scan(schedule_type: str, workflow) -> bool:
-    """True only for an immediate scan whose workflow contains solely passive tools.
+def _is_passive_only_scan(schedule_type: str, workflow, tools=None) -> bool:
+    """True only for an immediate scan whose tool set is solely passive.
 
     Passive tools use only public / third-party data and never touch the target,
     so such a scan needs no DomainAuthorization. Everything else — any active
     tool, or a scheduled (once/recurring) scan, which always runs the default
     active Full Scan workflow — is treated as active and stays behind the gate.
 
-    Resolving to the DEFAULT workflow when none was chosen means a bare "now"
-    scan (default = Full Scan) correctly reads as active and keeps the gate.
+    `tools`, when given (a category-scoped scan from the start form), is the
+    authoritative tool set and is gated directly — so selecting only passive
+    categories bypasses auth, while including an active tool (e.g. the Domain
+    Intelligence category's domain_security) keeps the gate. Otherwise the
+    workflow's tools are used; resolving to the DEFAULT workflow when none was
+    chosen means a bare "now" scan (default = Full Scan) correctly reads active.
     """
     if schedule_type != "now":
         return False
 
     from apps.core.engine.workflows.registry import is_passive_tool_set
+
+    if tools:
+        return is_passive_tool_set(tools)
 
     if workflow is None:
         from apps.core.engine.workflows.models import Workflow
@@ -269,6 +276,10 @@ class ScanStartRequest(Schema):
     domain: str
     schedule_type: str = "now"
     workflow_id: int | None = None
+    # Optional tool subset (immediate scans only) — e.g. the tools of the
+    # categories a user ticked on the start form. Restricts the run to these
+    # tools over the resolved workflow; the auth gate is applied to this set.
+    tools: list[str] | None = None
     scheduled_at: str | None = None
     recurrence: str = "daily"
     recurrence_time: str = "00:00"
@@ -293,19 +304,31 @@ def start_scan(request, data: ScanStartRequest):
         except Workflow.DoesNotExist:
             raise HttpError(404, "Workflow not found")
 
+    # Optional tool subset (immediate scans only) — validated against the registry.
+    tools = None
+    if data.tools:
+        if data.schedule_type != "now":
+            raise HttpError(400, "tools may only be given for an immediate (now) scan")
+        from apps.core.engine.workflows.registry import get_tool_choices
+        valid = {key for key, _ in get_tool_choices()}
+        unknown = [t for t in data.tools if t not in valid]
+        if unknown:
+            raise HttpError(400, f"Unknown tools: {', '.join(unknown)}")
+        tools = data.tools
+
     # Authorization gate — required unless this is an immediate passive-only scan.
-    # Scheduled scans (once/recurring) always run the default active Full Scan
-    # workflow and therefore always keep the gate.
-    if not _is_passive_only_scan(data.schedule_type, workflow):
+    # When a tool subset is given it is the authoritative set the gate checks;
+    # otherwise the workflow's tools are used. Scheduled scans always keep the gate.
+    if not _is_passive_only_scan(data.schedule_type, workflow, tools=tools):
         from apps.core.data.domains.models import DomainAuthorization
-        if not DomainAuthorization.objects.filter(domain__name=domain).exists():
+        if not DomainAuthorization.is_authorized(domain):
             raise HttpError(403, "Domain is not authorized for scanning")
 
     if data.schedule_type == "now":
         from apps.core.engine.scans.pipeline import create_scan_session
         from apps.core.engine.scans.tasks import run_scan_task
 
-        session = create_scan_session(domain, workflow=workflow)
+        session = create_scan_session(domain, workflow=workflow, tools=tools)
         if session is None:
             raise HttpError(409, "A scan is already running for this domain.")
         run_scan_task(session.id)
@@ -558,12 +581,12 @@ def scan_status(request, session_uuid: uuid.UUID):
         "urls": URL.objects.filter(session=session).count(),
     }
 
-    step_results = []
-    try:
-        run = session.workflow_run
-        step_results = list(run.step_results.order_by("order"))
-    except Exception:
-        pass
+    # No broad try/except here (F5): a pending scan simply has no WorkflowRun yet,
+    # so query for it rather than catching RelatedObjectDoesNotExist — that way a
+    # real DB error surfaces instead of being silently swallowed into "no steps".
+    from apps.core.engine.workflows.models import WorkflowRun
+    run = WorkflowRun.objects.filter(session=session).order_by("-id").first()
+    step_results = list(run.step_results.order_by("order")) if run is not None else []
 
     return {
         "session": {
@@ -625,7 +648,7 @@ def start_subscan(request, session_uuid: uuid.UUID, data: SubScanRequest):
     if not is_passive_tool_set(data.tools):
         from apps.core.data.domains.models import DomainAuthorization
         parent = get_object_or_404(ScanSession, uuid=str(session_uuid))
-        if not DomainAuthorization.objects.filter(domain__name=parent.domain).exists():
+        if not DomainAuthorization.is_authorized(parent.domain):
             raise HttpError(403, "Domain is not authorized for scanning")
 
     session = create_subscan_session(str(session_uuid), tools=data.tools)
@@ -655,7 +678,7 @@ def list_scheduled(request):
                 j["next_run_time"] or datetime.datetime.max.replace(tzinfo=datetime.timezone.utc),
             )
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 — broad by design: log and return what we have
         logger.exception("[list_scheduled] Failed to fetch scheduled jobs")
 
     return [

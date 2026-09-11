@@ -520,3 +520,156 @@ class TestWebCheckerScanner:
         with patch("apps.web_checker.scanner.collect", return_value=[]):
             findings = run_web_check(sess)
         assert findings == []
+
+
+# ---------------------------------------------------------------------------
+# Responsible disclosure — security.txt (RFC 9116)
+# ---------------------------------------------------------------------------
+
+class TestSecurityTxtHelpers:
+    def test_parse_expires_valid_z(self):
+        from apps.web_checker.analyzer import _parse_security_txt_expires
+        dt = _parse_security_txt_expires("Contact: mailto:s@x.com\nExpires: 2030-01-01T00:00:00Z\n")
+        assert dt is not None and dt.year == 2030 and dt.tzinfo is not None
+
+    def test_parse_expires_naive_assumed_utc(self):
+        import datetime
+        from apps.web_checker.analyzer import _parse_security_txt_expires
+        dt = _parse_security_txt_expires("Expires: 2030-01-01T00:00:00")
+        assert dt is not None and dt.tzinfo == datetime.timezone.utc
+
+    def test_parse_expires_absent_or_bad(self):
+        from apps.web_checker.analyzer import _parse_security_txt_expires
+        assert _parse_security_txt_expires("Contact: mailto:s@x.com") is None
+        assert _parse_security_txt_expires("Expires: not-a-date") is None
+
+    def test_looks_like_security_txt_accepts_contact(self):
+        from apps.web_checker.collector import _looks_like_security_txt
+        assert _looks_like_security_txt(200, "Contact: mailto:security@example.com\nExpires: 2030-01-01T00:00:00Z")
+
+    def test_looks_like_security_txt_rejects_html_spa(self):
+        from apps.web_checker.collector import _looks_like_security_txt
+        # SPA catch-all: 200 + HTML, no Contact line
+        assert not _looks_like_security_txt(200, "<!DOCTYPE html><html><head>Contact:</head></html>")
+
+    def test_looks_like_security_txt_rejects_non_200(self):
+        from apps.web_checker.collector import _looks_like_security_txt
+        assert not _looks_like_security_txt(404, "Contact: mailto:s@x.com")
+
+
+@pytest.mark.django_db
+class TestSecurityTxtFindings:
+    def _session(self):
+        from apps.core.engine.scans.models import ScanSession
+        return ScanSession.objects.create(domain="example.com", scan_type="full")
+
+    def test_none_result_no_finding(self):
+        from apps.web_checker.analyzer import security_txt_findings
+        assert security_txt_findings(None, self._session()) == []
+
+    def test_unreachable_no_finding(self):
+        # TLS/connection failure → we couldn't check → must NOT claim "missing".
+        from apps.web_checker.analyzer import security_txt_findings
+        out = security_txt_findings(
+            {"host": "example.com", "url_fk": None, "port_fk": None, "found": False,
+             "reachable": False, "location": None, "raw": "", "error": "SSLError"},
+            self._session())
+        assert out == []
+
+    def test_missing_is_info_finding(self):
+        from apps.web_checker.analyzer import security_txt_findings
+        sess = self._session()
+        out = security_txt_findings(
+            {"host": "example.com", "url_fk": None, "port_fk": None, "found": False,
+             "reachable": True, "location": None, "raw": "", "error": None}, sess)
+        assert len(out) == 1
+        assert out[0].check_type == "missing_security_txt"
+        assert out[0].severity == "info"
+
+    def test_valid_unexpired_no_finding(self):
+        from apps.web_checker.analyzer import security_txt_findings
+        sess = self._session()
+        out = security_txt_findings(
+            {"host": "example.com", "url_fk": None, "port_fk": None, "found": True,
+             "reachable": True, "location": "https://example.com/.well-known/security.txt",
+             "raw": "Contact: mailto:s@example.com\nExpires: 2999-01-01T00:00:00Z",
+             "error": None}, sess)
+        assert out == []
+
+    def test_expired_is_low_finding(self):
+        from apps.web_checker.analyzer import security_txt_findings
+        sess = self._session()
+        out = security_txt_findings(
+            {"host": "example.com", "url_fk": None, "port_fk": None, "found": True,
+             "reachable": True, "location": "https://example.com/.well-known/security.txt",
+             "raw": "Contact: mailto:s@example.com\nExpires: 2000-01-01T00:00:00Z",
+             "error": None}, sess)
+        assert len(out) == 1
+        assert out[0].check_type == "expired_security_txt"
+        assert out[0].severity == "low"
+
+
+@pytest.mark.django_db
+class TestCollectSecurityTxt:
+    def _session_with_apex(self, host="example.com", scheme="https"):
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain, IPAddress, Port
+        from apps.core.data.web_assets.models import URL
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        port = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                                   port=443, protocol="tcp", state="open", source="naabu")
+        sub = Subdomain.objects.create(session=sess, domain="example.com",
+                                       subdomain=host, source="subfinder")
+        URL.objects.create(session=sess, subdomain=sub, port=port,
+                           url=f"{scheme}://{host}", host=host, port_number=443,
+                           scheme=scheme, source="httpx")
+        return sess
+
+    def test_no_apex_url_returns_none(self):
+        # Only a subdomain URL, no apex/www — nothing to assert.
+        sess = self._session_with_apex(host="api.example.com")
+        from apps.web_checker.collector import collect_security_txt
+        assert collect_security_txt(sess) is None
+
+    def test_found_when_valid_body(self):
+        from apps.web_checker.collector import collect_security_txt
+        sess = self._session_with_apex()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = "Contact: mailto:security@example.com\nExpires: 2030-01-01T00:00:00Z"
+        with patch("apps.web_checker.collector.requests.get", return_value=mock_resp) as mget:
+            result = collect_security_txt(sess)
+        assert result["found"] is True
+        assert result["reachable"] is True
+        assert result["location"].endswith("/.well-known/security.txt")
+        assert mget.call_count == 1  # first path hit, no fallback needed
+
+    def test_not_found_tries_both_paths(self):
+        from apps.web_checker.collector import collect_security_txt
+        sess = self._session_with_apex()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        mock_resp.text = "nope"
+        with patch("apps.web_checker.collector.requests.get", return_value=mock_resp) as mget:
+            result = collect_security_txt(sess)
+        assert result["found"] is False
+        assert result["reachable"] is True  # server answered (404) — definitively absent
+        assert mget.call_count == 2  # tried /.well-known/ then /security.txt
+
+    def test_fetch_error_is_graceful(self):
+        import requests as req
+        from apps.web_checker.collector import collect_security_txt
+        sess = self._session_with_apex()
+        with patch("apps.web_checker.collector.requests.get",
+                   side_effect=req.ConnectionError("refused")):
+            result = collect_security_txt(sess)
+        assert result["found"] is False
+        assert result["reachable"] is False  # couldn't reach → analyzer emits nothing
+        assert result["error"] is not None
+
+    def test_no_domain_returns_none(self):
+        from apps.core.engine.scans.models import ScanSession
+        from apps.web_checker.collector import collect_security_txt
+        sess = ScanSession.objects.create(domain="", scan_type="full")
+        assert collect_security_txt(sess) is None

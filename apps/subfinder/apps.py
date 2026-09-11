@@ -9,8 +9,8 @@ class SubfinderConfig(AppConfig):
     tool_meta = {
         "label": "Subfinder",
         "runner": "apps.subfinder.scanner.run_subfinder",
-        "phase": 2,
-        "phase_group": "Surface Enumeration",
+        "phase": 3,
+        "phase_group": "Asset Discovery",
         "requires": [],
         "produces_findings": False,
         "active": False,

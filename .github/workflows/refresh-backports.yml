@@ -24,7 +24,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh && echo "$HOME/.local/bin" >> $GITHUB_PATH
@@ -43,7 +43,7 @@ jobs:
           uv run python apps/nmap/management/commands/refresh_backports.py
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@b99c9ae23bcf83f0f5aa571c2f0093de8aa85036  # v6.0.5
+        uses: peter-evans/create-pull-request@c9f8b51aaac1dfba340a97878061732b0e738ec1  # v6.0.5
         with:
           commit-message: "Update apps/nmap/backports.json from upstream security feeds"
           title: "Automated `backports.json` Refresh"

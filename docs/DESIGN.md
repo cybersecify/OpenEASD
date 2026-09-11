@@ -152,7 +152,7 @@ Notes on the mapping's soft edges:
   triggers + hygiene). Under the producer→queue→consumer lens it's a *producer*,
   not the execution core — the one app where the two lenses disagree on placement.
 - **`service_detection`** is the only app that is both core infrastructure and a
-  registry tool (nmap -sV, phase 6).
+  registry tool (nmap -sV, phase 7).
 
 Secrets at rest (`apps/core/crypto.py` + `fields.py`): BYOK API keys and webhook
 URLs stored in the DB are Fernet-encrypted via `EncryptedCharField`/`EncryptedTextField`.
@@ -182,12 +182,15 @@ full per-tool table is in [CLAUDE.md](../CLAUDE.md); by phase group:
 
 | Phase group | Phases | Tools |
 |---|---|---|
-| Domain Intelligence | 1 | domain_security, hudson_rock, dns_history, github_secrets, typosquat, breach_check |
-| Surface Enumeration | 2–4 | subfinder, amass, asn_discovery, alterx, github_recon, dnsx, takeover_check, cloud_assets |
-| Port Discovery | 5–6 | naabu, shodan, service_detection |
-| Network Exposure | 7 | nmap, tls_checker, ssh_checker, nuclei_network |
-| Web Exposure | 8–11 | httpx, historical_urls, katana, nuclei, web_checker, js_secrets |
-| Prioritization | 12 | cve_intel (enriches CVEs with EPSS + CISA-KEV in place) |
+| Domain Posture | 1 | domain_security, domain_probe, dns_history |
+| Brand Threat | 1, 13 | typosquat, asn_cluster |
+| Credential Exposure | 2 | breach_check, hudson_rock, github_secrets |
+| Asset Discovery | 3–4 | subfinder, amass, alterx, asn_discovery, dnsx |
+| Asset Exposure | 5 | takeover_check, cloud_assets |
+| Port Discovery | 6–7 | naabu, shodan, service_detection |
+| Network Exposure | 8 | nmap, tls_checker, ssh_checker, nuclei_network |
+| Web Exposure | 9–12 | httpx, historical_urls, katana, nuclei, web_checker, js_secrets |
+| Prioritization | 13 | cve_intel (enriches CVEs with EPSS + CISA-KEV in place) |
 
 Binaries: ProjectDiscovery tools (`subfinder`/`dnsx`/`naabu`/`httpx`/`katana`/
 `nuclei`) + `amass`, `gitleaks`, `subzy`, `gau` are pinned static binaries;
@@ -212,16 +215,17 @@ Deletion cascades top-down: deleting a Domain wipes all session data.
 ### Pipeline phases
 
 ```
-Phase 1   Domain Intelligence  → Finding (DNS/email/RDAP, breach, typosquat, infostealer, public-secret)
-Phase 2   Surface Enumeration  → Subdomain (subfinder/amass/alterx) + Finding (asn_discovery, github_recon)
-Phase 3   dnsx                 → IPAddress (public-IP filter)
-Phase 4   takeover / cloud     → Finding (dangling DNS, open buckets)
-Phase 5   naabu / shodan       → Port + Finding (passive exposure)
-Phase 6   service_detection    → enriches Port.service + Port.is_web
-Phase 7   Network Exposure     → Finding (nmap CVE / tls / ssh / nuclei_network — non-web; run in parallel)
-Phase 8-10 httpx → historical_urls → katana → URL (web probing / archived / crawl)
-Phase 11  Web Exposure         → Finding (nuclei web, web_checker headers, js_secrets)
-Phase 12  cve_intel            → enriches CVE findings with EPSS + CISA-KEV (no new findings)
+Phase 1   Domain Posture + Brand Threat → Finding (DNS/DNSSEC/email-auth/RDAP, domain_probe, dns_history; typosquat lookalikes)
+Phase 2   Credential Exposure            → Finding (breach_check, hudson_rock infostealer, github_secrets)
+Phase 3   Asset Discovery  → Subdomain (subfinder/amass/alterx) + Finding (asn_discovery)
+Phase 4   dnsx                 → IPAddress (public-IP filter)
+Phase 5   Asset Exposure       → Finding (takeover_check dangling DNS, cloud_assets open buckets)
+Phase 6   naabu / shodan       → Port + Finding (passive exposure)
+Phase 7   service_detection    → enriches Port.service + Port.is_web
+Phase 8   Network Exposure     → Finding (nmap CVE / tls / ssh / nuclei_network — non-web; run in parallel)
+Phase 9-11 httpx → historical_urls → katana → URL (web probing / archived / crawl)
+Phase 12  Web Exposure         → Finding (nuclei web, web_checker headers, js_secrets)
+Phase 13  cve_intel + asn_cluster → enrich CVE findings (EPSS + CISA-KEV) + cluster lookalikes by ASN
 ```
 
 ### Scan flow (call chain)
@@ -261,7 +265,7 @@ POST /api/scans/start/  (authorization gate: active tools need DomainAuthorizati
 1. **Tools never import from each other.** Shared data flows through the core
    asset/finding models only.
 2. **`Port.is_web`** is the classification gate — set by `service_detection`
-   (Phase 6); nmap skips web ports, nuclei_network targets non-web, tls_checker
+   (Phase 7); nmap skips web ports, nuclei_network targets non-web, tls_checker
    probes all.
 3. **httpx feeds subdomain:port pairs, not IP:port** — needed so SNI matches on
    CDN/Cloudflare-fronted hosts.
@@ -287,7 +291,7 @@ the pipeline's phase *order*.
 | | **Workflow-centric** | **Pipeline-centric** |
 |---|---|---|
 | Controls | *which* tools run | *what order* + *how data flows* |
-| The unit | `Workflow` + `WorkflowStep` (DB rows) | fixed 12 phases + dataflow models |
+| The unit | `Workflow` + `WorkflowStep` (DB rows) | fixed 13 phases + dataflow models |
 | Mutable? | ✅ dynamic — user-configurable | ❌ fixed — hardcoded `tool_meta["phase"]` |
 | Lives in | `apps/core/engine/workflows/` (models, api, runner, registry) | `tool_meta` phases + `apps/core/engine/scans/pipeline.py` |
 | Example control | enable/disable tools; Full / Passive / custom workflows | `dnsx`(3)→`naabu`(5)→`httpx`(8): IPs before ports before web probing |

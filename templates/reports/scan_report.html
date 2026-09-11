@@ -178,6 +178,30 @@
   </p>
 </div>
 
+{% if since_last_scan %}
+<div class="risk no-break" style="border-color:#5c7cfa;">
+  <div class="l" style="color:#5c7cfa;">Since Your Last Scan</div>
+  <p style="margin:8px 0 0;font-size:10px;line-height:1.5;color:#333;">Compared with the previous scan of {{ session.domain }} on {{ since_last_scan.previous_date|date:"Y-m-d" }}:
+    <strong style="color:#e03131;">{{ since_last_scan.new_count }} new</strong>,
+    <strong style="color:#2f9e44;">{{ since_last_scan.resolved_count }} resolved</strong>,
+    <strong style="color:#333;">{{ since_last_scan.still_open }} still open</strong>.
+  </p>
+  {% if since_last_scan.new %}
+  <p style="margin:8px 0 2px;font-size:9px;font-weight:bold;color:#e03131;">New this scan — investigate first:</p>
+  <ul style="margin:0;padding-left:14px;font-size:9px;line-height:1.45;color:#333;">
+    {% for f in since_last_scan.new %}<li><strong>{{ f.title }}</strong> ({{ f.severity|upper }})</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if since_last_scan.resolved %}
+  <p style="margin:8px 0 2px;font-size:9px;font-weight:bold;color:#2f9e44;">Resolved since last scan:</p>
+  <ul style="margin:0;padding-left:14px;font-size:9px;line-height:1.45;color:#333;">
+    {% for f in since_last_scan.resolved %}<li>{{ f.title }} ({{ f.severity|upper }})</li>{% endfor %}
+  </ul>
+  {% endif %}
+  <p style="margin:8px 0 0;font-size:8px;color:#888;">Changes are compared by issue type (tool, check, and title); a finding counts as "still open" when the same issue type appeared in both scans.</p>
+</div>
+{% endif %}
+
 {% if ai_summary %}
 <div class="risk no-break" style="border-color:#2f9e44;">
   <div class="l" style="color:#2f9e44;">Analyst Summary</div>
@@ -192,12 +216,42 @@
 </div>
 {% endif %}
 
+{% if ceo_questions %}
+<div class="h2">The Five Questions</div>
+<p class="lead">The questions a decision-maker actually asks, answered from this scan.</p>
+<table class="grid no-break">
+  <thead><tr><th style="width:58%;">Question</th><th style="width:42%;">Answer</th></tr></thead>
+  <tbody>
+    {% for q in ceo_questions %}
+    <tr>
+      <td><strong>{{ q.question }}</strong></td>
+      <td>
+        {% if q.status == "at_risk" %}<strong style="color:#e03131;">At risk</strong> — {{ q.issue_count }} finding{{ q.issue_count|pluralize }}
+        {% elif q.status == "attention" %}<strong style="color:#e8590c;">Needs attention</strong> — {{ q.issue_count }} finding{{ q.issue_count|pluralize }}
+        {% elif q.status == "clear" %}<strong style="color:#2f9e44;">No issues found</strong>
+        {% else %}<span style="color:#868e96;">Not assessed in this scan</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="lead" style="font-size:9px;color:#666;">"Not assessed" means the check for that question was not part of this scan's workflow — not that it is clear.</p>
+{% endif %}
+
 <p class="lead" style="font-style:italic;font-size:9px;color:#666;">This is a point-in-time snapshot of the externally observable attack surface, taken from the public internet. It does not include authenticated, internal, or manual testing, and an attack surface changes over time — treat it as a baseline, not a certificate.</p>
 
 {% if coverage %}
 <div class="risk no-break" style="border-color:#e8590c;">
   <div class="l" style="color:#e8590c;">Scan Coverage — Edge Blocking Observed</div>
   <p style="margin:6px 0 0;font-size:10px;line-height:1.5;">{{ coverage.note }}</p>
+</div>
+{% endif %}
+
+{% if rdap_unavailable %}
+<div class="risk no-break" style="border-color:#868e96;">
+  <div class="l" style="color:#868e96;">Scan Coverage — Registration Data Unavailable</div>
+  <p style="margin:6px 0 0;font-size:10px;line-height:1.5;">RDAP registration data could not be retrieved for {{ session.domain }}, so registrar, domain-expiry, and transfer/delete/update-lock checks could not be completed. This is a coverage gap, not a finding — re-run once RDAP is reachable for the domain's TLD.</p>
 </div>
 {% endif %}
 
@@ -369,6 +423,13 @@
   {% if g.remediation %}
   <div class="sect-lbl">Remediation</div>
   <div class="prose">{{ g.remediation }}</div>
+  {% endif %}
+
+  {% if show_next_steps and g.next_steps %}
+  <div class="sect-lbl">Recommended Next Steps</div>
+  <ol class="prose" style="margin:4px 0 0;padding-left:18px;">
+    {% for step in g.next_steps %}<li style="margin:0 0 3px;">{{ step }}</li>{% endfor %}
+  </ol>
   {% endif %}
 </div>
 {% endfor %}

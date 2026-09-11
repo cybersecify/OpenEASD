@@ -9,10 +9,9 @@ const NAV = [
   { label: 'Dashboard',      path: '/' },
   { label: 'Domains',        path: '/domains' },
   { label: 'Scans',          path: '/scans' },
-  { label: 'Assets',         path: '/assets' },
-  { label: 'Findings',       path: '/findings' },
   { label: 'Workflows',      path: '/workflows' },
   { label: 'Insights',       path: '/insights' },
+  { label: 'Reports',        path: '/reports' },
   { label: 'Notifications',  path: '/notifications' },
   { label: 'Credentials',    path: '/credentials' },
   { label: 'AI Analysis',    path: '/ai' },
@@ -44,7 +43,6 @@ function NavLink({ path, label, badge }) {
 export function Layout({ children }) {
   const navigate = useNavigate();
   const { data } = useQuery({ queryKey: ['dashboard-nav'], queryFn: () => apiGet('/dashboard/') });
-  const criticalHigh = data ? (data.kpi_critical ?? 0) + (data.kpi_high ?? 0) : null;
   const running      = data ? (data.kpi_active_scans ?? 0) : null;
 
   return (
@@ -55,9 +53,7 @@ export function Layout({ children }) {
         </div>
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
           {NAV.map(({ path, label }) => {
-            const badge =
-              label === 'Findings' ? criticalHigh :
-              label === 'Scans'    ? running : null;
+            const badge = label === 'Scans' ? running : null;
             return <NavLink key={path} path={path} label={label} badge={badge} />;
           })}
         </nav>

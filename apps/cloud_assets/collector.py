@@ -1,6 +1,5 @@
 import logging
 import os
-import shutil
 import subprocess
 import tempfile
 
@@ -18,10 +17,11 @@ def collect(keywords: list[str]) -> list[str]:
         return []
 
     binary = getattr(settings, "TOOL_CLOUD_ENUM", "cloud_enum")
-    if not shutil.which(binary):
-        logger.debug("cloud_enum binary not found at %r — skipping", binary)
-        return []
 
+    # Missing binary raises ToolBinaryMissing (below, via subprocess FileNotFoundError)
+    # rather than skipping silently — consistent with every other binary tool
+    # (takeover_check/nmap/naabu/…). The runner records the failed step so the scan
+    # is labeled "partial" instead of reporting a fake "clean" result.
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as kf:
         kf.write("\n".join(keywords))
         keywords_path = kf.name
@@ -42,6 +42,7 @@ def collect(keywords: list[str]) -> list[str]:
             logger.warning("cloud_enum timed out after %ss", _TIMEOUT)
             raise ToolTimeout(f"cloud_enum timed out after {_TIMEOUT}s")
         except FileNotFoundError:
+            logger.warning("cloud_enum binary not found at %r", binary)
             raise ToolBinaryMissing(f"cloud_enum binary not found: {binary}")
 
         if result.returncode != 0:

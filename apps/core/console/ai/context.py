@@ -5,7 +5,8 @@ reviewable in one place. Descriptions are truncated hard: prompts carry the
 minimum needed to rank, not full report bodies.
 """
 
-_SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+from apps.core.constants import SEVERITY_RANK  # critical=4 … info=0 (higher = more severe)
+
 _MAX_DESCRIPTION_CHARS = 300
 
 _SYSTEM_PROMPT = (
@@ -20,7 +21,7 @@ _SYSTEM_PROMPT = (
 def severity_counts(session) -> dict:
     from apps.core.data.findings.models import Finding
 
-    counts = {s: 0 for s in _SEVERITY_ORDER}
+    counts = {s: 0 for s in SEVERITY_RANK}
     for row in Finding.objects.filter(session=session).values_list("severity", flat=True):
         if row in counts:
             counts[row] += 1
@@ -40,7 +41,8 @@ def select_findings(session, cap: int) -> list:
         .exclude(severity="info")
         .select_related("port", "url")
     )
-    findings.sort(key=lambda f: (_SEVERITY_ORDER.get(f.severity, 9), f.id))
+    # Most-severe first (negate the rank, which is higher-is-worse), unknown last.
+    findings.sort(key=lambda f: (-SEVERITY_RANK.get(f.severity, -1), f.id))
     return findings[: max(cap, 0)]
 
 

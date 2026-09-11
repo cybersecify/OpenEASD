@@ -3,12 +3,12 @@
 External Attack Surface Detection platform. Scans domains for network and
 web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 
-## Status (v2.4.0 — 2026-09-09)
+## Status (v2.15.1 — 2026-09-11)
 
-- **Released**: v2.4.0 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
-  `:v2.4.0` / `:v2.4` / `:latest`. 3-tier deploy: `db` (postgres:17) + `web`
+- **Released**: v2.15.1 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
+  `:v2.15.1` / `:v2.15` / `:latest` (web on python:3.12-slim, worker on Ubuntu 24.04/3.12 — both Python 3.12; Django 5.2 LTS). 3-tier deploy: `db` (postgres:17) + `web`
   (gunicorn, no tools) + `worker` (`dbos_worker` + scanner matrix, `NET_RAW`).
-- **Scope**: 28 registered scan tools across 12 pipeline phases; single-user
+- **Scope**: 29 registered scan tools across 13 pipeline phases; single-user
   (one admin, no RBAC) by design.
 - **Engine**: DBOS durable workflows on PostgreSQL — one multi-step `run_scan`
   workflow per scan (checkpoint/resume) + `@durable_task` for one-step tasks
@@ -16,8 +16,10 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 - **AI**: optional Cloudflare Workers AI layer (BYOK, off by default, consent-gated).
 - **Docs**: [`docs/DESIGN.md`](docs/DESIGN.md) (architecture — layers/tiers,
   workflow-vs-pipeline, apps), [`docs/DECISIONS.md`](docs/DECISIONS.md) (why),
-  [`docs/PRD.md`](docs/PRD.md) (product), `docs/specs/` (feature specs +
-  producer→queue→consumer hardening plan H1–H7). Release notes: `CHANGELOG.md`.
+  [`docs/PRD.md`](docs/PRD.md) (product),
+  [`docs/CODING_STANDARDS.md`](docs/CODING_STANDARDS.md) (conventions + open
+  review findings), `docs/specs/` (feature specs + producer→queue→consumer
+  hardening plan H1–H7). Release notes: `CHANGELOG.md`.
 - **Health**: `GET /health/` (unauth, K8s probes) · `GET /api/version/`.
 
 ## GitHub Flow
@@ -109,8 +111,8 @@ git describe --tags --abbrev=0
 - **4 jobs:**
   - `test` — ruff (lint), pytest (fast, excludes `test_domain_security.py`) against a **`postgres:17-alpine` service container** (DB_* env) with a **coverage gate** (`--cov-fail-under=80`; config in `[tool.coverage.run]`, ~83% currently), bandit (SAST), pip-audit (CVE scan)
   - `frontend` — `npm ci`, `npm run test:run` (Vitest + Testing Library, happy-dom env), `npm run build`
-  - `docker` — matrix over the `web` + `worker` build targets, `docker buildx build` for `linux/amd64` (no push, cache check per target)
-  - `publish` — matrix over `web` + `worker`; builds `linux/amd64` and pushes to `ghcr.io/cybersecify/openeasd-web` and `-worker`
+  - `docker` — **PR-only** build gate (`if: github.event_name == 'pull_request'`): one job building both `web` + `worker` targets for `linux/amd64` (no push), warming the `type=gha` cache. **Skipped on main/tag pushes** — `publish` rebuilds+pushes from that warm cache there, so building here too would be a redundant full worker build on the release path.
+  - `publish` — matrix over `web` + `worker`; builds `linux/amd64` and pushes to `ghcr.io/cybersecify/openeasd-web` and `-worker`. `needs: [test, frontend]` only (NOT `docker`, which is PR-only and would cascade-skip publish); it's the sole image builder on release.
 - **Publish triggers:** every push to `main` (`:latest` tag) and `v*` git tags. A tag push emits both the full `:vX.Y.Z` (from `type=ref,event=tag`) and a floating `:vX.Y` major.minor tag (from `type=match,pattern=v\d+\.\d+`) so downstream can pin to a minor line and still get patch updates
 - Runner: `ubuntu-24.04`, Python 3.12, `uv sync --group dev` for deps, `libcairo2-dev gcc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0` system deps required (WeasyPrint PDF rendering)
 - `pip-audit --ignore-vuln PYSEC-2025-183` — disputed PyJWT weak-key-length CVE, no fix available
@@ -120,13 +122,14 @@ git describe --tags --abbrev=0
 - Always use `uv run python` instead of `python` or `python3`
 - Always use `uv run manage.py` for Django management commands (e.g. `uv run manage.py check`)
 - Always use `uv run pytest` for running tests
-- The slow `tests/unit/test_domain_security.py` (41 tests) makes real DNS/RDAP calls — exclude it for fast CI runs:
+- The slow `tests/unit/test_domain_security.py` (46 tests) makes real DNS/RDAP calls — exclude it for fast CI runs:
   `uv run pytest tests/ --ignore=tests/unit/test_domain_security.py`
 
 ## Stack
 
 ### Backend
-- Django 5+ with plain Django views (no DRF, no Celery, no Redis)
+- Django 5.2 LTS with plain Django views (no DRF, no Celery, no Redis) — pinned to
+  the LTS line (`django>=5.2.17,<6.0`), not floated to non-LTS 6.x
 - **Django Ninja** REST API under `/api/` — Schema-based, auto-docs at `/api/docs`
 - **JWT Bearer auth** — access + refresh tokens via `djangorestframework-simplejwt` (ninja-jwt wrapper); token blacklist handled by simplejwt's built-in `OutstandingToken`/`BlacklistedToken` models
 - **DBOS** — durable-execution engine for scan execution AND all scheduling, backed by PostgreSQL (its checkpoint tables live in a `dbos` schema in the same DB). Scans are durable workflows whose phases are checkpointed steps, so a crashed/restarted worker RESUMES a scan instead of losing it. Scheduling is DBOS `@scheduled` cron workflows (daily scan, monitoring sweep, user-schedule sweep, stuck-scan watchdog, JWT token purge) registered by the `dbos_worker` process. Django-Q2 and APScheduler have been fully removed.
@@ -149,9 +152,17 @@ git describe --tags --abbrev=0
 - **`/change-password` route** — forced redirect after login if `must_change_password=true`; clears flag on success
 
 ### Frontend dev setup
+
+**Task runners:** both a `Makefile` and a `justfile` are provided with the same
+recipes (`dev`, `worker`, `test`, `lint`, `migrate`, …) — use `make <target>` or
+`just <target>` interchangeably. `just` adds a few extras: **`just ci`** runs the
+whole CI pipeline locally (ruff + pytest w/ 80% coverage + bandit + pip-audit +
+vitest + build — mirrors `.github/workflows/ci.yml`), and `just up`/`down`/`logs`/`ps`
+drive the 3-container Docker Compose stack. `just` (no arg) lists all recipes.
+
 ```bash
 # Quickest: starts Django (:8001) + Vite dev server + DBOS worker together
-make dev
+make dev        # or: just dev
 
 # Or manually in three terminals:
 # Terminal 1 — Django
@@ -203,10 +214,17 @@ docker compose up -d --build
   `OPENEASD_PROFILE` (default `auto`, from RAM) tunes this: `low` (<2GB or
   `OPENEASD_LOW_MEMORY=true`) runs tools sequentially + throttles nuclei + skips
   amass brute so ~1GB completes without OOM; `balanced` (2-8GB) is the old
-  default; `high` (≥8GB) raises LOCAL concurrency. Per-target request rate stays
+  default; `high` (≥8GB) raises LOCAL concurrency. **Exception:** a phase group
+  of only light, network-I/O-only tools (`runner._LOW_MEM_PARALLEL_SAFE` —
+  domain_security/domain_probe/typosquat/dns_history/hudson_rock/breach_check/
+  github_secrets) runs concurrently *even under low memory* (they never OOM like
+  nuclei/amass), so the phase-1 intelligence group stays fast on a 1GB box;
+  override via `SCAN_LOW_MEM_PARALLEL_SAFE`. `typosquat` also resolves its
+  candidates and probes homepages concurrently (`TYPOSQUAT_DNS_CONCURRENCY`=16 /
+  `TYPOSQUAT_FETCH_CONCURRENCY`=8) instead of serially. Per-target request rate stays
   capped across all profiles (politeness — a big box is no licence to hammer the
   target; higher rates just trip WAFs, which the coverage report flags). Add
-  swap on 1GB hosts. Resolver + tuning in settings.py (`_resolve_profile`,
+  swap on 1GB hosts. Resolver + tuning in settings/base.py (`_resolve_profile`,
   `_PROFILE_TUNING`). nuclei is also severity-scoped per profile (`NUCLEI_SEVERITY`;
   low=critical/high/medium, else +low; `info` dropped everywhere) — the fix for
   its freeze/timeout since it compiles all ~13.5k templates into RAM. See
@@ -250,8 +268,20 @@ k8s/
   worker-deployment.yaml — openeasd-worker: DBOS worker (tier: worker, NET_RAW, no Service)
   service.yaml           — NodePort 30808 → 8000, selector tier: web ONLY
   ingress.yaml           — nginx Ingress; TLS annotations ready to uncomment
-  kustomization.yaml     — kubectl apply -k k8s/ (does NOT include secret.yaml)
+  kustomization.yaml     — kubectl apply -k k8s/ (does NOT include secret.yaml);
+                           pins the image tag via images[].newTag — the SINGLE
+                           source of truth for which version prod runs
 ```
+
+**Image pinning (deterministic promote + rollback):** the Deployments carry
+**bare image names** (`ghcr.io/cybersecify/openeasd-{web,worker}`, no tag); the
+version is set only by `kustomization.yaml` `images[].newTag`. To promote a
+release, smoke-test the published `:vX.Y.Z` image first (`OPENEASD_TAG=vX.Y.Z
+just deploy-dev`), then bump `newTag` to that version and `kubectl apply -k k8s/`.
+Rollback = set `newTag` back and re-apply. `imagePullPolicy: IfNotPresent` +
+immutable tags make this reproducible. Never pin prod to `:latest`. Enforced by
+`test_k8s_manifests.py::test_images_pinned_to_release_tag` (newTag must be `vX…`).
+See the full flow in `docs/DEVELOPMENT.md` (Ship it — verify, then promote).
 
 **Key constraints:**
 - `replicas: 1` on each Deployment by default. Postgres removes the SQLite single-writer limit, so `openeasd-worker` can scale to multiple replicas pulling the same DBOS queue (`kubectl scale deploy/openeasd-worker --replicas=N`) independently of `openeasd-web`
@@ -442,38 +472,46 @@ The registry (`apps/core/engine/workflows/registry.py`) auto-discovers all `tool
 - `get_tool_requires()` — for dependency validation
 - `get_source_choices()` — for finding source filtering
 
-### Tool apps (28 registered tools)
+**Pipeline diagram (generated, drift-proof):** `manage.py render_pipeline_diagram`
+renders the whole pipeline — every phase group, tool, passive/active flag, and
+dependency — straight from the registry as self-contained HTML (`-o file.html`),
+a terminal tree (`--format text`), or JSON (`--format json`). Because it reads
+`tool_meta` live, it can never drift; a test (`test_render_pipeline_diagram.py`)
+guards that every registered tool appears in the output.
+
+### Tool apps (29 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
-| `apps/domain_security/` | 1 | Domain Intelligence | Yes | DNS, email, RDAP checks |
-| `apps/hudson_rock/` | 1 | Domain Intelligence | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
-| `apps/dns_history/` | 1 | Domain Intelligence | Yes | Historical A/AAAA/MX records via a passive-DNS dataset — surfaces past hosting / stale records (info findings). Passive, BYO `DNS_HISTORY_API_URL` (no-op if unset), fail-graceful |
-| `apps/github_secrets/` | 1 | Domain Intelligence | Yes | Leaked secrets in PUBLIC GitHub — searches GitHub's code-search API (org-scoped by default) for the target org's committed credentials, fetches the hits, runs gitleaks over them (same engine as `js_secrets`), REDACTS before storage (`check_type="exposed_secret"`, shared with js_secrets). Passive (queries GitHub, not the target); BYOK MANDATORY (`GITHUB_TOKEN` — code-search needs auth; no token → logged no-op); fail-graceful |
-| `apps/typosquat/` | 1 | Domain Intelligence | Yes | Lookalike / typosquat domain detection — generates lookalike candidates algorithmically (homoglyph/typo/omission/insertion/repetition/transposition/hyphenation/TLD-swap) then checks which are registered via public DNS (A/MX → medium/weaponizable, NS-only → low). Passive (queries candidate domains' DNS, never the target), no key, fail-graceful |
-| `apps/breach_check/` | 1 | Domain Intelligence | Yes | Data-breach exposure for the domain. BYOK: free keyless XposedOrNot catalog by default, authoritative Have I Been Pwned `breacheddomain` when `HIBP_API_KEY` set. Aggregate COUNTS + public breach metadata only — never email aliases/credentials. Passive, fail-graceful |
-| `apps/subfinder/` | 2 | Surface Enumeration | No | Passive subdomain enumeration |
-| `apps/amass/` | 2 | Surface Enumeration | No | Active subdomain enumeration |
-| `apps/asn_discovery/` | 2 | Surface Enumeration | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
-| `apps/alterx/` | 2 | Surface Enumeration | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
-| `apps/github_recon/` | 2 | Surface Enumeration | Yes | GitHub Org Recon — enumerates the target org's PUBLIC GitHub repos via GitHub's official REST API and surfaces exposed infra references (internal hostnames/subdomains, cloud-bucket URLs, API endpoints) in that public code/config. Two-tier BYO-token: keyless unauthenticated API (60 req/hr, request-capped) works out of the box, `GITHUB_TOKEN` raises to 5000 req/hr. Complements `js_secrets`/`github_secrets` (secrets) — this finds infra exposure. Passive (queries GitHub, never the target), fail-graceful |
-| `apps/dnsx/` | 3 | Surface Enumeration | No | DNS resolution, public IP filtering |
-| `apps/takeover_check/` | 4 | Surface Enumeration | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
-| `apps/cloud_assets/` | 4 | Surface Enumeration | Yes | Public cloud bucket enumeration via cloud_enum (AWS S3 / Azure Blob / GCP Storage) |
-| `apps/naabu/` | 5 | Port Discovery | No | Port scanning (top 100 TCP) |
-| `apps/shodan/` | 5 | Port Discovery | Yes | Passive exposure intel from Shodan's own scan data — ports/services/CVEs per resolved IP. BYOK: free InternetDB tier (no key, no credits), full host API when `SHODAN_API_KEY` set (`SHODAN_MAX_IPS` caps the paid path). CVEs land in `extra["cve_ids"]` so `cve_intel` enriches them. Passive, fail-graceful |
-| `apps/core/engine/service_detection/` | 6 | Port Discovery | No | nmap -sV enriches Port.service + is_web |
-| `apps/nmap/` | 7 | Network Exposure | Yes | NSE vulners CVE scan (non-web ports); backport-aware CVE matching (`backports.json` registry) |
-| `apps/tls_checker/` | 7 | Network Exposure | Yes | TLS/cert analysis + cipher suite enumeration via `nmap --script ssl-enum-ciphers` (all ports) |
-| `apps/ssh_checker/` | 7 | Network Exposure | Yes | SSH config analysis |
-| `apps/nuclei_network/` | 7 | Network Exposure | Yes | Network protocol vuln scan (319 templates, non-web) |
-| `apps/httpx/` | 8 | Web Exposure | No | Web probing, URL discovery, technology fingerprinting (`-tech-detect` → `URL.technologies`) |
-| `apps/historical_urls/` | 9 | Web Exposure | No | Historical URL discovery via gau (Wayback Machine, OTX, Common Crawl, URLScan) |
-| `apps/katana/` | 10 | Web Exposure | No | Web crawling, endpoint discovery |
-| `apps/nuclei/` | 11 | Web Exposure | Yes | Web vuln scan (community templates) |
-| `apps/web_checker/` | 11 | Web Exposure | Yes | Security headers, cookies, CORS |
-| `apps/js_secrets/` | 11 | Web Exposure | Yes | Hardcoded-secret detection — fetches discovered `.js` assets and runs gitleaks over them; secret is redacted before storage |
-| `apps/cve_intel/` | 12 | Prioritization | No | Enriches CVE findings in place with EPSS scores + CISA KEV flags (no new findings) |
+| `apps/domain_security/` | 1 | Domain Posture | Yes | **Passive** DNS/DNSSEC/CAA/wildcard/lame-delegation, email-auth (SPF/DMARC/DKIM/TLS-RPT/BIMI) via public resolvers, and RDAP (expiry/locks/status). No packets to the target — needs no authorization |
+| `apps/domain_probe/` | 1 | Domain Posture | Yes | **Active** domain probes split out of domain_security: AXFR zone transfer (nameservers), SMTP open-relay (MX:25), and MTA-STS policy fetch (`mta-sts.<domain>`). Touches the target directly → requires `DomainAuthorization` |
+| `apps/hudson_rock/` | 2 | Credential Exposure | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
+| `apps/dns_history/` | 1 | Domain Posture | Yes | Historical A/AAAA/MX records via a passive-DNS dataset — surfaces past hosting / stale records (info findings). Passive, BYO `DNS_HISTORY_API_URL` (no-op if unset), fail-graceful |
+| `apps/github_secrets/` | 2 | Credential Exposure | Yes | Leaked secrets in PUBLIC GitHub — searches GitHub's code-search API (org-scoped by default) for the target org's committed credentials, fetches the hits, runs gitleaks over them (same engine as `js_secrets`), REDACTS before storage (`check_type="exposed_secret"`, shared with js_secrets). Passive (queries GitHub, not the target); BYOK MANDATORY (`GITHUB_TOKEN` — code-search needs auth; no token → logged no-op); fail-graceful |
+| `apps/typosquat/` | 1 | Brand Threat | Yes | Lookalike / typosquat domain detection — generates lookalike candidates algorithmically (homoglyph/typo/omission/insertion/repetition/transposition/hyphenation/TLD-swap), checks which are registered via public DNS, then scores **weaponization**: registered web-serving lookalikes get a capped, fail-graceful homepage fetch for a login form (credential phishing) or brand mention (impersonation) → **high** (active impersonation, prioritise takedown); A/MX-only → medium; NS-only → low. Passive w.r.t. the target (contacts only the lookalike domains, never yours), no key, fail-graceful. Weaponization model ported from the standalone `tldsquatting` project |
+| `apps/breach_check/` | 2 | Credential Exposure | Yes | Data-breach exposure for the domain. BYOK: free keyless XposedOrNot catalog by default, authoritative Have I Been Pwned `breacheddomain` when `HIBP_API_KEY` set. Aggregate COUNTS + public breach metadata only — never email aliases/credentials. Passive, fail-graceful |
+| `apps/subfinder/` | 3 | Asset Discovery | No | Passive subdomain enumeration |
+| `apps/amass/` | 3 | Asset Discovery | No | Active subdomain enumeration |
+| `apps/asn_discovery/` | 3 | Asset Discovery | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
+| `apps/alterx/` | 3 | Asset Discovery | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
+| `apps/dnsx/` | 4 | Asset Discovery | No | DNS resolution, public IP filtering |
+| `apps/takeover_check/` | 5 | Asset Exposure | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
+| `apps/cloud_assets/` | 5 | Asset Exposure | Yes | Public cloud bucket enumeration via cloud_enum (AWS S3 / Azure Blob / GCP Storage) |
+| `apps/naabu/` | 6 | Port Discovery | No | Port scanning (top 100 TCP) |
+| `apps/shodan/` | 6 | Port Discovery | Yes | Passive exposure intel from Shodan's own scan data — ports/services/CVEs per resolved IP. BYOK: free InternetDB tier (no key, no credits), full host API when `SHODAN_API_KEY` set (`SHODAN_MAX_IPS` caps the paid path). CVEs land in `extra["cve_ids"]` so `cve_intel` enriches them. Passive, fail-graceful |
+| `apps/core/engine/service_detection/` | 7 | Port Discovery | No | nmap -sV enriches Port.service + is_web |
+| `apps/nmap/` | 8 | Network Exposure | Yes | NSE vulners CVE scan (non-web ports); backport-aware CVE matching (`backports.json` registry) |
+| `apps/tls_checker/` | 8 | Network Exposure | Yes | TLS/cert analysis + cipher suite enumeration via `nmap --script ssl-enum-ciphers` (all ports) |
+| `apps/ssh_checker/` | 8 | Network Exposure | Yes | SSH config analysis |
+| `apps/nuclei_network/` | 8 | Network Exposure | Yes | Network protocol vuln scan (319 templates, non-web) |
+| `apps/httpx/` | 9 | Web Exposure | No | Web probing, URL discovery, technology fingerprinting (`-tech-detect` → `URL.technologies`) |
+| `apps/historical_urls/` | 10 | Web Exposure | No | Historical URL discovery via gau (Wayback Machine, OTX, Common Crawl, URLScan) |
+| `apps/katana/` | 11 | Web Exposure | No | Web crawling, endpoint discovery |
+| `apps/nuclei/` | 12 | Web Exposure | Yes | Web vuln scan (community templates) |
+| `apps/web_checker/` | 12 | Web Exposure | Yes | Security headers, cookies, CORS; + security.txt (RFC 9116) responsible-disclosure check on the apex |
+| `apps/js_secrets/` | 12 | Web Exposure | Yes | Hardcoded-secret detection — fetches discovered `.js` assets and runs gitleaks over them; secret is redacted before storage |
+| `apps/cve_intel/` | 13 | Prioritization | No | Enriches CVE findings in place with EPSS scores + CISA KEV flags (no new findings) |
+| `apps/asn_cluster/` | 13 | Brand Threat | Yes | Lookalike ASN clustering — reads typosquat's `lookalike_domain` findings, resolves their IPs to ASNs via Team Cymru (keyless DNS), and groups lookalikes sharing an autonomous system into `lookalike_cluster` campaign findings (weaponized member → high). Passive, fail-graceful, `requires: [typosquat]` |
 
 ### Tool app structure
 ```
@@ -495,33 +533,35 @@ only joins the default Full Scan when a data migration appends it — see
 but not yet in the default set.)
 
 ```
-Phase 1  domain_security    → Finding (DNS/email/RDAP)
-Phase 1  hudson_rock         → Finding (infostealer exposure via Hudson Rock — passive)
-Phase 1  dns_history         → Finding (historical A/AAAA/MX records via passive DNS — passive)
-Phase 1  github_secrets      → Finding (leaked secrets in public GitHub via gitleaks — passive, BYO token)
+Phase 1  domain_security    → Finding (DNS/DNSSEC/email-auth/RDAP — passive)
+Phase 1  domain_probe        → Finding (AXFR / open-relay / MTA-STS fetch — active)
 Phase 1  typosquat           → Finding (registered lookalike/typosquat domains via public DNS — passive)
-Phase 1  breach_check        → Finding (data-breach exposure: XposedOrNot free / HIBP BYO-key — passive, counts only)
-Phase 2  subfinder          → Subdomain (passive enumeration)
-Phase 2  amass              → Subdomain (active enumeration)
-Phase 2  asn_discovery      → Finding (owned ASN/CIDR ranges via amass intel — informational)
-Phase 2  alterx             → Subdomain (permutation candidates from existing subdomains)
-Phase 2  github_recon       → Finding (infra refs in the org's PUBLIC GitHub repos — passive)
-Phase 3  dnsx               → IPAddress (public-only filter)
-Phase 4  takeover_check     → Finding (subzy — dangling DNS → unclaimed cloud)
-Phase 4  cloud_assets       → Finding (open S3/Azure/GCP buckets — cloud_enum)
-Phase 5  naabu              → Port (top 100 TCP scan)
-Phase 5  shodan             → Finding (passive exposure: ports/services/CVEs from Shodan's data)
-Phase 6  service_detection  → enriches Port.service + Port.is_web
-Phase 7  nmap               → Finding (CVEs on non-web ports, is_web=False)  ┐
-Phase 7  tls_checker        → Finding (cipher/cert/protocol on all ports)    │ parallel
-Phase 7  ssh_checker        → Finding (SSH config on service="ssh" ports)    │
-Phase 7  nuclei_network     → Finding (network protocol vulns, non-web ports)┘
-Phase 8  httpx              → URL (web probing, CDN-aware via SNI)
-Phase 9  historical_urls    → URL (gau — archived endpoints)
-Phase 10 katana             → URL (web crawling, endpoint discovery)
-Phase 11 nuclei             → Finding (web vulns via templates on URLs)
-Phase 11 web_checker        → Finding (headers, cookies, CORS on URLs)
-Phase 11 js_secrets         → Finding (gitleaks over fetched .js assets — secret redacted)
+Phase 1  dns_history         → Finding (historical A/AAAA/MX records via passive DNS — passive)
+Phase 2  hudson_rock         → Finding (infostealer exposure via Hudson Rock — passive)      ┐ Credential Exposure
+Phase 2  github_secrets      → Finding (leaked secrets in public GitHub via gitleaks — passive)│
+Phase 2  breach_check        → Finding (data-breach exposure: XposedOrNot / HIBP — passive)   ┘
+Phase 3  subfinder          → Subdomain (passive enumeration)
+Phase 3  amass              → Subdomain (active enumeration)
+Phase 3  asn_discovery      → Finding (owned ASN/CIDR ranges via amass intel — informational)
+Phase 3  alterx             → Subdomain (permutation candidates from existing subdomains)
+Phase 4  dnsx               → IPAddress (public-only filter)
+Phase 5  takeover_check     → Finding (subzy — dangling DNS → unclaimed cloud)
+Phase 5  cloud_assets       → Finding (open S3/Azure/GCP buckets — cloud_enum)
+Phase 6  naabu              → Port (top 100 TCP scan)
+Phase 6  shodan             → Finding (passive exposure: ports/services/CVEs from Shodan's data)
+Phase 7  service_detection  → enriches Port.service + Port.is_web
+Phase 8  nmap               → Finding (CVEs on non-web ports, is_web=False)  ┐
+Phase 8  tls_checker        → Finding (cipher/cert/protocol on all ports)    │ parallel
+Phase 8  ssh_checker        → Finding (SSH config on service="ssh" ports)    │
+Phase 8  nuclei_network     → Finding (network protocol vulns, non-web ports)┘
+Phase 9  httpx              → URL (web probing, CDN-aware via SNI)
+Phase 10 historical_urls    → URL (gau — archived endpoints)
+Phase 11 katana             → URL (web crawling, endpoint discovery)
+Phase 12 nuclei             → Finding (web vulns via templates on URLs)
+Phase 12 web_checker        → Finding (headers, cookies, CORS on URLs; + security.txt RFC 9116 on apex)
+Phase 12 js_secrets         → Finding (gitleaks over fetched .js assets — secret redacted)
+Phase 13 cve_intel          → enriches CVE findings (EPSS + CISA KEV; no new findings)
+Phase 13 asn_cluster        → Finding (groups lookalikes by shared hosting ASN — passive)     [Brand Threat]
 ```
 
 ### Passive vs active scan modes (the authorization boundary)
@@ -534,23 +574,27 @@ the registry via `get_tool_active()` and `is_passive_tool_set(tools)`.
   archives, cloud-provider bucket APIs, Shodan's own scan dataset, CVE/EPSS/KEV
   feeds. Sends **no packets to the target's own systems**. Needs **no
   `DomainAuthorization`**.
-  Passive tools: `subfinder`, `alterx`, `dnsx`, `historical_urls`,
-  `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`, `shodan`,
-  `typosquat`, `breach_check`, `github_secrets`, `github_recon`, `dns_history`.
+  Passive tools: `domain_security`, `subfinder`, `alterx`, `dnsx`,
+  `historical_urls`, `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`,
+  `shodan`, `typosquat`, `breach_check`, `github_secrets`, `dns_history`,
+  `asn_cluster`.
 - **Active** (`active=True`): probes the target directly (port scans, HTTP/TLS/SSH
   connections, crawling, vuln templates, AXFR/SMTP/mta-sts probes). **Requires
   `DomainAuthorization`.**
-  Active tools: `domain_security`, `amass`, `takeover_check`, `naabu`,
+  Active tools: `domain_probe`, `amass`, `takeover_check`, `naabu`,
   `service_detection`, `nmap`, `tls_checker`, `ssh_checker`, `nuclei_network`,
   `httpx`, `katana`, `nuclei`, `web_checker`.
 
 **Default is active.** `tool_meta` omitting `"active"` is treated as active — a
 missing flag can never let a scanner probe an unauthorized target.
 
-**`domain_security` is active, not passive**, despite being mostly DNS lookups: it
-also performs AXFR zone transfers, SMTP open-relay probes, and mta-sts policy
-fetches directly against the target. A tool with ANY code path that touches the
-target is active.
+**`domain_security` is now passive; its active probes live in `domain_probe`.**
+The passive tool does DNS/DNSSEC/CAA/email-auth via public resolvers and RDAP via
+rdap.org — no packets to the target. The active probes that DO touch the target —
+AXFR zone transfers, SMTP open-relay, and the MTA-STS policy-file fetch — were
+split into `apps/domain_probe` (active). A tool with ANY code path that touches
+the target is active; keeping those paths isolated lets the passive DNS/email/RDAP
+intelligence run in a no-auth passive scan.
 
 **Authorization rule (`apps/core/engine/scans/api.py`):** a `schedule_type="now"` scan
 whose resolved workflow contains **only passive tools** bypasses the
@@ -614,7 +658,7 @@ every Cloudflare call → AIInvocation audit row (metadata only, never prompt/re
 
 ### Pipeline + workflow rules
 
-The architecture is a **pipeline** (12 phases) built out of **durable workflows**
+The architecture is a **pipeline** (13 phases) built out of **durable workflows**
 (DBOS). Pipeline outside, workflows inside, Postgres between them. These are the
 same 14-point rules the sibling `cybersecify/backend` follows; OpenEASD adopts the
 foundational ones and consciously differs on the *choreography* ones (it's
@@ -622,7 +666,7 @@ foundational ones and consciously differs on the *choreography* ones (it's
 row notes OpenEASD's stance. Full plan + status: `docs/specs/2026-09-07-producer-queue-consumer-hardening.md`.
 
 **Design**
-1. **Draw the pipeline before writing a workflow** — name the phase, the rows it stores, what triggers the next. ✅ (12 phases in DESIGN.md)
+1. **Draw the pipeline before writing a workflow** — name the phase, the rows it stores, what triggers the next. ✅ (13 phases in DESIGN.md)
 2. **Stages talk through stored data, never workflow calls** — a tool writes rows, the next phase reads them. ✅ (the empty-`models.py` rule)
 3. **One workflow per unit of work** — ⚠️ *deliberate deviation*: OpenEASD runs one multi-step `run_scan` per scan (orchestrated), not per-unit; retry granularity is per phase-group (checkpointed step).
 4. **Every workflow idempotent** (delete-then-insert / upsert, not append) — 🟡 partial: alerts ✅ (H1), phase-step idempotency is **H5**.
@@ -780,6 +824,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 ### Other routes
 - `/reports/<uuid>/csv/` → CSV export (**synchronous** Django view on the web tier, `_report_auth_required` — accepts session auth or `?token=<access_token>`)
 - `/reports/<uuid>/pdf/` → PDF export (**synchronous** Django view on the web tier, rendered with WeasyPrint, `_report_auth_required` — accepts session auth or `?token=<access_token>`)
+- **Reports UI:** the React SPA has a dedicated **Reports page** (`/reports`, nav item + `ReportsPage.jsx`) listing completed scans with per-scan CSV/PDF export + a `min_severity` filter (auth'd fetch+Blob, JWT in header); also still available as CSV/PDF buttons on the Scan Detail page. The SPA `/reports` route and the Django `/reports/<uuid>/{csv,pdf}/` endpoints coexist — Django's SPA catch-all serves bare `/reports`, and the Vite dev proxy uses a `^/reports/.+` regex so only the endpoints proxy to Django.
 - `/admin/` → Django admin
 - `/api/docs` → Django Ninja auto-generated OpenAPI docs
 - `/*` → React SPA catch-all (`frontend/dist/index.html`)
@@ -797,11 +842,12 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_cve_intel.py` | 24 | EPSS/KEV enrichment, CVE extraction (both finding shapes), feed-failure fallback |
 | `tests/unit/test_dnsx.py` | 21 | Public IP filter, analyzer, scanner |
 | `tests/unit/test_domain_authorization.py` | 10 | DomainAuthorization model + scan-entry gating |
-| `tests/unit/test_domain_security.py` | 52 | DNS/email/RDAP — **slow, real network** |
+| `tests/unit/test_domain_security.py` | 46 | Passive DNS/DNSSEC/email-auth/RDAP — **slow, real network** (active AXFR/open-relay/MTA-STS tests moved to test_domain_probe) |
+| `tests/unit/test_domain_security_email.py` | 15 | Email-auth DEPTH (fast, mocked): SPF neutral/no-all/soft-fail/+all, RFC-7208 lookup-limit (>10 permerror / near-limit) + counter; DMARC p/quarantine, sp=none-not-misread-as-p=none regression, pct<100, missing rua, malformed pct |
+| `tests/unit/test_domain_probe.py` | 17 | Active domain probes — tool_meta (active/runner/group), AXFR zone transfer, MTA-STS policy fetch, SMTP open-relay (all mocked, source="domain_probe"), orchestrator stamps controls |
 | `tests/unit/test_domains.py` | 13 | Domain CRUD |
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
 | `tests/unit/test_httpx.py` | 16 | JSON parser, Port lookup, Subdomain link, honest UA, tech-detect flag + technology storage/dedup |
-| `tests/unit/test_github_recon.py` | 39 | Org resolution (domain-derived + `GITHUB_ORG` override), collector (org/user confirm + fallback, repo enumeration/pagination, fork skip, `GITHUB_MAX_REPOS`/`GITHUB_MAX_REQUESTS` caps, config-file base64 decode + size cap, BYO-token auth header + honest UA), fail-graceful (timeout/500/rate-limit-backoff/hard-403/bad-JSON never raise), infra-reference extraction (hostname/api-endpoint/cloud-bucket, apex excluded), analyzer (summary + per-ref low Findings, dedup), scanner never-raises |
 | `tests/unit/test_hudson_rock.py` | 17 | collector (both endpoints keyless + honest UA, fail-graceful on timeout/500/429/bad-JSON, 429 retry), analyzer (severity, counts/families/URLs/attribution, no-finding-when-zero, **no plaintext/email persisted**, URL cap), scanner |
 | `tests/unit/test_dns_history.py` | 17 | Historical-DNS passive tool — collector (no-URL no-op, fail-graceful on request-error/non-200/bad-JSON, honest UA, type filter, dedup, cap, wrapped-dict), analyzer (info Finding per record, skip empty), scanner (no-domain/no-records skip, saves, never-raises) |
 | `tests/unit/test_breach_check.py` | 29 | Two-tier BYOK — free XposedOrNot parse (keyless + honest UA) + HIBP `breacheddomain` path (key set → HIBP used, `hibp-api-key` header sent, 404/403 = no-data), fail-graceful (timeout/500/429/bad-JSON never raise), 429 backoff, analyzer (severity high on large-account/recent, counts + attribution, no-finding-when-zero, breach-name cap), **PRIVACY: alias keys/emails/credentials never persisted (collector + analyzer + end-to-end)**, scanner |
@@ -811,18 +857,19 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_k8s_manifests.py` | 66 | k8s manifest structure — split web/worker Deployments, tier labels, Service→web-only selector, envFrom order, probes + probe-host, worker NET_RAW/role/entrypoint, no-PVC, kustomization |
 | `tests/unit/test_katana.py` | 19 | JSONL parser, Port/Subdomain FK links, scanner orchestrator, honest UA |
 | `tests/unit/test_management_commands.py` | 11 | `verify_tools` + other management commands |
+| `tests/unit/test_render_pipeline_diagram.py` | 12 | `render_pipeline_diagram` — build_structure covers every registry tool (drift guard), counts consistent, groups min-phase ordered, active flags match registry, html/text/json renderers + `-o` file write |
 | `tests/unit/test_monitoring.py` | 17 | sync_domain_monitoring_jobs, per-domain monitoring, authorization gate |
 | `tests/unit/test_naabu.py` | 10 | JSON parser, FK to IPAddress |
 | `tests/unit/test_nmap.py` | 26 |
 | `tests/unit/test_nmap_backports.py` | 16 | Backport-aware CVE demotion engine — Debian/Ubuntu version compare, check_backport, `protocol 2.0` false-positive guard | Severity mapping, vulners XML parser, web/non-web exclusion, backport matching |
-| `tests/unit/test_notifications.py` | 35 | NotificationConfig, Slack/Teams alerts, alert-history API, AI summary block/fact (absent = payload byte-identical), alert idempotency on finalize replay (skip when already sent, retry when only failed) |
+| `tests/unit/test_notifications.py` | 41 | NotificationConfig, Slack/Teams alerts, alert-history API, AI summary block/fact (absent = payload byte-identical), alert idempotency on finalize replay (skip when already sent, retry when only failed), "N new since last scan" line/fact (counts only alerted new findings, absent = byte-identical) |
 | `tests/unit/test_nuclei.py` | 33 | CVE parsing, severity, dedup, URL linking, collector, honest UA |
 | `tests/unit/test_nuclei_network.py` | 28 | Network-template parsing, non-web targeting, collector |
 | `tests/unit/test_pipeline_phases.py` | 1 | Phase ordering sanity |
 | `tests/unit/test_qcluster_config.py` | 3 | Scan-timeout invariants (Q_CLUSTER removed; SCAN_TASK_TIMEOUT + watchdog bound) |
 | `tests/unit/test_durable_task.py` | 7 | `@durable_task` engine adapter (H6) — in-process call, `.delay()` enqueue, dedupe template + override, registry, real tasks are DurableTasks, enqueue_* wrappers delegate |
 | `tests/unit/test_credentials.py` | 13 | UI-managed BYOK credentials (C1+C3) — singleton, ciphertext-at-rest/plaintext-via-ORM, resolver DB-wins-over-env + env fallback + source + never-raises, write-only API (presence-only never values, set/none-unchanged/clear), and a DB key reaching `shodan.collect` (paid tier, no env key) |
-| `tests/unit/test_reports.py` | 57 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block, technology stack block, AI Analyst Summary block (absent without AI rows) |
+| `tests/unit/test_reports.py` | 80 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block, technology stack block, AI Analyst Summary block (absent without AI rows), "Since Your Last Scan" delta block (new/resolved/still-open, baseline + subscan + min_severity rules, CSV new-flag column), per-finding "Recommended Next Steps" checklist (hosted-only gating, effective-key mapping incl. email control, empty for unmapped) |
 | `tests/unit/test_waf_detection.py` | 16 | WAF/block/challenge classifier (spec C1) — vendor fingerprint, false-positive guards, analyzer wiring |
 | `tests/unit/test_coverage.py` | 6 | Scan coverage (spec C2) — endpoint counts, dominant vendor, report note wording |
 | `tests/unit/test_scans.py` | 30 | ScanSession, scheduling, scan_start views |
@@ -831,7 +878,8 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_ssh_checker.py` | 34 | SSH probe, host key, kex/cipher/MAC, auth, collector |
 | `tests/unit/test_subfinder.py` | 10 | JSON parser, dedup, hostname normalization |
 | `tests/unit/test_subscan.py` | 12 | Targeted re-scan of a single tool / subset |
-| `tests/unit/test_typosquat.py` | 29 | candidate generation (all 8 techniques, uniqueness, no-original, www-strip, cap/truncation-logged), passive DNS registration check (A/MX/NS, NXDOMAIN + timeout never raise), analyzer (A/MX → medium, NS-only → low, one Finding per lookalike), scanner (saves + never-raises) |
+| `tests/unit/test_typosquat.py` | 36 | candidate generation (all 8 techniques, uniqueness, no-original, www-strip, cap/truncation-logged), passive DNS registration check (A/MX/NS, NXDOMAIN + timeout never raise), weaponization homepage probe (login form + brand mention flagged, fetch failure graceful), analyzer severity (A/MX → medium, NS-only → low, login-form/brand → high), scanner (saves + never-raises), concurrent collect (order-preserving, all-registered-checked, fetch cap) |
+| `tests/unit/test_asn_cluster.py` | 13 | Lookalike ASN clustering — meta (passive/group), Team Cymru IP→ASN parse (asn/prefix/name, space-list ASN, non-IPv4 + DNS-failure → None), clustering (≥2 same-ASN → finding, single → none, weaponized → high, unresolved-IPs ignored), scanner (<2 lookalikes no-op, persists, skips IP-less, no lookup when nothing to cluster) |
 | `tests/unit/test_takeover_check.py` | 35 | collector (missing binary, bad JSON, happy path), analyzer (vulnerable/non-vulnerable, FK link, dedup), scanner |
 | `tests/unit/test_tls_checker.py` | 87 | Cert parsing, ciphers, protocols, HSTS, collector, scanner, cipher enumeration |
 | `tests/unit/test_tools_healthcheck.py` | 14 | Tool binary preflight / health checks |
@@ -839,9 +887,9 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_settings_security.py` | 16 | SECRET_KEY strength guard (DEBUG=False + insecure default) |
 | `tests/unit/test_insights_builder.py` | 4 | FindingTypeSummary prune only when aggregation_complete |
 | `tests/unit/test_exposure_score.py` | 38 | Exposure Score — formula (clean=0, weights, saturation cap), grade bands, trend delta (up/down/flat/no-baseline), builder populates ScanSummary, insights + dashboard API fields, PDF report exposure block |
-| `tests/unit/test_web_checker.py` | 40 | Headers, cookies, CORS, disclosure, collector |
-| `tests/unit/test_passive_scan.py` | 21 | registry `active` classification, `is_passive_tool_set`, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
-| `tests/unit/test_workflow_runner.py` | 33 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism |
+| `tests/unit/test_web_checker.py` | 58 | Headers, cookies, CORS, disclosure, collector; security.txt (RFC 9116) — expires parsing, SPA-catch-all guard, missing=info/expired=low findings, reachable-vs-absent (unreachable ⇒ no false "missing"), apex-only collection + fail-graceful |
+| `tests/unit/test_passive_scan.py` | 27 | registry `active` classification (domain_security passive / domain_probe active), `is_passive_tool_set`, Credential Exposure grouping, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
+| `tests/unit/test_workflow_runner.py` | 35 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism (concurrent same-phase; LOW_MEMORY serialises heavy phases but light phase-1 tools still parallel) |
 | `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow with the complete 18-tool set (migration 0021), idempotent gap-fill |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/unit/test_update_check.py` | 22 | Update-available check — version parse/compare, cached GitHub fetch, fail-graceful on timeout/HTTP-error/bad-payload, endpoint shape |
@@ -865,6 +913,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1778 tests** (1726 fast + 52 slow domain_security)
+**Total: 1831 tests** (1785 fast + 46 slow domain_security)
 
 Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.

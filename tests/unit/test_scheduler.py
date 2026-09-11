@@ -43,6 +43,20 @@ class TestReapStuckScans:
         assert session.status == "failed"
         assert session.end_time is not None
 
+    def test_survives_count_error(self, db):
+        # F4: _count_all_findings now raises on a DB error (instead of returning a
+        # fake 0). The watchdog sweep must still complete — mark the scan and
+        # leave total_findings unchanged — rather than crash on one bad count.
+        from unittest.mock import patch
+        session = self._make_session("running", SCAN_TIMEOUT_MINUTES + 1)
+        with patch("apps.core.engine.scans.pipeline._count_all_findings",
+                   side_effect=Exception("db down")):
+            count = reap_stuck_scans()
+        assert count == 1
+        session.refresh_from_db()
+        assert session.status == "failed"
+        assert session.end_time is not None
+
     def test_reaps_pending_scan_past_timeout(self, db):
         session = self._make_session("pending", SCAN_TIMEOUT_MINUTES + 1)
         count = reap_stuck_scans()

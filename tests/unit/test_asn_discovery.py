@@ -101,8 +101,13 @@ class TestAsnDiscoveryCollector:
             side_effect=[org_out, asn_out],
         ) as mock_run:
             records = collect(sess)
-        # First call: -org example ; second call: -asn 714
-        assert mock_run.call_args_list[0][0][0][:3] == ["amass", "intel", "-org"]
+        # First call: -org example ; second call: -asn 714.
+        # Assert the amass binary + args without pinning the exact binary path —
+        # TOOL_AMASS may be an absolute path (Docker/k8s set it), so check the
+        # binary component ends with "amass" and the args follow.
+        first_cmd = mock_run.call_args_list[0][0][0]
+        assert first_cmd[0].endswith("amass")
+        assert first_cmd[1:3] == ["intel", "-org"]
         assert mock_run.call_args_list[1][0][0][2:4] == ["-asn", "714"]
         assert len(records) == 1
         assert records[0]["asn"] == 714
@@ -231,4 +236,12 @@ class TestAsnDiscoveryScanner:
     def test_returns_empty_when_collector_returns_nothing(self):
         sess = _session()
         with patch("apps.asn_discovery.scanner.collect", return_value=[]):
+            assert run_asn_discovery(sess) == []
+
+    def test_timeout_is_swallowed_not_raised(self):
+        """amass intel timing out must not fail the step — ASN discovery is
+        informational, so a ToolTimeout returns [] instead of propagating."""
+        from apps.core.engine.workflows.exceptions import ToolTimeout
+        sess = _session()
+        with patch("apps.asn_discovery.scanner.collect", side_effect=ToolTimeout("amass intel timed out")):
             assert run_asn_discovery(sess) == []

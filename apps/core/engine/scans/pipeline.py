@@ -34,6 +34,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _detect_deltas(session):
+    # Idempotency (F1): finalize is a replayable DBOS step — a worker crash after
+    # this ran but before the step checkpointed re-runs the whole finalize. Clear
+    # any ScanDelta rows from a prior pass before recreating (delete-then-insert),
+    # or a replay double-counts deltas, which build_insights reads as inflated
+    # new/removed-exposure counts.
+    ScanDelta.objects.filter(session=session).delete()
+
     # Exclude subscans: they only run a subset of tools, so using one as the
     # baseline would produce spurious "new finding" deltas on the next full scan.
     # Filter on scan_type (immutable) rather than parent_session, which is
@@ -53,14 +60,19 @@ def _detect_deltas(session):
 
     from apps.core.data.findings.models import Finding
 
-    current_keys = {
-        f"{f.source}:{f.check_type}:{f.title}"
-        for f in Finding.objects.filter(session=session)
-    }
-    prev_keys = {
-        f"{f.source}:{f.check_type}:{f.title}"
-        for f in Finding.objects.filter(session=previous)
-    }
+    # Exclude the scan_coverage meta-warning from delta keys: it's a
+    # finalize-generated marker, not a real attack-surface finding. Including it
+    # would make it a spurious "new" delta on replay (it is created *after* this
+    # runs, so a re-run would see last pass's copy) and a spurious "removed"
+    # delta on the next scan that doesn't regress.
+    def _finding_keys(s):
+        return {
+            f"{f.source}:{f.check_type}:{f.title}"
+            for f in Finding.objects.filter(session=s).exclude(source="scan_coverage")
+        }
+
+    current_keys = _finding_keys(session)
+    prev_keys = _finding_keys(previous)
     deltas = []
     for key in current_keys - prev_keys:
         deltas.append(ScanDelta(session=session, previous_session=previous,
@@ -85,6 +97,13 @@ def _check_coverage_regression(session):
     """
     from apps.core.data.web_assets.models import URL
     from apps.core.data.findings.models import Finding
+
+    # Idempotency (F1): reached via the replayable finalize step. Remove any
+    # coverage_regression finding from a prior pass so a replay recreates it
+    # exactly once instead of stacking duplicates (delete-then-insert).
+    Finding.objects.filter(
+        session=session, source="scan_coverage", check_type="coverage_regression"
+    ).delete()
 
     def _httpx_urls(s):
         return URL.objects.filter(session=s, source="httpx").count()
@@ -153,11 +172,21 @@ def _check_coverage_regression(session):
 
 
 def _count_all_findings(session) -> int:
-    try:
-        from apps.core.data.findings.models import Finding
-        return Finding.objects.filter(session=session).count()
-    except Exception:
-        return 0
+    from apps.core.data.findings.models import Finding
+    # Exclude the scan_coverage meta-warning — it's a finalize-generated marker,
+    # not a real attack-surface finding. Excluding it keeps the count stable
+    # across a finalize replay (F1): on the first pass the warning doesn't exist
+    # yet, so a replay would otherwise count N+1.
+    #
+    # No broad `except -> return 0` (F4): a DB error must NOT masquerade as
+    # "0 findings / clean". Let it propagate so finalize fails honestly (the
+    # reaper, the only other caller, guards its own call so a hiccup there can't
+    # abort the watchdog sweep).
+    return (
+        Finding.objects.filter(session=session)
+        .exclude(source="scan_coverage")
+        .count()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -276,13 +305,18 @@ def _is_scan_active(domain: str) -> bool:
     ).exists()
 
 
-def create_scan_session(domain: str, triggered_by: str = "manual", workflow=None) -> "ScanSession | None":
+def create_scan_session(domain: str, triggered_by: str = "manual", workflow=None, tools=None) -> "ScanSession | None":
     """
     Atomically create a scan session if no active scan exists for the domain.
     Returns the new ScanSession or None if a scan is already active.
 
     If no workflow is specified, the default workflow is auto-assigned so all
     scans run through the dynamic workflow runner.
+
+    `tools`, when given, restricts the run to that tool subset (stored as
+    `subscan_tools`, which the runner honors via `only_tools`) — this is how a
+    category-scoped scan from the start form runs just the selected tools over
+    the resolved workflow. None runs the full workflow.
     """
     if workflow is None:
         from apps.core.engine.workflows.models import Workflow
@@ -304,6 +338,7 @@ def create_scan_session(domain: str, triggered_by: str = "manual", workflow=None
             return ScanSession.objects.create(
                 domain=domain, scan_type="full", status="pending",
                 triggered_by=triggered_by, workflow=workflow,
+                subscan_tools=tools,
             )
     except DatabaseError:
         if _is_scan_active(domain):
@@ -323,6 +358,7 @@ def create_scan_session(domain: str, triggered_by: str = "manual", workflow=None
                 return ScanSession.objects.create(
                     domain=domain, scan_type="full", status="pending",
                     triggered_by=triggered_by, workflow=workflow,
+                    subscan_tools=tools,
                 )
         except DatabaseError:
             logger.error(f"[create_scan_session] Retry failed for {domain} — skipping scan")
@@ -367,7 +403,7 @@ def _seed_apex_into_assets(session) -> None:
                 if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
                     continue
                 public_ips.append((ip_str, ip.version))
-        except Exception:
+        except Exception:  # noqa: BLE001
             # NXDOMAIN, no answer, timeout — all benign; just leave IPs unresolved.
             continue
 

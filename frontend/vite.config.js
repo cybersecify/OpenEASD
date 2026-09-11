@@ -7,7 +7,7 @@ export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/static/' : '/',
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   build: {
@@ -18,7 +18,10 @@ export default defineConfig(({ command }) => ({
     proxy: {
       '/api': { target: 'http://localhost:8001', changeOrigin: true },
       '/accounts': { target: 'http://localhost:8001', changeOrigin: true },
-      '/reports': { target: 'http://localhost:8001', changeOrigin: true },
+      // Only proxy the report *endpoints* (/reports/<uuid>/csv|pdf/) to Django —
+      // a regex key (leading ^) so the bare /reports SPA page is served by Vite,
+      // not forwarded to the backend. (Production works via Django's SPA catch-all.)
+      '^/reports/.+': { target: 'http://localhost:8001', changeOrigin: true },
     },
   },
 }));

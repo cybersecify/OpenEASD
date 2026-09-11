@@ -371,6 +371,44 @@ class TestWorkflowModel:
 
 
 # ---------------------------------------------------------------------------
+# Phase-group resume idempotency (F1b)
+# ---------------------------------------------------------------------------
+
+class TestPhaseGroupResume:
+    """A crash-resume re-runs the whole phase-group DBOS step, so within-group
+    execution must be idempotent: completed tools aren't re-executed and
+    StepResults aren't duplicated."""
+
+    def test_resume_skips_completed_tool_and_does_not_duplicate(self, transactional_db, run):
+        from apps.core.engine.workflows.runner import run_one_phase_group
+        runner = _mock_runner(return_value=[])
+        group = ["subfinder"]
+        with _patch_get_runner({"subfinder": runner}):
+            run_one_phase_group(run, run.session, group, base_order=1)
+            assert runner.call_count == 1
+            assert WorkflowStepResult.objects.filter(run=run, tool="subfinder").count() == 1
+            # Simulate the DBOS step re-running the same group after a crash-resume.
+            run_one_phase_group(run, run.session, group, base_order=2)
+        assert runner.call_count == 1  # NOT re-executed
+        rows = WorkflowStepResult.objects.filter(run=run, tool="subfinder")
+        assert rows.count() == 1       # NOT duplicated
+        assert rows.first().status == "completed"
+
+    def test_single_step_reuses_stale_running_row(self, transactional_db, run):
+        # A crash left a non-terminal "running" row; re-running reuses it (the
+        # tool genuinely didn't finish) instead of stacking a duplicate.
+        from apps.core.engine.workflows.runner import _run_single_step
+        WorkflowStepResult.objects.create(run=run, tool="subfinder", order=1, status="running")
+        runner = _mock_runner(return_value=[])
+        with _patch_get_runner({"subfinder": runner}):
+            _run_single_step(run, run.session, "subfinder", 1)
+        rows = WorkflowStepResult.objects.filter(run=run, tool="subfinder")
+        assert rows.count() == 1
+        assert rows.first().status == "completed"
+        assert runner.call_count == 1
+
+
+# ---------------------------------------------------------------------------
 # WorkflowStepResult
 # ---------------------------------------------------------------------------
 
@@ -524,6 +562,42 @@ class TestPhaseParallelExecution:
         assert {"nmap", "tls_checker"} <= ran
         assert peak[0] == 1, (
             f"LOW_MEMORY must serialise the phase; observed peak concurrency {peak[0]}"
+        )
+
+    def test_low_memory_light_phase_still_parallel(self, transactional_db, settings):
+        """Under LOW_MEMORY, a group of only light network-I/O tools
+        (_LOW_MEM_PARALLEL_SAFE) must STILL run concurrently — that's the speedup
+        for the phase-1 intelligence group on a small box. domain_security +
+        typosquat are both phase 1 and both on the safe list. Barrier(2) proves
+        parallelism: serial execution would never satisfy it → failed step → the
+        run would not be 'completed'.
+        """
+        settings.LOW_MEMORY = True
+        import threading
+        from apps.core.engine.scans.models import ScanSession
+
+        barrier = threading.Barrier(2, timeout=5)
+        session = ScanSession.objects.create(
+            domain="lightmem.example.com", scan_type="full", status="running"
+        )
+        wf = Workflow.objects.create(name="LowMem Phase 1 light")
+        WorkflowStep.objects.create(workflow=wf, tool="domain_security", order=1, enabled=True)
+        WorkflowStep.objects.create(workflow=wf, tool="typosquat",       order=2, enabled=True)
+        run = WorkflowRun.objects.create(workflow=wf, session=session)
+
+        def barrier_runner(tool_name):
+            def runner(sess):
+                barrier.wait()
+                return []
+            return runner
+
+        with patch("apps.core.engine.workflows.runner._get_runner", side_effect=barrier_runner):
+            run_workflow(run.id)
+
+        run.refresh_from_db()
+        assert run.status == "completed", (
+            "Light phase-1 tools must run concurrently even under LOW_MEMORY "
+            "(barrier never satisfied → they ran serially)"
         )
 
     def test_phase_boundary_respected(self, transactional_db):

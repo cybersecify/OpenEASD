@@ -9,8 +9,8 @@ class GithubSecretsConfig(AppConfig):
     tool_meta = {
         "label": "GitHub Secret Exposure (gitleaks)",
         "runner": "apps.github_secrets.scanner.run_github_secrets",
-        "phase": 1,
-        "phase_group": "Domain Intelligence",
+        "phase": 2,
+        "phase_group": "Credential Exposure",
         "requires": ["gitleaks"],
         "produces_findings": True,
         # Passive: queries GitHub's OWN public code-search API (a third party),

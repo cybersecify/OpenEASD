@@ -9,8 +9,8 @@ class BreachCheckConfig(AppConfig):
     tool_meta = {
         "label": "Breach Exposure (HIBP / XposedOrNot)",
         "runner": "apps.breach_check.scanner.run_breach_check",
-        "phase": 1,
-        "phase_group": "Domain Intelligence",
+        "phase": 2,
+        "phase_group": "Credential Exposure",
         "requires": [],
         "produces_findings": True,
         # Passive: queries third-party breach datasets (XposedOrNot's public

@@ -9,8 +9,8 @@ class HudsonRockConfig(AppConfig):
     tool_meta = {
         "label": "Infostealer Exposure (Hudson Rock)",
         "runner": "apps.hudson_rock.scanner.run_hudson_rock",
-        "phase": 1,
-        "phase_group": "Domain Intelligence",
+        "phase": 2,
+        "phase_group": "Credential Exposure",
         "requires": [],
         "produces_findings": True,
         # Passive: queries Hudson Rock's Cavalier API (third-party threat

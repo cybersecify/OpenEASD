@@ -1,4 +1,4 @@
-"""Unit tests for the SECRET_KEY production guard in openeasd/settings.py."""
+"""Unit tests for the SECRET_KEY production guard in openeasd/settings/."""
 
 from unittest.mock import patch
 
@@ -6,7 +6,8 @@ import pytest
 from django.core.exceptions import ImproperlyConfigured
 
 from openeasd.settings import (
-    _validate_secret_key, _security_settings, _resolve_profile, _PROFILE_TUNING,
+    _validate_secret_key, _validate_db_password, _under_pytest, _security_settings,
+    _resolve_profile, _PROFILE_TUNING,
 )
 
 
@@ -43,19 +44,19 @@ class TestResourceProfile:
         assert _PROFILE_TUNING["high"]["nuclei_rate"] <= 150
 
     def test_auto_detects_low_on_small_ram(self):
-        with patch("openeasd.settings._detect_ram_gb", return_value=1.0):
+        with patch("openeasd.settings.base._detect_ram_gb", return_value=1.0):
             assert _resolve_profile() == "low"
 
     def test_auto_detects_high_on_big_ram(self):
-        with patch("openeasd.settings._detect_ram_gb", return_value=16.0):
+        with patch("openeasd.settings.base._detect_ram_gb", return_value=16.0):
             assert _resolve_profile() == "high"
 
     def test_auto_detects_balanced_on_mid_ram(self):
-        with patch("openeasd.settings._detect_ram_gb", return_value=4.0):
+        with patch("openeasd.settings.base._detect_ram_gb", return_value=4.0):
             assert _resolve_profile() == "balanced"
 
     def test_unknown_ram_defaults_balanced(self):
-        with patch("openeasd.settings._detect_ram_gb", return_value=None):
+        with patch("openeasd.settings.base._detect_ram_gb", return_value=None):
             assert _resolve_profile() == "balanced"
 
 
@@ -138,6 +139,11 @@ class TestSecretKeyGuardWiring:
         env = {
             **os.environ,
             "SECRET_KEY": "x" * 50,  # strong enough to pass the guard
+            # A strong DB_PASSWORD too — the production boot now also refuses the
+            # default DB password (see TestDbPasswordGuard), so a valid prod boot
+            # must satisfy both guards.
+            "DB_PASSWORD": "a-strong-db-password",
+            "DATABASE_URL": "",  # force the DB_* path, ignoring any repo .env
             "DEBUG": "False",
         }
         env.pop("PYTEST_CURRENT_TEST", None)
@@ -146,3 +152,90 @@ class TestSecretKeyGuardWiring:
             cwd=str(repo_root), env=env, capture_output=True, text=True,
         )
         assert result.returncode == 0, result.stderr
+
+
+class TestDbPasswordGuard:
+    def test_raises_on_default_password_in_production(self):
+        with pytest.raises(ImproperlyConfigured):
+            _validate_db_password(using_database_url=False, db_password="openeasd", debug=False)
+
+    def test_allows_default_password_when_debug(self):
+        # Local dev is permitted to keep the placeholder password.
+        _validate_db_password(using_database_url=False, db_password="openeasd", debug=True)
+
+    def test_allows_strong_password_in_production(self):
+        _validate_db_password(using_database_url=False, db_password="s3cure-p@ss", debug=False)
+
+    def test_database_url_path_is_exempt(self):
+        # DATABASE_URL carries its own credentials — the DB_* default never applies,
+        # so the guard must not fire even if db_password is left at the default.
+        _validate_db_password(using_database_url=True, db_password="openeasd", debug=False)
+
+
+class TestDbPasswordGuardWiring:
+    """Prove the DB-password guard is actually WIRED into settings import — a
+    real subprocess, since the in-process call is skipped under pytest. A strong
+    SECRET_KEY is set so boot reaches the DB guard rather than aborting earlier."""
+
+    def test_settings_import_aborts_on_default_db_password_in_production(self):
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[2]
+        env = {
+            **os.environ,
+            "SECRET_KEY": "x" * 50,        # pass the SECRET_KEY guard first
+            "DB_PASSWORD": "openeasd",     # the insecure default
+            "DATABASE_URL": "",            # force the DB_* path, ignoring any repo .env
+            "DEBUG": "False",
+        }
+        env.pop("PYTEST_CURRENT_TEST", None)
+        result = subprocess.run(
+            [sys.executable, "-c", "import openeasd.settings"],
+            cwd=str(repo_root), env=env, capture_output=True, text=True,
+        )
+        assert result.returncode != 0, "settings booted with the default DB password + DEBUG=False"
+        assert "ImproperlyConfigured" in result.stderr or "DB_PASSWORD" in result.stderr
+
+
+class TestPytestRunnerDetection:
+    """F-sec2: the production guards skip only under the pytest *runner*
+    (argv[0]), not merely because pytest is importable."""
+
+    def test_true_under_the_pytest_runner(self):
+        # This suite runs under pytest, so argv[0] is the pytest console script.
+        assert _under_pytest() is True
+
+    def test_false_for_non_pytest_entrypoints(self):
+        import sys
+        for argv0 in ("/usr/local/bin/gunicorn", "manage.py", "-c", ""):
+            with patch.object(sys, "argv", [argv0]):
+                assert _under_pytest() is False
+
+    def test_guard_fires_even_when_pytest_is_importable(self):
+        # The core F-sec2 regression: a process that merely imports pytest (a
+        # transitive dep, a debug shell) must NOT get the guard disabled — only
+        # the runner (argv[0]) skips it. Import pytest THEN settings with an
+        # insecure key + DEBUG=False in a subprocess; it must still abort.
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[2]
+        env = {
+            **os.environ,
+            "SECRET_KEY": "django-insecure-change-me-in-production",
+            "DB_PASSWORD": "a-strong-db-password",
+            "DATABASE_URL": "",
+            "DEBUG": "False",
+        }
+        env.pop("PYTEST_CURRENT_TEST", None)
+        result = subprocess.run(
+            [sys.executable, "-c", "import pytest; import openeasd.settings"],
+            cwd=str(repo_root), env=env, capture_output=True, text=True,
+        )
+        assert result.returncode != 0, "guard was bypassed merely because pytest was importable"
+        assert "ImproperlyConfigured" in result.stderr or "SECRET_KEY" in result.stderr
