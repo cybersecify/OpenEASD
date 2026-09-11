@@ -113,7 +113,13 @@ COPY config/ config/
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 COPY --from=frontend-builder /build/frontend/dist/ frontend/dist/
-RUN SECRET_KEY=build-time-placeholder python manage.py collectstatic --noinput
+# Build-time placeholders for the production fail-fast guards (settings/base.py):
+# collectstatic imports settings but never touches the DB or signs tokens, so
+# these never leave this RUN layer. SECRET_KEY clears the SECRET_KEY guard;
+# DB_PASSWORD clears the default-password guard. Real values are supplied at
+# runtime by compose / k8s.
+RUN SECRET_KEY=build-time-placeholder DB_PASSWORD=build-time-placeholder \
+    python manage.py collectstatic --noinput
 
 ARG OPENEASD_VERSION=dev
 ARG OPENEASD_GIT_SHA=unknown
