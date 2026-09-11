@@ -34,6 +34,14 @@ commits to recover the reasoning.
     `dns.resolver.resolve` calls.
 
 ### Security
+- **Production guards skip only under the pytest runner, not mere importability
+  (F-sec2).** The SECRET_KEY and default-DB-password fail-fast guards skipped
+  whenever `"pytest" in sys.modules` — so any process that transitively imported
+  pytest (a dependency, a debug shell) silently disabled them. A new
+  `_under_pytest()` detects the test *runner* via the process entrypoint
+  (`sys.argv[0]`), so the guards still skip during `pytest` runs but fire
+  everywhere else. (Prod images install only `.[prod]`, so pytest isn't present
+  there anyway — this is defense-in-depth.)
 - **Removed the `?token=<JWT>` query-param auth on report endpoints (F-sec3).**
   The CSV/PDF report views accepted a JWT in the query string, which leaks into
   browser history, `Referer` headers, server access logs, and proxy caches.

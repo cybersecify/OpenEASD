@@ -44,11 +44,21 @@ def _validate_secret_key(secret_key: str, debug: bool) -> None:
         )
 
 
-# Skip enforcement under the test runner: pytest-django imports settings before
-# any conftest/env hook can set a key, and token-signing key strength is
-# irrelevant to tests. The logic itself is covered by unit tests that call
-# _validate_secret_key directly.
-if "pytest" not in sys.modules:
+def _under_pytest() -> bool:
+    """True only when the pytest runner is the actual process entrypoint.
+
+    The production fail-fast guards below skip under the test runner: pytest-django
+    imports settings before any conftest/env hook can provide real secrets, and
+    key/password strength is irrelevant to tests. We detect the *runner* via
+    ``sys.argv[0]`` rather than ``"pytest" in sys.modules`` (F-sec2) — a transitive
+    import of pytest in a production process (a dependency, a debug shell) must
+    never disable a security guard. The subprocess wiring tests run ``python -c``
+    (argv[0] != pytest), so the guards still fire there and prove it.
+    """
+    return os.path.basename(sys.argv[0] or "").startswith(("pytest", "py.test"))
+
+
+if not _under_pytest():
     _validate_secret_key(SECRET_KEY, DEBUG)
 
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
@@ -235,10 +245,9 @@ else:
         }
     }
 
-# Skip under the test runner for the same reason as the SECRET_KEY guard: pytest
-# imports settings before any env hook can set one, and CI sets real DB_* values.
-# The logic is covered by unit + subprocess tests.
-if "pytest" not in sys.modules:
+# Skip under the test runner for the same reason as the SECRET_KEY guard (see
+# _under_pytest — runner-entrypoint detection, not mere importability).
+if not _under_pytest():
     _validate_db_password(bool(_DATABASE_URL), _DB_PASSWORD, DEBUG)
 
 # DBOS durable-execution system database. Checkpoints scan workflows/steps so a
