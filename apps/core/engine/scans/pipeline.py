@@ -281,6 +281,15 @@ def _finalize_session(session):
     except Exception:  # noqa: BLE001
         logger.exception("[%s] asset-inventory rollup failed — scan unaffected", session.id)
 
+    # Roll findings into the persistent Issue register so triage status persists
+    # across scans (after the asset rollup, so Finding.asset links exist to ground
+    # each Issue). Fail-graceful — a rollup error must never fail a scan.
+    try:
+        from apps.core.data.findings.rollup import rollup_session_issues
+        rollup_session_issues(session)
+    except Exception:  # noqa: BLE001
+        logger.exception("[%s] issue-register rollup failed — scan unaffected", session.id)
+
     # AI triage + summaries (no-op unless keys + consent — apps/core/ai/hooks
     # is fail-graceful). Must precede _dispatch_alerts so alerts can carry the
     # summary.

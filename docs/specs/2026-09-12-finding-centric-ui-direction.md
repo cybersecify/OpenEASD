@@ -4,8 +4,9 @@
 > - PR1 — restore the **Assets inventory UI** (list + detail), nav + routes (the
 >   asset-centric grounding). *This PR.* The `/api/assets/` layer was never
 >   removed, so this is UI wiring only.
-> - PR2 — **persistent finding identity** (cross-scan Issue register + finalize
->   rollup). *The make-or-break prerequisite for finding-centric.*
+> - PR2 — ✅ **persistent finding identity** (cross-scan `Issue` register +
+>   finalize rollup). *The make-or-break prerequisite for finding-centric* — done:
+>   status now persists across scans, dismissals stick.
 > - PR3 — **Findings/Issues register UI** as the primary triage surface.
 > - PR4 — dashboard cross-links + a "changes since last scan" feed.
 >
