@@ -44,8 +44,7 @@ def gate_subscan_tools(domain: str, tools: list[str]) -> tuple[list[str], str]:
         return [], "no known tools in the proposed set"
 
     if not is_passive_tool_set(known):
-        authorized = DomainAuthorization.objects.filter(domain__name=domain).exists()
-        if not authorized:
+        if not DomainAuthorization.is_authorized(domain):
             return [], "active tools require DomainAuthorization for this domain"
 
     return known, ""

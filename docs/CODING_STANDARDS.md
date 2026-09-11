@@ -254,8 +254,8 @@ fail the whole scan. Specifically:
   (`schedule_type="now"`) **all-passive** scan bypasses authorization. Every
   scheduled scan and any active tool keeps the gate. The scheduler and the AI
   agent (`guard.gate_subscan_tools`) **re-check authorization at execution time**
-  — a revoked authorization can never scan. (This rule is currently implemented
-  in three places — finding F3 — keep them in sync.)
+  — a revoked authorization can never scan. All three sites resolve authorization
+  through the single `DomainAuthorization.is_authorized(domain)` classmethod (F3).
 
 ### 7.2 Secrets at rest
 
@@ -393,9 +393,13 @@ blockers. Fixed items are struck through with the PR that closed them.
 - **F2 — `ai_triage` dedupe key blocks manual re-triage.** `triage-{0}` +
   return-existing returns the old handle, so a "manual re-triage" silently doesn't
   re-run. (`durable/workflows.py:63`, `durable/task.py:78`)
-- **F3 — the passive/active auth rule is implemented three times**
-  (`scans/api.py` start + subscan, `ai/guard.py`) — drift risk on a security gate.
-  Extract one shared predicate.
+- **F3 — ~~the passive/active auth rule is implemented three times~~ — FIXED
+  (#453).** The triplicated authorization check (`DomainAuthorization.objects
+  .filter(domain__name=X).exists()` in the scan-start gate, subscan gate, and AI
+  `gate_subscan_tools`) is now a single `DomainAuthorization.is_authorized(domain)`
+  classmethod — one source of truth for a security gate, so a future change
+  (e.g. authorization expiry) lands in one place. The passive-set predicate was
+  already shared (`is_passive_tool_set`).
 - **F4 — `_count_all_findings` returns 0 on any DB error** → a transient failure
   reports "0 findings" into `total_findings` and the reaper, reading as "clean."
   (`pipeline.py:159`)
