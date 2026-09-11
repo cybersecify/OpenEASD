@@ -138,9 +138,14 @@ class TestExportFindingsCsv:
                     HTTP_AUTHORIZATION=f"Bearer {token}")
         assert res.status_code == 200
 
-    def test_garbage_token_rejected(self, session, findings):
+    def test_query_param_token_ignored(self, session, findings, user):
+        # F-sec3: the ?token= query-param auth path was removed (it leaked JWTs
+        # into history/Referer/logs). Even a VALID token in the URL must NOT grant
+        # access — only the Authorization header (or a session) does.
+        from ninja_jwt.tokens import AccessToken
         c = Client()
-        res = c.get(f"/reports/{session.uuid}/csv/?token=not.a.jwt")
+        token = str(AccessToken.for_user(user))
+        res = c.get(f"/reports/{session.uuid}/csv/?token={token}")
         assert res.status_code in (302, 301)  # redirect to /login, not 200
 
     def test_deactivated_user_token_rejected(self, session, findings, user):
