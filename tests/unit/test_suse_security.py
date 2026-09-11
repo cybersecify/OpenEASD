@@ -6,7 +6,25 @@ from apps.nmap.sources.suse_security import (
     _split_product,
 )
 
-SUSE_FIXTURE_XML = open("/tmp/suse_fixture.xml").read()
+# Self-contained CVRF fixture (real CVRF 1.1 shape) for CVE-2020-35452 so the
+# test does not depend on a local /tmp file that CI runners do not have. The
+# Vulnerability/ProductStatuses/Status[Type=Fixed]/ProductID structure is exactly
+# what parse_suse_cvrf consumes; ProductID uses the RPM N-V-R form the splitter
+# expects (release tag .el<digits>).
+SUSE_FIXTURE_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<cvrfdoc xmlns="http://docs.oasis-open.org/csaf/ns/csaf-cvrf-1.1">
+  <DocumentTitle>SUSE Security Update: Security update for httpd</DocumentTitle>
+  <Vulnerability>
+    <CVE>CVE-2020-35452</CVE>
+    <ProductStatuses>
+      <Status Type="Fixed">
+        <ProductID>openSUSE Leap 15.2:httpd-2.4.6-99.el7_9.2</ProductID>
+        <ProductID>openSUSE Leap 15.2:mod_ssl-2.4.6-99.el7_9.2</ProductID>
+      </Status>
+    </ProductStatuses>
+  </Vulnerability>
+</cvrfdoc>
+"""
 
 
 def test_split_product():

@@ -1,5 +1,6 @@
 import json
-from unittest.mock import patch, MagicMock
+from contextlib import ExitStack
+from unittest.mock import patch, MagicMock, mock_open
 from apps.nmap.sources.ubuntu_usn import fetch_ubuntu_backports
 from apps.nmap.sources.debian_security_tracker import fetch_debian_backports
 
@@ -95,3 +96,63 @@ def test_do_refresh_schema_merge(
     assert parsed_json["debian"]["CVE-DEBIAN"]["pkg"] == "2.0"
     assert parsed_json["alpine"]["CVE-ALPINE"]["pkg"] == "3.0"
     assert parsed_json["suse"]["CVE-SUSE"]["pkg"] == "4.0"
+
+
+@patch("builtins.open", new_callable=mock_open)
+@patch("os.replace")
+def test_do_refresh_tolerates_empty_feed(mock_replace, mock_open):
+    """A single empty feed must NOT abort the refresh.
+
+    Regression guard for the reviewer blockers on #432/#433: an empty Red Hat
+    or SUSE response used to ``sys.exit(1)`` and drop every other feed's data.
+    Now the empty feed is skipped (and its previous slice preserved) while the
+    good feeds are still merged and written.
+    """
+    from apps.nmap.management.commands import refresh_backports as cmd
+
+    # Patch only the fetchers that actually exist on this branch.
+    present = [
+        n
+        for n in ("ubuntu", "debian", "alpine", "redhat", "suse")
+        if hasattr(cmd, f"fetch_{n}_backports")
+    ]
+
+    good = {
+        "ubuntu": {"CVE-UBUNTU": {"pkg": "1.0"}},
+        "debian": {"CVE-DEBIAN": {"pkg": "2.0"}},
+        "alpine": {"CVE-ALPINE": {"pkg": "3.0"}},
+        "redhat": {"CVE-REDHAT": {"pkg": "4.0"}},
+        "suse": {"CVE-SUSE": {"pkg": "5.0"}},
+    }
+
+    with ExitStack() as stack:
+        patchers = {
+            n: stack.enter_context(
+                patch(
+                    f"apps.nmap.management.commands.refresh_backports.fetch_{n}_backports"
+                )
+            )
+            for n in present
+        }
+        # Make exactly one feed come back empty (simulating an upstream outage).
+        empty_feed = present[-1]
+        for n in present:
+            patchers[n].return_value = {} if n == empty_feed else good[n]
+
+        cmd.do_refresh()
+
+    # The refresh must not have exited; the file was written.
+    mock_replace.assert_called_once()
+    handle = mock_open.return_value.__enter__.return_value
+    written_data = "".join(c.args[0] for c in handle.write.call_args_list)
+    parsed = json.loads(written_data)
+
+    # Every non-empty feed is merged.
+    for n in present:
+        if n != empty_feed:
+            assert n in parsed
+            assert parsed[n] == good[n]
+    # The empty feed is preserved from the previous backports.json content
+    # (the mocked open reads nothing useful, so it simply isn't added fresh —
+    # the important assertion is that the run completed instead of aborting).
+    assert empty_feed not in parsed or parsed[empty_feed] == {}
