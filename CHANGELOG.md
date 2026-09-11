@@ -8,6 +8,15 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Fixed
+- **Manual AI re-triage actually re-runs now (F2).** The `ai_triage` durable task
+  deduped on `triage-{session_id}` with `return-existing`, so a second manual
+  re-triage returned the prior *completed* workflow and silently did nothing —
+  while the UI sat at "running". Dropped the dedupe (each manual run enqueues a
+  fresh workflow, matching `agent_step`), and moved the concurrency protection it
+  incidentally provided into the `/triage/<uuid>/run/` endpoint as an atomic
+  `select_for_update` in-flight guard (two near-simultaneous clicks → one run +
+  409). The automatic post-scan triage was unaffected (it runs inline, not via
+  this task).
 - **Tool consistency pass (F-tool1 / F-tool4 / config drift).** Aligned a few
   tool apps with the conventions their siblings already follow:
   - `domain_security` and `domain_probe` now wrap collect+analyze in

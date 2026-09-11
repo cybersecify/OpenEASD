@@ -60,7 +60,12 @@ def run_scan_workflow(session_id: int) -> None:
     logger.info("[dbos] scan workflow complete for session %s", session_id)
 
 
-@durable_task("ai_triage", dedupe="triage-{0}")
+# No dedupe (F2): a "triage-{id}" deduplication_id with return-existing made a
+# manual re-triage return the prior (completed) workflow and silently no-op,
+# defeating the whole point of the re-run endpoint. Each manual run now enqueues
+# a fresh workflow; the API endpoint serializes concurrent runs atomically
+# (run_triage_now). Matches agent_step, which also carries no dedupe.
+@durable_task("ai_triage")
 def ai_triage(session_id: int) -> None:
     """Manual (re-)triage of a finished scan, durably (one-step task)."""
     from apps.core.console.ai.tasks import run_triage_and_summaries

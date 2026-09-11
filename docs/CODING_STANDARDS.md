@@ -187,9 +187,12 @@ fail the whole scan. Specifically:
   a uniform surface: `task(*args)` runs in-process (tests) and
   `task.delay(*args, dedupe_id=...)` durably enqueues. Multi-step work stays an
   explicit `@DBOS.workflow` with per-phase `@DBOS.step`s (the checkpoint unit).
-- **Every durable enqueue carries a stable `deduplication_id`** +
-  `duplication_policy: "return-existing"` — `scan-{session_id}`, `triage-{id}`,
-  etc. (But see finding F2 — the dedupe key must still allow an intended re-run.)
+- **A durable enqueue that must never double-run carries a stable
+  `deduplication_id`** + `duplication_policy: "return-existing"` (e.g.
+  `scan-{session_id}`). But **don't dedupe a re-runnable task**: `ai_triage`
+  dropped its `triage-{id}` dedupe (F2) because return-existing returned the
+  prior completed run and blocked legitimate manual re-triage — serialize
+  concurrency at the caller instead. Match the work to the policy.
 - **Idempotency**: setup steps use `get_or_create` /
   `bulk_create(ignore_conflicts=True)`. The alert dispatcher skips when a
   `status="sent"` Alert already exists, so a finalize replay can't double-notify.
@@ -390,9 +393,12 @@ blockers. Fixed items are struck through with the PR that closed them.
 
 ### Medium — consistency / robustness
 
-- **F2 — `ai_triage` dedupe key blocks manual re-triage.** `triage-{0}` +
-  return-existing returns the old handle, so a "manual re-triage" silently doesn't
-  re-run. (`durable/workflows.py:63`, `durable/task.py:78`)
+- **F2 — ~~`ai_triage` dedupe key blocks manual re-triage~~ — FIXED (#454).**
+  Dropped the `triage-{0}` dedupe (it returned the prior *completed* workflow via
+  return-existing, so a re-run silently no-op'd while the UI sat at "running").
+  Each manual run now enqueues a fresh workflow — matching `agent_step`, which
+  carries no dedupe — and the concurrency the dedupe incidentally provided moved
+  into the API as an atomic `select_for_update` in-flight guard (`run_triage_now`).
 - **F3 — ~~the passive/active auth rule is implemented three times~~ — FIXED
   (#453).** The triplicated authorization check (`DomainAuthorization.objects
   .filter(domain__name=X).exists()` in the scan-start gate, subscan gate, and AI

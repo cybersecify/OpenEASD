@@ -225,11 +225,23 @@ def run_triage_now(request, session_uuid: uuid_lib.UUID):
         raise HttpError(400, "Enable analysis (with consent) on the AI Analysis page first.")
     if session.status in ("pending", "running"):
         raise HttpError(409, "Scan is still running — triage runs automatically when it finishes.")
-    if AITriage.objects.filter(session=session, status="running").exists():
-        raise HttpError(409, "A triage run is already in flight for this scan.")
 
-    # In-flight marker so the UI can poll; the task replaces it with the result.
-    AITriage.objects.update_or_create(session=session, defaults={"status": "running"})
+    # Atomic in-flight guard (F2): the ai_triage task no longer dedupes at the
+    # DBOS layer (that blocked legitimate re-runs), so two near-simultaneous
+    # re-run clicks must be serialized here instead. Lock the triage row (or
+    # create it) and flip to "running" in one transaction; a concurrent request
+    # then sees "running" and gets 409. The marker also lets the UI poll; the
+    # task replaces it with the result.
+    from django.db import transaction
+    with transaction.atomic():
+        triage, created = AITriage.objects.select_for_update().get_or_create(
+            session=session, defaults={"status": "running"}
+        )
+        if not created:
+            if triage.status == "running":
+                raise HttpError(409, "A triage run is already in flight for this scan.")
+            triage.status = "running"
+            triage.save(update_fields=["status"])
     enqueue_triage(session.id)
     return {"ok": True, "status": "running"}
 
