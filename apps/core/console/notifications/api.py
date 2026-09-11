@@ -16,9 +16,13 @@ router = Router(auth=JWTAuth())
 # ---------------------------------------------------------------------------
 
 class NotificationConfigIn(Schema):
-    slack_webhook_url:  str = ""
-    teams_webhook_url:  str = ""
-    severity_threshold: str = "high"
+    # Write-only, like the credentials/AI config endpoints: None = leave unchanged,
+    # "" = clear (→ env-var fallback), "value" = set. Defaulting to None (not "")
+    # is what lets the UI save the threshold alone without wiping a stored webhook
+    # it can no longer read back.
+    slack_webhook_url:  str | None = None
+    teams_webhook_url:  str | None = None
+    severity_threshold: str | None = None
 
 
 class TestIn(Schema):
@@ -29,13 +33,29 @@ class TestIn(Schema):
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _webhook_source(db_value: str, env_setting: str) -> str:
+    """Where a webhook resolves from: 'db' | 'env' | 'none' (mirrors the
+    credentials resolver's DB-wins-over-env contract)."""
+    from django.conf import settings
+    if db_value:
+        return "db"
+    if getattr(settings, env_setting, ""):
+        return "env"
+    return "none"
+
+
 def _serialize_config(cfg) -> dict:
+    # Webhook URLs are SECRETS — anyone holding one can post into the channel — so
+    # they are write-only: never returned. Surface only presence + resolution
+    # source, exactly like /api/credentials/ and /api/ai/config/. `*_configured`
+    # reflects effective availability (DB or env fallback).
+    slack_src = _webhook_source(cfg.slack_webhook_url, "SLACK_WEBHOOK_URL")
+    teams_src = _webhook_source(cfg.teams_webhook_url, "MS_TEAMS_WEBHOOK_URL")
     return {
-        "slack_configured":    bool(cfg.slack_webhook_url),
-        "teams_configured":    bool(cfg.teams_webhook_url),
-        # Return URLs so the form can show current values (user set them intentionally)
-        "slack_webhook_url":   cfg.slack_webhook_url,
-        "teams_webhook_url":   cfg.teams_webhook_url,
+        "slack_configured":    slack_src != "none",
+        "teams_configured":    teams_src != "none",
+        "slack_source":        slack_src,
+        "teams_source":        teams_src,
         "severity_threshold":  cfg.severity_threshold,
     }
 
@@ -57,15 +77,26 @@ def get_config(request):
 def save_config(request, data: NotificationConfigIn):
     from apps.core.console.notifications.models import NotificationConfig
 
-    if data.severity_threshold not in VALID_THRESHOLDS:
+    # Validate before mutating so a bad threshold can't partially apply.
+    if data.severity_threshold is not None and data.severity_threshold not in VALID_THRESHOLDS:
         raise HttpError(400, f"severity_threshold must be one of {sorted(VALID_THRESHOLDS)}")
 
     cfg = NotificationConfig.get()
-    cfg.slack_webhook_url  = data.slack_webhook_url.strip()
-    cfg.teams_webhook_url  = data.teams_webhook_url.strip()
-    cfg.severity_threshold = data.severity_threshold
-    cfg.save()
-    logger.info("[notifications] Config updated")
+    changed = []
+    # None = unchanged; "" = clear; "value" = set. Only touch fields the caller sent,
+    # so saving the threshold alone preserves webhooks the UI can no longer read back.
+    if data.severity_threshold is not None:
+        cfg.severity_threshold = data.severity_threshold
+        changed.append("severity_threshold")
+    if data.slack_webhook_url is not None:
+        cfg.slack_webhook_url = data.slack_webhook_url.strip()
+        changed.append("slack_webhook_url")
+    if data.teams_webhook_url is not None:
+        cfg.teams_webhook_url = data.teams_webhook_url.strip()
+        changed.append("teams_webhook_url")
+    if changed:
+        cfg.save(update_fields=changed)
+        logger.info("[notifications] Config updated (%s)", ", ".join(changed))
     return _serialize_config(cfg)
 
 
