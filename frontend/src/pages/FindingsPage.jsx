@@ -4,7 +4,7 @@ import { Layout } from '../components/Layout.jsx';
 import { Badge } from '../components/Badge.jsx';
 import { Spinner } from '../components/Spinner.jsx';
 import { Pagination } from '../components/Pagination.jsx';
-import { Card, CardContent } from '../components/ui/card.jsx';
+import { Card } from '../components/ui/card.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.jsx';
 import { toast } from '../components/Notification.jsx';
 import { apiGet, apiPost } from '../api/client.js';
