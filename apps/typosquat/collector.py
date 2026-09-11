@@ -54,6 +54,44 @@ CONTENT_MAX_FETCHES = 25          # homepages fetched per scan
 CONTENT_TIMEOUT = 6               # seconds per fetch
 _LOGIN_FORM_RE = re.compile(r"<form[^>]*(?:login|sign.?in|auth|password)[^>]*>", re.I)
 
+# Domain-parking detection. A parked lookalike resolves and often carries
+# registrar-default MX, which used to read as "weaponizable right now" — but a
+# parking lot is speculation, not phishing infrastructure. Two independent
+# signals, either one marks the record parked:
+#
+#   1. Anycast IPs of the major parking / for-sale services. These are stable,
+#      well-known landing addresses (GoDaddy/Afternic ride AWS Global
+#      Accelerator; Namecheap, Sedo, Bodis, ParkingCrew use their own ranges).
+#   2. Sale/parking boilerplate on the fetched homepage.
+_PARKING_IPS = frozenset({
+    "76.223.54.146", "13.248.169.48",    # Afternic / GoDaddy (AWS Global Accelerator)
+    "3.33.130.190", "15.197.148.33",     # GoDaddy parking (AWS Global Accelerator)
+    "34.102.136.180",                    # GoDaddy CashParking
+    "91.195.240.94", "91.195.241.136",   # Sedo
+    "199.59.243.228", "199.59.243.226",  # Bodis
+    "192.64.119.87", "192.64.119.254",   # Namecheap parking
+    "162.255.119.112",                   # Namecheap registrar default
+    "185.53.177.30", "185.53.178.30",    # ParkingCrew / TeamInternet
+    "208.91.197.27",                     # Confluence Networks parking
+})
+_PARKING_PREFIXES = (
+    "185.53.177.", "185.53.178.", "185.53.179.",  # ParkingCrew / TeamInternet
+    "199.59.243.",                                # Bodis
+    "91.195.240.", "91.195.241.",                 # Sedo
+)
+_PARKED_CONTENT_RE = re.compile(
+    r"domain (?:is |may be )?for sale|buy this domain|this domain is parked|"
+    r"domain parking|parked free|hugedomains|afternic|sedo\.com|dan\.com|"
+    r"godaddy\.com/forsale|is available for purchase",
+    re.I,
+)
+
+
+def _parked_by_ip(ips: list[str]) -> bool:
+    return any(
+        ip in _PARKING_IPS or ip.startswith(_PARKING_PREFIXES) for ip in ips or []
+    )
+
 # Per-lookup DNS timeout / overall lifetime (seconds). Short — most candidates are
 # NXDOMAIN and resolve fast; we never want a hung resolver to stall a scan.
 _DNS_TIMEOUT = 3
@@ -256,6 +294,8 @@ def _content_signals(candidate: str, brand: str) -> dict:
     Contacts only the lookalike domain, never the target. Never raises — any
     fetch failure leaves content_checked=False and no signals.
     """
+    # NOTE: no "parked" default here — IP-based parking detection may already
+    # have set it on the record, and this dict is update()ed over the record.
     out = {"content_checked": True, "login_form": False,
            "brand_mentioned": False, "brand_mention_count": 0}
     try:
@@ -266,12 +306,18 @@ def _content_signals(candidate: str, brand: str) -> dict:
         )
         html = resp.text or ""
         out["login_form"] = bool(_LOGIN_FORM_RE.search(html))
+        if _PARKED_CONTENT_RE.search(html):
+            out["parked"] = True
         b = (brand or "").lower()
         if b:
             count = html.lower().count(b)
             out["brand_mention_count"] = count
             # A mention on the page, OR a redirect landing on the real brand, is
-            # an impersonation signal.
+            # an impersonation signal — but only a SIGNAL. A short brand string
+            # legitimately appears in unrelated organizations' own names (a
+            # lookalike of "amnic" hit the Armenia Network Information Centre,
+            # whose page says AMNIC because that IS its name), so the analyzer
+            # never escalates on mentions alone.
             out["brand_mentioned"] = count > 0 or b in (resp.url or "").lower()
     except Exception:  # noqa: BLE001 — never let a lookalike fetch fail the scan
         out["content_checked"] = False
@@ -303,6 +349,12 @@ def collect(session) -> list[dict]:
     dns_workers = max(1, min(_DNS_CONCURRENCY, len(candidates)))
     with ThreadPoolExecutor(max_workers=dns_workers) as executor:
         results = [r for r in executor.map(_check, candidates) if r]
+
+    # Parking detection by IP works even when the homepage fetch fails (parked
+    # domains frequently have no HTTPS), so it runs on every A-bearing record.
+    for r in results:
+        if r.get("has_a") and _parked_by_ip(r.get("resolved_ips") or []):
+            r["parked"] = True
 
     # Weaponization pass: for registered lookalikes that serve web (have an A
     # record), fetch the homepage to spot active phishing / impersonation. Capped,

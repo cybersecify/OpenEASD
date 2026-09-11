@@ -259,12 +259,39 @@ class TestAnalyzer:
         assert f.extra["login_form"] is True
         assert "takedown" in f.description.lower()
 
-    def test_brand_mention_elevates_to_high(self):
+    def test_brand_mention_alone_stays_medium(self):
+        # A brand string on the page is a review signal, not proof of
+        # impersonation — short brands collide with unrelated orgs' real names
+        # (e.g. a scan for "amnic" hit the Armenia Network Information Centre).
         sess = _session("example.com")
         results = [{"candidate": "examp1e.com", "technique": "typo",
                     "has_a": True, "has_mx": False, "has_ns": False,
                     "resolved_ips": ["1.2.3.4"], "brand_mentioned": True,
                     "brand_mention_count": 4, "content_checked": True}]
+        f = analyze(sess, results)[0]
+        assert f.severity == "medium"
+        assert "review it manually" in f.description
+
+    def test_parked_lookalike_is_low_even_with_a_and_mx(self):
+        # Parking-lot A/MX records are registrar defaults, not the buyer's
+        # phishing infrastructure.
+        sess = _session("example.com")
+        results = [{"candidate": "examp1e.com", "technique": "typo",
+                    "has_a": True, "has_mx": True, "has_ns": False,
+                    "resolved_ips": ["76.223.54.146"], "parked": True,
+                    "content_checked": True}]
+        f = analyze(sess, results)[0]
+        assert f.severity == "low"
+        assert "parking" in f.description.lower()
+        assert f.extra["parked"] is True
+
+    def test_login_form_on_parked_page_still_high(self):
+        # A confirmed phishing page outranks the parked signal.
+        sess = _session("example.com")
+        results = [{"candidate": "examp1e.com", "technique": "typo",
+                    "has_a": True, "has_mx": False, "has_ns": False,
+                    "resolved_ips": ["1.2.3.4"], "parked": True,
+                    "login_form": True, "content_checked": True}]
         assert analyze(sess, results)[0].severity == "high"
 
     def test_weaponizable_without_content_signal_stays_medium(self):

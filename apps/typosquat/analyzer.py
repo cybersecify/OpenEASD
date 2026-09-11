@@ -2,12 +2,15 @@
 
 One Finding per registered lookalike domain (``check_type="lookalike_domain"``):
 
-  * ``medium`` when the lookalike has A or MX records — it can already host a
-    phishing page or receive mail, i.e. it is weaponizable against the org's
-    brand / users.
-  * ``low`` when it is only registered / parked (NS but no A/MX) — no live
-    phishing surface yet, but worth monitoring: someone owns a name built to be
-    confused with the org's.
+  * ``high`` when the live homepage carries a login form — confirmed credential
+    phishing, takedown-worthy. (Brand mentions alone never reach high: short
+    brand strings collide with unrelated organizations' legitimate names.)
+  * ``medium`` when the lookalike has A or MX records and is not parked — it
+    can host a phishing page or receive mail, i.e. it is weaponizable against
+    the org's brand / users.
+  * ``low`` when it is only registered (NS but no A/MX) or sits at a known
+    domain-parking / for-sale service — speculation, not live phishing
+    surface; worth monitoring.
 
 This is threat-surface intel: the finding names the lookalike, the records it
 carries, and the technique that produced it, so a defender can prioritise
@@ -47,13 +50,22 @@ def analyze(session, results) -> list[Finding]:
         weaponizable = bool(record.get("has_a") or record.get("has_mx"))
         login_form = bool(record.get("login_form"))
         brand_mentioned = bool(record.get("brand_mentioned"))
-        # Weaponized = the lookalike is actively impersonating: a login form
-        # (credential phishing) or the brand name on a live page. That's a
-        # confirmed threat worth a takedown, so it outranks a merely-registered
-        # (medium) or parked (low) lookalike.
-        weaponized = login_form or brand_mentioned
+        parked = bool(record.get("parked"))
+        # Weaponized = a login form on the live homepage (credential phishing) —
+        # a confirmed threat worth a takedown. Brand mentions alone are NOT
+        # enough for high: short brand strings legitimately appear in unrelated
+        # organizations' own names (a lookalike scan for "amnic" flagged the
+        # Armenia Network Information Centre as "active impersonation" because
+        # its page says AMNIC — its own name). Mentions stay a medium-level
+        # review signal in the description.
+        weaponized = login_form
         if weaponized:
             severity = "high"
+        elif parked:
+            # Parked at a domain-parking / for-sale service: speculation, not
+            # phishing infrastructure. The registrar-default A/MX records don't
+            # make it weaponizable by whoever bought the name.
+            severity = "low"
         elif weaponizable:
             severity = "medium"
         else:
@@ -61,21 +73,30 @@ def analyze(session, results) -> list[Finding]:
         summary = _record_summary(record)
 
         if weaponized:
-            signals = []
-            if login_form:
-                signals.append("a login form (credential phishing)")
-            if brand_mentioned:
-                signals.append("mentions of your brand (impersonation)")
             weapon_line = (
-                "Its live homepage shows " + " and ".join(signals) + " — this is an "
-                "active impersonation of your brand, not just a registered name. "
-                "Prioritise a takedown."
+                "Its live homepage shows a login form (credential phishing)"
+                + (" and mentions your brand" if brand_mentioned else "")
+                + " — this is an active impersonation of your brand, not just a "
+                "registered name. Prioritise a takedown."
+            )
+        elif parked:
+            weapon_line = (
+                "It sits at a domain-parking / for-sale service — registered "
+                "speculation, not live phishing infrastructure. Monitor for a "
+                "change of hosting, and consider buying it if the name is "
+                "convincing."
             )
         elif weaponizable:
             weapon_line = (
                 "Because it resolves and/or accepts mail, it can be used right "
                 "now to host a phishing page impersonating the brand or to send "
                 "spoofed email to staff, customers, or partners."
+                + (
+                    " Its homepage mentions your brand — review it manually "
+                    "(this can also be an unrelated organization with a "
+                    "similar name)."
+                    if brand_mentioned else ""
+                )
             )
         else:
             weapon_line = (
@@ -110,6 +131,7 @@ def analyze(session, results) -> list[Finding]:
                 "has_ns": bool(record.get("has_ns")),
                 "resolved_ips": record.get("resolved_ips") or [],
                 "login_form": login_form,
+                "parked": parked,
                 "brand_mentioned": brand_mentioned,
                 "brand_mention_count": record.get("brand_mention_count", 0),
                 "content_checked": bool(record.get("content_checked")),
