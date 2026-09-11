@@ -17,6 +17,8 @@ import ReportsPage from './pages/ReportsPage.jsx';
 import NotificationsPage from './pages/NotificationsPage.jsx';
 import AiPage from './pages/AiPage.jsx';
 import CredentialsPage from './pages/CredentialsPage.jsx';
+import AssetsPage from './pages/AssetsPage.jsx';
+import AssetDetailPage from './pages/AssetDetailPage.jsx';
 
 function NotFound() {
   return <div className="p-8 text-body">404 - Page not found</div>;
@@ -39,6 +41,8 @@ export const router = createBrowserRouter([
       { path: '/scans', element: <ScansPage /> },
       { path: '/scans/start', element: <ScanStartPage /> },
       { path: '/scans/:uuid', element: <ScanDetailPage /> },
+      { path: '/assets', element: <AssetsPage /> },
+      { path: '/assets/:id', element: <AssetDetailPage /> },
       { path: '/workflows', element: <WorkflowsPage /> },
       { path: '/workflows/:id', element: <WorkflowDetailPage /> },
       { path: '/insights', element: <InsightsPage /> },
