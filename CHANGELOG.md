@@ -7,6 +7,18 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Security
+- **Fail fast on the default DB password in production (F-sec1).** `DB_PASSWORD`
+  defaulted to `"openeasd"` with nothing stopping a `DEBUG=False` deploy from
+  booting on it — a trivial foothold on the database that holds every scan
+  result and the encrypted BYOK credentials. A new `_validate_db_password` guard
+  (mirroring the existing `SECRET_KEY` guard) raises `ImproperlyConfigured` at
+  settings import when `DEBUG=False` and the DB_* path still uses the default
+  `"openeasd"`. The `DATABASE_URL` path is exempt (it carries its own creds), and
+  the guard is skipped under the test runner. Like the SECRET_KEY guard it
+  matches only the **code default**, so the shipped docker-compose / k8s configs
+  (which set a real password or `"change-me-in-production"`) boot unchanged.
+
 ### Fixed
 - **Brand-threat false positives (typosquat + asn_cluster).** Triaging a real
   amnic.com report showed the Brand Threat category badly over-calling: a

@@ -6,7 +6,8 @@ import pytest
 from django.core.exceptions import ImproperlyConfigured
 
 from openeasd.settings import (
-    _validate_secret_key, _security_settings, _resolve_profile, _PROFILE_TUNING,
+    _validate_secret_key, _validate_db_password, _security_settings,
+    _resolve_profile, _PROFILE_TUNING,
 )
 
 
@@ -138,6 +139,11 @@ class TestSecretKeyGuardWiring:
         env = {
             **os.environ,
             "SECRET_KEY": "x" * 50,  # strong enough to pass the guard
+            # A strong DB_PASSWORD too — the production boot now also refuses the
+            # default DB password (see TestDbPasswordGuard), so a valid prod boot
+            # must satisfy both guards.
+            "DB_PASSWORD": "a-strong-db-password",
+            "DATABASE_URL": "",  # force the DB_* path, ignoring any repo .env
             "DEBUG": "False",
         }
         env.pop("PYTEST_CURRENT_TEST", None)
@@ -146,3 +152,49 @@ class TestSecretKeyGuardWiring:
             cwd=str(repo_root), env=env, capture_output=True, text=True,
         )
         assert result.returncode == 0, result.stderr
+
+
+class TestDbPasswordGuard:
+    def test_raises_on_default_password_in_production(self):
+        with pytest.raises(ImproperlyConfigured):
+            _validate_db_password(using_database_url=False, db_password="openeasd", debug=False)
+
+    def test_allows_default_password_when_debug(self):
+        # Local dev is permitted to keep the placeholder password.
+        _validate_db_password(using_database_url=False, db_password="openeasd", debug=True)
+
+    def test_allows_strong_password_in_production(self):
+        _validate_db_password(using_database_url=False, db_password="s3cure-p@ss", debug=False)
+
+    def test_database_url_path_is_exempt(self):
+        # DATABASE_URL carries its own credentials — the DB_* default never applies,
+        # so the guard must not fire even if db_password is left at the default.
+        _validate_db_password(using_database_url=True, db_password="openeasd", debug=False)
+
+
+class TestDbPasswordGuardWiring:
+    """Prove the DB-password guard is actually WIRED into settings import — a
+    real subprocess, since the in-process call is skipped under pytest. A strong
+    SECRET_KEY is set so boot reaches the DB guard rather than aborting earlier."""
+
+    def test_settings_import_aborts_on_default_db_password_in_production(self):
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[2]
+        env = {
+            **os.environ,
+            "SECRET_KEY": "x" * 50,        # pass the SECRET_KEY guard first
+            "DB_PASSWORD": "openeasd",     # the insecure default
+            "DATABASE_URL": "",            # force the DB_* path, ignoring any repo .env
+            "DEBUG": "False",
+        }
+        env.pop("PYTEST_CURRENT_TEST", None)
+        result = subprocess.run(
+            [sys.executable, "-c", "import openeasd.settings"],
+            cwd=str(repo_root), env=env, capture_output=True, text=True,
+        )
+        assert result.returncode != 0, "settings booted with the default DB password + DEBUG=False"
+        assert "ImproperlyConfigured" in result.stderr or "DB_PASSWORD" in result.stderr
