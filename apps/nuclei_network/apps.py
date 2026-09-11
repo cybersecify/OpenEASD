@@ -2,6 +2,7 @@ from django.apps import AppConfig
 
 
 class NucleiNetworkConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
     name = "apps.nuclei_network"
     label = "nuclei_network"
     verbose_name = "Nuclei Network"

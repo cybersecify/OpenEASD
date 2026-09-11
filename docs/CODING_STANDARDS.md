@@ -399,19 +399,26 @@ blockers. Fixed items are struck through with the PR that closed them.
 - **F6 — two 404 body shapes**: `get_object_or_404` renders `{"detail":...}` while
   `HttpError(404,…)` renders the `{"error":{...}}` envelope. Standardize on the
   envelope.
-- **F-tool1 — `domain_security`/`domain_probe` orchestrators have no top-level
-  try/except** (unlike `typosquat`/`shodan`), so a finding-producing tool could
-  still raise into the runner. (`domain_security/scanner.py:877`,
-  `domain_probe/scanner.py:264`)
+- **F-tool1 — ~~`domain_security`/`domain_probe` orchestrators have no top-level
+  try/except~~ — FIXED (#448).** Both now wrap collect+analyze in
+  `try/except → return []`, matching their passive Domain-Posture siblings
+  (`breach_check`/`hudson_rock`/`dns_history`). `cloud_assets` was deliberately
+  **excluded**: it's a binary tool, and its phase-sibling `takeover_check`
+  *propagates* `ToolBinaryMissing`/`ToolTimeout` → "partial" (labeled-partials
+  principle). Whether `cloud_assets` should swallow (additive) or propagate
+  (honest-partial) is an open policy call — tracked, not guessed.
 - **F-tool2 — configured `_DNS_TIMEOUT` is honored in only one check** in
   `domain_security`; most `dns.resolver.resolve` calls use the default resolver
-  with no explicit timeout. (`domain_security/scanner.py`)
+  with no explicit timeout. (`domain_security/scanner.py`) **Deferred** from #448:
+  the slow real-network `test_domain_security.py` patches `scanner.dns` with
+  fixed-signature fakes, so adding a `lifetime=` kwarg needs validating against
+  that suite — its own PR.
 - **F-tool3 — `cloud_assets` skips on missing binary** (`shutil.which → []`)
   instead of raising `ToolBinaryMissing` like every other binary collector —
   inconsistent binary-missing contract. (`cloud_assets/collector.py:21-23`)
-- **F-tool4 — `web_checker` hardcodes its own User-Agent** instead of
-  `settings.OPENEASD_USER_AGENT` — the only tool that breaks the honest-UA rule.
-  (`web_checker/collector.py:25`)
+  **Open**, coupled to the F-tool1 policy call above (raise→partial vs skip).
+- **F-tool4 — ~~`web_checker` hardcodes its own User-Agent~~ — FIXED (#448).**
+  Now uses `settings.OPENEASD_USER_AGENT`, the shared honest UA.
 - **F9 — local fixtures shadow `conftest.py`** in `test_api_endpoints.py` and
   `test_reports.py`; the two `auth_client`s differ subtly and can drift.
 - **F11 — brittle report tests** assert exact HTML/CSS/copy strings rather than
@@ -438,6 +445,7 @@ blockers. Fixed items are struck through with the PR that closed them.
   Consolidate into shared helpers.
 - **F-misc — stale comments / config drift**: `nuclei` timeout comments say
   "30m→2h" but the value is 6h; `asn_cluster` comment says "Prioritization" but
-  `phase_group="Brand Threat"`; several tool `apps.py` omit `default_auto_field`;
+  `phase_group="Brand Threat"`; ~~several tool `apps.py` omit
+  `default_auto_field`~~ (FIXED #448 — the 6 that omitted it now set it);
   `Badge.jsx` lists status keys twice; `axiosInstance.js` imports `router.jsx`
   (near-circular — prefer a navigation callback).

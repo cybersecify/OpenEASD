@@ -2,6 +2,7 @@ from django.apps import AppConfig
 
 
 class SshCheckerConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
     name = "apps.ssh_checker"
     label = "ssh_checker"
     verbose_name = "SSH Checker"
