@@ -85,6 +85,28 @@ class TestGenerateCandidates:
         assert names & {"example.net"}
         assert not (names & {"www.example.com"})
 
+    def test_split_apex_handles_multi_label_suffix(self):
+        from apps.typosquat.collector import _split_apex
+        assert _split_apex("example.com") == ("example", "com")
+        assert _split_apex("example.co.uk") == ("example", "co.uk")
+        assert _split_apex("mybank.com.au") == ("mybank", "com.au")
+        assert _split_apex("www.example.co.uk") == ("example", "co.uk")
+
+    def test_cctld_tld_swap_uses_registrable_name(self):
+        # PSL/ccTLD: the old last-dot split produced garbage like "example.co.net";
+        # the whole public suffix must be swapped, yielding real lookalikes.
+        names = {c["candidate"] for c in generate_candidates("example.co.uk")
+                 if c["technique"] == "tld_swap"}
+        assert {"example.com", "example.net", "example.org"} <= names
+        assert not any(n.startswith("example.co.") for n in names)  # no example.co.<tld> garbage
+
+    def test_cctld_char_mutation_keeps_full_suffix(self):
+        # Character techniques mutate the registrable label and keep ".co.uk".
+        names = {c["candidate"] for c in generate_candidates("example.co.uk")}
+        assert "xample.co.uk" in names          # omission on "example"
+        assert not any(".co.uk" not in n and n.endswith(".uk") for n in names
+                       if n.startswith("exampl"))  # suffix never mangled to bare .uk
+
     def test_empty_domain_returns_empty(self):
         assert generate_candidates("") == []
 

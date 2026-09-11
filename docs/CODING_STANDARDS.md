@@ -446,6 +446,13 @@ blockers. Fixed items are struck through with the PR that closed them.
   among the raisers.
 - **F-tool4 — ~~`web_checker` hardcodes its own User-Agent~~ — FIXED (#448).**
   Now uses `settings.OPENEASD_USER_AGENT`, the shared honest UA.
+- **PSL/ccTLD — ~~typosquat apex split by last-dot, broken for multi-label
+  ccTLDs~~ — FIXED (#458).** `_split_apex` recognises common multi-label public
+  suffixes (`co.uk`, `com.au`, …) so `example.co.uk` → `("example", "co.uk")`
+  and TLD-swap/char-mutation operate on the registrable label (was emitting
+  non-resolving garbage like `example.co.com`, i.e. no ccTLD detection). Curated
+  set, not the full PSL — dependency-free/offline; extend via
+  `TYPOSQUAT_MULTI_LABEL_SUFFIXES`.
 - **F9 — local fixtures shadow `conftest.py`** in `test_api_endpoints.py` and
   `test_reports.py`; the two `auth_client`s differ subtly and can drift.
 - **F11 — brittle report tests** assert exact HTML/CSS/copy strings rather than
