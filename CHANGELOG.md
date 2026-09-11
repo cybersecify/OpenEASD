@@ -8,6 +8,14 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Added
+- **Dashboard cross-link cards (finding-centric PR4).** Two clickable summary
+  cards on the dashboard: **Open Issues** (open/acknowledged/in-progress by
+  severity, from `/issues/summary/`) linking to the Findings register, and
+  **Asset Inventory** (active / gone / total, from `/assets/summary/`) linking to
+  Assets. Restores the cross-scan posture cards #406 removed and completes the
+  finding-centric-grounded-on-asset-centric UI direction
+  (`docs/specs/2026-09-12-finding-centric-ui-direction.md`). Frontend-only —
+  reuses existing summary endpoints.
 - **Changes feed — "what changed since last scan" (finding-centric PR5).** New
   **Changes** page (nav + `/changes`) and `/api/scans/deltas/` endpoint over the
   existing `ScanDelta` records: a recency-ordered feed of **new / removed**

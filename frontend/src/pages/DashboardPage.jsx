@@ -34,6 +34,14 @@ export default function DashboardPage() {
     queryKey: ['/dashboard/'],
     queryFn: () => apiGet('/dashboard/'),
   });
+  const { data: issuesSummary } = useQuery({
+    queryKey: ['/issues/summary/'],
+    queryFn: () => apiGet('/issues/summary/'),
+  });
+  const { data: assetsSummary } = useQuery({
+    queryKey: ['/assets/summary/'],
+    queryFn: () => apiGet('/assets/summary/'),
+  });
 
   if (loading) return <Layout><div className="flex justify-center items-center h-64"><Spinner size={40} /></div></Layout>;
   if (error)   return <Layout><div className="text-red-400 p-4">Error: {error?.message ?? String(error)}</div></Layout>;
@@ -65,6 +73,37 @@ export default function DashboardPage() {
           <AssetCard label="IPs"        value={kpi_ips} />
           <AssetCard label="Ports"      value={kpi_ports} />
           <AssetCard label="URLs"       value={kpi_urls} />
+        </div>
+
+        {/* Cross-links into the persistent finding-centric surfaces. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button onClick={() => navigate('/findings')}
+            className="text-left bg-card border border-rim rounded-xl p-4 hover:bg-hover transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-semibold text-lit">Open Issues</span>
+              <span className="text-xs text-brand">View all →</span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {['critical', 'high', 'medium', 'low', 'info'].map(s => (
+                <Badge key={s} value={s} label={`${issuesSummary?.open_by_severity?.[s] ?? 0} ${s}`} />
+              ))}
+            </div>
+            <p className="text-xs text-dim mt-2">Persistent register — triage sticks across scans.</p>
+          </button>
+
+          <button onClick={() => navigate('/assets')}
+            className="text-left bg-card border border-rim rounded-xl p-4 hover:bg-hover transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-semibold text-lit">Asset Inventory</span>
+              <span className="text-xs text-brand">View all →</span>
+            </div>
+            <div className="flex gap-5">
+              <div><span className="text-2xl font-bold text-lit">{assetsSummary?.active ?? 0}</span> <span className="text-xs text-dim">active</span></div>
+              <div><span className="text-2xl font-bold text-dim">{assetsSummary?.gone ?? 0}</span> <span className="text-xs text-dim">gone</span></div>
+              <div><span className="text-2xl font-bold text-lit">{assetsSummary?.total ?? 0}</span> <span className="text-xs text-dim">total</span></div>
+            </div>
+            <p className="text-xs text-dim mt-2">Persistent attack surface across scans.</p>
+          </button>
         </div>
 
         <Card className="overflow-hidden">

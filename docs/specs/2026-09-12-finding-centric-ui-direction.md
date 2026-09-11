@@ -1,6 +1,7 @@
 # Finding-Centric UI, Grounded on Asset-Centric — Direction Spec
 
-> **Status:** 🚧 In progress.
+> **Status:** ✅ Implemented (PR1–PR5). The console is finding-centric grounded
+> on asset-centric; scans are the activity/history layer.
 > - PR1 — restore the **Assets inventory UI** (list + detail), nav + routes (the
 >   asset-centric grounding). *This PR.* The `/api/assets/` layer was never
 >   removed, so this is UI wiring only.
@@ -10,8 +11,8 @@
 > - PR3 — ✅ **Findings/Issues register UI** as the primary triage surface
 >   (`/findings` + `/api/issues/`; triage patches `Issue.status`, so it persists).
 > - PR5 — ✅ **"changes since last scan" feed** (`/changes` + `/api/scans/deltas/`).
-> - PR4 — dashboard cross-link cards (Open-Issues + Asset-inventory) — *deferred*
->   (the delta feed was prioritised as PR5).
+> - PR4 — ✅ dashboard cross-link cards (Open-Issues + Asset-inventory). All
+>   phases now shipped — the console is finding-centric grounded on asset-centric.
 >
 > **This decision supersedes #406** ("make the UI strictly scan-centric"), which
 > had removed the global Findings page and the Assets inventory pages. See
