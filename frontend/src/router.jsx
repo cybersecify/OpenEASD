@@ -20,6 +20,7 @@ import CredentialsPage from './pages/CredentialsPage.jsx';
 import AssetsPage from './pages/AssetsPage.jsx';
 import AssetDetailPage from './pages/AssetDetailPage.jsx';
 import FindingsPage from './pages/FindingsPage.jsx';
+import ChangesPage from './pages/ChangesPage.jsx';
 
 function NotFound() {
   return <div className="p-8 text-body">404 - Page not found</div>;
@@ -43,6 +44,7 @@ export const router = createBrowserRouter([
       { path: '/scans/start', element: <ScanStartPage /> },
       { path: '/scans/:uuid', element: <ScanDetailPage /> },
       { path: '/findings', element: <FindingsPage /> },
+      { path: '/changes', element: <ChangesPage /> },
       { path: '/assets', element: <AssetsPage /> },
       { path: '/assets/:id', element: <AssetDetailPage /> },
       { path: '/workflows', element: <WorkflowsPage /> },

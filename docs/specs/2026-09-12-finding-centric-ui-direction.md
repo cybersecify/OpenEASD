@@ -9,7 +9,9 @@
 >   status now persists across scans, dismissals stick.
 > - PR3 — ✅ **Findings/Issues register UI** as the primary triage surface
 >   (`/findings` + `/api/issues/`; triage patches `Issue.status`, so it persists).
-> - PR4 — dashboard cross-links + a "changes since last scan" feed.
+> - PR5 — ✅ **"changes since last scan" feed** (`/changes` + `/api/scans/deltas/`).
+> - PR4 — dashboard cross-link cards (Open-Issues + Asset-inventory) — *deferred*
+>   (the delta feed was prioritised as PR5).
 >
 > **This decision supersedes #406** ("make the UI strictly scan-centric"), which
 > had removed the global Findings page and the Assets inventory pages. See

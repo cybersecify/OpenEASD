@@ -508,6 +508,48 @@ def update_finding_status(request, finding_id: int, data: FindingStatusRequest):
     return _serialize_finding(finding)
 
 
+def _delta_row(d) -> dict:
+    # item_identifier is "source:check_type:title" (the delta-detection key).
+    # Split on the first two ":" so a title containing ":" stays intact.
+    parts = (d.item_identifier or "").split(":", 2)
+    source, check_type, title = (parts + ["", "", ""])[:3]
+    return {
+        "id": d.id,
+        "change_type": d.change_type,       # "new" | "removed"
+        "category": d.change_category,       # "finding"
+        "source": source,
+        "check_type": check_type,
+        "title": title,
+        "domain": d.session.domain,
+        "scan_uuid": str(d.session.uuid),
+        "created_at": d.created_at.isoformat(),
+    }
+
+
+@router.get("/deltas/")
+def list_deltas(request, domain: str = "", change_type: str = "", page: int = 1):
+    """Recent scan-to-scan changes (new / removed findings), newest first — the
+    'changes since last scan' feed. Filter by domain / change_type."""
+    from apps.core.engine.scans.models import ScanDelta
+
+    qs = ScanDelta.objects.select_related("session").order_by("-created_at")
+    if domain:
+        qs = qs.filter(session__domain__icontains=domain)
+    if change_type:
+        qs = qs.filter(change_type=change_type)
+
+    paginator = Paginator(qs, 30)
+    p = paginator.get_page(page)
+    return {
+        "deltas": [_delta_row(d) for d in p],
+        "total": paginator.count,
+        "page": p.number,
+        "total_pages": paginator.num_pages,
+        "has_next": p.has_next(),
+        "has_previous": p.has_previous(),
+    }
+
+
 @router.get("/{session_uuid}/")
 def scan_detail(request, session_uuid: uuid.UUID):
     from apps.core.data.assets.models import IPAddress, Port, Subdomain
