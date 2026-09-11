@@ -26,8 +26,12 @@ commits to recover the reasoning.
     case raises `ToolBinaryMissing` like every other binary collector and the
     runner marks the scan "partial" instead of a fake "clean". Ruling: binary
     tools propagate, matching `takeover_check` — restoring the intent of the
-    earlier "tool failures no longer hidden behind `completed`" change. (F-tool2,
-    the domain_security DNS-timeout fix, is still deferred to its own PR.)
+    earlier "tool failures no longer hidden behind `completed`" change.
+  - `domain_security` now honors the configured DNS timeout on **all** lookups
+    (F-tool2): `_DNS_TIMEOUT` (`SCANNER_DNS_TIMEOUT`, default 5s) was applied to
+    only the lame-delegation probe, so a slow/hung authoritative server could
+    stall a scan past the bound. Added `lifetime=_DNS_TIMEOUT` to all six
+    `dns.resolver.resolve` calls.
 
 ### Security
 - **Fail fast on the default DB password in production (F-sec1).** `DB_PASSWORD`
