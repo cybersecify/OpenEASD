@@ -7,6 +7,17 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **Assets inventory UI restored (asset-centric grounding).** Re-introduces the
+  persistent **Assets** page (list) + **Asset detail** page over the existing
+  `/api/assets/` layer, with a nav entry and `/assets` + `/assets/:id` routes.
+  The list filters by kind/status/domain/search, paginates, and shows per-asset
+  open-finding severity chips; the detail page shows metadata, findings, and the
+  scan timeline. This is step 1 of the finding-centric-grounded-on-asset-centric
+  UI direction (`docs/specs/2026-09-12-finding-centric-ui-direction.md`), which
+  supersedes the "strictly scan-centric" decision (#406). The `/api/assets/` data
+  layer was never removed — this is UI wiring only.
+
 ## [v2.15.1] — 2026-09-11
 
 ### Fixed
