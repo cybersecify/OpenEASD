@@ -375,9 +375,13 @@ blockers. Fixed items are struck through with the PR that closed them.
 - **F-sec1 — weak default DB credentials ship silently.** `DB_PASSWORD` defaults
   to `"openeasd"` with no fail-fast guard (unlike `SECRET_KEY`).
   (`openeasd/settings/base.py:210`)
-- **F-sec2 — SECRET_KEY guard is skipped whenever `"pytest" in sys.modules`.** Any
-  runtime that transitively imports pytest bypasses the production check.
-  (`base.py:18,51`)
+- **F-sec2 — ~~SECRET_KEY guard skipped whenever `"pytest" in sys.modules`~~ —
+  FIXED (#452).** Both the SECRET_KEY and DB-password guards now skip only under
+  the pytest *runner* — a new `_under_pytest()` checks the process entrypoint
+  (`sys.argv[0]` basename), not mere importability — so a transitive import of
+  pytest in a production process (a dependency, a debug shell) can no longer
+  disable a security guard. A subprocess regression test imports pytest *then*
+  settings with an insecure key + `DEBUG=False` and asserts it still aborts.
 - **F-sec3 — ~~`?token=<JWT>` query-param auth on report endpoints~~ — FIXED
   (#451).** Removed the query-param fallback in `_report_auth_required`; report
   endpoints now authenticate only via Django session or the `Authorization:
