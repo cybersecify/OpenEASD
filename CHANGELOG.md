@@ -8,6 +8,14 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Added
+- **Changes feed — "what changed since last scan" (finding-centric PR5).** New
+  **Changes** page (nav + `/changes`) and `/api/scans/deltas/` endpoint over the
+  existing `ScanDelta` records: a recency-ordered feed of **new / removed**
+  findings across scans, filterable by domain and change type, each row linking
+  to its scan. The delta-detection identity key (`source:check_type:title`) is
+  parsed for display (colons in titles preserved). The delta/change-centric entry
+  point for the finding-centric UI (asset grounding = PR1, persistent issues =
+  PR2, register = PR3). Dashboard cross-link cards remain deferred.
 - **Findings register UI — the finding-centric primary surface (PR3).** New
   **Findings** page (nav + `/findings`) and `/api/issues/` API (list ranked by
   severity, `summary`, and a `status` endpoint) over the persistent `Issue`
