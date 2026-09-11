@@ -173,6 +173,78 @@ class TestCoverageRegressionReport:
 
 
 @pytest.mark.django_db
+class TestFinalizeReplayIdempotency:
+    """F1: finalize is a replayable DBOS step. Running it twice (a worker crash
+    after side effects but before the step checkpoints, then resume) must NOT
+    duplicate the rows it produces — ScanDelta rows and the coverage_regression
+    meta-finding — nor drift total_findings."""
+
+    def _setup(self):
+        from django.utils import timezone
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.findings.models import Finding
+        from apps.core.engine.workflows.models import Workflow, WorkflowRun
+
+        # Baseline (completed) with a finding unique to it → a genuine "removed"
+        # delta; the current scan gets a different finding → a genuine "new" delta.
+        base = ScanSession.objects.create(
+            domain="example.com", scan_type="full", status="completed",
+            end_time=timezone.now(),
+        )
+        Finding.objects.create(
+            session=base, source="web_checker", target="example.com",
+            check_type="missing_header", severity="medium",
+            title="Baseline only finding", description="d", remediation="f",
+        )
+        # High block ratio → coverage_regression fires.
+        cur = _session(status="running", endpoints_probed=10, endpoints_blocked=10)
+        Finding.objects.create(
+            session=cur, source="web_checker", target="example.com",
+            check_type="missing_header", severity="medium",
+            title="Current only finding", description="d", remediation="f",
+        )
+        wf = Workflow.objects.create(name="wf")
+        WorkflowRun.objects.create(workflow=wf, session=cur, status="completed")
+        return cur
+
+    def test_second_finalize_does_not_duplicate_rows(self):
+        from apps.core.engine.scans.models import ScanDelta
+        from apps.core.data.findings.models import Finding
+
+        cur = self._setup()
+
+        _finalize_session(cur)
+        cur.refresh_from_db()
+        deltas_1 = ScanDelta.objects.filter(session=cur).count()
+        new_1 = ScanDelta.objects.filter(session=cur, change_type="new").count()
+        total_1 = cur.total_findings
+        reg_1 = Finding.objects.filter(
+            session=cur, check_type="coverage_regression"
+        ).count()
+
+        assert deltas_1 >= 2            # at least one "new" + one "removed"
+        assert new_1 >= 1
+        assert reg_1 == 1
+
+        # Replay the exact same finalize step.
+        _finalize_session(cur)
+        cur.refresh_from_db()
+
+        # Nothing duplicated, nothing drifted.
+        assert ScanDelta.objects.filter(session=cur).count() == deltas_1
+        assert ScanDelta.objects.filter(session=cur, change_type="new").count() == new_1
+        assert cur.total_findings == total_1
+        assert Finding.objects.filter(
+            session=cur, check_type="coverage_regression"
+        ).count() == 1
+
+        # The meta-warning never becomes a delta on replay either.
+        assert not ScanDelta.objects.filter(
+            session=cur, item_identifier__startswith="scan_coverage:"
+        ).exists()
+
+
+@pytest.mark.django_db
 class TestPartialStatus:
     def _run(self, session, status):
         from apps.core.engine.workflows.models import Workflow, WorkflowRun
