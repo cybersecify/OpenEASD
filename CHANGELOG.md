@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.15.1] — 2026-09-11
+
 ### Fixed
 - **typosquat now handles multi-label ccTLD domains (PSL/ccTLD).** The apex was
   split by a naive last dot, so `example.co.uk` became name=`example.co` /
@@ -1682,7 +1684,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.15.0...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.15.1...HEAD
+[v2.15.1]: https://github.com/cybersecify/OpenEASD/compare/v2.15.0...v2.15.1
 [v2.15.0]: https://github.com/cybersecify/OpenEASD/compare/v2.14.2...v2.15.0
 [v2.14.2]: https://github.com/cybersecify/OpenEASD/compare/v2.14.1...v2.14.2
 [v2.14.1]: https://github.com/cybersecify/OpenEASD/compare/v2.14.0...v2.14.1
