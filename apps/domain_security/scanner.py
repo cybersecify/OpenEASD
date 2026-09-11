@@ -54,7 +54,7 @@ _HTTP_TIMEOUT = getattr(settings, "SCANNER_HTTP_TIMEOUT", 10)
 def _resolve(domain, record_type):
     """Resolve a DNS record, return answers or empty list."""
     try:
-        return dns.resolver.resolve(domain, record_type)
+        return dns.resolver.resolve(domain, record_type, lifetime=_DNS_TIMEOUT)
     except (_DNS_NoAnswer, _DNS_NXDOMAIN, _DNS_NoNameservers):
         return []
     except Exception as e:
@@ -107,7 +107,7 @@ def _check_wildcard(session, domain) -> list:
     test_subdomain = f"openeasd-wildcard-probe.{domain}"
 
     try:
-        answers = dns.resolver.resolve(test_subdomain, "A")
+        answers = dns.resolver.resolve(test_subdomain, "A", lifetime=_DNS_TIMEOUT)
         if answers:
             findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="dns",
@@ -144,7 +144,7 @@ def _check_lame_delegation(session, domain, ns_records) -> list:
             ns_host = str(ns).rstrip(".")
 
         try:
-            ns_ips = dns.resolver.resolve(ns_host, "A")
+            ns_ips = dns.resolver.resolve(ns_host, "A", lifetime=_DNS_TIMEOUT)
             ns_ip = str(ns_ips[0])
         except Exception:
             lame_servers.append(f"{ns_host} (no A record)")
@@ -193,13 +193,13 @@ def _check_dnssec(session, domain) -> list:
     has_ds = False
 
     try:
-        resp = dns.resolver.resolve(domain, "DNSKEY")
+        resp = dns.resolver.resolve(domain, "DNSKEY", lifetime=_DNS_TIMEOUT)
         has_dnskey = len(resp) > 0
     except Exception:
         pass
 
     try:
-        resp = dns.resolver.resolve(domain, "DS")
+        resp = dns.resolver.resolve(domain, "DS", lifetime=_DNS_TIMEOUT)
         has_ds = len(resp) > 0
     except Exception:
         pass
@@ -327,7 +327,7 @@ def _check_dns(session, domain) -> list:
 def _get_txt_record(domain) -> list:
     """Return all TXT record strings for a domain."""
     try:
-        answers = dns.resolver.resolve(domain, "TXT")
+        answers = dns.resolver.resolve(domain, "TXT", lifetime=_DNS_TIMEOUT)
         return [b"".join(r.strings).decode("utf-8", errors="ignore") for r in answers]
     except Exception:
         return []
