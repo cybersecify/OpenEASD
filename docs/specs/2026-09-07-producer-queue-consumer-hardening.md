@@ -109,6 +109,15 @@ auth behaviour.
 
 ## 5. Phase H3 — Bounded result store (retention / pruning)
 
+> **Status:** ✅ Shipped — `prune_old_scans()` (`scheduler.py`) + `scheduled_scan_prune`
+> (`@DBOS.scheduled`, `SCAN_PRUNE_CRON` default `30 3 * * *`). OFF by default
+> (`SCAN_RETENTION_ENABLED`); when on, keeps per domain the newest
+> `SCAN_RETENTION_KEEP_PER_DOMAIN` (30) scans + any within
+> `SCAN_RETENTION_MAX_AGE_DAYS` (180), always keeps the single newest, never deletes
+> pending/running, and cascades to assets/findings. Hygiene cron (self-gates on the
+> setting), so NOT tied to `SCHEDULED_SCANS_ENABLED`. Tests:
+> `tests/unit/test_scan_retention.py` (7). No migration.
+
 **Problem:** unbounded growth of scan history.
 
 **Change:**

@@ -327,6 +327,17 @@ DBOS_APP_NAME = config("DBOS_APP_NAME", default="openeasd")
 DBOS_SCAN_CONCURRENCY = config("DBOS_SCAN_CONCURRENCY", default=2, cast=int)
 SCAN_STEP_TIMEOUT = config("SCAN_STEP_TIMEOUT", default=SCAN_TASK_TIMEOUT, cast=int)
 
+# Scan retention / pruning (H3 — bounded result store). OFF by default: pruning
+# deletes scan history (cascading to its assets/findings), so it is opt-in. When
+# enabled, prune_old_scans keeps, per domain, the newest KEEP_PER_DOMAIN scans AND
+# any scan newer than MAX_AGE_DAYS; older ones are deleted. The single latest scan
+# per domain is ALWAYS kept regardless. The persistent asset_inventory + Issue
+# registers preserve the long-term "surface over time" story, so pruning raw scan
+# rows does not lose it. Set MAX_AGE_DAYS=0 to disable the age rule (count only).
+SCAN_RETENTION_ENABLED = config("SCAN_RETENTION_ENABLED", default=False, cast=bool)
+SCAN_RETENTION_KEEP_PER_DOMAIN = config("SCAN_RETENTION_KEEP_PER_DOMAIN", default=30, cast=int)
+SCAN_RETENTION_MAX_AGE_DAYS = config("SCAN_RETENTION_MAX_AGE_DAYS", default=180, cast=int)
+
 # Scanner timeouts (seconds) — override in .env if needed
 SCANNER_DNS_TIMEOUT = config("SCANNER_DNS_TIMEOUT", default=5, cast=int)
 SCANNER_HTTP_TIMEOUT = config("SCANNER_HTTP_TIMEOUT", default=10, cast=int)
