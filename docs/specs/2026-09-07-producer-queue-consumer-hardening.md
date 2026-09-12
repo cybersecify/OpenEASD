@@ -156,6 +156,16 @@ no-op when disabled.
 
 ## 5b. Phase H4 — reconcile the watchdog with DBOS resume (design smell)
 
+> **Status:** ✅ Resolved via the heartbeat, not the spec's "query DBOS liveness"
+> option. H10's `last_progress_at` heartbeat IS the liveness signal: the watchdog
+> only reaps a `running` scan that has made **no progress** for
+> `SCAN_NO_PROGRESS_MINUTES` (or exceeded the 24h cap), so a scan DBOS is
+> legitimately resuming/advancing keeps its heartbeat fresh and is never reaped —
+> which is exactly H4's "don't fight DBOS resume" goal, achieved without querying
+> the DBOS workflow store on every sweep. Paired with H9 (below), the reap now also
+> cancels the scan's DBOS workflow inline. Tests: `test_no_progress_watchdog.py` +
+> `test_watchdog_reconcile.py`.
+
 **Problem:** `reap_stuck_scans` (the `scheduled_watchdog` cron) and DBOS's own
 crash-resume are **two uncoordinated recovery mechanisms** for the same scans.
 The watchdog reaps a `running` scan by `start_time` age → marks it `failed`/
@@ -359,6 +369,14 @@ resume) is **never** touched; drain refuses to roll while scans are in-flight.
 has *already occurred* and fully stalls the scan subsystem with no auto-recovery.
 
 ## 5g. Phase H9 — reconcile phantom `PENDING` workflows with terminal sessions
+
+> **Status:** ✅ Shipped — two complementary mechanisms. **Source-fix:**
+> `reap_stuck_scans` now cancels each reaped scan's DBOS workflow inline
+> (`_cancel_workflows_for_sessions`, matched by `scan-{id}` dedup), so a phantom
+> never outlives its scan. **Periodic safety net:** `reap_orphaned_scan_workflows`
+> (H8), wired after `reap_stuck_scans` in the watchdog, still sweeps any
+> non-terminal workflow whose session is already terminal. Both are fail-graceful
+> and idempotent. Tests: `test_watchdog_reconcile.py` (6) + `test_orphan_reaper.py`.
 
 > **Origin:** same 2026-09-12 incident. Observed `scan-25` (raga.ai) with
 > `ScanSession.status = "failed"` **but** its DBOS workflow still `PENDING`,

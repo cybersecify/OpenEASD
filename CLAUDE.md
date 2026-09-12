@@ -875,6 +875,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_scans.py` | 30 | ScanSession, scheduling, scan_start views |
 | `tests/unit/test_scheduler.py` | 33 | reap_stuck_scans, token purge, daily_scan, authorization gate, `SCHEDULED_SCANS_ENABLED` switch |
 | `tests/unit/test_scan_retention.py` | 7 | H3 scan pruning — opt-in (`SCAN_RETENTION_ENABLED`), keep newest-N per domain, max-age window, always keep latest, never delete pending/running, per-domain, cascade to findings |
+| `tests/unit/test_watchdog_reconcile.py` | 6 | H4/H9 watchdog↔DBOS reconcile — reap_stuck_scans cancels the reaped scan's DBOS workflow inline (`_cancel_workflows_for_sessions` matches `scan-{id}` dedup); empty no-op, list/cancel failures swallowed, reap-then-cancel end-to-end |
 | `tests/unit/test_no_progress_watchdog.py` | 5 | H10 no-progress watchdog — reap running scan on stale `last_progress_at` heartbeat (fresh → kept, stale → reaped, NULL+old → reaped, NULL+recent → kept, 24h hard cap still applies) |
 | `tests/unit/test_metrics.py` | 9 | H2 DB-backed Prometheus exporter — scans-by-status, queue depth, findings-by-severity, domains, journey latency, liveness staleness; `/metrics` endpoint (prometheus text, no-store, unauthenticated, `METRICS_ENABLED` 404 toggle); `last_progress_at` heartbeat stamped per step |
 | `tests/unit/test_orphan_reaper.py` | 9 | H8 orphaned-workflow reaper — cancels ENQUEUED/PENDING `run_scan` workflows whose `ScanSession` is terminal/missing (phantom queue-slot holders); keeps live (pending/running) sessions; dry-run; fail-graceful (list/cancel errors swallowed) |
@@ -917,6 +918,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1864 tests** (1818 fast + 46 slow domain_security)
+**Total: 1870 tests** (1824 fast + 46 slow domain_security)
 
 Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.
