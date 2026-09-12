@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.16.0] — 2026-09-12
+
 ### Added
 - **Dashboard cross-link cards (finding-centric PR4).** Two clickable summary
   cards on the dashboard: **Open Issues** (open/acknowledged/in-progress by
@@ -1730,7 +1732,8 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.15.1...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.16.0...HEAD
+[v2.16.0]: https://github.com/cybersecify/OpenEASD/compare/v2.15.1...v2.16.0
 [v2.15.1]: https://github.com/cybersecify/OpenEASD/compare/v2.15.0...v2.15.1
 [v2.15.0]: https://github.com/cybersecify/OpenEASD/compare/v2.14.2...v2.15.0
 [v2.14.2]: https://github.com/cybersecify/OpenEASD/compare/v2.14.1...v2.14.2
