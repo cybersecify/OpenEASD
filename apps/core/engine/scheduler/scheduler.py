@@ -462,6 +462,39 @@ def purge_expired_blacklisted_tokens():
 
 
 # ---------------------------------------------------------------------------
+# System cron registry dispatch (H7)
+# ---------------------------------------------------------------------------
+
+def dispatch_scheduled(name: str, fn):
+    """Run a backbone cron job `fn` unless its ScheduledJob row is disabled, then
+    stamp last_run_at. The DBOS @scheduled decorator still owns timing/exactly-once;
+    this adds runtime enable/disable + last-run visibility via the editable table.
+
+    Fails OPEN: if the row is missing or the enabled-check errors, the job still
+    runs — a DB hiccup or a deleted row must never silently stop the backbone.
+    """
+    from apps.core.engine.scans.models import ScheduledJob
+
+    job = None
+    try:
+        job = ScheduledJob.objects.filter(name=name).first()
+        if job is not None and not job.enabled:
+            logger.info("[scheduler] job '%s' disabled via ScheduledJob — skipping", name)
+            return
+    except Exception:  # noqa: BLE001 — never let the registry lookup block a job
+        logger.warning("[scheduler] ScheduledJob lookup failed for '%s' — running anyway", name, exc_info=True)
+
+    fn()
+
+    if job is not None:
+        try:
+            job.last_run_at = django_tz.now()
+            job.save(update_fields=["last_run_at"])
+        except Exception:  # noqa: BLE001 — a stamp failure must not fail the job
+            logger.warning("[scheduler] could not stamp last_run_at for '%s'", name, exc_info=True)
+
+
+# ---------------------------------------------------------------------------
 # Scan retention / pruning (H3 — bounded result store)
 # ---------------------------------------------------------------------------
 
