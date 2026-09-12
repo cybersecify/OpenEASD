@@ -23,15 +23,17 @@ from apps.core.engine.scheduler.scheduler import (
 # ---------------------------------------------------------------------------
 
 class TestReapStuckScans:
-    def _make_session(self, status, age_minutes, domain="example.com"):
+    def _make_session(self, status, age_minutes, domain="example.com", progress_minutes_ago=None):
         from apps.core.engine.scans.models import ScanSession
         session = ScanSession.objects.create(
             domain=domain, scan_type="full", status=status,
         )
-        # Backdate start_time
-        ScanSession.objects.filter(pk=session.pk).update(
-            start_time=timezone.now() - timedelta(minutes=age_minutes)
-        )
+        # Backdate start_time; optionally set a liveness heartbeat (H10). Without
+        # a heartbeat a running scan is eligible for the no-progress reap.
+        fields = {"start_time": timezone.now() - timedelta(minutes=age_minutes)}
+        if progress_minutes_ago is not None:
+            fields["last_progress_at"] = timezone.now() - timedelta(minutes=progress_minutes_ago)
+        ScanSession.objects.filter(pk=session.pk).update(**fields)
         session.refresh_from_db()
         return session
 
@@ -86,16 +88,22 @@ class TestReapStuckScans:
         assert session.status == "pending"
 
     def test_running_scan_keeps_longer_timeout(self, db):
-        """A running scan older than the pending cutoff but under the running
-        timeout is NOT reaped — running scans keep the full SCAN_TIMEOUT budget."""
-        session = self._make_session("running", SCAN_PENDING_TIMEOUT_MINUTES + 5)
+        """A LIVE running scan (fresh heartbeat) older than the pending cutoff but
+        under the running timeout is NOT reaped — running scans keep the full
+        SCAN_TIMEOUT budget as long as they keep making progress (H10)."""
+        session = self._make_session(
+            "running", SCAN_PENDING_TIMEOUT_MINUTES + 5, progress_minutes_ago=1
+        )
         count = reap_stuck_scans()
         assert count == 0
         session.refresh_from_db()
         assert session.status == "running"
 
     def test_does_not_reap_recent_running_scan(self, db):
-        session = self._make_session("running", SCAN_TIMEOUT_MINUTES - 1)
+        # Live scan (fresh heartbeat) just under the 24h hard cap → kept.
+        session = self._make_session(
+            "running", SCAN_TIMEOUT_MINUTES - 1, progress_minutes_ago=1
+        )
         count = reap_stuck_scans()
         assert count == 0
         session.refresh_from_db()
@@ -116,7 +124,8 @@ class TestReapStuckScans:
     def test_reaps_multiple_stuck_scans(self, db):
         self._make_session("running", SCAN_TIMEOUT_MINUTES + 5, "a.com")
         self._make_session("pending", SCAN_TIMEOUT_MINUTES + 5, "b.com")
-        self._make_session("running", SCAN_TIMEOUT_MINUTES - 1, "c.com")  # recent — skip
+        # Live scan just under the hard cap (fresh heartbeat) — skipped.
+        self._make_session("running", SCAN_TIMEOUT_MINUTES - 1, "c.com", progress_minutes_ago=1)
         count = reap_stuck_scans()
         assert count == 2
 
