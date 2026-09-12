@@ -70,6 +70,23 @@ nothing; a first call with no prior `Alert` rows still sends.
 
 ## 4. Phase H2 — Queue / consumer observability (`/metrics`)
 
+> **Status:** ✅ Shipped — as a **DB-backed exporter** (deliberate deviation from the
+> in-process-counter design below). `apps/core/console/observability/metrics.py`
+> `render_metrics()` queries Postgres on each scrape and emits Prometheus text;
+> `GET /metrics` (web tier, unauthenticated like `/health`, `METRICS_ENABLED`
+> toggle, `no-store`). Metrics: `openeasd_scans{status}`,
+> `openeasd_scan_queue_depth`, `openeasd_findings{severity}`, `openeasd_domains`,
+> `openeasd_scan_last_journey_seconds` (enqueue=start_time → finalize=end_time,
+> principle #13), and `openeasd_seconds_since_last_progress` (worker liveness).
+> A `ScanSession.last_progress_at` **heartbeat** (migration `0015`) is stamped by
+> `_run_single_step` on every step completion — it powers both the liveness metric
+> and **H10**. **Why DB-backed, not in-process counters:** it needs no worker HTTP
+> listener and no cross-pod aggregation (the web↔worker problem the options below
+> wrestle with), is drift-free (reflects real stored state), and survives restarts.
+> Trade-off: point-in-time gauges + stored-timestamp journey latency, no per-request
+> histograms — sufficient at this scale. No new dependency. Tests:
+> `tests/unit/test_metrics.py` (9).
+
 **Problem:** long-running durable work with no runtime visibility.
 
 **Change:**

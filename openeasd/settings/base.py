@@ -338,6 +338,10 @@ SCAN_RETENTION_ENABLED = config("SCAN_RETENTION_ENABLED", default=False, cast=bo
 SCAN_RETENTION_KEEP_PER_DOMAIN = config("SCAN_RETENTION_KEEP_PER_DOMAIN", default=30, cast=int)
 SCAN_RETENTION_MAX_AGE_DAYS = config("SCAN_RETENTION_MAX_AGE_DAYS", default=180, cast=int)
 
+# Prometheus metrics endpoint (H2). Unauthenticated GET /metrics (counts only, no
+# finding detail) — restrict at the network/proxy layer. Set False to 404 it.
+METRICS_ENABLED = config("METRICS_ENABLED", default=True, cast=bool)
+
 # Scanner timeouts (seconds) — override in .env if needed
 SCANNER_DNS_TIMEOUT = config("SCANNER_DNS_TIMEOUT", default=5, cast=int)
 SCANNER_HTTP_TIMEOUT = config("SCANNER_HTTP_TIMEOUT", default=10, cast=int)
