@@ -387,3 +387,74 @@ def purge_expired_blacklisted_tokens():
     if deleted:
         logger.info(f"[token_purge] Deleted {deleted} expired outstanding token(s)")
     return deleted
+
+
+# ---------------------------------------------------------------------------
+# Scan retention / pruning (H3 — bounded result store)
+# ---------------------------------------------------------------------------
+
+def prune_old_scans():
+    """Delete old scan history to bound DB growth — OPT-IN (no-op unless
+    SCAN_RETENTION_ENABLED). Per domain, keep the newest
+    SCAN_RETENTION_KEEP_PER_DOMAIN scans AND any newer than
+    SCAN_RETENTION_MAX_AGE_DAYS; delete the rest. Invariants:
+
+    - The single newest scan per domain is ALWAYS kept (a domain never ends up
+      with zero scans, even if its newest is older than MAX_AGE_DAYS).
+    - pending/running scans are NEVER deleted (they may be in-flight); only
+      terminal scans are deletion candidates.
+    - Deletion cascades to the scan's assets/findings (FK on_delete=CASCADE);
+      the persistent asset_inventory + Issue registers keep the long-term
+      surface history, so pruning raw scans doesn't lose the over-time story.
+
+    Returns the number of ScanSessions deleted.
+    """
+    from django.conf import settings
+
+    if not getattr(settings, "SCAN_RETENTION_ENABLED", False):
+        return 0
+
+    from apps.core.engine.scans.models import ScanSession
+
+    keep_n = getattr(settings, "SCAN_RETENTION_KEEP_PER_DOMAIN", 30)
+    max_age_days = getattr(settings, "SCAN_RETENTION_MAX_AGE_DAYS", 180)
+    age_cutoff = (
+        django_tz.now() - django_tz.timedelta(days=max_age_days)
+        if max_age_days and max_age_days > 0
+        else None
+    )
+    terminal = ["completed", "failed", "partial", "cancelled"]
+
+    # order_by() clears ScanSession.Meta.ordering — otherwise the ordering field
+    # is added to the SELECT and defeats DISTINCT (one row per scan, not per domain).
+    domains = list(
+        ScanSession.objects.order_by().values_list("domain", flat=True).distinct()
+    )
+    to_delete = []
+    for domain in domains:
+        # Newest-first; only terminal scans are candidates for deletion.
+        sessions = list(
+            ScanSession.objects.filter(domain=domain, status__in=terminal)
+            .order_by("-start_time")
+            .values_list("id", "start_time")
+        )
+        for idx, (sid, start_time) in enumerate(sessions):
+            if idx == 0:
+                continue  # always keep the newest terminal scan for the domain
+            if idx < keep_n:
+                continue  # within the keep-N window
+            if age_cutoff is not None and start_time >= age_cutoff:
+                continue  # within the max-age window
+            to_delete.append(sid)
+
+    if not to_delete:
+        return 0
+
+    deleted, _ = ScanSession.objects.filter(id__in=to_delete).delete()
+    # `deleted` counts cascaded rows too; report the ScanSession count explicitly.
+    session_count = len(to_delete)
+    logger.info(
+        "[retention] Pruned %d old scan(s) across %d domain(s) (keep=%d, max_age_days=%s)",
+        session_count, len(set(domains)), keep_n, max_age_days,
+    )
+    return session_count

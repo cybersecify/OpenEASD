@@ -203,3 +203,17 @@ def scheduled_token_purge(scheduled_time, actual_time) -> None:
     from apps.core.engine.scheduler.scheduler import purge_expired_blacklisted_tokens
 
     purge_expired_blacklisted_tokens()
+
+
+_SCAN_PRUNE_CRON = getattr(settings, "SCAN_PRUNE_CRON", "30 3 * * *")
+
+
+@DBOS.scheduled(_SCAN_PRUNE_CRON)
+@DBOS.workflow(name="scheduled_scan_prune")
+def scheduled_scan_prune(scheduled_time, actual_time) -> None:
+    """Prune old scan history (H3). A hygiene cron like token-purge — always
+    registered, but a no-op unless SCAN_RETENTION_ENABLED (the function self-gates),
+    so it is NOT tied to SCHEDULED_SCANS_ENABLED."""
+    from apps.core.engine.scheduler.scheduler import prune_old_scans
+
+    prune_old_scans()
