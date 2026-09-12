@@ -725,3 +725,80 @@ class TestPhaseParallelExecution:
         assert WorkflowStepResult.objects.get(run=run, tool="tls_checker").status == "completed"
         # Phase-10 tool was skipped
         assert WorkflowStepResult.objects.get(run=run, tool="nuclei").status == "skipped"
+
+
+# ---------------------------------------------------------------------------
+# H5 — idempotent re-run of a crash-interrupted tool (no duplicate Findings)
+# ---------------------------------------------------------------------------
+
+class TestResumeIdempotencyH5:
+    """_run_single_step must delete a tool's prior Findings before re-running it
+    on a crash-resume (non-terminal step row), so Finding writes converge instead
+    of duplicating (bulk_create has no unique constraint)."""
+
+    def _finding_runner(self, n):
+        """A runner that writes n Findings for the session (like a real tool)."""
+        def _run(session):
+            from apps.core.data.findings.models import Finding
+            objs = [
+                Finding(
+                    session=session, source="nmap", check_type="cve",
+                    severity="high", title=f"CVE-{i}", description="d",
+                    remediation="r", target="1.2.3.4:22",
+                )
+                for i in range(n)
+            ]
+            Finding.objects.bulk_create(objs)
+            return objs
+        return _run
+
+    def test_crash_resume_does_not_duplicate_findings(self, transactional_db, run):
+        from apps.core.data.findings.models import Finding
+        from apps.core.engine.workflows.runner import _run_single_step
+
+        # Simulate a crash mid-run: a non-terminal step row + 2 partially-written findings.
+        WorkflowStepResult.objects.create(
+            run=run, tool="nmap", order=1, status="running",
+            started_at=timezone.now(),
+        )
+        self._finding_runner(2)(run.session)
+        assert Finding.objects.filter(session=run.session, source="nmap").count() == 2
+
+        # Resume: re-run writes 3 findings. Old 2 must be cleared first → exactly 3.
+        with _patch_get_runner({"nmap": self._finding_runner(3)}):
+            _run_single_step(run, run.session, "nmap", order=1)
+
+        assert Finding.objects.filter(session=run.session, source="nmap").count() == 3
+        assert WorkflowStepResult.objects.get(run=run, tool="nmap").status == "completed"
+
+    def test_completed_tool_is_not_rerun_and_findings_kept(self, transactional_db, run):
+        from apps.core.data.findings.models import Finding
+        from apps.core.engine.workflows.runner import _run_single_step
+
+        # A tool that already COMPLETED this run: its row is terminal, findings stay.
+        WorkflowStepResult.objects.create(
+            run=run, tool="nmap", order=1, status="completed",
+            started_at=timezone.now(), finished_at=timezone.now(),
+        )
+        self._finding_runner(2)(run.session)
+
+        called = {"n": 0}
+        def _should_not_run(session):
+            called["n"] += 1
+            return []
+        with _patch_get_runner({"nmap": _should_not_run}):
+            _run_single_step(run, run.session, "nmap", order=1)
+
+        assert called["n"] == 0  # early-return: tool not re-executed
+        assert Finding.objects.filter(session=run.session, source="nmap").count() == 2
+
+    def test_first_run_writes_findings_normally(self, transactional_db, run):
+        from apps.core.data.findings.models import Finding
+        from apps.core.engine.workflows.runner import _run_single_step
+
+        # No prior step row → fresh run, nothing to delete, findings written once.
+        with _patch_get_runner({"nmap": self._finding_runner(2)}):
+            _run_single_step(run, run.session, "nmap", order=1)
+
+        assert Finding.objects.filter(session=run.session, source="nmap").count() == 2
+        assert WorkflowStepResult.objects.get(run=run, tool="nmap").status == "completed"

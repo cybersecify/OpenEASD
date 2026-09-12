@@ -82,6 +82,21 @@ def _run_single_step(run, session, tool: str, order: int) -> None:
         step_result.save(update_fields=[
             "order", "status", "started_at", "finished_at", "error", "findings_count",
         ])
+        # Idempotency (H5, pipeline principle #4): a non-terminal existing row means
+        # this tool was interrupted mid-run (worker crash), so it is about to be
+        # RE-executed. Finding writes use bulk_create (append, no unique constraint),
+        # so any Findings the tool wrote before the crash would be DUPLICATED by the
+        # re-run. Delete this tool's prior Findings for the session first, so the
+        # re-run converges to the same state (delete-then-insert). source == the
+        # registry tool key. Assets need no cleanup — they are (session, …)-unique
+        # and written with ignore_conflicts=True, so re-writes are already idempotent.
+        from apps.core.data.findings.models import Finding
+        deleted, _ = Finding.objects.filter(session=session, source=tool).delete()
+        if deleted:
+            logger.info(
+                "[workflow:%s] resume: cleared %d stale %s finding(s) before re-run",
+                run.id, deleted, tool,
+            )
     else:
         step_result = WorkflowStepResult.objects.create(
             run=run,

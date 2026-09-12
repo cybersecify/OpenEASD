@@ -164,6 +164,17 @@ terminal/absent DBOS workflow past cutoff is reaped as today.
 
 ## 5c. Phase H5 — idempotent phase-group steps (pipeline principle #4)
 
+> **Status:** ✅ Shipped — implemented at **per-tool** granularity (finer than the
+> per-group option A), in `runner.py::_run_single_step`. The existing F1b resume
+> guard already skips tools that reached a terminal state and re-runs only a tool
+> left non-terminal by a crash; in exactly that re-run branch we now
+> **delete the tool's prior `Finding` rows for the session** (`source == tool`)
+> before re-executing, so Finding writes (bulk_create, no unique constraint)
+> converge instead of duplicating. Assets need no cleanup — they are
+> `(session, …)`-unique and written with `ignore_conflicts=True`, so re-writes are
+> already idempotent. Tests: `test_workflow_runner.py::TestResumeIdempotencyH5`
+> (3: crash-resume no-dup, completed-tool-not-rerun, first-run-normal). No migration.
+
 **Problem:** `_run_phase_group` is a `@DBOS.step` that runs *all* tools in a phase.
 DBOS skips a step that **completed**, but a step that **crashes mid-run** re-runs
 the whole group on resume — so a tool that already wrote its rows before the crash

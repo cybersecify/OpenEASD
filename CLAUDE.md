@@ -890,7 +890,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_exposure_score.py` | 38 | Exposure Score — formula (clean=0, weights, saturation cap), grade bands, trend delta (up/down/flat/no-baseline), builder populates ScanSummary, insights + dashboard API fields, PDF report exposure block |
 | `tests/unit/test_web_checker.py` | 58 | Headers, cookies, CORS, disclosure, collector; security.txt (RFC 9116) — expires parsing, SPA-catch-all guard, missing=info/expired=low findings, reachable-vs-absent (unreachable ⇒ no false "missing"), apex-only collection + fail-graceful |
 | `tests/unit/test_passive_scan.py` | 27 | registry `active` classification (domain_security passive / domain_probe active), `is_passive_tool_set`, Credential Exposure grouping, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
-| `tests/unit/test_workflow_runner.py` | 35 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism (concurrent same-phase; LOW_MEMORY serialises heavy phases but light phase-1 tools still parallel) |
+| `tests/unit/test_workflow_runner.py` | 38 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism (concurrent same-phase; LOW_MEMORY serialises heavy phases but light phase-1 tools still parallel); **H5 resume idempotency** (crash-resume re-run deletes the tool's stale Findings first → no duplicates; completed tool not re-run; first run normal) |
 | `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow with the complete 18-tool set (migration 0021), idempotent gap-fill |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/unit/test_update_check.py` | 22 | Update-available check — version parse/compare, cached GitHub fetch, fail-graceful on timeout/HTTP-error/bad-payload, endpoint shape |
@@ -914,6 +914,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1840 tests** (1794 fast + 46 slow domain_security)
+**Total: 1843 tests** (1797 fast + 46 slow domain_security)
 
 Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.
