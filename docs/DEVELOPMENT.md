@@ -162,6 +162,21 @@ version and re-apply. Because tags are immutable, this is deterministic — the
 > The k8s Deployments use **bare image names**; the tag is set *only* by
 > `kustomization.yaml` (`images[].newTag`). Bump it in one place to promote.
 
+> ⚠️ **Migration-safe deploys: bump `newTag` + `apply -k` — do NOT `kubectl set
+> image ...web=…`.** The web Deployment has **two** containers on the web image:
+> an **`init` container that runs `migrate`** and the `web` container that runs
+> gunicorn. `kubectl set image deploy/openeasd-web web=…:vX.Y.Z` updates *only*
+> the `web` container — the `init` container keeps the **old** image, so on a
+> release that adds a migration, `migrate` runs with the **old code** and the new
+> migration is **silently skipped** (the app boots on the new version against a
+> schema missing the new table/column). `kustomize` `newTag` rewrites the image
+> for *every* container (init + web + worker) at once, so `apply -k` always
+> migrates with the new code. If you must hot-patch with `set image` (a
+> migration-less patch only), set the init container too:
+> `kubectl set image deploy/openeasd-web init=…:vX.Y.Z web=…:vX.Y.Z`. After any
+> deploy that includes a migration, verify it applied:
+> `kubectl exec deploy/openeasd-web -c web -- python manage.py showmigrations`.
+
 ## Where things live
 
 | Concern | File |
