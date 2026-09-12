@@ -257,8 +257,10 @@ def reap_stuck_scans():
     reap_msg = "reaped by watchdog after timeout"
     partial_count = 0
     failed_count = 0
+    reaped_ids = []
 
     for session in stuck_qs:
+        reaped_ids.append(session.id)
         run = getattr(session, "workflow_run", None)
         completed_step = False
         if run is not None:
@@ -300,7 +302,55 @@ def reap_stuck_scans():
             f"[watchdog] Reaped {total} stuck scan(s) — "
             f"{partial_count} as partial (kept findings), {failed_count} as failed"
         )
+    # H4/H9 reconcile (source-fix): a scan we just reaped to terminal leaves its
+    # DBOS run_scan workflow still ENQUEUED/PENDING — a phantom that holds a
+    # scans-queue concurrency slot. Cancel those workflows inline, in the SAME
+    # pass that reaped the sessions, so a phantom never outlives its scan
+    # (rather than depending on reap_orphaned_scan_workflows running afterwards —
+    # that remains the periodic safety net for anything missed). The heartbeat
+    # reap (H10) is the liveness signal that keeps us from reaping a scan DBOS is
+    # legitimately still advancing, which is H4's "don't fight DBOS resume" goal.
+    _cancel_workflows_for_sessions(reaped_ids)
     return total
+
+
+def _cancel_workflows_for_sessions(session_ids) -> int:
+    """Cancel the ENQUEUED/PENDING run_scan DBOS workflows for the given sessions
+    (matched by deduplication_id ``scan-{id}``). Fail-graceful — logs and returns
+    0 on any error so it never aborts the watchdog sweep. Idempotent: cancelling
+    an already-terminal workflow is a no-op."""
+    if not session_ids:
+        return 0
+    try:
+        from apps.core.engine.durable.client import get_client
+        from apps.core.engine.durable.constants import QUEUE_NAME
+
+        client = get_client()
+        workflows = client.list_workflows(
+            name="run_scan",
+            status=["ENQUEUED", "PENDING"],
+            queue_name=QUEUE_NAME,
+            load_input=False,
+            load_output=False,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("[watchdog] could not list run_scan workflows to cancel", exc_info=True)
+        return 0
+
+    wanted = {f"scan-{sid}" for sid in session_ids}
+    cancelled = 0
+    for wf in workflows:
+        if (getattr(wf, "deduplication_id", None) or "") in wanted:
+            try:
+                client.cancel_workflow(wf.workflow_id)
+                cancelled += 1
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "[watchdog] failed to cancel workflow %s", wf.workflow_id, exc_info=True
+                )
+    if cancelled:
+        logger.info("[watchdog] cancelled %d DBOS workflow(s) for reaped scan(s)", cancelled)
+    return cancelled
 
 
 # ---------------------------------------------------------------------------
