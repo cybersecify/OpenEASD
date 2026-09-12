@@ -282,6 +282,99 @@ def reap_stuck_scans():
 
 
 # ---------------------------------------------------------------------------
+# Orphaned-workflow reaper (H8 — free jammed `scans`-queue concurrency slots)
+# ---------------------------------------------------------------------------
+
+# A ScanSession is "live" only while it is pending or running; any other status
+# is terminal. A DBOS run_scan workflow that is still ENQUEUED/PENDING while its
+# ScanSession is terminal (or gone) is a *phantom*: it occupies a scarce
+# `scans`-queue concurrency slot but has no live work behind it. With
+# concurrency=2, a couple of phantoms permanently jam the queue so no new scan
+# dequeues (observed 2026-09-12: a worker rollout orphaned in-flight run_scan
+# workflows pinned to the old app-version; their sessions were later reaped to
+# `failed` by reap_stuck_scans, but the DBOS workflows stayed PENDING and held
+# both slots). This reaper cancels those phantoms so the slots free.
+#
+# It only ever cancels a workflow whose session is NOT live, so it can never kill
+# a legitimately in-flight scan — making it safe to run unattended from the
+# watchdog cron (no app-version guessing, no rolling-deploy race). Pending/running
+# version-orphans are first flipped to terminal by reap_stuck_scans (pending after
+# SCAN_PENDING_TIMEOUT_MINUTES), after which this reaper clears their workflows.
+_SCAN_ACTIVE_STATUSES = {"pending", "running"}
+
+
+def reap_orphaned_scan_workflows(apply: bool = True):
+    """Cancel ENQUEUED/PENDING `run_scan` DBOS workflows whose ScanSession is
+    terminal or missing (phantoms holding a `scans`-queue concurrency slot).
+
+    Returns a list of ``(workflow_id, deduplication_id, session_status)`` tuples
+    that were (or, when ``apply=False``, would be) cancelled. Fail-graceful: any
+    error is logged and an empty list returned — it runs inside the watchdog cron
+    and must never abort the sweep.
+    """
+    try:
+        from apps.core.engine.durable.client import get_client
+        from apps.core.engine.durable.constants import QUEUE_NAME
+        from apps.core.engine.scans.models import ScanSession
+
+        client = get_client()
+        workflows = client.list_workflows(
+            name="run_scan",
+            status=["ENQUEUED", "PENDING"],
+            queue_name=QUEUE_NAME,
+            load_input=False,
+            load_output=False,
+        )
+    except Exception:  # noqa: BLE001 — never abort the watchdog sweep
+        logger.warning("[orphan-reaper] could not list run_scan workflows", exc_info=True)
+        return []
+
+    reaped = []
+    for wf in workflows:
+        dedup = getattr(wf, "deduplication_id", None) or ""
+        # enqueue_scan() always sets deduplication_id="scan-{session_id}".
+        session_id = None
+        if dedup.startswith("scan-"):
+            try:
+                session_id = int(dedup[len("scan-"):])
+            except ValueError:
+                session_id = None
+
+        if session_id is None:
+            # No resolvable session handle — leave it; we only reap workflows we
+            # can prove are orphaned (don't guess about un-mappable ones).
+            continue
+
+        status = (
+            ScanSession.objects.filter(id=session_id)
+            .values_list("status", flat=True)
+            .first()
+        )
+        session_is_live = status in _SCAN_ACTIVE_STATUSES
+        if session_is_live:
+            continue  # a pending/running session may still be legitimate work
+
+        # status is None (session deleted) or terminal → phantom slot holder.
+        reaped.append((wf.workflow_id, dedup, status or "missing"))
+        if apply:
+            try:
+                client.cancel_workflow(wf.workflow_id)
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "[orphan-reaper] failed to cancel workflow %s (%s)",
+                    wf.workflow_id, dedup, exc_info=True,
+                )
+
+    if reaped:
+        verb = "Cancelled" if apply else "Would cancel"
+        logger.warning(
+            "[orphan-reaper] %s %d phantom run_scan workflow(s) holding a queue slot: %s",
+            verb, len(reaped), ", ".join(f"{d}({s})" for _, d, s in reaped),
+        )
+    return reaped
+
+
+# ---------------------------------------------------------------------------
 # JWT token cleanup
 # ---------------------------------------------------------------------------
 
