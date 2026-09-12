@@ -130,3 +130,29 @@ class ScheduledScan(models.Model):
 
     def __str__(self):
         return f"{self.kind} scan {self.domain} @ {self.next_run}"
+
+
+class ScheduledJob(models.Model):
+    """System cron registry (H7) — one editable row per unattended backbone job
+    (daily scan, monitoring/user sweeps, watchdog, token purge, scan prune).
+
+    Timing still comes from the DBOS ``@scheduled`` decorators (DBOS owns the tick
+    + exactly-once), so ``cron`` here is the informational/current schedule. What
+    this table adds is runtime control an operator can change in Django admin
+    WITHOUT a deploy: ``enabled`` toggles a job on/off on its next tick, and
+    ``last_run_at`` gives visibility into when it last fired. Rows are seeded on
+    migrate to match the deployed crons; a missing row fails OPEN (the job runs),
+    so deleting a row never silently disables a job.
+    """
+
+    name = models.CharField(max_length=64, unique=True)
+    cron = models.CharField(max_length=100, blank=True, default="")  # informational
+    enabled = models.BooleanField(default=True)
+    description = models.CharField(max_length=255, blank=True, default="")
+    last_run_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} ({'on' if self.enabled else 'off'})"

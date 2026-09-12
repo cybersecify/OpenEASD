@@ -282,6 +282,21 @@ touches the durable core, so do it deliberately (not under time pressure).
 
 ## 5e. Phase H7 — `ScheduledJob` table for system crons (pipeline principle #8)
 
+> **Status:** ✅ Shipped as the **lower-risk slice**. A `ScheduledJob` model
+> (`scans` app: `name`, `cron`, `enabled`, `description`, `last_run_at`; migration
+> `0016` + seed `0017`; Django-admin editable with inline `enabled` toggle) now
+> controls each backbone cron. Each `@DBOS.scheduled` body dispatches through
+> `scheduler.dispatch_scheduled(name, fn)`, which honours the row's `enabled` flag
+> (runtime on/off, no deploy) and stamps `last_run_at` (visibility) — **failing
+> OPEN** (missing row or lookup error ⇒ job still runs, never silently disabled).
+> **Deliberate deviation:** DBOS `@scheduled` still owns the tick + exactly-once, so
+> `cron` here is informational and changing a job's *timing* still needs a deploy.
+> The full runtime-cron-rescheduling dispatcher (one sweep replacing every cron)
+> was **not** done: it would mean reimplementing DBOS's per-cron exactly-once in a
+> hand-rolled loop — backbone risk disproportionate to the benefit for a single-user
+> tool whose schedules rarely change. Runtime enable/disable + last-run visibility
+> is the high-value, low-risk 80%. Tests: `tests/unit/test_scheduled_jobs.py` (7).
+
 **Problem:** the system crons (daily scan, monitoring/user sweeps, watchdog, token
 purge) are `@DBOS.scheduled` decorators with cron strings from `settings` — changing
 a schedule needs a deploy or env change. Principle #8: *"put every timed job in one

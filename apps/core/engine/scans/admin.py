@@ -2,7 +2,19 @@
 
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import ScanSession, ScanDelta
+from .models import ScanSession, ScanDelta, ScheduledJob
+
+
+@admin.register(ScheduledJob)
+class ScheduledJobAdmin(admin.ModelAdmin):
+    """H7 — runtime enable/disable + last-run visibility for the system crons.
+    Timing (`cron`) is informational (DBOS owns the tick); toggle `enabled` to
+    turn a backbone job on/off without a deploy."""
+    list_display = ["name", "enabled", "cron", "last_run_at", "description"]
+    list_filter = ["enabled"]
+    list_editable = ["enabled"]
+    readonly_fields = ["last_run_at"]
+    search_fields = ["name", "description"]
 
 
 @admin.register(ScanSession)
