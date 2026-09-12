@@ -32,6 +32,14 @@ SCAN_TIMEOUT_MINUTES = _config("SCAN_TIMEOUT_MINUTES", default=1440, cast=int)  
 # that legitimately queue scans for long stretches behind long-running ones.
 SCAN_PENDING_TIMEOUT_MINUTES = _config("SCAN_PENDING_TIMEOUT_MINUTES", default=60, cast=int)
 
+# H10 — no-progress watchdog. A running scan that has not completed a step (no
+# heartbeat on ScanSession.last_progress_at) for this many minutes is treated as
+# wedged and reaped, freeing its scarce concurrency slot in minutes rather than
+# waiting out the 24h hard cap (SCAN_TIMEOUT_MINUTES). Must stay COMFORTABLY above
+# the longest single-tool runtime (nuclei/amass can run tens of minutes and the
+# heartbeat only ticks between steps) so a slow-but-alive scan is never killed.
+SCAN_NO_PROGRESS_MINUTES = _config("SCAN_NO_PROGRESS_MINUTES", default=60, cast=int)
+
 
 # ---------------------------------------------------------------------------
 # Core schedule setup (legacy no-op — schedules are DBOS @scheduled workflows)
@@ -227,9 +235,23 @@ def reap_stuck_scans():
     now = django_tz.now()
     running_cutoff = now - django_tz.timedelta(minutes=SCAN_TIMEOUT_MINUTES)
     pending_cutoff = now - django_tz.timedelta(minutes=SCAN_PENDING_TIMEOUT_MINUTES)
+    no_progress_cutoff = now - django_tz.timedelta(minutes=SCAN_NO_PROGRESS_MINUTES)
+    # A running scan is stuck if EITHER it has exceeded the 24h hard cap
+    # (SCAN_TIMEOUT_MINUTES) OR it has made no progress for
+    # SCAN_NO_PROGRESS_MINUTES (H10). The heartbeat (ScanSession.last_progress_at,
+    # stamped on every step completion) is the liveness signal: a slow-but-alive
+    # scan keeps it fresh and is NOT reaped; a wedged scan goes stale and is freed
+    # in minutes instead of a day. NULL heartbeat (no step has finished yet) falls
+    # back to start_time, so a scan that never completes a first step is still
+    # reaped once it's stale. NO_PROGRESS must exceed the longest single-tool
+    # runtime (heartbeat is per-step), hence a generous default.
+    running_stuck = Q(status="running") & (
+        Q(start_time__lt=running_cutoff)
+        | Q(last_progress_at__lt=no_progress_cutoff)
+        | Q(last_progress_at__isnull=True, start_time__lt=no_progress_cutoff)
+    )
     stuck_qs = ScanSession.objects.filter(
-        Q(status="running", start_time__lt=running_cutoff)
-        | Q(status="pending", start_time__lt=pending_cutoff)
+        running_stuck | Q(status="pending", start_time__lt=pending_cutoff)
     ).select_related("workflow_run")
 
     reap_msg = "reaped by watchdog after timeout"

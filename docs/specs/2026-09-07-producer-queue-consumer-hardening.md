@@ -398,6 +398,17 @@ in-flight) is untouched; reconciler is idempotent (re-running cancels nothing ne
 
 ## 5h. Phase H10 — short "no-progress" liveness watchdog (distinct from the 24h cap)
 
+> **Status:** ✅ Shipped — `reap_stuck_scans` now reaps a `running` scan when its
+> `last_progress_at` heartbeat (H2) is older than `SCAN_NO_PROGRESS_MINUTES`
+> (default 60), in addition to the 24h `SCAN_TIMEOUT_MINUTES` hard cap. A
+> slow-but-alive scan keeps the heartbeat fresh (stamped per step completion) and
+> is not reaped; a NULL heartbeat falls back to `start_time`. The default stays
+> comfortably above the longest single-tool runtime (heartbeat only ticks between
+> steps). The existing orphan reaper wired after `reap_stuck_scans` then cancels the
+> reaped scan's DBOS workflow (frees the slot). Tests:
+> `tests/unit/test_no_progress_watchdog.py` (5) + updated `test_scheduler.py`
+> (live scans now carry a heartbeat). No migration (uses H2's field).
+
 > **Origin:** same incident exposed the gap. `SCAN_TASK_TIMEOUT` / the watchdog
 > cutoff is ~**24h** (deliberately high so a healthy long scan is never flipped
 > mid-run, per H4). But that means a **genuinely wedged** scan — or a phantom
