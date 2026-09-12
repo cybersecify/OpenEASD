@@ -259,6 +259,21 @@ adapter). **Priority:** medium — operator-experience win.
 
 ## 5f. Phase H8 — drain / quiesce the queue before a worker rollout (deploy safety)
 
+> **Status:** ✅ Slice 1 shipped — the **safe, race-free** core. A
+> `reap_orphaned_scan_workflows()` reaper (`scheduler.py`) cancels ENQUEUED/PENDING
+> `run_scan` workflows whose `ScanSession` is terminal/missing (phantoms holding a
+> `scans`-queue slot); it runs automatically in the `scheduled_watchdog` cron
+> (after `reap_stuck_scans` flips stale sessions terminal) and on demand via
+> `manage.py reap_orphan_scans [--dry-run]`. Drain runbook added to
+> `docs/DEVELOPMENT.md` (`SCHEDULED_SCANS_ENABLED=false` + wait + post-rollout
+> reap). Tests: `tests/unit/test_orphan_reaper.py` (9). **Deferred:** the
+> *auto version-orphan reaper on worker startup* (option 2a) — it has a
+> rolling-deploy race (a still-live old-version worker's in-flight scans) and
+> needs `DBOS__APPVERSION` pinning we don't have; the terminal-session reaper
+> subsumes its practical need (a pending version-orphan is reaped to terminal by
+> `reap_stuck_scans` after `SCAN_PENDING_TIMEOUT_MINUTES`, then cancelled here).
+> The *running*-session version-orphan (held up to the 24h cap) is **H10's** gap.
+
 > **Origin:** a real 2026-09-12 preprod incident. The v2.16.0 rollout landed
 > **while scans were running**. DBOS pins an in-flight workflow to the code's
 > **app-version hash**; the new worker computed a different hash, so it could

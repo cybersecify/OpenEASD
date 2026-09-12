@@ -177,6 +177,24 @@ version and re-apply. Because tags are immutable, this is deterministic — the
 > deploy that includes a migration, verify it applied:
 > `kubectl exec deploy/openeasd-web -c web -- python manage.py showmigrations`.
 
+> ⚠️ **Drain scans before rolling the worker, or the queue can jam.** A worker
+> rollout that lands **while scans are running** orphans the in-flight `run_scan`
+> DBOS workflows: the new worker's code hash differs from the old one's, so it
+> **cannot recover** them, and — because the `scans` queue is `concurrency=2` —
+> a couple of stranded `PENDING` workflows **occupy both slots permanently** →
+> every new scan sits `pending` forever (observed 2026-09-12; see the
+> producer→queue→consumer hardening plan, **H8**). Safe rollout:
+> 1. Quiesce new enqueues during the window: `SCHEDULED_SCANS_ENABLED=false`.
+> 2. Wait for in-flight scans to finish (the Scans page, or check for
+>    `running`/`pending` sessions) before rolling the worker.
+> 3. After the rollout, clear any phantom slot-holders immediately:
+>    `kubectl exec deploy/openeasd-web -c web -- python manage.py reap_orphan_scans`
+>    (add `--dry-run` to preview). It cancels only `run_scan` workflows whose
+>    `ScanSession` is already terminal, so it can never kill a live scan. The
+>    `scheduled_watchdog` cron also runs this reaper automatically every cycle, so
+>    a skipped drain self-heals within ~`SCAN_PENDING_TIMEOUT_MINUTES` + one
+>    watchdog interval — the manual command just makes it instant.
+
 ## Where things live
 
 | Concern | File |

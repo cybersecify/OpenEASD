@@ -185,9 +185,16 @@ def scheduled_user_scans_sweep(scheduled_time, actual_time) -> None:
 @DBOS.scheduled(_WATCHDOG_CRON)
 @DBOS.workflow(name="scheduled_watchdog")
 def scheduled_watchdog(scheduled_time, actual_time) -> None:
-    from apps.core.engine.scheduler.scheduler import reap_stuck_scans
+    from apps.core.engine.scheduler.scheduler import (
+        reap_orphaned_scan_workflows,
+        reap_stuck_scans,
+    )
 
+    # Order matters: reap_stuck_scans first flips stale pending/running sessions
+    # to terminal (failed/partial), then reap_orphaned_scan_workflows cancels the
+    # now-phantom DBOS workflows still holding a `scans`-queue concurrency slot.
     reap_stuck_scans()
+    reap_orphaned_scan_workflows()
 
 
 @DBOS.scheduled(_TOKEN_PURGE_CRON)
