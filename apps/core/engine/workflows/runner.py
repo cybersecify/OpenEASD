@@ -130,6 +130,13 @@ def _run_single_step(run, session, tool: str, order: int) -> None:
     step_result.finished_at = django_tz.now()
     step_result.save(update_fields=["status", "findings_count", "error", "finished_at"])
 
+    # Liveness heartbeat (H2): a step just finished, so the scan is making
+    # progress. Stamp the session (targeted UPDATE, no full save — safe from the
+    # parallel tool threads) so the no-progress watchdog (H10) can distinguish a
+    # slow-but-alive scan from a wedged one.
+    from apps.core.engine.scans.models import ScanSession
+    ScanSession.objects.filter(id=session.id).update(last_progress_at=django_tz.now())
+
 
 def resolve_phase_groups(workflow, only_tools: list | None = None) -> list:
     """The ordered list of phase groups a run will execute: enabled tools,

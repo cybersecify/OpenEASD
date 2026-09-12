@@ -39,6 +39,11 @@ class ScanSession(models.Model):
     subscan_tools = models.JSONField(null=True, blank=True)
     start_time = models.DateTimeField(auto_now_add=True)
     end_time = models.DateTimeField(null=True, blank=True)
+    # Liveness heartbeat (H2): stamped each time a tool step completes, so a
+    # scan that is slow-but-progressing can be told apart from a wedged one. The
+    # short no-progress watchdog (H10) reaps on a stale heartbeat; the 24h cap
+    # still bounds a heartbeating-but-overlong run. NULL until the first step.
+    last_progress_at = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", db_index=True)
     total_findings = models.IntegerField(default=0)
 

@@ -3,11 +3,24 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.urls import path, include, re_path
 
 from apps.core.console.api.ninja import api
+
+
+def metrics(request):
+    """Prometheus metrics (H2). Unauthenticated like /health (counts only, no
+    finding detail) — restrict at the network layer. Toggle via METRICS_ENABLED.
+    Served by the web tier but reflects worker state too (DB-backed exporter)."""
+    if not getattr(settings, "METRICS_ENABLED", True):
+        return HttpResponse(status=404)
+    from apps.core.console.observability.metrics import render_metrics
+
+    resp = HttpResponse(render_metrics(), content_type="text/plain; version=0.0.4")
+    resp["Cache-Control"] = "no-store"
+    return resp
 
 
 def health(request):
@@ -40,8 +53,9 @@ def spa(request):
 
 urlpatterns = [
     path("health/", health),
+    path("metrics/", metrics),
     path("admin/", admin.site.urls),
     path("api/", api.urls),
     path("reports/", include("apps.core.console.reports.urls")),
-    re_path(r'^(?!api/|admin|static/|media/).*$', spa, name='spa'),
+    re_path(r'^(?!api/|admin|static/|media/|metrics/).*$', spa, name='spa'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
