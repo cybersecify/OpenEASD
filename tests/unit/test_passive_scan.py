@@ -220,16 +220,18 @@ class TestPassiveScanAuthorizationGate:
             })
         assert resp.status_code == 201
 
-    def test_scheduled_passive_workflow_id_ignored_gate_applies(self, auth_client, domain):
-        # Scheduled (once/recurring) scans run the default active workflow
-        # regardless of any workflow_id, so the gate must still apply.
+    def test_scheduled_workflow_id_rejected(self, auth_client, domain):
+        # Scheduled (once/recurring) scans can't take a workflow_id — ScheduledScan
+        # has no workflow field, so rather than silently ignore it (and quietly run
+        # the default active Full Scan), the API now rejects it with 400 (L-b fix).
         resp = post_json(auth_client, "/api/scans/start/", {
             "domain": "example.com",
             "schedule_type": "once",
             "scheduled_at": "2030-01-01T03:00:00",
             "workflow_id": self._passive_workflow_id(),
         })
-        assert resp.status_code == 403
+        assert resp.status_code == 400
+        assert "workflow_id" in resp.json()["error"]["message"]
 
     def test_passive_tools_subset_bypasses_authorization(self, auth_client, domain):
         # A category-scoped scan of only passive tools on an unauthorized domain

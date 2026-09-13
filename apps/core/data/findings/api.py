@@ -79,10 +79,18 @@ def list_findings(
     if not session_id:
         base_qs = base_qs.filter(session_id__in=latest_ids)
 
+    # Open-findings-by-severity KPI. Scope it to the SAME domain/source filters as
+    # the list (else `?domain=foo` shows a foo list with whole-fleet counts). Stays
+    # status="open" by definition and keeps a full severity breakdown, so the `status`
+    # and `severity` list-filters intentionally don't narrow it.
     if session_id:
         count_base = Finding.objects.filter(session_id=session_id, status="open")
     else:
         count_base = Finding.objects.filter(session_id__in=latest_ids, status="open")
+    if domain:
+        count_base = count_base.filter(session__domain__icontains=domain)
+    if source:
+        count_base = count_base.filter(source=source)
     count_open_critical = count_base.filter(severity="critical").count()
     count_open_high     = count_base.filter(severity="high").count()
     count_open_medium   = count_base.filter(severity="medium").count()

@@ -260,6 +260,9 @@ def list_scans(request, domain: str = "", status: str = "", page: int = 1):
     if domain:
         qs = qs.filter(domain__icontains=domain)
     if status:
+        valid = {s for s, _ in ScanSession.STATUS_CHOICES}
+        if status not in valid:
+            raise HttpError(400, f"status must be one of: {', '.join(sorted(valid))}")
         qs = qs.filter(status=status)
 
     paginator = Paginator(qs, 25)
@@ -299,6 +302,12 @@ def start_scan(request, data: ScanStartRequest):
     # whether authorization is required BEFORE the gate. A passive-only workflow
     # never sends packets to the target, so it needs no DomainAuthorization.
     workflow = None
+    if data.workflow_id is not None and data.schedule_type != "now":
+        # Scheduled scans always run the default Full Scan (ScheduledScan has no
+        # workflow field). Reject rather than silently ignore a chosen workflow —
+        # symmetric with the `tools` guard below, and avoids the surprise of
+        # scheduling a "Passive Scan" that quietly runs the active Full Scan.
+        raise HttpError(400, "workflow_id may only be given for an immediate (now) scan")
     if data.schedule_type == "now" and data.workflow_id is not None:
         from apps.core.engine.workflows.models import Workflow
         try:
@@ -388,6 +397,11 @@ def list_deltas(request, domain: str = "", change_type: str = "", page: int = 1)
     """Recent scan-to-scan changes (new / removed findings), newest first — the
     'changes since last scan' feed. Filter by domain / change_type."""
     from apps.core.engine.scans.models import ScanDelta
+
+    if change_type:
+        valid = {c for c, _ in ScanDelta.CHANGE_TYPE_CHOICES}
+        if change_type not in valid:
+            raise HttpError(400, f"change_type must be one of: {', '.join(sorted(valid))}")
 
     qs = ScanDelta.objects.select_related("session").order_by("-created_at")
     if domain:
