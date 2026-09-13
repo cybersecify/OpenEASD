@@ -365,6 +365,56 @@ Calling these out so contributors don't add them back without a discussion:
 
 ---
 
+## D-017 — Architecture north star: domain-centric, API-driven, UI-agnostic
+**Status:** locked · **Decided:** 2026-09-13
+
+**Decision.** OpenEASD is a **domain-centric, API-driven EASM backend with
+DBOS-based durable orchestration, a configurable security pipeline, normalized
+tool outputs, and a UI-agnostic data model.** The governing rule: **the backend
+stores facts, relationships, execution state, and normalized results; the UI
+decides how those facts are presented.**
+
+**Entities are independent, related by a graph — not nested.** Model the domain as
+first-class entities (Asset, Scan, Finding, Issue, Tool) joined by relationships —
+`Scan discovers Asset`, `Scan generates Finding`, `Finding affects Asset`,
+`Tool produces Finding`, `Finding promoted to Issue` — NOT a fixed hierarchy
+(`Scan → Finding → Asset`, nor `Asset → Finding → Scan`). A fixed nesting bakes one
+UI perspective into the schema; the relationship graph lets scan-/asset-/finding-/
+issue-/tool-centric views all sit over the same backend and change freely.
+
+**Two layers, kept distinct.** (a) A **raw, scan-scoped layer** — `ScanSession`,
+per-scan `Subdomain/IPAddress/Port/URL`, per-scan `Finding` — is execution state +
+provenance ("what this run saw"): scoped `(session, …)`, prunable
+([D-016] retention / H3), idempotent (H5). (b) A **persistent, domain-centric fact
+layer** — `asset_inventory.Asset` + `Issue` — is the canonical cross-scan truth and
+the relationship graph ("the current state of the domain"), with first/last-seen and
+triage that survives scans. Raw rows feed the persistent layer at finalize (rollup).
+Do **not** flatten raw findings into pure domain-owned entities — that loses per-scan
+provenance and the pruning story.
+
+**Execution is structured separately from the domain:** `API ↕ DBOS workflow →
+pipeline → tools → normalized data`. Tools never import each other; they write
+normalized rows to the shared models (the empty-`models.py` rule).
+
+**Development order going forward.** (1) core entities + relationships; (2) pipeline
+capabilities; (3) API + DBOS workflow together; (4) normalize tool outputs into the
+domain model; (5) implement feature-by-feature as **vertical slices**; (6) decide UI
+perspective last.
+
+**Why.** It's largely where the codebase already is (Django Ninja + Postgres + DBOS +
+the 13-phase pipeline + tool normalization), and it was validated by the
+finding-centric-grounded-on-asset-centric work — **one backend already serves
+scan-, asset-, and finding-centric UIs** without schema change. Codifying it keeps
+future features from re-baking a single UI perspective into the data model, and keeps
+the UI free to evolve its product perspective.
+
+**Follow-up trigger.** If a future feature needs a relationship the graph doesn't yet
+make first-class (e.g. explicit `Scan discovers Asset` provenance links, or a `Tool`
+entity with its own rows rather than the registry), add it as an entity/edge rather
+than nesting it under an existing owner.
+
+---
+
 ## Index
 
 | ID | Decision | Status | Decided |
@@ -385,6 +435,7 @@ Calling these out so contributors don't add them back without a discussion:
 | D-014 | v2.0 AI backend: Cloudflare Workers AI only (BYOK) | locked | 2026-09-05 |
 | D-015 | v2.0 shipped scope: triage + orchestration + summaries | locked | 2026-09-05 |
 | D-016 | v2.x execution re-platform: PostgreSQL + DBOS | locked | 2026-09-05 |
+| D-017 | Architecture north star: domain-centric, API-driven, UI-agnostic | locked | 2026-09-13 |
 
 ---
 
