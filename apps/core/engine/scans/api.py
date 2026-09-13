@@ -5,7 +5,6 @@ import logging
 import uuid
 
 from django.core.paginator import Paginator
-from django.db import models
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -17,7 +16,6 @@ from ninja.errors import HttpError
 from apps.core.console.api.auth import JWTAuth
 from apps.core.constants import SEVERITY_LEVELS
 from apps.core.console.insights.builder import rebuild_finding_type_summaries
-from apps.core.queries import latest_session_ids
 from apps.core.engine.scans.models import ScanSession
 
 logger = logging.getLogger(__name__)
@@ -77,6 +75,10 @@ def _schedule_recurring(domain, recurrence, recurrence_time):
 
 router = Router(auth=JWTAuth())
 scheduled_router = Router(auth=JWTAuth())
+# Change-centric perspective (D-017): the scan-to-scan delta feed, mounted at
+# /api/changes/. Code lives here because ScanDelta is a scans-app model, but the
+# endpoint is a changes-centric view, not a scan resource.
+changes_router = Router(auth=JWTAuth())
 
 
 # ---------------------------------------------------------------------------
@@ -363,155 +365,6 @@ def start_scan(request, data: ScanStartRequest):
     raise HttpError(400, "schedule_type must be 'now', 'once', or 'recurring'")
 
 
-@router.get("/findings/")
-def list_findings(
-    request,
-    severity: str = "",
-    domain: str = "",
-    status: str = "",
-    source: str = "",
-    session_id: int = 0,
-    session_uuid: uuid.UUID | None = None,
-    page: int = 1,
-):
-    from apps.core.data.findings.models import Finding
-
-    # Allow callers to filter by scan UUID directly — matches list_urls and is
-    # what most external clients have on hand. Internally still keyed by
-    # session_id for the queries below.
-    if session_uuid is not None and not session_id:
-        session = get_object_or_404(ScanSession, uuid=str(session_uuid))
-        session_id = session.id
-
-    latest_ids = latest_session_ids()
-    base_qs = Finding.objects.select_related("session", "asset")
-    if not session_id:
-        base_qs = base_qs.filter(session_id__in=latest_ids)
-
-    if session_id:
-        count_base = Finding.objects.filter(session_id=session_id, status="open")
-    else:
-        count_base = Finding.objects.filter(session_id__in=latest_ids, status="open")
-    count_open_critical = count_base.filter(severity="critical").count()
-    count_open_high     = count_base.filter(severity="high").count()
-    count_open_medium   = count_base.filter(severity="medium").count()
-    count_open_low      = count_base.filter(severity="low").count()
-
-    qs = base_qs.order_by(
-        models.Case(
-            models.When(severity="critical", then=0),
-            models.When(severity="high", then=1),
-            models.When(severity="medium", then=2),
-            models.When(severity="low", then=3),
-            default=4,
-            output_field=models.IntegerField(),
-        ),
-        "-discovered_at",
-    )
-
-    if severity:
-        qs = qs.filter(severity=severity)
-    if session_id:
-        qs = qs.filter(session_id=session_id)
-    if domain:
-        qs = qs.filter(session__domain__icontains=domain)
-    if status:
-        qs = qs.filter(status=status)
-    if source:
-        qs = qs.filter(source=source)
-
-    paginator = Paginator(qs, 25)
-    p = paginator.get_page(page)
-
-    return {
-        "findings": [_serialize_finding(f) for f in p],
-        "counts": {
-            "open_critical": count_open_critical,
-            "open_high": count_open_high,
-            "open_medium": count_open_medium,
-            "open_low": count_open_low,
-        },
-        "total": paginator.count,
-        "page": p.number,
-        "total_pages": paginator.num_pages,
-        "has_next": p.has_next(),
-        "has_previous": p.has_previous(),
-    }
-
-
-@router.get("/urls/")
-def list_urls(
-    request,
-    domain: str = "",
-    session_uuid: uuid.UUID | None = None,
-    scheme: str = "",
-    status_code: str = "",
-    page: int = 1,
-):
-    from apps.core.data.web_assets.models import URL
-
-    if session_uuid is not None:
-        session = get_object_or_404(ScanSession, uuid=str(session_uuid))
-        qs = URL.objects.filter(session=session)
-    else:
-        latest_ids = latest_session_ids()
-        qs = URL.objects.filter(session_id__in=latest_ids)
-        if domain:
-            qs = qs.filter(session__domain__icontains=domain)
-
-    if scheme:
-        qs = qs.filter(scheme=scheme)
-    if status_code:
-        try:
-            qs = qs.filter(status_code=int(status_code))
-        except ValueError:
-            pass
-
-    qs = qs.select_related("port", "subdomain").order_by("url")
-    paginator = Paginator(qs, 50)
-    p = paginator.get_page(page)
-
-    return {
-        "results": [_serialize_url(u) for u in p],
-        "total": paginator.count,
-        "page": p.number,
-        "total_pages": paginator.num_pages,
-        "has_next": p.has_next(),
-        "has_previous": p.has_previous(),
-    }
-
-
-class FindingStatusRequest(Schema):
-    status: str
-    assigned_to: str | None = None
-    resolution_note: str | None = None
-
-
-@router.post("/findings/{finding_id}/status/")
-def update_finding_status(request, finding_id: int, data: FindingStatusRequest):
-    from apps.core.data.findings.models import Finding, STATUS_CHOICES
-
-    finding = get_object_or_404(Finding, id=finding_id)
-
-    valid_statuses = {s[0] for s in STATUS_CHOICES}
-    if data.status not in valid_statuses:
-        raise HttpError(400, f"status must be one of: {', '.join(sorted(valid_statuses))}")
-
-    finding.status = data.status
-    if data.status == "resolved" and not finding.resolved_at:
-        finding.resolved_at = timezone.now()
-    elif data.status != "resolved":
-        finding.resolved_at = None
-
-    if data.assigned_to is not None:
-        finding.assigned_to = str(data.assigned_to)[:150]
-    if data.resolution_note is not None:
-        finding.resolution_note = str(data.resolution_note)[:5000]
-
-    finding.save(update_fields=["status", "resolved_at", "assigned_to", "resolution_note"])
-    return _serialize_finding(finding)
-
-
 def _delta_row(d) -> dict:
     # item_identifier is "source:check_type:title" (the delta-detection key).
     # Split on the first two ":" so a title containing ":" stays intact.
@@ -530,7 +383,7 @@ def _delta_row(d) -> dict:
     }
 
 
-@router.get("/deltas/")
+@changes_router.get("/")
 def list_deltas(request, domain: str = "", change_type: str = "", page: int = 1):
     """Recent scan-to-scan changes (new / removed findings), newest first — the
     'changes since last scan' feed. Filter by domain / change_type."""

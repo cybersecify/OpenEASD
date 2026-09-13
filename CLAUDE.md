@@ -790,9 +790,6 @@ GET  /api/scans/<uuid>/status/            — lightweight status (React polls ev
 POST /api/scans/<uuid>/stop/              — cancel running scan
 POST /api/scans/<uuid>/delete/            — delete scan session
 POST /api/scans/<uuid>/subscan/           — re-run a single tool / subset against an existing scan
-GET  /api/scans/urls/                     — paginated web-asset URLs (?domain=&page=)
-GET  /api/scans/findings/                 — paginated findings (?severity=&domain=&status=&source=)
-POST /api/scans/findings/<id>/status/     — update finding lifecycle status
 GET  /api/scheduled/                      — scheduled jobs list
 POST /api/scheduled/<job_id>/cancel/      — cancel scheduled job
 GET  /api/workflows/                      — list workflows
@@ -806,6 +803,10 @@ POST /api/workflows/<pk>/steps/<tool>/toggle/ — toggle single tool step
 GET  /api/assets/                         — persistent asset inventory (paginated; ?domain=&kind=&status=&q=), each row with per-severity open-finding counts
 GET  /api/assets/summary/                 — inventory totals by kind + active/gone
 GET  /api/assets/<id>/                     — asset detail: metadata + extra, findings, scan timeline (seen_in_scans)
+GET  /api/assets/urls/                     — paginated web-asset URLs (relocated from /api/scans/urls/ — D-017; ?domain=&session_uuid=&scheme=&status_code=&page=)
+GET  /api/findings/                        — paginated raw findings (relocated from /api/scans/findings/ — D-017; ?severity=&domain=&status=&source=&session_uuid=&page=)
+POST /api/findings/<id>/status/            — update finding lifecycle status (relocated from /api/scans/findings/<id>/status/ — D-017)
+GET  /api/changes/                         — scan-to-scan delta feed (relocated from /api/scans/deltas/ — D-017; ?domain=&change_type=&page=)
 GET  /api/insights/                       — trends, top hosts, asset growth, KPIs, Exposure Score + trend (per-scan exposure_score/grade + top-level exposure block)
 GET  /api/notifications/config/           — get Slack/Teams notification config
 POST /api/notifications/config/           — update notification config

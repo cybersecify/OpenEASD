@@ -120,7 +120,7 @@ export function FindingDetailModal({ finding, onClose, onStatusChanged }) {
     setStatus(next);
     setSaving(true);
     try {
-      await apiPost(`/scans/findings/${f.id}/status/`, { status: next });
+      await apiPost(`/findings/${f.id}/status/`, { status: next });
       toast.success('Status updated.');
       onStatusChanged && onStatusChanged();
     } catch (err) {

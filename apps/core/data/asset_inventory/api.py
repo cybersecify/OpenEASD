@@ -5,6 +5,7 @@ rollup. Flat JSON, JWT-authed, same shape/pagination as the rest of the API.
 """
 
 import logging
+import uuid
 
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
@@ -142,6 +143,75 @@ def assets_summary(request, domain: str = ""):
         "gone": qs.filter(status="gone").count(),
         "by_kind": by_kind,
     }
+
+
+# ---------------------------------------------------------------------------
+# Web-asset URLs — /api/assets/urls/ (asset-centric). Relocated from
+# /api/scans/urls/ (D-017: URLs are web assets, not a scan concern).
+# ---------------------------------------------------------------------------
+
+def _serialize_url(url) -> dict:
+    return {
+        "id": url.id,
+        "url": url.url,
+        "scheme": url.scheme,
+        "host": url.host,
+        "port_number": url.port_number,
+        "status_code": url.status_code,
+        "title": url.title,
+        "web_server": url.web_server,
+        "content_length": url.content_length,
+        "technologies": url.technologies or [],
+        "source": url.source,
+        "discovered_at": url.discovered_at.isoformat(),
+    }
+
+
+@router.get("/urls/")
+def list_urls(
+    request,
+    domain: str = "",
+    session_uuid: uuid.UUID | None = None,
+    scheme: str = "",
+    status_code: str = "",
+    page: int = 1,
+):
+    from apps.core.data.web_assets.models import URL
+    from apps.core.engine.scans.models import ScanSession
+    from apps.core.queries import latest_session_ids
+
+    if session_uuid is not None:
+        session = get_object_or_404(ScanSession, uuid=str(session_uuid))
+        qs = URL.objects.filter(session=session)
+    else:
+        latest_ids = latest_session_ids()
+        qs = URL.objects.filter(session_id__in=latest_ids)
+        if domain:
+            qs = qs.filter(session__domain__icontains=domain)
+
+    if scheme:
+        qs = qs.filter(scheme=scheme)
+    if status_code:
+        try:
+            qs = qs.filter(status_code=int(status_code))
+        except ValueError:
+            # Non-numeric status_code filter → ignore it (return unfiltered by code)
+            # rather than 400; a bad query param shouldn't error the listing.
+            pass
+
+    qs = qs.select_related("port", "subdomain").order_by("url")
+    paginator = Paginator(qs, 50)
+    p = paginator.get_page(page)
+
+    return {
+        "results": [_serialize_url(u) for u in p],
+        "total": paginator.count,
+        "page": p.number,
+        "total_pages": paginator.num_pages,
+        "has_next": p.has_next(),
+        "has_previous": p.has_previous(),
+    }
+
 
 
 @router.get("/{asset_id}/")
