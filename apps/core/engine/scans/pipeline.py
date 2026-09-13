@@ -285,7 +285,7 @@ def _finalize_session(session):
     # across scans (after the asset rollup, so Finding.asset links exist to ground
     # each Issue). Fail-graceful — a rollup error must never fail a scan.
     try:
-        from apps.core.data.findings.rollup import rollup_session_issues
+        from apps.core.data.issues.rollup import rollup_session_issues
         rollup_session_issues(session)
     except Exception:  # noqa: BLE001
         logger.exception("[%s] issue-register rollup failed — scan unaffected", session.id)

@@ -377,7 +377,8 @@ Django labels are unchanged — the nesting is organisational only (import paths
 | `assets/` | `assets` | Network assets: Subdomain, IPAddress, Port |
 | `web_assets/` | `web_assets` | Web assets: URL |
 | `service_detection/` | `service_detection` | Enriches Port.service + Port.is_web via nmap -sV |
-| `findings/` | `findings` | Unified Finding model — all tools write here |
+| `findings/` | `findings` | Unified **raw** `Finding` model (per-scan) — all finding-producing tools write here; `/api/findings/` |
+| `issues/` | `issues` | Persistent, cross-scan **`Issue`** register (the deduped promotion of Findings; triage status persists across scans) — populated by a finalize rollup, mirrors `asset_inventory`; `/api/issues/`. Split out of `findings` (D-017); keeps table `findings_issue` |
 | `asset_inventory/` | `asset_inventory` | Persistent, deduplicated `Asset` inventory (domain-scoped, first/last-seen + status) — populated by a fail-graceful rollup at finalize; `Finding.asset` links findings to it. Spec: `docs/specs/2026-09-06-asset-centric-inventory.md` (PR1: model + rollup + backfill) |
 | `scans/` | `scans` | ScanSession, ScanDelta, pipeline orchestrator |
 | `workflows/` | `workflow` | Workflow CRUD, dynamic runner, tool registry |

@@ -110,6 +110,7 @@ INSTALLED_APPS = [
     "apps.core.data.web_assets",
     "apps.core.engine.service_detection",
     "apps.core.data.findings",
+    "apps.core.data.issues",
     "apps.core.data.asset_inventory",
     "apps.core.engine.scans",
     "apps.core.data.domains",
