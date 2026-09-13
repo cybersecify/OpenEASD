@@ -380,7 +380,7 @@ first-class entities (Asset, Scan, Finding, Issue, Tool) joined by relationships
 `Tool produces Finding`, `Finding promoted to Issue` — NOT a fixed hierarchy
 (`Scan → Finding → Asset`, nor `Asset → Finding → Scan`). A fixed nesting bakes one
 UI perspective into the schema; the relationship graph lets scan-/asset-/finding-/
-issue-/tool-centric views all sit over the same backend and change freely.
+issue-centric views all sit over the same backend and change freely.
 
 **Two layers, kept distinct.** (a) A **raw, scan-scoped layer** — `ScanSession`,
 per-scan `Subdomain/IPAddress/Port/URL`, per-scan `Finding` — is execution state +
