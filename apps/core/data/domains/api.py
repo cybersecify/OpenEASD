@@ -160,7 +160,13 @@ def authorize_domain(request, pk: int, data: AuthorizeIn):
         raise HttpError(400, "Authorization attestation is required")
 
     valid_types = {choice[0] for choice in DomainAuthorization.AUTH_TYPES}
-    auth_type = data.auth_type if data.auth_type in valid_types else "owner"
+    # Reject an explicit bad value rather than silently coercing to "owner" — that
+    # would mis-attribute the scan-consent record's basis (e.g. record "owner" when
+    # the caller claimed written-authorization/bug-bounty). Omitted defaults to
+    # "owner" via the schema, which is valid and passes.
+    if data.auth_type not in valid_types:
+        raise HttpError(400, f"auth_type must be one of: {', '.join(sorted(valid_types))}")
+    auth_type = data.auth_type
 
     DomainAuthorization.objects.create(
         domain=domain,

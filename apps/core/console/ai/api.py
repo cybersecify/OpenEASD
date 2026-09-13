@@ -252,6 +252,10 @@ def list_audit(request, page: int = 1, page_size: int = 25):
 
     qs = AIInvocation.objects.select_related("session").order_by("-created_at")
     total = qs.count()
+    # Clamp: a negative/zero page produces a negative slice offset (ORM raises →
+    # unhandled 500 escaping the error envelope); cap page_size to bound the fetch.
+    page = max(1, page)
+    page_size = max(1, min(page_size, 100))
     offset = (page - 1) * page_size
     items = qs[offset:offset + page_size]
 
