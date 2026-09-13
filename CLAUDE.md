@@ -916,10 +916,11 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_crypto.py` | 16 | At-rest secret encryption — Fernet roundtrip/non-determinism/legacy-plaintext tolerance, key derivation/override/rotation, DB-holds-ciphertext + ORM-returns-plaintext for AI/notifications/amass/subfinder |
 | `tests/unit/test_login_ratelimit.py` | 14 | Login brute-force limiter — threshold lockout, window reset, success clears, **rightmost** X-Forwarded-For keying (leftmost is client-forgeable — spoofed-leftmost can't evade when trusted; untrusted-XFF fallback to REMOTE_ADDR), middleware integration (per-IP isolation, disabled bypass, refresh endpoint unaffected) |
 | `tests/unit/test_api_security_fixes.py` | 5 | API-review security fixes — webhook URL/secret not leaked in `/notifications/test/` error (H1); report download honours `must_change_password` gate via Bearer (M1); change-password blacklists outstanding refresh tokens (M2) + rejects >128-char password (M4) |
+| `tests/unit/test_api_robustness_fixes.py` | 11 | API-review robustness fixes — pagination clamp (page≤0 / huge page_size → 200 not 500) on `/ai/audit` + `/notifications/alerts` (L1); `authorize_domain` rejects invalid `auth_type` with 400, omitted→owner (L2); `schedule_type=once` rejects a past `scheduled_at` (L5) |
 
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1883 tests** (1837 fast + 46 slow domain_security)
+**Total: 1894 tests** (1848 fast + 46 slow domain_security)
 
 Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.
