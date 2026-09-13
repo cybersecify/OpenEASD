@@ -7,6 +7,22 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **`github_recon` (GitHub Org Recon) tool restored** — passive, phase-3 "Asset
+  Discovery". Enumerates the target org's PUBLIC GitHub repos via GitHub's REST
+  API and surfaces infrastructure references (internal hostnames/subdomains,
+  cloud-bucket URLs, API endpoints) leaked in that public code/config
+  (`github_public_repos` info + `github_infra_exposure` low findings). Keyless at
+  GitHub's 60 req/hr public limit (capped by `GITHUB_MAX_REPOS`/`GITHUB_MAX_REQUESTS`),
+  richer with a `GITHUB_TOKEN`; passive (queries GitHub, not the target → no
+  `DomainAuthorization`), fail-graceful. Re-added to Full Scan + Passive Scan
+  (migration `workflow/0034`). Registry count **29 → 30**. **Why:** it was retired
+  in v2.x (#438) as overlapping with `github_secrets`, but the two are
+  complementary — `github_secrets` finds leaked *secrets*, `github_recon` finds
+  *infra exposure* (recon surface). +39 tests (`test_github_recon.py`).
+  Its phase group moved from the retired "Surface Enumeration" to "Asset
+  Discovery" (beside `asn_discovery`, its passive-infra-recon analog).
+
 ## [v2.18.0] — 2026-09-13
 
 Backend structure aligned to the D-017 domain-centric model, plus a second API
