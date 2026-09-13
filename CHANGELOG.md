@@ -7,6 +7,44 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.17.1] — 2026-09-13
+
+Security + robustness fixes from a UI-independent API contract/security review.
+Code-only (no migrations); the active-scan authorization gate was traced
+end-to-end and is unchanged (holds).
+
+### Fixed
+- **Webhook secret leak (HIGH).** `POST /api/notifications/test/` no longer
+  interpolates the `requests` exception into its 502 body — that embedded the
+  full webhook URL, whose path carries the Slack/Teams secret token, letting an
+  authenticated client exfiltrate the write-only webhook by triggering a failed
+  test. Detail is logged server-side; the response is generic.
+- **Login brute-force evasion (HIGH).** The rate-limiter now keys on the
+  **rightmost** `X-Forwarded-For` entry (the hop the trusted proxy appends)
+  instead of the client-forgeable leftmost — a rotated spoofed XFF header can no
+  longer hand each guess a fresh throttle key.
+- **Report password-gate bypass (MED).** CSV/PDF report downloads now honour
+  `must_change_password` like the API's `JWTAuth` — a default-credential holder
+  can no longer pull reports via a Bearer token while locked out of `/api/*`.
+- **Token revocation on password change (MED).** Changing the password now
+  blacklists the user's outstanding refresh tokens, so the change ends other
+  (possibly stolen) sessions instead of leaving them minting access tokens.
+- **Password-change hashing DoS (MED).** `new_password` is capped at 128 chars
+  (`set_password` PBKDF2-hashes the raw string).
+- **Pagination 500s (LOW).** `/api/ai/audit/` and `/api/notifications/alerts/`
+  clamp `page>=1` and cap `page_size` — a `page<=0` previously produced a
+  negative slice offset that raised an unhandled 500 outside the error envelope.
+- **Silent auth_type coercion (LOW).** `POST /api/domains/<pk>/authorize/` now
+  returns 400 on an invalid `auth_type` instead of silently recording `"owner"`
+  (which mis-attributed the scan-consent basis).
+- **Past scheduled scan (LOW).** `schedule_type=once` rejects a past
+  `scheduled_at` instead of firing it on the next sweep.
+
+### Docs
+- **D-017** recorded: OpenEASD's architecture north star — domain-centric,
+  API-driven, DBOS-orchestrated, UI-agnostic data model (`docs/DECISIONS.md`,
+  `docs/DESIGN.md`).
+
 ## [v2.17.0] — 2026-09-13
 
 Producer→queue→consumer **resilience hardening** — the full open plan
