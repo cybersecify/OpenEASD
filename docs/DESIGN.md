@@ -136,7 +136,7 @@ import the same codebase and differ only by entrypoint.
 ├─ TOOLS     plugins: the 27 self-registering scanner tools
 │               apps/<tool>/  (subfinder, nmap, nuclei, …)
 └─ DATA      models: the dataflow substrate every layer reads/writes
-                apps/core/{domains, assets, web_assets, findings, asset_inventory}
+                apps/core/{domains, assets, web_assets, findings, issues, asset_inventory}
 
 Dependency direction — everything points DOWN to DATA (which depends on nothing):
       console ─┐
@@ -196,7 +196,8 @@ the folder move is purely organisational; the table lists each app by name.
 | `assets/` | `assets` | Network assets: `Subdomain`, `IPAddress`, `Port` |
 | `web_assets/` | `web_assets` | Web assets: `URL` |
 | `service_detection/` | `service_detection` | Enriches `Port.service` + `Port.is_web` via nmap -sV |
-| `findings/` | `findings` | Unified `Finding` model — all finding-producing tools write here |
+| `findings/` | `findings` | Unified **raw** `Finding` model (per-scan) — all finding-producing tools write here; `/api/findings/` |
+| `issues/` | `issues` | Persistent, cross-scan **`Issue`** register (deduped promotion of Findings; triage persists across scans); finalize rollup, mirrors `asset_inventory`; `/api/issues/`. Split out of `findings` (D-017; table kept as `findings_issue`) |
 | `asset_inventory/` | `asset_inventory` | Persistent, deduplicated `Asset` inventory (domain-scoped, first/last-seen + status); populated by a fail-graceful rollup at finalize; `Finding.asset` links findings to it; `/api/assets/` + the Assets UI |
 | `scans/` | `scans` | `ScanSession`, `ScanDelta`, `ScheduledScan`, pipeline orchestrator |
 | `workflows/` | `workflow` | Workflow CRUD, dynamic runner, tool registry |

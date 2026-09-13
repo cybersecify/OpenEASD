@@ -5,7 +5,7 @@ from django.utils import timezone
 
 
 def _issue(domain, **kw):
-    from apps.core.data.findings.models import Issue, issue_key
+    from apps.core.data.issues.models import Issue, issue_key
     now = timezone.now()
     defaults = dict(
         source="web_checker", check_type="missing_header", title="Missing CSP",

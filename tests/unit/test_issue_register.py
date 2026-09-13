@@ -25,11 +25,11 @@ class TestIssueRollup:
         return Finding.objects.create(**defaults)
 
     def _rollup(self, sess):
-        from apps.core.data.findings.rollup import rollup_session_issues
+        from apps.core.data.issues.rollup import rollup_session_issues
         rollup_session_issues(sess)
 
     def test_creates_one_issue_per_identity_key(self):
-        from apps.core.data.findings.models import Issue
+        from apps.core.data.issues.models import Issue
         dom, sess = self._domain_and_session()
         self._finding(sess, title="Missing CSP")
         self._finding(sess, source="tls_checker", check_type="weak_cipher",
@@ -42,7 +42,7 @@ class TestIssueRollup:
 
     def test_false_positive_persists_across_scans(self):
         # The whole point of PR2: dismissing a false positive sticks on re-scan.
-        from apps.core.data.findings.models import Issue
+        from apps.core.data.issues.models import Issue
         from apps.core.engine.scans.models import ScanSession
         dom, s1 = self._domain_and_session()
         self._finding(s1)
@@ -60,7 +60,7 @@ class TestIssueRollup:
         assert Issue.objects.filter(domain=dom).count() == 1  # not duplicated
 
     def test_acknowledged_persists_across_scans(self):
-        from apps.core.data.findings.models import Issue
+        from apps.core.data.issues.models import Issue
         from apps.core.engine.scans.models import ScanSession
         dom, s1 = self._domain_and_session()
         self._finding(s1); self._rollup(s1)
@@ -70,7 +70,7 @@ class TestIssueRollup:
         assert Issue.objects.get(domain=dom).status == "acknowledged"
 
     def test_resolved_reopens_on_regression(self):
-        from apps.core.data.findings.models import Issue
+        from apps.core.data.issues.models import Issue
         from apps.core.engine.scans.models import ScanSession
         dom, s1 = self._domain_and_session()
         self._finding(s1); self._rollup(s1)
@@ -81,7 +81,7 @@ class TestIssueRollup:
         assert Issue.objects.get(domain=dom).status == "open"
 
     def test_severity_refreshes_from_latest_occurrence(self):
-        from apps.core.data.findings.models import Issue
+        from apps.core.data.issues.models import Issue
         from apps.core.engine.scans.models import ScanSession
         dom, s1 = self._domain_and_session()
         self._finding(s1, severity="medium"); self._rollup(s1)
@@ -90,13 +90,13 @@ class TestIssueRollup:
         assert Issue.objects.get(domain=dom).severity == "high"
 
     def test_subscan_does_not_roll_up(self):
-        from apps.core.data.findings.models import Issue
+        from apps.core.data.issues.models import Issue
         _, sess = self._domain_and_session(scan_type="subscan")
         self._finding(sess); self._rollup(sess)
         assert Issue.objects.count() == 0
 
     def test_no_domain_row_skips_without_error(self):
-        from apps.core.data.findings.models import Issue
+        from apps.core.data.issues.models import Issue
         from apps.core.engine.scans.models import ScanSession
         sess = ScanSession.objects.create(domain="orphan.example", scan_type="full", status="completed")
         self._finding(sess, target="orphan.example")
@@ -104,7 +104,7 @@ class TestIssueRollup:
         assert Issue.objects.count() == 0
 
     def test_scan_coverage_meta_excluded(self):
-        from apps.core.data.findings.models import Issue
+        from apps.core.data.issues.models import Issue
         _, sess = self._domain_and_session()
         self._finding(sess, source="scan_coverage", check_type="coverage_regression",
                       title="Scan coverage dropped")
@@ -112,7 +112,7 @@ class TestIssueRollup:
         assert Issue.objects.count() == 0
 
     def test_idempotent_on_replay(self):
-        from apps.core.data.findings.models import Issue
+        from apps.core.data.issues.models import Issue
         dom, sess = self._domain_and_session()
         self._finding(sess)
         self._rollup(sess)
@@ -121,7 +121,7 @@ class TestIssueRollup:
 
     def test_asset_grounding(self):
         from apps.core.data.asset_inventory.models import Asset
-        from apps.core.data.findings.models import Issue
+        from apps.core.data.issues.models import Issue
         dom, sess = self._domain_and_session()
         asset = Asset.objects.create(
             domain=dom, kind="subdomain", key="example.com",
