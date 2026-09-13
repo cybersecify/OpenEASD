@@ -55,10 +55,23 @@ class TestHelpers:
         row.refresh_from_db()
         assert row.failures == 1  # counter reset for the new window
 
-    def test_client_ip_prefers_forwarded_for(self):
+    def test_client_ip_uses_rightmost_forwarded_for(self):
+        # The trusted proxy APPENDS the real client IP, so the rightmost XFF
+        # entry is trustworthy; the leftmost ("5.5.5.5") is client-forgeable and
+        # must NOT be used (keying on it would let a spoofed header evade the limit).
         req = type("R", (), {"META": {
             "HTTP_X_FORWARDED_FOR": "5.5.5.5, 10.0.0.1", "REMOTE_ADDR": "10.0.0.1"}})()
-        assert ratelimit.client_ip(req) == "5.5.5.5"
+        assert ratelimit.client_ip(req) == "10.0.0.1"
+
+    def test_spoofed_leftmost_forwarded_for_cannot_evade_when_trusted(self, settings):
+        # Even with XFF trusted, a client rotating the LEFTMOST (forged) entry
+        # keys on the same rightmost proxy-added IP every time → no evasion.
+        settings.LOGIN_RATELIMIT_TRUST_FORWARDED_FOR = True
+        ip1 = ratelimit.client_ip(type("R", (), {"META": {
+            "HTTP_X_FORWARDED_FOR": "1.1.1.1, 10.0.0.9", "REMOTE_ADDR": "10.0.0.9"}})())
+        ip2 = ratelimit.client_ip(type("R", (), {"META": {
+            "HTTP_X_FORWARDED_FOR": "2.2.2.2, 10.0.0.9", "REMOTE_ADDR": "10.0.0.9"}})())
+        assert ip1 == ip2 == "10.0.0.9"
 
     def test_client_ip_falls_back_to_remote_addr(self):
         req = type("R", (), {"META": {"REMOTE_ADDR": "6.6.6.6"}})()

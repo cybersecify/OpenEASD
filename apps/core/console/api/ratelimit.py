@@ -29,16 +29,24 @@ def _cfg(name, default):
 def client_ip(request) -> str:
     """Client IP the limiter keys on.
 
-    Behind the documented TLS reverse proxy, REMOTE_ADDR is the proxy, so the
-    leftmost X-Forwarded-For entry (set by that proxy) identifies the client —
-    used when LOGIN_RATELIMIT_TRUST_FORWARDED_FOR is on (the default). When it is
-    off (no trusted proxy), XFF is ignored and the unspoofable REMOTE_ADDR is
-    used, so an attacker cannot rotate the header to evade the limit.
+    Behind the documented single TLS reverse proxy, REMOTE_ADDR is the proxy and
+    the proxy APPENDS the real client IP to any inbound X-Forwarded-For. So the
+    trustworthy value is the **rightmost** (last) XFF entry — the hop the proxy
+    itself added — NOT the leftmost, which the client can forge. Taking the
+    leftmost would let an attacker rotate a spoofed `X-Forwarded-For: <random>`
+    per request to get a fresh throttle key every time and evade the lockout.
+    Used when LOGIN_RATELIMIT_TRUST_FORWARDED_FOR is on (the default). When off
+    (no trusted proxy), XFF is ignored and the unspoofable REMOTE_ADDR is used.
+
+    NB: this assumes exactly one trusted proxy in front. With N chained proxies
+    the trusted entry is the Nth-from-right; set LOGIN_RATELIMIT_TRUST_FORWARDED_FOR
+    off (or front with a single proxy) if that doesn't hold.
     """
     if _cfg("LOGIN_RATELIMIT_TRUST_FORWARDED_FOR", True):
         xff = request.META.get("HTTP_X_FORWARDED_FOR", "")
         if xff:
-            return xff.split(",")[0].strip()
+            # rightmost = the hop our own proxy appended (client can forge the rest)
+            return xff.split(",")[-1].strip()
     return request.META.get("REMOTE_ADDR") or "unknown"
 
 

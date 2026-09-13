@@ -419,7 +419,7 @@ Per-module routers (each file exports a `router = Router(auth=JWTAuth())`):
 - Access token: short-lived, sent as `Authorization: Bearer <token>`
 - Refresh token: long-lived, sent in POST body to `/api/token/refresh`
 - Logout: blacklists refresh token via `/api/token/blacklist` (simplejwt OutstandingToken/BlacklistedToken)
-- **Brute-force rate limiting:** `LoginRateLimitMiddleware` (`apps/core/console/api/ratelimit.py`) locks out an IP after `LOGIN_RATELIMIT_MAX_FAILURES` (default 5) failed `POST /api/token/pair` attempts within the window, returning 429 + `Retry-After`. State is the DB-backed `LoginThrottle` model (shared across gunicorn workers, unlike the per-process LocMemCache). Only `/token/pair` is limited (not `/refresh`); a successful login clears the IP's counter. Per-IP via `X-Forwarded-For` when `LOGIN_RATELIMIT_TRUST_FORWARDED_FOR` is on (default, for the mandated proxy); off → falls back to the unspoofable `REMOTE_ADDR` so a bare deployment can't be evaded by rotating the header. Tunable/`LOGIN_RATELIMIT_ENABLED`-toggle via settings. Tests: `tests/unit/test_login_ratelimit.py`.
+- **Brute-force rate limiting:** `LoginRateLimitMiddleware` (`apps/core/console/api/ratelimit.py`) locks out an IP after `LOGIN_RATELIMIT_MAX_FAILURES` (default 5) failed `POST /api/token/pair` attempts within the window, returning 429 + `Retry-After`. State is the DB-backed `LoginThrottle` model (shared across gunicorn workers, unlike the per-process LocMemCache). Only `/token/pair` is limited (not `/refresh`); a successful login clears the IP's counter. Per-IP via `X-Forwarded-For` when `LOGIN_RATELIMIT_TRUST_FORWARDED_FOR` is on (default, for the mandated proxy) — keyed on the **rightmost** XFF entry (the hop the trusted proxy appended; the leftmost is client-forgeable, so keying on it would let an attacker rotate a spoofed header to evade the lockout — assumes a single trusted proxy); off → falls back to the unspoofable `REMOTE_ADDR`. Tunable/`LOGIN_RATELIMIT_ENABLED`-toggle via settings. Tests: `tests/unit/test_login_ratelimit.py`.
 
 **Adding a new API endpoint:**
 1. Add endpoint function to the relevant `apps/core/<module>/api.py` router
@@ -822,8 +822,8 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 ```
 
 ### Other routes
-- `/reports/<uuid>/csv/` → CSV export (**synchronous** Django view on the web tier, `_report_auth_required` — accepts session auth or `?token=<access_token>`)
-- `/reports/<uuid>/pdf/` → PDF export (**synchronous** Django view on the web tier, rendered with WeasyPrint, `_report_auth_required` — accepts session auth or `?token=<access_token>`)
+- `/reports/<uuid>/csv/` → CSV export (**synchronous** Django view on the web tier, `_report_auth_required` — accepts session auth or an `Authorization: Bearer` header; the old `?token=` query-param was removed in F-sec3, and the gate now also honors `must_change_password`)
+- `/reports/<uuid>/pdf/` → PDF export (**synchronous** Django view on the web tier, rendered with WeasyPrint, `_report_auth_required` — same auth as CSV: session or Bearer header, no `?token=`, `must_change_password` enforced)
 - **Reports UI:** the React SPA has a dedicated **Reports page** (`/reports`, nav item + `ReportsPage.jsx`) listing completed scans with per-scan CSV/PDF export + a `min_severity` filter (auth'd fetch+Blob, JWT in header); also still available as CSV/PDF buttons on the Scan Detail page. The SPA `/reports` route and the Django `/reports/<uuid>/{csv,pdf}/` endpoints coexist — Django's SPA catch-all serves bare `/reports`, and the Vite dev proxy uses a `^/reports/.+` regex so only the endpoints proxy to Django.
 - `/admin/` → Django admin
 - `/api/docs` → Django Ninja auto-generated OpenAPI docs
@@ -914,11 +914,12 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/integration/test_ai_flow.py` | 6 | AI end-to-end (only the Cloudflare HTTP edge + queue mocked): finalize → triage/summaries/agent/audit, report + alert carry output, subscan chain roundtrip, AI-off zero traces, Cloudflare-down scan still completes; plus an opt-in LIVE smoke test (runs only with real `CLOUDFLARE_*` env: `pytest tests/integration/test_ai_flow.py -k live`) |
 | `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
 | `tests/unit/test_crypto.py` | 16 | At-rest secret encryption — Fernet roundtrip/non-determinism/legacy-plaintext tolerance, key derivation/override/rotation, DB-holds-ciphertext + ORM-returns-plaintext for AI/notifications/amass/subfinder |
-| `tests/unit/test_login_ratelimit.py` | 13 | Login brute-force limiter — threshold lockout, window reset, success clears, X-Forwarded-For keying (+ untrusted-XFF fallback / spoof-evasion), middleware integration (per-IP isolation, disabled bypass, refresh endpoint unaffected) |
+| `tests/unit/test_login_ratelimit.py` | 14 | Login brute-force limiter — threshold lockout, window reset, success clears, **rightmost** X-Forwarded-For keying (leftmost is client-forgeable — spoofed-leftmost can't evade when trusted; untrusted-XFF fallback to REMOTE_ADDR), middleware integration (per-IP isolation, disabled bypass, refresh endpoint unaffected) |
+| `tests/unit/test_api_security_fixes.py` | 5 | API-review security fixes — webhook URL/secret not leaked in `/notifications/test/` error (H1); report download honours `must_change_password` gate via Bearer (M1); change-password blacklists outstanding refresh tokens (M2) + rejects >128-char password (M4) |
 
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1877 tests** (1831 fast + 46 slow domain_security)
+**Total: 1883 tests** (1837 fast + 46 slow domain_security)
 
 Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.
