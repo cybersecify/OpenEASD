@@ -195,6 +195,8 @@ def list_urls(
         try:
             qs = qs.filter(status_code=int(status_code))
         except ValueError:
+            # Non-numeric status_code filter → ignore it (return unfiltered by code)
+            # rather than 400; a bad query param shouldn't error the listing.
             pass
 
     qs = qs.select_related("port", "subdomain").order_by("url")
