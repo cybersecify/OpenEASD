@@ -11,10 +11,11 @@ from apps.core.console.api.ninja import api
 
 
 def metrics(request):
-    """Prometheus metrics (H2). Unauthenticated like /health (counts only, no
-    finding detail) — restrict at the network layer. Toggle via METRICS_ENABLED.
-    Served by the web tier but reflects worker state too (DB-backed exporter)."""
-    if not getattr(settings, "METRICS_ENABLED", True):
+    """Prometheus metrics (H2). Unauthenticated (counts only, no finding detail) and
+    therefore OPT-IN: OFF by default (M3) — enable METRICS_ENABLED only once the
+    endpoint is network-restricted to your scraper. Served by the web tier but
+    reflects worker state too (DB-backed exporter)."""
+    if not getattr(settings, "METRICS_ENABLED", False):
         return HttpResponse(status=404)
     from apps.core.console.observability.metrics import render_metrics
 

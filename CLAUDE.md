@@ -20,7 +20,7 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
   [`docs/CODING_STANDARDS.md`](docs/CODING_STANDARDS.md) (conventions + open
   review findings), `docs/specs/` (feature specs + producer→queue→consumer
   hardening plan H1–H7). Release notes: `CHANGELOG.md`.
-- **Health**: `GET /health/` (unauth, K8s probes) · `GET /api/version/` · `GET /metrics/` (unauth Prometheus exporter, `METRICS_ENABLED`).
+- **Health**: `GET /health/` (unauth, K8s probes) · `GET /api/version/` · `GET /metrics/` (unauth Prometheus exporter — **opt-in, OFF by default**; enable `METRICS_ENABLED=true` only once network-restricted to your scraper — M3).
 
 ## GitHub Flow
 
@@ -878,7 +878,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_scheduled_jobs.py` | 7 | H7 ScheduledJob registry — `dispatch_scheduled` honours enabled toggle, stamps last_run_at, skips disabled (no stamp), fails open on missing row / lookup error; migration seeds the 6 system crons enabled |
 | `tests/unit/test_watchdog_reconcile.py` | 6 | H4/H9 watchdog↔DBOS reconcile — reap_stuck_scans cancels the reaped scan's DBOS workflow inline (`_cancel_workflows_for_sessions` matches `scan-{id}` dedup); empty no-op, list/cancel failures swallowed, reap-then-cancel end-to-end |
 | `tests/unit/test_no_progress_watchdog.py` | 5 | H10 no-progress watchdog — reap running scan on stale `last_progress_at` heartbeat (fresh → kept, stale → reaped, NULL+old → reaped, NULL+recent → kept, 24h hard cap still applies) |
-| `tests/unit/test_metrics.py` | 9 | H2 DB-backed Prometheus exporter — scans-by-status, queue depth, findings-by-severity, domains, journey latency, liveness staleness; `/metrics` endpoint (prometheus text, no-store, unauthenticated, `METRICS_ENABLED` 404 toggle); `last_progress_at` heartbeat stamped per step |
+| `tests/unit/test_metrics.py` | 10 | H2 DB-backed Prometheus exporter — scans-by-status, queue depth, findings-by-severity, domains, journey latency, liveness staleness; `/metrics` endpoint (prometheus text, no-store, unauthenticated, `METRICS_ENABLED` 404 toggle, **off by default** — M3); `last_progress_at` heartbeat stamped per step |
 | `tests/unit/test_orphan_reaper.py` | 9 | H8 orphaned-workflow reaper — cancels ENQUEUED/PENDING `run_scan` workflows whose `ScanSession` is terminal/missing (phantom queue-slot holders); keeps live (pending/running) sessions; dry-run; fail-graceful (list/cancel errors swallowed) |
 | `tests/unit/test_service_detection.py` | 64 | XML parsing, Port enrichment, is_web |
 | `tests/unit/test_ssh_checker.py` | 34 | SSH probe, host key, kex/cipher/MAC, auth, collector |
@@ -921,6 +921,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1894 tests** (1848 fast + 46 slow domain_security)
+**Total: 1895 tests** (1849 fast + 46 slow domain_security)
 
 Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.

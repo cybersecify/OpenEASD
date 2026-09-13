@@ -86,6 +86,10 @@ class TestMetricsEndpoint:
         settings.METRICS_ENABLED = False
         assert Client().get("/metrics/").status_code == 404
 
+    def test_endpoint_off_by_default(self):
+        # M3: /metrics is opt-in — OFF by default (no METRICS_ENABLED override).
+        assert Client().get("/metrics/").status_code == 404
+
 
 class TestHeartbeat:
     def test_step_stamps_last_progress_at(self, transactional_db):

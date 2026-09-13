@@ -73,8 +73,10 @@ nothing; a first call with no prior `Alert` rows still sends.
 > **Status:** ✅ Shipped — as a **DB-backed exporter** (deliberate deviation from the
 > in-process-counter design below). `apps/core/console/observability/metrics.py`
 > `render_metrics()` queries Postgres on each scrape and emits Prometheus text;
-> `GET /metrics` (web tier, unauthenticated like `/health`, `METRICS_ENABLED`
-> toggle, `no-store`). Metrics: `openeasd_scans{status}`,
+> `GET /metrics` (web tier, unauthenticated, `no-store`; `METRICS_ENABLED` toggle —
+> **OFF by default / opt-in**, per M3 of the API security review: it's unauth so it
+> ships closed and is enabled only once network-restricted to the scraper).
+> Metrics: `openeasd_scans{status}`,
 > `openeasd_scan_queue_depth`, `openeasd_findings{severity}`, `openeasd_domains`,
 > `openeasd_scan_last_journey_seconds` (enqueue=start_time → finalize=end_time,
 > principle #13), and `openeasd_seconds_since_last_progress` (worker liveness).

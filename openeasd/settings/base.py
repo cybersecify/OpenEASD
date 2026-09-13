@@ -338,9 +338,12 @@ SCAN_RETENTION_ENABLED = config("SCAN_RETENTION_ENABLED", default=False, cast=bo
 SCAN_RETENTION_KEEP_PER_DOMAIN = config("SCAN_RETENTION_KEEP_PER_DOMAIN", default=30, cast=int)
 SCAN_RETENTION_MAX_AGE_DAYS = config("SCAN_RETENTION_MAX_AGE_DAYS", default=180, cast=int)
 
-# Prometheus metrics endpoint (H2). Unauthenticated GET /metrics (counts only, no
-# finding detail) — restrict at the network/proxy layer. Set False to 404 it.
-METRICS_ENABLED = config("METRICS_ENABLED", default=True, cast=bool)
+# Prometheus metrics endpoint (H2). GET /metrics is UNAUTHENTICATED (counts only,
+# no finding detail), so it is OPT-IN: OFF by default (404). Enable it deliberately
+# (METRICS_ENABLED=true) once the endpoint is network-restricted to your scraper —
+# leaving it public exposes aggregate posture (open-finding counts by severity, scan
+# activity) to any caller. (M3, API security review.)
+METRICS_ENABLED = config("METRICS_ENABLED", default=False, cast=bool)
 
 # Scanner timeouts (seconds) — override in .env if needed
 SCANNER_DNS_TIMEOUT = config("SCANNER_DNS_TIMEOUT", default=5, cast=int)
