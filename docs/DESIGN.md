@@ -8,6 +8,34 @@
 
 ---
 
+## North star (D-017)
+
+OpenEASD is a **domain-centric, API-driven EASM backend with DBOS-based durable
+orchestration, a configurable security pipeline, normalized tool outputs, and a
+UI-agnostic data model.** Governing rule: **the backend stores facts,
+relationships, execution state, and normalized results; the UI decides how those
+facts are presented.**
+
+- **Entities are independent, joined by a relationship graph — not nested:**
+  `Scan discovers Asset` · `Scan generates Finding` · `Finding affects Asset` ·
+  `Tool produces Finding` · `Finding promoted to Issue`. No fixed
+  `Scan→Finding→Asset` (or `Asset→Finding→Scan`) hierarchy — that would bake one UI
+  perspective into the schema.
+- **Two layers:** a **raw, scan-scoped** layer (`ScanSession`, per-scan assets +
+  findings) = execution state/provenance, prunable + idempotent; and a
+  **persistent, domain-centric fact** layer (`asset_inventory.Asset`, `Issue`) =
+  the canonical cross-scan truth + the relationship graph. Raw rows feed the
+  persistent layer at finalize.
+- **Execution structured separately:** `API ↕ DBOS workflow → pipeline → tools →
+  normalized data`.
+- **UI perspectives** (scan-/asset-/finding-/issue-/tool-centric) are views over the
+  same backend and free to change. One backend already serves three of them.
+
+Full rationale + the dev order (entities → pipeline → API+DBOS → normalize →
+vertical slices → UI last) in [DECISIONS.md §D-017](DECISIONS.md#d-017--architecture-north-star-domain-centric-api-driven-ui-agnostic).
+
+---
+
 ## System Overview
 
 ```
