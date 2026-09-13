@@ -7,6 +7,39 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.18.0] — 2026-09-13
+
+Backend structure aligned to the D-017 domain-centric model, plus a second API
+security/robustness review. **Breaking API-path changes** (below) — the in-repo
+React SPA is updated; any other client must update paths. Migrations are
+**state-only** (no data change).
+
+### Changed (breaking — API paths relocated to perspective namespaces, D-017)
+- `GET /api/scans/findings/` → **`GET /api/findings/`**
+- `POST /api/scans/findings/{id}/status/` → **`POST /api/findings/{id}/status/`**
+- `GET /api/scans/urls/` → **`GET /api/assets/urls/`**
+- `GET /api/scans/deltas/` → **`GET /api/changes/`**
+  So `/api/scans/` is now cleanly scan-lifecycle-only (~7 endpoints).
+
+### Changed (structure)
+- **`Issue` split into its own `apps/core/data/issues` app** (persistent
+  cross-scan register), paralleling `asset_inventory` for assets — raw
+  (`findings`) vs persistent (`issues`) now symmetric. Model move is
+  **state-only** (`SeparateDatabaseAndState`, keeps table `findings_issue`) — no
+  data migration.
+
+### Fixed (second API review — all LOW; HIGH/MED from v2.17.x verified still present)
+- `/api/findings/` open-by-severity `counts` now respect the `domain`/`source`
+  filter (was whole-fleet — misleading KPI).
+- `workflow_id` on a scheduled scan → **400** (was silently dropped, quietly
+  running the default Full Scan).
+- `/api/scans/?status=` and `/api/changes/?change_type=` reject unknown enum
+  values with 400 (were silent-empty).
+
+### Docs
+- **D-017 tool-centric perspective dropped** — not a product goal; the 4 backed
+  perspectives are scan / asset / finding / issue.
+
 ## [v2.17.2] — 2026-09-13
 
 ### Fixed
