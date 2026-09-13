@@ -343,6 +343,10 @@ def start_scan(request, data: ScanStartRequest):
             raise HttpError(400, "Invalid ISO datetime format for scheduled_at")
         if scheduled_at.tzinfo is None:
             scheduled_at = timezone.make_aware(scheduled_at)
+        # Reject a past datetime — otherwise the next sweep fires it immediately,
+        # which is surprising for a "schedule for later" request.
+        if scheduled_at <= timezone.now():
+            raise HttpError(400, "scheduled_at must be in the future")
         _schedule_once(domain, scheduled_at)
         return Status(201, {"scheduled_at": scheduled_at.isoformat()})
 
