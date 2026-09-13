@@ -28,7 +28,7 @@ facts are presented.**
   persistent layer at finalize.
 - **Execution structured separately:** `API ↕ DBOS workflow → pipeline → tools →
   normalized data`.
-- **UI perspectives** (scan-/asset-/finding-/issue-/tool-centric) are views over the
+- **UI perspectives** (scan-/asset-/finding-/issue-centric) are views over the
   same backend and free to change. One backend already serves three of them.
 
 Full rationale + the dev order (entities → pipeline → API+DBOS → normalize →
