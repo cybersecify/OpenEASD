@@ -7,6 +7,20 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.17.2] — 2026-09-13
+
+### Fixed
+- **`/metrics` is now opt-in, OFF by default (M3).** The Prometheus endpoint is
+  unauthenticated (counts only), so it ships closed: `METRICS_ENABLED` defaults to
+  `False` (404 unless explicitly enabled). Enable it only once the endpoint is
+  network-restricted to your scraper — leaving it public exposes aggregate posture
+  (open-finding counts by severity, scan activity) to any caller. Closes the last
+  open finding from the API security review.
+
+### Docs
+- Added the **D-017 flow diagram** to `docs/DESIGN.md` (write → execute → promote →
+  read path of the domain-centric architecture).
+
 ## [v2.17.1] — 2026-09-13
 
 Security + robustness fixes from a UI-independent API contract/security review.
