@@ -139,7 +139,7 @@ class TestCrossLinks:
         a = _asset(d, "port", "1.2.3.4:443/tcp")
         s = _session()
         f = _finding(s, a, "high")
-        body = auth_client.get(f"/api/scans/findings/?session_uuid={s.uuid}").json()
+        body = auth_client.get(f"/api/findings/?session_uuid={s.uuid}").json()
         row = next(x for x in body["findings"] if x["id"] == f.id)
         assert row["asset_id"] == a.id
         assert row["asset_key"] == "1.2.3.4:443/tcp"
@@ -149,7 +149,7 @@ class TestCrossLinks:
         _domain()
         s = _session()
         f = _finding(s, asset=None, severity="low")
-        body = auth_client.get(f"/api/scans/findings/?session_uuid={s.uuid}").json()
+        body = auth_client.get(f"/api/findings/?session_uuid={s.uuid}").json()
         row = next(x for x in body["findings"] if x["id"] == f.id)
         assert row["asset_id"] is None and row["asset_key"] is None
 

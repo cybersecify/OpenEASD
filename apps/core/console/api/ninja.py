@@ -185,9 +185,10 @@ api.add_router("/dashboard", dashboard_router)
 from apps.core.data.domains.api import router as domains_router
 api.add_router("/domains", domains_router)
 
-from apps.core.engine.scans.api import router as scans_router, scheduled_router
+from apps.core.engine.scans.api import router as scans_router, scheduled_router, changes_router
 api.add_router("/scans", scans_router)
 api.add_router("/scheduled", scheduled_router)
+api.add_router("/changes", changes_router)
 
 from apps.core.engine.workflows.api import router as workflows_router
 api.add_router("/workflows", workflows_router)
@@ -204,8 +205,9 @@ api.add_router("/credentials", credentials_router)
 from apps.core.console.ai.api import router as ai_router
 api.add_router("/ai", ai_router)
 
-from apps.core.data.findings.api import router as issues_router
+from apps.core.data.findings.api import router as issues_router, findings_router
 api.add_router("/issues", issues_router)
+api.add_router("/findings", findings_router)
 
 from apps.core.data.asset_inventory.api import router as assets_router
 api.add_router("/assets", assets_router)

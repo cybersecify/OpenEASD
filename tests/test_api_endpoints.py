@@ -588,7 +588,7 @@ class TestScanDelete:
 
 class TestFindingsList:
     def test_returns_paginated_findings(self, auth_client, finding):
-        res = auth_client.get("/api/scans/findings/")
+        res = auth_client.get("/api/findings/")
         assert res.status_code == 200
         data = res.json()
         assert "findings" in data
@@ -596,7 +596,7 @@ class TestFindingsList:
         assert "total" in data
 
     def test_filter_by_severity(self, auth_client, finding):
-        res = auth_client.get("/api/scans/findings/?severity=info")
+        res = auth_client.get("/api/findings/?severity=info")
         assert res.status_code == 200
 
     def test_filter_by_session_uuid(self, auth_client, finding):
@@ -615,7 +615,7 @@ class TestFindingsList:
             description="d", remediation="r",
         )
 
-        res = auth_client.get(f"/api/scans/findings/?session_uuid={finding.session.uuid}")
+        res = auth_client.get(f"/api/findings/?session_uuid={finding.session.uuid}")
         assert res.status_code == 200
         data = res.json()
         uuids = {f["session_uuid"] for f in data["findings"]} if data["findings"] else set()
@@ -625,18 +625,18 @@ class TestFindingsList:
 
     def test_unknown_session_uuid_returns_404(self, auth_client):
         import uuid
-        res = auth_client.get(f"/api/scans/findings/?session_uuid={uuid.uuid4()}")
+        res = auth_client.get(f"/api/findings/?session_uuid={uuid.uuid4()}")
         assert res.status_code == 404
 
     def test_requires_auth(self, client):
-        assert client.get("/api/scans/findings/").status_code == 401
+        assert client.get("/api/findings/").status_code == 401
 
 
 class TestFindingStatusUpdate:
     def test_updates_status(self, auth_client, finding):
         res = post_json(
             auth_client,
-            f"/api/scans/findings/{finding.id}/status/",
+            f"/api/findings/{finding.id}/status/",
             {"status": "acknowledged"},
         )
         assert res.status_code == 200
@@ -645,7 +645,7 @@ class TestFindingStatusUpdate:
     def test_resolved_sets_resolved_at(self, auth_client, finding):
         res = post_json(
             auth_client,
-            f"/api/scans/findings/{finding.id}/status/",
+            f"/api/findings/{finding.id}/status/",
             {"status": "resolved", "resolution_note": "Fixed"},
         )
         assert res.status_code == 200
@@ -656,13 +656,13 @@ class TestFindingStatusUpdate:
     def test_invalid_status_returns_400(self, auth_client, finding):
         res = post_json(
             auth_client,
-            f"/api/scans/findings/{finding.id}/status/",
+            f"/api/findings/{finding.id}/status/",
             {"status": "invalid_status"},
         )
         assert res.status_code == 400
 
     def test_requires_auth(self, client, finding):
-        assert post_json(client, f"/api/scans/findings/{finding.id}/status/", {"status": "open"}).status_code == 401
+        assert post_json(client, f"/api/findings/{finding.id}/status/", {"status": "open"}).status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -671,14 +671,14 @@ class TestFindingStatusUpdate:
 
 class TestUrlsList:
     def test_returns_paginated(self, auth_client, db):
-        res = auth_client.get("/api/scans/urls/")
+        res = auth_client.get("/api/assets/urls/")
         assert res.status_code == 200
         data = res.json()
         assert "results" in data
         assert "total" in data
 
     def test_requires_auth(self, client):
-        assert client.get("/api/scans/urls/").status_code == 401
+        assert client.get("/api/assets/urls/").status_code == 401
 
 
 # ---------------------------------------------------------------------------

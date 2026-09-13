@@ -21,8 +21,8 @@ export default function ChangesPage() {
   const [page,       setPage]       = useState(1);
 
   const { data, isLoading: loading, error } = useQuery({
-    queryKey: ['/scans/deltas/', changeType, domain, page],
-    queryFn: () => apiGet(`/scans/deltas/?change_type=${changeType}`
+    queryKey: ['/changes/', changeType, domain, page],
+    queryFn: () => apiGet(`/changes/?change_type=${changeType}`
       + `&domain=${encodeURIComponent(domain)}&page=${page}`),
   });
 
