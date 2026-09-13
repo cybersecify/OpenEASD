@@ -34,6 +34,58 @@ facts are presented.**
 Full rationale + the dev order (entities → pipeline → API+DBOS → normalize →
 vertical slices → UI last) in [DECISIONS.md §D-017](DECISIONS.md#d-017--architecture-north-star-domain-centric-api-driven-ui-agnostic).
 
+### Flow
+
+How a fact enters the system and comes back out. Execution, domain, and
+presentation run in their own lanes and meet only through stored facts.
+
+```
+ ① WRITE / TRIGGER                          ② EXECUTE (durable, resumable)
+ ┌─────────────────────────┐                ┌───────────────────────────────────────┐
+ │ producer:               │  create        │ DBOS run_scan workflow (worker tier)    │
+ │  • API POST /scans/start│  ScanSession   │   └─ Pipeline — 13 phases, fixed order  │
+ │  • scheduler cron       │ ─── + ────────►│        └─ Tools (per phase)             │
+ │  • AI agent             │  enqueue       │             normalize → write rows      │
+ └─────────────────────────┘  (returns 201) │             (never call each other)     │
+        ▲                                    └───────────────────┬─────────────────────┘
+        │                                                        │ writes
+        │                                                        ▼
+        │                                   ╔═════════════════════════════════════════╗
+        │                                   ║ RAW, SCAN-SCOPED LAYER                   ║
+        │                                   ║ per-scan Finding + Subdomain/IP/Port/URL ║
+        │                                   ║ "what this run saw" — provenance,        ║
+        │                                   ║ prunable (retention), idempotent (resume)║
+        │                                   ╚════════════════════╤════════════════════╝
+        │                                                        │ ③ PROMOTE (at _finalize_session)
+        │                                                        ▼  rollup + relationships
+        │                                   ╔═════════════════════════════════════════╗
+        │                                   ║ PERSISTENT, DOMAIN-CENTRIC FACT LAYER    ║
+        │                                   ║   Asset (inventory, deduped per domain)  ║
+        │                                   ║   Issue (triage persists across scans)   ║
+        │                                   ║ relationship graph (independent entities)║
+        │                                   ║   Scan ─discovers→ Asset                 ║
+        │                                   ║   Scan ─generates→ Finding               ║
+        │                                   ║   Finding ─affects→ Asset                ║
+        │                                   ║   Finding ─promoted to→ Issue            ║
+        │                                   ║ + deltas · exposure · AI triage · alerts ║
+        │                                   ╚════════════════════╤════════════════════╝
+        │                                                        │ ④ READ (traverse the graph)
+        │         the SAME backend, queried per perspective      ▼
+   ┌────┴───────────────── API (Django Ninja, flat JSON — the one contract) ──────────────────┐
+   │  /scans → scan-centric   /assets → asset-centric   /issues → finding/issue-centric   …    │
+   └────────────────────────────────────────────────┬──────────────────────────────────────────┘
+                                                     ▼
+                            UI decides PRESENTATION only (React SPA, or any client)
+                            new perspective = new read + view, NO schema change
+```
+
+**The rule the diagram encodes:** the backend stores **facts, relationships,
+execution state, and normalized results**; the UI decides **how they're presented**.
+Raw scan rows are execution/provenance; the domain-centric layer is the canonical
+cross-scan truth. ⑤ *Lifecycle:* triage lives on `Issue` so it survives scans;
+retention prunes the raw layer without losing the domain story; a new tool just
+writes normalized rows and the graph + every perspective pick it up for free.
+
 ---
 
 ## System Overview
