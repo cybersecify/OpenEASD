@@ -7,6 +7,57 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.17.0] — 2026-09-13
+
+Producer→queue→consumer **resilience hardening** — the full open plan
+(`docs/specs/2026-09-07-producer-queue-consumer-hardening.md`, H2–H10) plus the
+deploy-incident follow-ups. No UI changes; all additive and safe when unused.
+
+### Added
+- **Prometheus `/metrics` endpoint + scan heartbeat (H2).** A DB-backed exporter
+  (`apps/core/console/observability/metrics.py`) serves `GET /metrics` on the web
+  tier (unauthenticated like `/health`, `METRICS_ENABLED` toggle, `no-store`):
+  `openeasd_scans{status}`, `openeasd_scan_queue_depth`,
+  `openeasd_findings{severity}`, `openeasd_domains`,
+  `openeasd_scan_last_journey_seconds` (enqueue→finalize), and
+  `openeasd_seconds_since_last_progress` (worker liveness). **Why** DB-backed, not
+  in-process counters: no worker HTTP listener, no cross-pod aggregation,
+  drift-free, survives restarts, no new dependency. A `ScanSession.last_progress_at`
+  heartbeat (migration `0015`) is stamped on every step completion.
+- **Opt-in scan retention / pruning (H3).** `prune_old_scans()` + a
+  `scheduled_scan_prune` hygiene cron keep, per domain, the newest
+  `SCAN_RETENTION_KEEP_PER_DOMAIN` (30) scans + any within
+  `SCAN_RETENTION_MAX_AGE_DAYS` (180); older terminal scans are deleted (cascade).
+  **OFF by default** (`SCAN_RETENTION_ENABLED`); never deletes the latest per
+  domain or an in-flight scan. **Why:** bound unbounded scan-history growth — the
+  asset/Issue registers keep the long-term surface story.
+- **No-progress watchdog (H10).** `reap_stuck_scans` now reaps a `running` scan
+  whose `last_progress_at` is stale beyond `SCAN_NO_PROGRESS_MINUTES` (60), freeing
+  a wedged `concurrency=2` slot in minutes instead of the 24h hard cap. A
+  slow-but-alive scan keeps its heartbeat fresh and is never reaped.
+- **`ScheduledJob` registry for runtime cron control (H7).** An admin-editable
+  table (migration `0016`+seed `0017`) with one row per backbone cron; each
+  `@DBOS.scheduled` body dispatches through `dispatch_scheduled(name, fn)` which
+  honours the row's `enabled` toggle (on/off with no deploy) and records
+  `last_run_at`. Fails open (missing row ⇒ job still runs). DBOS still owns timing.
+
+### Fixed
+- **Idempotent crash-resume (H5).** A tool re-run after a worker crash (non-terminal
+  step row) now deletes its prior `Finding` rows for the session before
+  re-executing, so Finding writes (bulk_create, no unique constraint) converge
+  instead of duplicating. Assets are already `(session,*)`-unique + `ignore_conflicts`.
+- **Watchdog ↔ DBOS reconcile (H4 + H9).** `reap_stuck_scans` cancels each reaped
+  scan's DBOS `run_scan` workflow inline (matched by `scan-{id}` dedup), so a
+  phantom `PENDING` workflow never outlives its scan and can't hold a scans-queue
+  slot; the H8 orphan reaper remains the periodic safety net. H4's "don't fight
+  DBOS resume" goal is met via the H10 heartbeat (only non-progressing scans are
+  reaped) rather than querying the DBOS store each sweep.
+- **Queue-jam recovery (H8, carried from v2.16.x line).** A version-orphaned /
+  phantom `run_scan` workflow (e.g. stranded by a worker rollout mid-scan) that
+  holds a `concurrency=2` slot is auto-cancelled — `reap_orphaned_scan_workflows`
+  in the watchdog + `manage.py reap_orphan_scans` for immediate cleanup — plus a
+  drain-before-rollout runbook in `docs/DEVELOPMENT.md`.
+
 ## [v2.16.0] — 2026-09-12
 
 ### Added
