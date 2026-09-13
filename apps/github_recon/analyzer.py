@@ -27,7 +27,11 @@ _MAX_FINDINGS = 200  # hard cap so a huge org can't flood the report
 # the org's own buckets, so we surface all providers (not just target-domain matches).
 _BUCKET_RES = (
     re.compile(r"s3://[a-z0-9][a-z0-9.\-]{1,254}", re.I),
-    re.compile(r"[a-z0-9][a-z0-9.\-]{1,254}\.s3(?:[.\-][a-z0-9\-]+)*\.amazonaws\.com", re.I),
+    # Region part is a single bounded [a-z0-9.-] run (not a nested `(?:...)*`) so the
+    # pattern can't backtrack exponentially (ReDoS). Still matches the no-region
+    # (`x.s3.amazonaws.com`), dot-region (`x.s3.us-east-1.…`), dash-region
+    # (`x.s3-us-west-2.…`), and dualstack (`x.s3.dualstack.us-east-1.…`) forms.
+    re.compile(r"[a-z0-9][a-z0-9.\-]{1,63}\.s3[a-z0-9.\-]{0,40}\.amazonaws\.com", re.I),
     re.compile(r"[a-z0-9][a-z0-9\-]{1,62}\.blob\.core\.windows\.net", re.I),
     re.compile(r"storage\.googleapis\.com/[a-z0-9._\-]+", re.I),
     re.compile(r"[a-z0-9][a-z0-9._\-]{1,254}\.storage\.googleapis\.com", re.I),
