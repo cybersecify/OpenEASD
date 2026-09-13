@@ -138,7 +138,13 @@ def test_notification(request, data: TestIn):
         resp.raise_for_status()
         return {"ok": True, "channel": channel}
     except Exception as e:
-        raise HttpError(502, f"Webhook delivery failed: {e}")
+        # Do NOT put `e` in the response: requests' exceptions embed the full
+        # webhook URL, whose path carries the Slack/Teams secret token. The URL is
+        # write-only everywhere else (never returned by GET), so leaking it here
+        # would let a client exfiltrate the secret by triggering a failed test.
+        # Log the detail server-side; return a generic message.
+        logger.warning("[notifications] %s webhook test delivery failed: %s", channel, e)
+        raise HttpError(502, "Webhook delivery failed — see server logs for detail.")
 
 
 @router.get("/alerts/")

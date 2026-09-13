@@ -146,6 +146,10 @@ def change_password(request, payload: ChangePasswordIn):
         raise HttpError(400, "Current password is incorrect")
     if len(payload.new_password) < 8:
         raise HttpError(400, "New password must be at least 8 characters")
+    # Cap length: set_password PBKDF2-hashes the raw string, so an unbounded
+    # password is an authenticated CPU-burn vector.
+    if len(payload.new_password) > 128:
+        raise HttpError(400, "New password must be at most 128 characters")
     if payload.new_password == payload.current_password:
         raise HttpError(400, "New password must differ from current password")
     u.set_password(payload.new_password)
@@ -155,6 +159,20 @@ def change_password(request, payload: ChangePasswordIn):
     if profile and profile.must_change_password:
         profile.must_change_password = False
         profile.save(update_fields=["must_change_password"])
+    # Revoke existing sessions: the API is stateless JWT, so without this a
+    # previously-issued (possibly stolen) refresh token keeps minting access
+    # tokens after the password change. Blacklist all of the user's outstanding
+    # refresh tokens so a password change actually ends other sessions. Access
+    # tokens are short-lived and expire on their own.
+    try:
+        from ninja_jwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+        for ot in OutstandingToken.objects.filter(user=u):
+            BlacklistedToken.objects.get_or_create(token=ot)
+    except Exception:  # noqa: BLE001 — a blacklist hiccup must not fail the change
+        import logging
+        logging.getLogger(__name__).warning(
+            "[auth] could not blacklist outstanding tokens on password change", exc_info=True
+        )
     return {"ok": True}
 
 

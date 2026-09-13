@@ -264,9 +264,19 @@ def _report_auth_required(view_func):
     the Bearer header), so nothing depends on it — a token in the query string is
     now ignored.
     """
+    def _password_change_pending(user) -> bool:
+        # Mirror JWTAuth: a user still on the forced-change flag (e.g. default
+        # admin/admin) must not reach data endpoints. The Ninja API blocks them
+        # everywhere but /user/*; without this check the report views are a hole
+        # in that server-side enforcement.
+        profile = getattr(user, "profile", None)
+        return bool(profile is not None and profile.must_change_password)
+
     @functools.wraps(view_func)
     def wrapper(request, *args, **kwargs):
         if request.user.is_authenticated:
+            if _password_change_pending(request.user):
+                return HttpResponseRedirect('/change-password')
             return view_func(request, *args, **kwargs)
 
         auth_header = request.headers.get('Authorization', '')
@@ -277,7 +287,10 @@ def _report_auth_required(view_func):
                 from ninja_jwt.tokens import AccessToken
                 token_obj = AccessToken(token)
                 user_id = token_obj["user_id"]
-                request.user = User.objects.get(id=user_id, is_active=True)
+                user = User.objects.get(id=user_id, is_active=True)
+                if _password_change_pending(user):
+                    return HttpResponseRedirect('/change-password')
+                request.user = user
                 return view_func(request, *args, **kwargs)
             except Exception as exc:
                 logger.debug(f"Report token auth failed: {exc}")
