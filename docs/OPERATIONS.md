@@ -120,21 +120,6 @@ just logs / just ps
 The rule: **verify everything in dev; never debug on the live instance.** Prod
 only ever receives an already-verified, tagged image.
 
-> **Preprod auto-deploy (CD).** Preprod is deployed automatically by
-> `.github/workflows/deploy-preprod.yml` on every published GitHub Release (and on
-> manual `workflow_dispatch`), via a **self-hosted runner** on the preprod host
-> (label `preprod`). Preprod's desired state is **not** the upstream `k8s/` base
-> (that's PROD-only, namespace `default`) — it's the `apps/openeasd/` kustomize
-> overlay in a **separate private infra repo on the host** (`PREPROD_INFRA_DIR`,
-> namespace `preprod`), which has **no remote**. The job: `pg_dump` backup → **bump
-> that overlay's image pins to the release tag, commit locally, `kubectl apply -k`**
-> it (kustomize rewrites the `init` container image too → migration-safe) → wait for
-> rollout → verify `/health`. Bumping-in-Git (not `kubectl set image`) is what stops
-> the drift trap where a later `apply -k` rolled preprod back to a stale pin. Runner
-> setup + the `PREPROD_INFRA_DIR`/`KUBECTL`/`KUSTOMIZE` vars are in the workflow
-> header. **Prod is deliberately NOT auto-deployed** — it stays on the manual,
-> deterministic promote below.
-
 **1 — Verify the code (native).** Build on a `feat/`/`fix/` branch with `just dev`,
 click through the feature at http://localhost:5173, run a scan on an *authorized*
 test domain, and confirm any new migrations apply (`uv run manage.py migrate`).
