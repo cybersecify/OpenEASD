@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.19.0] — 2026-09-14
+
 ### Added
 - **`github_recon` (GitHub Org Recon) tool restored** — passive, phase-3 "Asset
   Discovery". Enumerates the target org's PUBLIC GitHub repos via GitHub's REST
@@ -22,6 +24,15 @@ commits to recover the reasoning.
   *infra exposure* (recon surface). +39 tests (`test_github_recon.py`).
   Its phase group moved from the retired "Surface Enumeration" to "Asset
   Discovery" (beside `asn_discovery`, its passive-infra-recon analog).
+
+### Docs
+- **Design-flow documentation** (#490): `docs/DDD.md` (the domain model in pure
+  DDD terms — ubiquitous language, bounded contexts, aggregates, domain events),
+  `docs/README.md` (the docs index + reading order: PRD → DDD → System Design →
+  Technical Design → API Contract → Coding), and `docs/API.md` (API-contract
+  conventions — auth, error shape, pagination, perspectives — pointing to the live
+  OpenAPI at `/api/docs`). All existing docs cross-linked; governing rule stated
+  once: the running code is the source of truth.
 
 ## [v2.18.0] — 2026-09-13
 
