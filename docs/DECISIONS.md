@@ -367,6 +367,8 @@ Calling these out so contributors don't add them back without a discussion:
 
 ## D-017 — Architecture north star: domain-centric, API-driven, UI-agnostic
 **Status:** locked · **Decided:** 2026-09-13
+> The domain model this decision produced is described in DDD terms in
+> [`DDD.md`](DDD.md); its structural realization is in [`DESIGN.md`](DESIGN.md).
 
 **Decision.** OpenEASD is a **domain-centric, API-driven EASM backend with
 DBOS-based durable orchestration, a configurable security pipeline, normalized

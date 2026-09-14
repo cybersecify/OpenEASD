@@ -8,8 +8,12 @@ somewhere in the tree, usually enforced by a test.
 This document complements, and never overrides:
 
 1. [`CLAUDE.md`](../CLAUDE.md) — the authoritative project/architecture/flow rules.
-2. [`docs/DESIGN.md`](DESIGN.md) — layers, tiers, pipeline, apps.
-3. [`docs/DECISIONS.md`](DECISIONS.md) — *why* the architecture is the way it is.
+2. [`docs/DDD.md`](DDD.md) — the domain model in DDD terms.
+3. [`docs/DESIGN.md`](DESIGN.md) — layers, tiers, pipeline, apps.
+4. [`docs/DECISIONS.md`](DECISIONS.md) — *why* the architecture is the way it is.
+
+This is the last stage of the design flow; full index + reading order:
+[`README.md`](README.md).
 
 Precedence on any conflict: the user's explicit instruction → CLAUDE.md → this file.
 
