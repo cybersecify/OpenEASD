@@ -3,7 +3,7 @@
 External Attack Surface Detection platform. Scans domains for network and
 web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 
-## Status (v2.21.0 — 2026-09-14)
+## Status (v2.22.0 — 2026-09-14)
 
 - **Released**: v2.16.0 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
   `:v2.16.0` / `:v2.16` / `:latest` (web on python:3.12-slim, worker on Ubuntu 24.04/3.12 — both Python 3.12; Django 5.2 LTS). 3-tier deploy: `db` (postgres:17) + `web`
