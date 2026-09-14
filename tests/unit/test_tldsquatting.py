@@ -7,7 +7,7 @@ via public DNS. It must be fail-graceful (never raise a resolver error) and neve
 fail a scan.
 """
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import dns.resolver
 import pytest
@@ -299,89 +299,173 @@ class TestCollector:
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
-class TestAnalyzer:
-    def test_weaponizable_is_medium(self):
+class TestRdapAge:
+    def test_rdap_created_parses_registration_date(self):
+        from apps.tldsquatting.collector import _rdap_created
+        payload = {"events": [
+            {"eventAction": "registration", "eventDate": "1994-02-28T05:00:00Z"},
+            {"eventAction": "last changed", "eventDate": "2020-01-01T00:00:00Z"},
+        ]}
+        resp = Mock(status_code=200)
+        resp.json.return_value = payload
+        with patch("apps.tldsquatting.collector.requests.get", return_value=resp):
+            assert _rdap_created("amnic.net") == "1994-02-28"
+
+    def test_rdap_created_none_on_error(self):
+        from apps.tldsquatting.collector import _rdap_created
+        with patch("apps.tldsquatting.collector.requests.get", side_effect=Exception("boom")):
+            assert _rdap_created("x.com") is None
+
+    def test_rdap_created_none_on_non_200(self):
+        from apps.tldsquatting.collector import _rdap_created
+        resp = Mock(status_code=404)
+        resp.json.return_value = {}
+        with patch("apps.tldsquatting.collector.requests.get", return_value=resp):
+            assert _rdap_created("x.com") is None
+
+    def test_enrich_marks_predating(self):
+        from apps.tldsquatting import collector as C
+        sess = _session("amnic.com")
+        results = [{"candidate": "amnic.net", "has_a": True, "has_mx": False,
+                    "has_ns": False, "resolved_ips": ["1.2.3.4"]}]
+        dates = {"amnic.com": "1997-04-25", "amnic.net": "1994-02-28"}
+        with patch("apps.tldsquatting.collector._rdap_created",
+                   side_effect=lambda d, timeout=8: dates[d]):
+            C._enrich_registration_age(sess, "amnic.com", results)
+        assert results[0]["predates_target"] is True
+        assert results[0]["created"] == "1994-02-28"
+        assert results[0]["target_created"] == "1997-04-25"
+
+    def test_enrich_noop_when_disabled(self):
+        from apps.tldsquatting import collector as C
         sess = _session("example.com")
-        results = [{"candidate": "examp1e.com", "technique": "typo",
-                    "has_a": True, "has_mx": False, "has_ns": False,
-                    "resolved_ips": ["1.2.3.4"]}]
-        findings = analyze(sess, results)
-        assert len(findings) == 1
-        f = findings[0]
+        results = [{"candidate": "example.net", "has_a": True, "has_mx": False,
+                    "has_ns": False, "resolved_ips": ["1.2.3.4"]}]
+        with override_settings(TLDSQUATTING_RDAP_AGE=False), \
+             patch("apps.tldsquatting.collector._rdap_created") as rdap:
+            C._enrich_registration_age(sess, "example.com", results)
+        rdap.assert_not_called()
+        assert "predates_target" not in results[0]
+
+
+@pytest.mark.django_db
+class TestAnalyzer:
+    """Severity now comes from the ported risk+threat scoring model
+    (``scoring.py``), mapped threat-level → severity
+    (PRE-EXISTING→info … CRITICAL→critical). These assert the bands, not an
+    ad-hoc ladder."""
+
+    def _find(self, sess, record):
+        return analyze(sess, [record])[0]
+
+    def test_finding_shape(self):
+        sess = _session("example.com")
+        f = self._find(sess, {"candidate": "examp1e.com", "technique": "typo",
+                              "has_a": True, "resolved_ips": ["1.2.3.4"]})
         assert f.source == "tldsquatting"
         assert f.check_type == "lookalike_domain"
-        assert f.severity == "medium"
         assert f.target == "examp1e.com"
         assert f.extra["resolved_ips"] == ["1.2.3.4"]
         assert f.extra["technique"] == "typo"
 
-    def test_mx_is_also_medium(self):
-        sess = _session("example.com")
-        results = [{"candidate": "examp1e.com", "technique": "typo",
-                    "has_a": False, "has_mx": True, "has_ns": False,
-                    "resolved_ips": []}]
-        assert analyze(sess, results)[0].severity == "medium"
+    def test_predates_target_is_pre_existing_info(self):
+        # amnic.net (1994) predates amnic.com (1997) → PRE-EXISTING, score 0, info,
+        # even though it carries A+MX (which would otherwise raise the score).
+        sess = _session("amnic.com")
+        f = self._find(sess, {
+            "candidate": "amnic.net", "technique": "tld_swap",
+            "has_a": True, "has_mx": True, "resolved_ips": ["1.2.3.4"],
+            "created": "1994-02-28", "target_created": "1997-04-25",
+            "predates_target": True,
+        })
+        assert f.severity == "info"
+        assert f.extra["risk_level"] == "PRE-EXISTING"
+        assert f.extra["risk_score"] == 0.0
+        assert f.extra["threat_level"] == "PRE-EXISTING"
+        assert "predates" in f.description.lower()
 
-    def test_ns_only_is_low(self):
+    def test_apex_itself_is_pre_existing(self):
         sess = _session("example.com")
-        results = [{"candidate": "examp1e.com", "technique": "typo",
-                    "has_a": False, "has_mx": False, "has_ns": True,
-                    "resolved_ips": []}]
-        assert analyze(sess, results)[0].severity == "low"
+        f = self._find(sess, {"candidate": "example.com", "has_a": True,
+                              "resolved_ips": ["1.2.3.4"]})
+        assert f.severity == "info"
+        assert f.extra["risk_level"] == "PRE-EXISTING"
 
-    def test_login_form_elevates_to_high(self):
+    def test_weighted_email_infra_combo_is_critical(self):
+        # MX + SPF + DMARC without an A record — the classic phishing-setup
+        # fingerprint; the weighted suspicious-combo bonuses stack to CRITICAL.
         sess = _session("example.com")
-        results = [{"candidate": "examp1e.com", "technique": "typo",
-                    "has_a": True, "has_mx": False, "has_ns": False,
-                    "resolved_ips": ["1.2.3.4"], "login_form": True,
-                    "content_checked": True}]
-        f = analyze(sess, results)[0]
+        f = self._find(sess, {
+            "candidate": "examp1e.com", "technique": "typo",
+            "has_a": False, "has_mx": True, "has_spf": True, "has_dmarc": True,
+            "resolved_ips": [],
+        })
+        assert f.extra["threat_level"] == "CRITICAL"
+        assert f.severity == "critical"
+
+    def test_login_form_with_infra_is_high(self):
+        # A + MX + a live login form → HIGH threat (credential phishing).
+        sess = _session("example.com")
+        f = self._find(sess, {
+            "candidate": "examp1e.com", "technique": "typo",
+            "has_a": True, "has_mx": True, "resolved_ips": ["1.2.3.4"],
+            "login_form": True, "content_checked": True,
+        })
         assert f.severity == "high"
         assert f.extra["login_form"] is True
-        assert "takedown" in f.description.lower()
+        assert f.extra["threat_score"] >= 8.0
 
-    def test_brand_mention_alone_stays_medium(self):
-        # A brand string on the page is a review signal, not proof of
-        # impersonation — short brands collide with unrelated orgs' real names
-        # (e.g. a scan for "amnic" hit the Armenia Network Information Centre).
+    def test_fully_weaponized_recent_lookalike_is_critical(self):
+        # Recent registration + full posture + login form + heavy brand mention.
+        from datetime import datetime, timedelta, timezone
+        recent = (datetime.now(timezone.utc) - timedelta(days=20)).strftime("%Y-%m-%d")
         sess = _session("example.com")
-        results = [{"candidate": "examp1e.com", "technique": "typo",
-                    "has_a": True, "has_mx": False, "has_ns": False,
-                    "resolved_ips": ["1.2.3.4"], "brand_mentioned": True,
-                    "brand_mention_count": 4, "content_checked": True}]
-        f = analyze(sess, results)[0]
-        assert f.severity == "medium"
-        assert "review it manually" in f.description
+        f = self._find(sess, {
+            "candidate": "examp1e.com", "technique": "typo",
+            "has_a": True, "has_spf": True, "has_dmarc": True,
+            "resolved_ips": ["1.2.3.4"], "created": recent,
+            "target_created": "2000-01-01",
+            "https_enabled": True, "ssl_valid": True,
+            "login_form": True, "brand_mentioned": True, "brand_mention_count": 8,
+            "content_checked": True,
+        })
+        assert f.severity == "critical"
+        assert f.extra["risk_level"] == "CRITICAL"
 
-    def test_parked_lookalike_is_low_even_with_a_and_mx(self):
-        # Parking-lot A/MX records are registrar defaults, not the buyer's
-        # phishing infrastructure.
+    def test_enterprise_ns_lowers_score(self):
+        # Enterprise NS (AWS) is a legitimacy signal (-1.0); unknown NS adds +1.0.
         sess = _session("example.com")
-        results = [{"candidate": "examp1e.com", "technique": "typo",
-                    "has_a": True, "has_mx": True, "has_ns": False,
-                    "resolved_ips": ["76.223.54.146"], "parked": True,
-                    "content_checked": True}]
-        f = analyze(sess, results)[0]
+        base = {"candidate": "examp1e.com", "technique": "typo",
+                "has_a": True, "resolved_ips": ["1.2.3.4"]}
+        ent = self._find(sess, {**base, "ns_targets": ["ns-1.awsdns-01.org."]})
+        unk = self._find(sess, {**base, "ns_targets": ["ns1.randomhost.io."]})
+        assert ent.extra["risk_score"] < unk.extra["risk_score"]
+
+    def test_parked_reduces_threat_to_low(self):
+        # A parked A-only lookalike: the -1.0 parked nudge keeps it LOW.
+        sess = _session("example.com")
+        f = self._find(sess, {
+            "candidate": "examp1e.com", "technique": "typo",
+            "has_a": True, "resolved_ips": ["76.223.54.146"],
+            "parked": True, "content_checked": True,
+        })
         assert f.severity == "low"
-        assert "parking" in f.description.lower()
         assert f.extra["parked"] is True
 
-    def test_login_form_on_parked_page_still_high(self):
-        # A confirmed phishing page outranks the parked signal.
+    def test_scores_stored_in_extra(self):
         sess = _session("example.com")
-        results = [{"candidate": "examp1e.com", "technique": "typo",
-                    "has_a": True, "has_mx": False, "has_ns": False,
-                    "resolved_ips": ["1.2.3.4"], "parked": True,
-                    "login_form": True, "content_checked": True}]
-        assert analyze(sess, results)[0].severity == "high"
+        f = self._find(sess, {"candidate": "examp1e.com", "has_a": True,
+                              "resolved_ips": ["1.2.3.4"]})
+        for key in ("risk_score", "risk_level", "threat_score", "threat_level"):
+            assert key in f.extra
 
-    def test_weaponizable_without_content_signal_stays_medium(self):
+    def test_not_pre_existing_when_dates_missing(self):
+        # No RDAP dates → not PRE-EXISTING; scored purely on DNS posture.
         sess = _session("example.com")
-        results = [{"candidate": "examp1e.com", "technique": "typo",
-                    "has_a": True, "has_mx": False, "has_ns": False,
-                    "resolved_ips": ["1.2.3.4"], "content_checked": True,
-                    "login_form": False, "brand_mentioned": False}]
-        assert analyze(sess, results)[0].severity == "medium"
+        f = self._find(sess, {"candidate": "examp1e.com", "has_a": True,
+                              "has_mx": True, "resolved_ips": ["1.2.3.4"]})
+        assert f.extra["risk_level"] != "PRE-EXISTING"
+        assert f.severity in ("low", "medium", "high", "critical")
 
     def test_one_finding_per_candidate(self):
         sess = _session("example.com")
@@ -401,6 +485,53 @@ class TestAnalyzer:
 
     def test_empty_results(self):
         assert analyze(_session("example.com"), []) == []
+
+
+# ---------------------------------------------------------------------------
+# Scoring model (ported risk + threat functions)
+# ---------------------------------------------------------------------------
+
+class TestScoring:
+    def test_pre_existing_when_predates(self):
+        from apps.tldsquatting.scoring import calculate_risk_score
+        score, level = calculate_risk_score(
+            {"created": "1994-02-28", "has_a": True, "has_mx": True},
+            target_created="1997-04-25",
+        )
+        assert (score, level) == (0.0, "PRE-EXISTING")
+
+    def test_pre_existing_when_apex(self):
+        from apps.tldsquatting.scoring import calculate_risk_score
+        assert calculate_risk_score({"has_a": True}, is_apex=True) == (0.0, "PRE-EXISTING")
+
+    def test_email_only_combo_scores_critical(self):
+        from apps.tldsquatting.scoring import calculate_risk_score
+        score, level = calculate_risk_score(
+            {"has_mx": True, "has_spf": True, "has_dmarc": True}
+        )
+        assert level == "CRITICAL"
+        assert score >= 8.0
+
+    def test_ns_tier_classification(self):
+        from apps.tldsquatting.scoring import ns_tier_from_targets
+        assert ns_tier_from_targets(["ns-1.awsdns-01.org."]) == "enterprise"
+        assert ns_tier_from_targets(["ns1.sedoparking.com."]) == "parking"
+        assert ns_tier_from_targets(["dns1.registrar-servers.com."]) == "known"
+        assert ns_tier_from_targets([]) == "unknown"
+        assert ns_tier_from_targets(["ns1.randomhost.io."]) == "unknown"
+
+    def test_threat_adds_content_signals(self):
+        from apps.tldsquatting.scoring import calculate_threat_score
+        base, _ = calculate_threat_score({}, 4.0)
+        login, _ = calculate_threat_score({"login_form": True}, 4.0)
+        assert login == base + 3.0
+
+    def test_threat_bad_input_never_raises(self):
+        from apps.tldsquatting.scoring import calculate_risk_score, calculate_threat_score
+        # Garbage created date degrades to "unknown age", never raises.
+        score, _ = calculate_risk_score({"created": "not-a-date", "has_a": True})
+        assert score > 0.0
+        assert calculate_threat_score({"brand_mention_count": None}, 1.0)[0] >= 1.0
 
 
 # ---------------------------------------------------------------------------
