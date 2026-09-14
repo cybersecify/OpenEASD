@@ -22,6 +22,13 @@ commits to recover the reasoning.
   unchanged (one out, one in). Core scope only — RDAP/SSL/CT-subdomain/reputation/
   IP-intel enrichment from the reference project is deferred. Passive (no auth).
 
+### Removed
+- **Preprod auto-deploy config** — removed `.github/workflows/deploy-preprod.yml`
+  and its OPERATIONS.md note. Development is local-dev-only; preprod CD is not
+  pursued. Releases (tag → GHCR publish) and the manual prod promote (`k8s/`)
+  are unchanged. (The v2.20.0 entry below is kept as history — the workflow did
+  ship then; this removes it going forward.)
+
 ## [v2.20.0] — 2026-09-14
 
 ### Added
