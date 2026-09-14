@@ -859,6 +859,53 @@ def _since_last_scan(session, severities):
     }
 
 
+_ISSUE_SEV_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+_ISSUE_REGISTER_CAP = 25  # keep the report tidy on domains with large registers
+
+
+def _issue_register(session, now=None):
+    """The domain's persistent Issue register for the report (item 6):
+    new-this-month / still-open-with-age / resolved-this-month, sourced from the
+    cross-scan register — not per-scan findings. Triaged issues (false_positive,
+    accepted) are excluded (item 7). Empty-safe when there's no Domain row."""
+    from apps.core.data.domains.models import Domain
+    from apps.core.data.findings.models import ACTIVE_STATUSES, TRIAGED_STATUSES
+    from apps.core.data.issues.models import Issue
+
+    now = now or timezone.now()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    empty = {"has_domain": False, "new_count": 0, "new": [],
+             "open_with_age": [], "open_count": 0, "resolved_count": 0, "resolved": []}
+    domain = Domain.objects.filter(name=session.domain).first()
+    if domain is None:
+        return empty
+
+    qs = Issue.objects.filter(domain=domain).exclude(status__in=TRIAGED_STATUSES)
+
+    def _by_sev(items):
+        return sorted(items, key=lambda i: _ISSUE_SEV_RANK.get(i.severity, 5))
+
+    new = _by_sev(list(qs.filter(first_seen__gte=month_start)))
+
+    open_issues = list(qs.filter(status__in=ACTIVE_STATUSES))
+    for i in open_issues:
+        i.age_days = (now - i.first_seen).days
+    open_with_age = sorted(
+        open_issues, key=lambda i: (_ISSUE_SEV_RANK.get(i.severity, 5), -i.age_days)
+    )
+
+    resolved = list(
+        qs.filter(status="resolved", resolved_at__gte=month_start).order_by("-resolved_at")
+    )
+
+    return {
+        "has_domain": True,
+        "new_count": len(new), "new": new[:_ISSUE_REGISTER_CAP],
+        "open_count": len(open_with_age), "open_with_age": open_with_age[:_ISSUE_REGISTER_CAP],
+        "resolved_count": len(resolved), "resolved": resolved[:_ISSUE_REGISTER_CAP],
+    }
+
+
 @_report_auth_required
 def export_scan_pdf(request, session_uuid):
     """Export a scan report as PDF, optionally filtered by ?min_severity=."""
@@ -1033,6 +1080,7 @@ def export_scan_pdf(request, session_uuid):
         "exposure_grade": exposure_grade,
         "exposure_trend": exposure_trend,
         "since_last_scan": _since_last_scan(session, severities),
+        "issue_register": _issue_register(session),
         "top_risks": top_risks,
         "headline_risk": top_risks[0] if top_risks else None,
         "coverage": _coverage_context(session),

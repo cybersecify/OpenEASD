@@ -8,6 +8,16 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Added
+- **Report reads the Issue register + exposure score excludes triaged (items 6 & 7).**
+  The PDF report gains an **Issue Register** section sourced from the persistent
+  cross-scan register (not per-scan findings): *new this month*, *still open with
+  age*, *resolved this month*. A new **`accepted` ("Accepted Risk")** status joins
+  `false_positive` as a triage decision, and both are now **excluded from the Issue
+  Register and from the exposure score** — a dismissed or accepted risk no longer
+  inflates the number. Per-finding detail stays as evidence. `accepted` added to
+  `STATUS_CHOICES` (migrations `findings/0012`, `issues/0004`).
+
+### Added
 - **Auto-resolve Issues no longer seen (identity/register item 4).** When a
   *comprehensive* scan finalizes — a **completed** run of the **default full
   workflow** with **no tool subset** — any active Issue (`open`/`acknowledged`/

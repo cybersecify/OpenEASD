@@ -1086,3 +1086,55 @@ class TestNextStepsBlock:
         )
         groups = _group_findings_by_issue([f])
         assert any("SPF" in s for s in groups[0]["next_steps"])
+
+
+@pytest.mark.django_db
+class TestIssueRegisterSection:
+    """Register items 6 + 7 — the report reads the persistent Issue register
+    (new/open-with-age/resolved), excluding triaged (false_positive, accepted)."""
+
+    def _issue(self, domain, **kw):
+        from apps.core.data.issues.models import Issue
+        now = timezone.now()
+        d = dict(
+            domain=domain, key=f"key-{Issue.objects.count()}", check_id="x:y",
+            source="web_checker", check_type="hdr", title="I", target="t",
+            severity="high", status="open", first_seen=now, last_seen=now,
+        )
+        d.update(kw)
+        return Issue.objects.create(**d)
+
+    def test_groups_and_excludes_triaged(self, db, session):
+        from datetime import timedelta
+        from apps.core.data.domains.models import Domain
+        from apps.core.console.reports.views import _issue_register
+        now = timezone.now()
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        last_month = month_start - timedelta(days=5)
+        dom, _ = Domain.objects.get_or_create(name=session.domain)
+
+        self._issue(dom, key="new1", title="New open", first_seen=now, status="open")
+        self._issue(dom, key="old1", title="Old open", first_seen=last_month, status="open")
+        self._issue(dom, key="res1", title="Resolved one", status="resolved",
+                    first_seen=last_month, resolved_at=now)
+        self._issue(dom, key="fp1", title="False positive", status="false_positive", first_seen=now)
+        self._issue(dom, key="acc1", title="Accepted", status="accepted", first_seen=now)
+
+        reg = _issue_register(session, now=now)
+        assert reg["has_domain"] is True
+        assert {i.title for i in reg["open_with_age"]} == {"New open", "Old open"}  # triaged excluded
+        assert {i.title for i in reg["new"]} == {"New open"}                        # this month only
+        assert {i.title for i in reg["resolved"]} == {"Resolved one"}
+        old = next(i for i in reg["open_with_age"] if i.title == "Old open")
+        assert old.age_days >= 5
+
+    def test_no_domain_row_is_empty(self, db, session):
+        from apps.core.console.reports.views import _issue_register
+        reg = _issue_register(session)
+        assert reg["has_domain"] is False
+        assert reg["open_with_age"] == [] and reg["new_count"] == 0
+
+    def test_accepted_is_a_valid_status(self):
+        from apps.core.data.findings.models import STATUS_CHOICES, TRIAGED_STATUSES
+        assert "accepted" in dict(STATUS_CHOICES)
+        assert set(TRIAGED_STATUSES) == {"false_positive", "accepted"}

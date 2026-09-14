@@ -38,6 +38,9 @@ class Issue(models.Model):
     )
     key = models.CharField(max_length=1024)
 
+    # Statuses: open/acknowledged/in_progress (active), resolved (auto-set when a
+    # comprehensive scan no longer sees it — item 4), false_positive/accepted
+    # (triaged — excluded from the report register + exposure score, items 6/7).
     # check_id is the title-independent rule identity the `key` is built from
     # (with target). source/check_type/title are kept as display metadata only.
     check_id = models.CharField(max_length=100, blank=True, db_index=True)

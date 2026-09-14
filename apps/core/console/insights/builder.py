@@ -34,11 +34,34 @@ def build_insights(session) -> None:
 
     findings_qs = Finding.objects.filter(session=session)
 
+    # Triaged issues (false_positive / accepted) are excluded from the exposure
+    # score (register item 7): a dismissed or accepted risk shouldn't inflate the
+    # number. Build the set of triaged issue keys for this domain, then skip any
+    # finding whose (check_id, target) identity matches. Fail-graceful: no Domain
+    # row (or no triaged issues) → count every finding, exactly as before.
+    from apps.core.data.domains.models import Domain
+    from apps.core.data.findings.models import TRIAGED_STATUSES
+    from apps.core.data.issues.models import Issue, issue_key
+
+    domain = Domain.objects.filter(name=session.domain).first()
+    triaged_keys = set()
+    if domain is not None:
+        triaged_keys = set(
+            Issue.objects.filter(domain=domain, status__in=TRIAGED_STATUSES)
+            .values_list("key", flat=True)
+        )
+
     counts = {sev: 0 for sev in SEVERITIES}
-    sev_rows = findings_qs.values("severity").annotate(total=Count("id"))
-    for row in sev_rows:
-        if row["severity"] in counts:
-            counts[row["severity"]] = row["total"]
+    if triaged_keys:
+        for f in findings_qs.values("severity", "check_id", "target"):
+            if issue_key(f["check_id"], f["target"]) in triaged_keys:
+                continue
+            if f["severity"] in counts:
+                counts[f["severity"]] += 1
+    else:
+        for row in findings_qs.values("severity").annotate(total=Count("id")):
+            if row["severity"] in counts:
+                counts[row["severity"]] = row["total"]
 
     tool_breakdown: dict[str, int] = {}
     for row in findings_qs.values("source").annotate(total=Count("id")):
