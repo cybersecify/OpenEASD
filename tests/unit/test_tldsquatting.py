@@ -11,6 +11,11 @@ from unittest.mock import patch
 
 import dns.resolver
 import pytest
+from django.test import override_settings
+
+# Character-mutation techniques are OFF by default (TLD cybersquatting is the focus);
+# tests that exercise them opt in explicitly.
+_typos_on = override_settings(TLDSQUATTING_INCLUDE_TYPOS=True)
 
 from apps.tldsquatting.analyzer import analyze
 from apps.tldsquatting.collector import (
@@ -48,6 +53,7 @@ class TestTldBreadth:
         assert swaps <= set(_TLDS)
         assert len(swaps) > 50
 
+    @_typos_on
     def test_tld_swap_prioritised_within_cap(self):
         # A long name blows past the cap; TLD-swaps are emitted first so they
         # survive truncation (the high-value "exact name, other TLD" signal).
@@ -74,25 +80,38 @@ class TestGenerateCandidates:
         names = [c["candidate"] for c in generate_candidates("example.com")]
         assert len(names) == len(set(names))
 
+    def test_char_mutations_off_by_default(self):
+        # Brand Threat is TLD cybersquatting only by default: no char-mutation
+        # (typo/homoglyph/…) candidates unless TLDSQUATTING_INCLUDE_TYPOS is set.
+        cands = generate_candidates("example.com")
+        assert cands  # tld_swaps still generated
+        assert all(c["technique"] == "tld_swap" for c in cands)
+        assert "xample.com" not in {c["candidate"] for c in cands}  # no omission typo
+
+    @_typos_on
     def test_omission_technique_present(self):
         names = {c["candidate"] for c in generate_candidates("example.com")}
         # dropping the leading 'e' yields "xample.com"
         assert names & {"xample.com"}
 
+    @_typos_on
     def test_transposition_technique_present(self):
         names = {c["candidate"] for c in generate_candidates("example.com")}
         # swap first two chars of "example" -> "xeample"
         assert names & {"xeample.com"}
 
+    @_typos_on
     def test_repetition_technique_present(self):
         names = {c["candidate"] for c in generate_candidates("example.com")}
         # double the leading 'e' -> "eexample"
         assert names & {"eexample.com"}
 
+    @_typos_on
     def test_hyphenation_technique_present(self):
         names = {c["candidate"] for c in generate_candidates("example.com")}
         assert names & {"e-xample.com"}
 
+    @_typos_on
     def test_homoglyph_technique_present(self):
         names = {c["candidate"] for c in generate_candidates("example.com")}
         # 'a' -> '4' homoglyph in "example" -> "ex4mple"
@@ -133,6 +152,7 @@ class TestGenerateCandidates:
         assert {"example.com", "example.net", "example.org"} <= names
         assert "example.co.uk" not in names  # never the original apex
 
+    @_typos_on
     def test_cctld_char_mutation_keeps_full_suffix(self):
         # Character techniques mutate the registrable label and keep the full
         # ".co.uk" suffix — the old last-dot split mutated the "co" label too.
@@ -147,11 +167,13 @@ class TestGenerateCandidates:
     def test_empty_domain_returns_empty(self):
         assert generate_candidates("") == []
 
+    @_typos_on
     def test_cap_enforced(self):
         # A long name generates far more than MAX_CANDIDATES permutations.
         cands = generate_candidates("abcdefghijklmnopqrstuvwxyz.com")
         assert len(cands) == MAX_CANDIDATES
 
+    @_typos_on
     def test_cap_logs_truncation(self):
         # Truncation must never be silent — it logs an INFO line.
         with patch("apps.tldsquatting.collector.logger.info") as log:
