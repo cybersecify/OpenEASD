@@ -751,8 +751,8 @@ _CEO_QUESTIONS = [
      lambda g: g["source"] == "domain_security" and g["check_type"] in ("rdap", "dnssec")),
     ("Are staff logins stolen?", {"hudson_rock", "breach_check"},
      lambda g: g["source"] in ("hudson_rock", "breach_check")),
-    ("Is anyone impersonating us?", {"typosquat", "asn_cluster"},
-     lambda g: g["source"] in ("typosquat", "asn_cluster")),
+    ("Is anyone impersonating us?", {"tldsquatting", "asn_cluster"},
+     lambda g: g["source"] in ("tldsquatting", "asn_cluster")),
     ("Did we leak keys?", {"js_secrets", "github_secrets"},
      lambda g: g["source"] in ("js_secrets", "github_secrets") or g["check_type"] == "exposed_secret"),
 ]

@@ -219,10 +219,10 @@ docker compose up -d --build
   amass brute so ~1GB completes without OOM; `balanced` (2-8GB) is the old
   default; `high` (≥8GB) raises LOCAL concurrency. **Exception:** a phase group
   of only light, network-I/O-only tools (`runner._LOW_MEM_PARALLEL_SAFE` —
-  domain_security/domain_probe/typosquat/dns_history/hudson_rock/breach_check/
+  domain_security/domain_probe/tldsquatting/dns_history/hudson_rock/breach_check/
   github_secrets) runs concurrently *even under low memory* (they never OOM like
   nuclei/amass), so the phase-1 intelligence group stays fast on a 1GB box;
-  override via `SCAN_LOW_MEM_PARALLEL_SAFE`. `typosquat` also resolves its
+  override via `SCAN_LOW_MEM_PARALLEL_SAFE`. `tldsquatting` also resolves its
   candidates and probes homepages concurrently (`TYPOSQUAT_DNS_CONCURRENCY`=16 /
   `TYPOSQUAT_FETCH_CONCURRENCY`=8) instead of serially. Per-target request rate stays
   capped across all profiles (politeness — a big box is no licence to hammer the
@@ -492,7 +492,7 @@ guards that every registered tool appears in the output.
 | `apps/hudson_rock/` | 2 | Credential Exposure | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
 | `apps/dns_history/` | 1 | Domain Posture | Yes | Historical A/AAAA/MX records via a passive-DNS dataset — surfaces past hosting / stale records (info findings). Passive, BYO `DNS_HISTORY_API_URL` (no-op if unset), fail-graceful |
 | `apps/github_secrets/` | 2 | Credential Exposure | Yes | Leaked secrets in PUBLIC GitHub — searches GitHub's code-search API (org-scoped by default) for the target org's committed credentials, fetches the hits, runs gitleaks over them (same engine as `js_secrets`), REDACTS before storage (`check_type="exposed_secret"`, shared with js_secrets). Passive (queries GitHub, not the target); BYOK MANDATORY (`GITHUB_TOKEN` — code-search needs auth; no token → logged no-op); fail-graceful |
-| `apps/typosquat/` | 1 | Brand Threat | Yes | Lookalike / typosquat domain detection — generates lookalike candidates algorithmically (homoglyph/typo/omission/insertion/repetition/transposition/hyphenation/TLD-swap), checks which are registered via public DNS, then scores **weaponization**: registered web-serving lookalikes get a capped, fail-graceful homepage fetch for a login form (credential phishing) or brand mention (impersonation) → **high** (active impersonation, prioritise takedown); A/MX-only → medium; NS-only → low. Passive w.r.t. the target (contacts only the lookalike domains, never yours), no key, fail-graceful. Weaponization model ported from the standalone `tldsquatting` project |
+| `apps/tldsquatting/` | 1 | Brand Threat | Yes | TLD-squatting / lookalike domain detection (**supersedes the former `typosquat` tool** — broader TLD coverage). Generates lookalike candidates algorithmically: **TLD permutation across ~900 registrable TLDs** (bundled `tlds.txt`, emitted first so the high-precision "exact name, other TLD" signal survives the candidate cap) plus character-level typos (homoglyph/omission/insertion/repetition/transposition/hyphenation/adjacent-key). Checks which are registered via public DNS, then scores **weaponization**: registered web-serving lookalikes get a capped, fail-graceful homepage fetch for a login form (credential phishing) or brand mention (impersonation) → **high**; A/MX-only → medium; NS-only / parked → low. `check_type="lookalike_domain"` (consumed by `asn_cluster`). Passive w.r.t. the target (contacts only the lookalike domains, never yours), no key, fail-graceful. |
 | `apps/breach_check/` | 2 | Credential Exposure | Yes | Data-breach exposure for the domain. BYOK: free keyless XposedOrNot catalog by default, authoritative Have I Been Pwned `breacheddomain` when `HIBP_API_KEY` set. Aggregate COUNTS + public breach metadata only — never email aliases/credentials. Passive, fail-graceful |
 | `apps/subfinder/` | 3 | Asset Discovery | No | Passive subdomain enumeration |
 | `apps/amass/` | 3 | Asset Discovery | No | Active subdomain enumeration |
@@ -516,7 +516,7 @@ guards that every registered tool appears in the output.
 | `apps/web_checker/` | 12 | Web Exposure | Yes | Security headers, cookies, CORS; + security.txt (RFC 9116) responsible-disclosure check on the apex |
 | `apps/js_secrets/` | 12 | Web Exposure | Yes | Hardcoded-secret detection — fetches discovered `.js` assets and runs gitleaks over them; secret is redacted before storage |
 | `apps/cve_intel/` | 13 | Prioritization | No | Enriches CVE findings in place with EPSS scores + CISA KEV flags (no new findings) |
-| `apps/asn_cluster/` | 13 | Brand Threat | Yes | Lookalike ASN clustering — reads typosquat's `lookalike_domain` findings, resolves their IPs to ASNs via Team Cymru (keyless DNS), and groups lookalikes sharing an autonomous system into `lookalike_cluster` campaign findings (weaponized member → high). Passive, fail-graceful, `requires: [typosquat]` |
+| `apps/asn_cluster/` | 13 | Brand Threat | Yes | Lookalike ASN clustering — reads tldsquatting's `lookalike_domain` findings, resolves their IPs to ASNs via Team Cymru (keyless DNS), and groups lookalikes sharing an autonomous system into `lookalike_cluster` campaign findings (weaponized member → high). Passive, fail-graceful, `requires: [tldsquatting]` |
 
 ### Tool app structure
 ```
@@ -540,7 +540,7 @@ but not yet in the default set.)
 ```
 Phase 1  domain_security    → Finding (DNS/DNSSEC/email-auth/RDAP — passive)
 Phase 1  domain_probe        → Finding (AXFR / open-relay / MTA-STS fetch — active)
-Phase 1  typosquat           → Finding (registered lookalike/typosquat domains via public DNS — passive)
+Phase 1  tldsquatting        → Finding (registered lookalike / TLD-squat domains via public DNS — passive)
 Phase 1  dns_history         → Finding (historical A/AAAA/MX records via passive DNS — passive)
 Phase 2  hudson_rock         → Finding (infostealer exposure via Hudson Rock — passive)      ┐ Credential Exposure
 Phase 2  github_secrets      → Finding (leaked secrets in public GitHub via gitleaks — passive)│
@@ -582,7 +582,7 @@ the registry via `get_tool_active()` and `is_passive_tool_set(tools)`.
   `DomainAuthorization`**.
   Passive tools: `domain_security`, `subfinder`, `alterx`, `dnsx`,
   `historical_urls`, `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`,
-  `shodan`, `typosquat`, `breach_check`, `github_secrets`, `github_recon`,
+  `shodan`, `tldsquatting`, `breach_check`, `github_secrets`, `github_recon`,
   `dns_history`, `asn_cluster`.
 - **Active** (`active=True`): probes the target directly (port scans, HTTP/TLS/SSH
   connections, crawling, vuln templates, AXFR/SMTP/mta-sts probes). **Requires
@@ -895,7 +895,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_ssh_checker.py` | 34 | SSH probe, host key, kex/cipher/MAC, auth, collector |
 | `tests/unit/test_subfinder.py` | 10 | JSON parser, dedup, hostname normalization |
 | `tests/unit/test_subscan.py` | 12 | Targeted re-scan of a single tool / subset |
-| `tests/unit/test_typosquat.py` | 36 | candidate generation (all 8 techniques, uniqueness, no-original, www-strip, cap/truncation-logged), passive DNS registration check (A/MX/NS, NXDOMAIN + timeout never raise), weaponization homepage probe (login form + brand mention flagged, fetch failure graceful), analyzer severity (A/MX → medium, NS-only → low, login-form/brand → high), scanner (saves + never-raises), concurrent collect (order-preserving, all-registered-checked, fetch cap) |
+| `tests/unit/test_tldsquatting.py` | 39 | candidate generation (all 8 techniques, uniqueness, no-original, www-strip, cap/truncation-logged), passive DNS registration check (A/MX/NS, NXDOMAIN + timeout never raise), weaponization homepage probe (login form + brand mention flagged, fetch failure graceful), analyzer severity (A/MX → medium, NS-only → low, login-form/brand → high), scanner (saves + never-raises), concurrent collect (order-preserving, all-registered-checked, fetch cap) |
 | `tests/unit/test_asn_cluster.py` | 13 | Lookalike ASN clustering — meta (passive/group), Team Cymru IP→ASN parse (asn/prefix/name, space-list ASN, non-IPv4 + DNS-failure → None), clustering (≥2 same-ASN → finding, single → none, weaponized → high, unresolved-IPs ignored), scanner (<2 lookalikes no-op, persists, skips IP-less, no lookup when nothing to cluster) |
 | `tests/unit/test_takeover_check.py` | 35 | collector (missing binary, bad JSON, happy path), analyzer (vulnerable/non-vulnerable, FK link, dedup), scanner |
 | `tests/unit/test_tls_checker.py` | 87 | Cert parsing, ciphers, protocols, HSTS, collector, scanner, cipher enumeration |
