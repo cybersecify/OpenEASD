@@ -568,7 +568,7 @@ class TestPhaseParallelExecution:
         """Under LOW_MEMORY, a group of only light network-I/O tools
         (_LOW_MEM_PARALLEL_SAFE) must STILL run concurrently — that's the speedup
         for the phase-1 intelligence group on a small box. domain_security +
-        typosquat are both phase 1 and both on the safe list. Barrier(2) proves
+        tldsquatting are both phase 1 and both on the safe list. Barrier(2) proves
         parallelism: serial execution would never satisfy it → failed step → the
         run would not be 'completed'.
         """
@@ -582,7 +582,7 @@ class TestPhaseParallelExecution:
         )
         wf = Workflow.objects.create(name="LowMem Phase 1 light")
         WorkflowStep.objects.create(workflow=wf, tool="domain_security", order=1, enabled=True)
-        WorkflowStep.objects.create(workflow=wf, tool="typosquat",       order=2, enabled=True)
+        WorkflowStep.objects.create(workflow=wf, tool="tldsquatting",    order=2, enabled=True)
         run = WorkflowRun.objects.create(workflow=wf, session=session)
 
         def barrier_runner(tool_name):

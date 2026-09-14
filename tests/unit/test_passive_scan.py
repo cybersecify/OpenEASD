@@ -21,7 +21,7 @@ def post_json(client, path, data):
 # third-party data and never touch the target.
 _PASSIVE = {
     "subfinder", "alterx", "dnsx", "historical_urls",
-    "cloud_assets", "cve_intel", "asn_discovery", "typosquat", "breach_check",
+    "cloud_assets", "cve_intel", "asn_discovery", "tldsquatting", "breach_check",
     # domain_security is passive now that its active probes (AXFR/open-relay/
     # MTA-STS fetch) were split out into domain_probe.
     "domain_security",
@@ -258,7 +258,7 @@ class TestPassiveScanAuthorizationGate:
         resp = post_json(auth_client, "/api/scans/start/", {
             "domain": "example.com",
             "schedule_type": "now",
-            "tools": ["typosquat", "domain_probe"],
+            "tools": ["tldsquatting", "domain_probe"],
         })
         assert resp.status_code == 403
 

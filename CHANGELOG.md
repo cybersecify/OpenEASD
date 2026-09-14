@@ -7,6 +7,21 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **`tldsquatting` supersedes the `typosquat` tool.** New `apps/tldsquatting/`
+  tool app that keeps typosquat's proven engine (8 candidate-generation
+  techniques + passive public-DNS registration check + capped homepage
+  weaponization probe) and adds **TLD-permutation breadth**: it checks the exact
+  registrable name across **~900 purchasable TLDs** (bundled `tlds.txt`), emitted
+  ahead of the noisier char-mutations so the high-precision "your exact name on
+  another TLD" signal survives the candidate cap. Same `check_type="lookalike_domain"`
+  finding shape, so **`asn_cluster` is repointed** (`requires: [tldsquatting]`,
+  reads `source="tldsquatting"`) with no behaviour change. `typosquat` is retired
+  (app + tests removed); workflow migration `workflow/0035` drops it from all
+  workflows and adds `tldsquatting` to Full Scan + Passive Scan. Registry count
+  unchanged (one out, one in). Core scope only — RDAP/SSL/CT-subdomain/reputation/
+  IP-intel enrichment from the reference project is deferred. Passive (no auth).
+
 ## [v2.20.0] — 2026-09-14
 
 ### Added

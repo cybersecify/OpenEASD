@@ -1,7 +1,7 @@
-"""Unit tests for apps/typosquat — candidate generation, passive DNS registration
+"""Unit tests for apps/tldsquatting — candidate generation, passive DNS registration
 checks, analyzer Finding shape/severity, scanner.
 
-typosquat is a passive, no-key threat-surface tool: it generates lookalike
+tldsquatting is a passive, no-key threat-surface tool: it generates lookalike
 candidates from the apex domain and checks which are registered / weaponizable
 via public DNS. It must be fail-graceful (never raise a resolver error) and never
 fail a scan.
@@ -12,18 +12,48 @@ from unittest.mock import patch
 import dns.resolver
 import pytest
 
-from apps.typosquat.analyzer import analyze
-from apps.typosquat.collector import (
+from apps.tldsquatting.analyzer import analyze
+from apps.tldsquatting.collector import (
     MAX_CANDIDATES,
+    _TLDS,
     collect,
     generate_candidates,
 )
-from apps.typosquat.scanner import run_typosquat
+from apps.tldsquatting.scanner import run_tldsquatting
 
 
 def _session(domain="example.com"):
     from apps.core.engine.scans.models import ScanSession
     return ScanSession.objects.create(domain=domain, scan_type="full")
+
+
+# ---------------------------------------------------------------------------
+# Expanded TLD breadth (the tldsquatting enhancement over the old typosquat)
+# ---------------------------------------------------------------------------
+
+class TestTldBreadth:
+    def test_tld_list_loads_broad_set(self):
+        # Bundled tlds.txt should give hundreds of TLDs, not a handful.
+        assert len(_TLDS) > 100
+
+    def test_tld_swap_candidates_drawn_from_loaded_list(self):
+        swaps = {
+            c["candidate"].split(".", 1)[1]
+            for c in generate_candidates("example.com")
+            if c["technique"] == "tld_swap"
+        }
+        # Every TLD-swap suffix must come from the loaded set, and there should
+        # be many of them (broad coverage).
+        assert swaps
+        assert swaps <= set(_TLDS)
+        assert len(swaps) > 50
+
+    def test_tld_swap_prioritised_within_cap(self):
+        # A long name blows past the cap; TLD-swaps are emitted first so they
+        # survive truncation (the high-value "exact name, other TLD" signal).
+        cands = generate_candidates("abcdefghijklmnopqrstuvwxyz.com")
+        assert len(cands) == MAX_CANDIDATES
+        assert any(c["technique"] == "tld_swap" for c in cands)
 
 
 # ---------------------------------------------------------------------------
@@ -86,19 +116,22 @@ class TestGenerateCandidates:
         assert not (names & {"www.example.com"})
 
     def test_split_apex_handles_multi_label_suffix(self):
-        from apps.typosquat.collector import _split_apex
+        from apps.tldsquatting.collector import _split_apex
         assert _split_apex("example.com") == ("example", "com")
         assert _split_apex("example.co.uk") == ("example", "co.uk")
         assert _split_apex("mybank.com.au") == ("mybank", "com.au")
         assert _split_apex("www.example.co.uk") == ("example", "co.uk")
 
     def test_cctld_tld_swap_uses_registrable_name(self):
-        # PSL/ccTLD: the old last-dot split produced garbage like "example.co.net";
-        # the whole public suffix must be swapped, yielding real lookalikes.
+        # PSL/ccTLD: the whole public suffix is swapped (registrable name is
+        # "example", not "example.co"), yielding real lookalikes on other TLDs.
+        # The bundled TLD list includes multi-label ccTLD registries (co.jp,
+        # com.au, …), so "example.co.jp" is a legitimate candidate — what must
+        # never happen is re-emitting the ORIGINAL suffix.
         names = {c["candidate"] for c in generate_candidates("example.co.uk")
                  if c["technique"] == "tld_swap"}
         assert {"example.com", "example.net", "example.org"} <= names
-        assert not any(n.startswith("example.co.") for n in names)  # no example.co.<tld> garbage
+        assert "example.co.uk" not in names  # never the original apex
 
     def test_cctld_char_mutation_keeps_full_suffix(self):
         # Character techniques mutate the registrable label and keep the full
@@ -121,7 +154,7 @@ class TestGenerateCandidates:
 
     def test_cap_logs_truncation(self):
         # Truncation must never be silent — it logs an INFO line.
-        with patch("apps.typosquat.collector.logger.info") as log:
+        with patch("apps.tldsquatting.collector.logger.info") as log:
             generate_candidates("abcdefghijklmnopqrstuvwxyz.com")
         assert any("truncating" in str(call.args[0]).lower() for call in log.call_args_list)
 
@@ -143,10 +176,10 @@ class TestCollector:
                 return ["93.184.216.34"]
             raise dns.resolver.NoAnswer()
 
-        with patch("apps.typosquat.collector.generate_candidates",
+        with patch("apps.tldsquatting.collector.generate_candidates",
                    return_value=[{"candidate": "examp1e.com", "technique": "typo"}]), \
              patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
-             patch("apps.typosquat.collector.requests.get") as get:
+             patch("apps.tldsquatting.collector.requests.get") as get:
             get.return_value = type("R", (), {"text": "<html>hi</html>", "url": "https://examp1e.com/"})()
             results = collect(sess)
         assert len(results) == 1
@@ -168,10 +201,10 @@ class TestCollector:
             raise dns.resolver.NoAnswer()
 
         html = "<html><form action='/login' class=signin>example bank</form></html>"
-        with patch("apps.typosquat.collector.generate_candidates",
+        with patch("apps.tldsquatting.collector.generate_candidates",
                    return_value=[{"candidate": "examp1e.com", "technique": "typo"}]), \
              patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
-             patch("apps.typosquat.collector.requests.get") as get:
+             patch("apps.tldsquatting.collector.requests.get") as get:
             get.return_value = type("R", (), {"text": html, "url": "https://examp1e.com/"})()
             rec = collect(sess)[0]
         assert rec["login_form"] is True
@@ -185,24 +218,24 @@ class TestCollector:
                 return ["1.2.3.4"]
             raise dns.resolver.NoAnswer()
 
-        with patch("apps.typosquat.collector.generate_candidates",
+        with patch("apps.tldsquatting.collector.generate_candidates",
                    return_value=[{"candidate": "examp1e.com", "technique": "typo"}]), \
              patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
-             patch("apps.typosquat.collector.requests.get", side_effect=Exception("boom")):
+             patch("apps.tldsquatting.collector.requests.get", side_effect=Exception("boom")):
             rec = collect(sess)[0]   # must not raise
         assert rec["content_checked"] is False
         assert rec["login_form"] is False
 
     def test_unregistered_nxdomain_skipped(self):
         sess = _session("example.com")
-        with patch("apps.typosquat.collector.generate_candidates",
+        with patch("apps.tldsquatting.collector.generate_candidates",
                    return_value=[{"candidate": "nope.com", "technique": "typo"}]), \
              patch("dns.resolver.Resolver.resolve", side_effect=dns.resolver.NXDOMAIN()):
             assert collect(sess) == []
 
     def test_timeout_never_raises_and_skips(self):
         sess = _session("example.com")
-        with patch("apps.typosquat.collector.generate_candidates",
+        with patch("apps.tldsquatting.collector.generate_candidates",
                    return_value=[{"candidate": "slow.com", "technique": "typo"}]), \
              patch("dns.resolver.Resolver.resolve", side_effect=dns.resolver.LifetimeTimeout()):
             assert collect(sess) == []  # must not raise
@@ -215,7 +248,7 @@ class TestCollector:
                 return ["10 mail.examp1e.com."]
             raise dns.resolver.NoAnswer()
 
-        with patch("apps.typosquat.collector.generate_candidates",
+        with patch("apps.tldsquatting.collector.generate_candidates",
                    return_value=[{"candidate": "examp1e.com", "technique": "typo"}]), \
              patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve):
             results = collect(sess)
@@ -230,7 +263,7 @@ class TestCollector:
                 return ["ns1.parking.com."]
             raise dns.resolver.NoAnswer()
 
-        with patch("apps.typosquat.collector.generate_candidates",
+        with patch("apps.tldsquatting.collector.generate_candidates",
                    return_value=[{"candidate": "examp1e.com", "technique": "typo"}]), \
              patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve):
             results = collect(sess)
@@ -253,7 +286,7 @@ class TestAnalyzer:
         findings = analyze(sess, results)
         assert len(findings) == 1
         f = findings[0]
-        assert f.source == "typosquat"
+        assert f.source == "tldsquatting"
         assert f.check_type == "lookalike_domain"
         assert f.severity == "medium"
         assert f.target == "examp1e.com"
@@ -357,23 +390,23 @@ class TestScanner:
     def test_saves_findings(self):
         from apps.core.data.findings.models import Finding
         sess = _session("example.com")
-        with patch("apps.typosquat.scanner.collect", return_value=[
+        with patch("apps.tldsquatting.scanner.collect", return_value=[
             {"candidate": "examp1e.com", "technique": "typo", "has_a": True,
              "has_mx": False, "has_ns": False, "resolved_ips": ["1.2.3.4"]},
         ]):
-            saved = run_typosquat(sess)
+            saved = run_tldsquatting(sess)
         assert len(saved) == 1
-        assert Finding.objects.filter(session=sess, source="typosquat").count() == 1
+        assert Finding.objects.filter(session=sess, source="tldsquatting").count() == 1
 
     def test_empty_when_no_data(self):
         sess = _session("example.com")
-        with patch("apps.typosquat.scanner.collect", return_value=[]):
-            assert run_typosquat(sess) == []
+        with patch("apps.tldsquatting.scanner.collect", return_value=[]):
+            assert run_tldsquatting(sess) == []
 
     def test_never_raises_on_collect_error(self):
         sess = _session("example.com")
-        with patch("apps.typosquat.scanner.collect", side_effect=RuntimeError("boom")):
-            assert run_typosquat(sess) == []  # swallowed — must never fail a scan
+        with patch("apps.tldsquatting.scanner.collect", side_effect=RuntimeError("boom")):
+            assert run_tldsquatting(sess) == []  # swallowed — must never fail a scan
 
 
 @pytest.mark.django_db
@@ -383,7 +416,7 @@ class TestCollectorConcurrency:
     registered candidate is still checked."""
 
     def test_results_preserve_candidate_order(self):
-        from apps.typosquat import collector
+        from apps.tldsquatting import collector
         sess = _session("example.com")
         cands = [
             {"candidate": "aaa.com", "technique": "typo"},
@@ -397,9 +430,9 @@ class TestCollectorConcurrency:
                 return ["1.2.3.4"]
             return []
 
-        with patch("apps.typosquat.collector.generate_candidates", return_value=cands), \
+        with patch("apps.tldsquatting.collector.generate_candidates", return_value=cands), \
              patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
-             patch("apps.typosquat.collector.requests.get") as get:
+             patch("apps.tldsquatting.collector.requests.get") as get:
             get.return_value.text = "<html></html>"
             get.return_value.url = "https://x/"
             results = collector.collect(sess)
@@ -407,16 +440,16 @@ class TestCollectorConcurrency:
         assert [r["candidate"] for r in results] == ["aaa.com", "ccc.com"]
 
     def test_all_registered_candidates_checked_when_many(self):
-        from apps.typosquat import collector
+        from apps.tldsquatting import collector
         sess = _session("example.com")
         cands = [{"candidate": f"c{i}.com", "technique": "typo"} for i in range(50)]
 
         def fake_resolve(name, rdtype):
             return ["1.2.3.4"] if rdtype == "A" else []  # all register
 
-        with patch("apps.typosquat.collector.generate_candidates", return_value=cands), \
+        with patch("apps.tldsquatting.collector.generate_candidates", return_value=cands), \
              patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
-             patch("apps.typosquat.collector.requests.get") as get:
+             patch("apps.tldsquatting.collector.requests.get") as get:
             get.return_value.text = "<html></html>"
             get.return_value.url = "https://x/"
             results = collector.collect(sess)

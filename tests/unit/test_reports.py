@@ -821,8 +821,8 @@ class TestCeoQuestions:
         qs = self._by_q([self._g("domain_security", "dnssec", "medium")], {"domain_security"})
         assert qs["Can we lose our domain?"]["status"] == "attention"
 
-    def test_typosquat_maps_to_impersonation(self):
-        qs = self._by_q([self._g("typosquat", "lookalike_domain", "medium")], {"typosquat"})
+    def test_tldsquatting_maps_to_impersonation(self):
+        qs = self._by_q([self._g("tldsquatting", "lookalike_domain", "medium")], {"tldsquatting"})
         assert qs["Is anyone impersonating us?"]["status"] == "attention"
 
     def test_tool_not_run_is_not_checked(self):

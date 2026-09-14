@@ -1,6 +1,6 @@
-"""asn_cluster scanner — orchestrator: read typosquat lookalikes → IP→ASN → cluster.
+"""asn_cluster scanner — orchestrator: read tldsquatting lookalikes → IP→ASN → cluster.
 
-Reads the `lookalike_domain` findings typosquat already wrote (shared DB data,
+Reads the `lookalike_domain` findings tldsquatting already wrote (shared DB data,
 not a cross-tool import), resolves their A-record IPs to ASNs via Team Cymru, and
 groups lookalikes that share an autonomous system into cluster findings. No-op
 (returns []) when there are fewer than two registered, IP-bearing lookalikes to
@@ -24,7 +24,7 @@ def run_asn_cluster(session) -> list[Finding]:
     ips: set[str] = set()
 
     qs = Finding.objects.filter(
-        session=session, source="typosquat", check_type="lookalike_domain"
+        session=session, source="tldsquatting", check_type="lookalike_domain"
     )
     for f in qs:
         extra = f.extra if isinstance(f.extra, dict) else {}
@@ -34,7 +34,7 @@ def run_asn_cluster(session) -> list[Finding]:
         lookalikes.append({
             "candidate": extra.get("candidate") or f.target,
             "ips": cand_ips,
-            # typosquat marks weaponized lookalikes (login form / brand) as high.
+            # tldsquatting marks weaponized lookalikes (login form / brand) as high.
             "weaponized": f.severity == "high",
         })
         ips.update(cand_ips)

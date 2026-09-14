@@ -16,7 +16,7 @@ def _session():
 def _lookalike(session, candidate, ips, weaponized=False):
     from apps.core.data.findings.models import Finding
     return Finding.objects.create(
-        session=session, source="typosquat", check_type="lookalike_domain",
+        session=session, source="tldsquatting", check_type="lookalike_domain",
         severity="high" if weaponized else "medium",
         title=f"Registered lookalike domain {candidate}",
         description="d", remediation="r", target=candidate,
@@ -212,7 +212,7 @@ class TestScanner:
         from apps.core.data.findings.models import Finding
         for c in ("a.com", "b.com"):
             Finding.objects.create(
-                session=sess, source="typosquat", check_type="lookalike_domain",
+                session=sess, source="tldsquatting", check_type="lookalike_domain",
                 severity="low", title=f"lookalike {c}", description="d", remediation="r",
                 target=c, extra={"candidate": c, "resolved_ips": []},
             )
