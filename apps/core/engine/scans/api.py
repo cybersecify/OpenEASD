@@ -375,7 +375,9 @@ def start_scan(request, data: ScanStartRequest):
 
 
 def _delta_row(d) -> dict:
-    # item_identifier is "source:check_type:title" (the delta-detection key).
+    # item_identifier is a readable "source:check_type:title" label. (The delta
+    # DETECTION identity is (check_id, target) — the same key as the Issue register,
+    # item 3 — but this stored label stays human-readable for display.)
     # Split on the first two ":" so a title containing ":" stays intact.
     parts = (d.item_identifier or "").split(":", 2)
     source, check_type, title = (parts + ["", "", ""])[:3]

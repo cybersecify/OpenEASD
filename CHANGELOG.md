@@ -8,6 +8,14 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Changed
+- **Delta detection keyed on `check_id` (identity/register item 3).**
+  `_detect_deltas` now dedups findings by the shared `issue_key(check_id, target)`
+  — the **same identity as the Issue register** — instead of `source:check_type:title`
+  (no target). This ends the disagreement between the change-feed and the register:
+  a reworded title no longer shows as a phantom new+removed delta, and the same rule
+  on different hosts is no longer conflated. The stored `item_identifier` stays a
+  readable `source:check_type:title` label (so `/api/changes/` + alerts are
+  unchanged); only the detection identity changed.
 - **Issue register keyed on `check_id` (identity/register item 2).** `issue_key`
   changes from `(source, check_type, title, target)` to **`(check_id, target)`** —
   dropping the human `title` from the identity. A reworded title now keeps the same
