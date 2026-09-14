@@ -3,15 +3,15 @@ passive public-DNS registration checks.
 
 Two stages, no external binary:
 
-  1. GENERATE lookalike candidates from the session's apex domain. The emphasis
-     (vs. the former typosquat tool) is TLD PERMUTATION: the same registrable
-     name across a broad set of purchasable TLDs (loaded from ``tlds.txt``,
-     ~900 entries) — a small, high-precision set where every registered hit is
-     almost always meaningful. Plus classic character-level typos (homoglyph,
-     adjacent-key substitution, omission, insertion, repetition, transposition,
-     hyphenation). Deterministic and deduped; TLD-swap candidates are emitted
-     FIRST so they survive the ``MAX_CANDIDATES`` cap (truncation is logged,
-     never silent).
+  1. GENERATE lookalike candidates from the session's apex domain. Brand Threat
+     focuses on TLD CYBERSQUATTING: the same registrable name across a broad set
+     of purchasable TLDs (loaded from ``tlds.txt``, ~900 entries) — a
+     high-precision set where every registered hit ("your exact name on another
+     TLD") is almost always meaningful. Character-level typos (homoglyph,
+     adjacent-key, omission, insertion, repetition, transposition, hyphenation)
+     are the noisy half and are OFF by default — opt in with
+     ``TLDSQUATTING_INCLUDE_TYPOS=True``. Deterministic and deduped; capped at
+     ``MAX_CANDIDATES`` (truncation is logged, never silent).
   2. CHECK which candidates are registered / weaponizable via PUBLIC DNS. For
      each candidate we resolve A + MX (and NS only when neither is present). A
      candidate with A or MX records can host a phishing page or receive mail
@@ -274,10 +274,16 @@ def generate_candidates(domain: str) -> list[dict]:
         if alt != tld:
             _add(f"{name}.{alt}", "tld_swap")
 
-    # Character-level mutations on the name label, keeping the real TLD.
-    for variant in sorted(_char_variants(name)):
-        suffix = f".{tld}" if tld else ""
-        _add(f"{variant}{suffix}", "typo")
+    # Character-level mutations (homoglyph/adjacent-key/omission/insertion/…) are
+    # OFF by default. They are the noisy half — many unrelated registrations
+    # (ammic/aminc/amic/…) that dilute the report — whereas TLD-swap is the
+    # high-precision "your exact name on another TLD" signal. Brand Threat focuses
+    # on TLD cybersquatting; set TLDSQUATTING_INCLUDE_TYPOS=True to re-enable the
+    # character-mutation candidates.
+    if getattr(settings, "TLDSQUATTING_INCLUDE_TYPOS", False):
+        for variant in sorted(_char_variants(name)):
+            suffix = f".{tld}" if tld else ""
+            _add(f"{variant}{suffix}", "typo")
 
     candidates = [{"candidate": c, "technique": t} for c, t in seen.items()]
     if len(candidates) > MAX_CANDIDATES:

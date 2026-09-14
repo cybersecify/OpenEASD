@@ -7,6 +7,14 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **`tldsquatting` focuses on TLD cybersquatting by default.** The character-level
+  mutation techniques (homoglyph/adjacent-key/omission/insertion/repetition/
+  transposition/hyphenation) are now **off by default** — they're the noisy half
+  (many unrelated `ammic`/`aminc`/`amic`-style registrations), while TLD-swap
+  ("your exact name on another TLD") is the high-precision Brand Threat signal.
+  Set `TLDSQUATTING_INCLUDE_TYPOS=True` to re-enable the char-mutation candidates.
+
 ## [v2.21.0] — 2026-09-14
 
 ### Added
