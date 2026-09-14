@@ -1,0 +1,130 @@
+[
+  {
+    "CVE": "CVE-2024-6387",
+    "public_date": "2024-07-01T08:00:00Z",
+    "severity": "important",
+    "bugzilla_description": "openssh: regreSSHion - race condition in SSH allows RCE/DoS",
+    "advisories": [
+      "RHSA-2024:4340",
+      "RHSA-2024:4484",
+      "RHSA-2024:4474",
+      "RHSA-2024:4479",
+      "RHSA-2024:4469",
+      "RHSA-2024:4312",
+      "RHSA-2024:4389"
+    ],
+    "affected_packages": [
+      "rhcos-416.94.202407081958-0",
+      "rhcos-414.92.202407091253-0",
+      "openssh-0:8.7p1-30.el9_2.4",
+      "rhcos-415.92.202407091355-0",
+      "openssh-0:8.7p1-38.el9_4.1",
+      "openssh-0:8.7p1-12.el9_0.1",
+      "rhcos-413.92.202407091321-0"
+    ],
+    "package_state": null
+  },
+  {
+    "CVE": "CVE-2023-6693",
+    "public_date": "2024-01-02T00:00:00Z",
+    "severity": "moderate",
+    "bugzilla_description": "QEMU: virtio-net: stack buffer overflow in virtio_net_flush_tx()",
+    "advisories": [
+      "RHSA-2025:4492",
+      "RHSA-2024:2962"
+    ],
+    "affected_packages": [
+      "virt:rhel-8100020240314161907.e155f54d",
+      "virt-devel:rhel-8100020240314161907.e155f54d",
+      "qemu-kvm-17:9.0.0-10.el9_5.3"
+    ],
+    "package_state": null
+  },
+  {
+    "CVE": "CVE-2024-0193",
+    "public_date": "2024-01-02T00:00:00Z",
+    "severity": "important",
+    "bugzilla_description": "kernel: netfilter: use-after-free in nft_trans_gc_catchall_sync leads to privilege escalation",
+    "advisories": [
+      "RHSA-2024:2094",
+      "RHSA-2024:4412",
+      "RHSA-2024:1248",
+      "RHSA-2024:4415",
+      "RHSA-2024:1019",
+      "RHSA-2024:1018"
+    ],
+    "affected_packages": [
+      "openshift-logging/log-file-metric-exporter-rhel9:v1.1.0-227",
+      "openshift-logging/logging-curator5-rhel9:v5.8.1-470",
+      "kernel-0:5.14.0-70.105.1.el9_0",
+      "kernel-rt-0:5.14.0-284.55.1.rt14.340.el9_2",
+      "openshift-logging/fluentd-rhel9:v5.8.6-5",
+      "openshift-logging/elasticsearch6-rhel9:v6.8.1-407",
+      "openshift-logging/elasticsearch-operator-bundle:v5.8.6-19",
+      "openshift-logging/loki-rhel9-operator:v5.8.6-10",
+      "kernel-rt-0:5.14.0-70.105.1.rt21.177.el9_0",
+      "openshift-logging/loki-operator-bundle:v5.8.6-24",
+      "openshift-logging/eventrouter-rhel9:v0.4.0-247",
+      "openshift-logging/cluster-logging-rhel9-operator:v5.8.6-11",
+      "openshift-logging/elasticsearch-rhel9-operator:v5.8.6-7",
+      "kernel-0:5.14.0-284.55.1.el9_2",
+      "kernel-0:5.14.0-362.24.1.el9_3",
+      "openshift-logging/elasticsearch-proxy-rhel9:v1.0.0-479",
+      "openshift-logging/lokistack-gateway-rhel9:v0.1.0-525",
+      "openshift-logging/cluster-logging-operator-bundle:v5.8.6-22",
+      "openshift-logging/opa-openshift-rhel9:v0.1.0-224",
+      "openshift-logging/vector-rhel9:v0.28.1-56",
+      "openshift-logging/logging-loki-rhel9:v2.9.6-14",
+      "openshift-logging/logging-view-plugin-rhel9:v5.8.6-2"
+    ],
+    "package_state": null
+  },
+  {
+    "CVE": "CVE-2024-22047",
+    "public_date": "2024-01-04T00:00:00Z",
+    "severity": "low",
+    "bugzilla_description": "audited: race condition can lead to audit logs being incorrectly attributed to the wrong user",
+    "advisories": [
+      "RHSA-2024:2010"
+    ],
+    "affected_packages": [
+      "rubygem-audited-0:5.4.2-1.el8sat"
+    ],
+    "package_state": null
+  },
+  {
+    "CVE": "CVE-2024-21647",
+    "public_date": "2024-01-08T00:00:00Z",
+    "severity": "important",
+    "bugzilla_description": "rubygem-puma: HTTP request smuggling when parsing chunked Transfer-Encoding Bodies",
+    "advisories": [
+      "RHSA-2024:2010"
+    ],
+    "affected_packages": [
+      "rubygem-puma-0:6.4.2-1.el8sat"
+    ],
+    "package_state": null
+  },
+  {
+    "CVE": "CVE-2024-1979",
+    "public_date": "2024-01-05T00:00:00Z",
+    "severity": "moderate",
+    "bugzilla_description": "quarkus: information leak in annotation",
+    "advisories": [
+      "RHSA-2024:1662"
+    ],
+    "affected_packages": [
+      "io.quarkus/quarkus-kubernetes-deployment:3.2.11.Final-redhat-00001"
+    ],
+    "package_state": null
+  },
+  {
+    "CVE": "CVE-2024-0582",
+    "public_date": "2024-01-08T00:00:00Z",
+    "severity": "important",
+    "bugzilla_description": "kernel: io_uring: page use-after-free vulnerability via buffer ring mmap",
+    "advisories": [],
+    "affected_packages": [],
+    "package_state": null
+  }
+]
