@@ -33,6 +33,12 @@ class Finding(models.Model):
     )
     source = models.CharField(max_length=50, db_index=True)  # no choices constraint — registry is source of truth
     check_type = models.CharField(max_length=50, blank=True, db_index=True)
+    # Stable per-rule identity, independent of the human `title` (which gets
+    # reworded). Default `"{source}:{check_type}"` is backfilled at finalize for the
+    # granular tools (1 check_type : 1 rule); coarse tools (domain_security/
+    # domain_probe) and CVE/secret tools set it explicitly per rule at construction.
+    # This is the cross-scan identity `Issue.key` is built from (see issues/rollup).
+    check_id = models.CharField(max_length=100, blank=True, db_index=True)
     severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES, db_index=True)
     title = models.CharField(max_length=500)
     description = models.TextField(blank=True)

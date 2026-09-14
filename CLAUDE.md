@@ -703,6 +703,9 @@ class Finding(models.Model):
     session     = FK(ScanSession)
     source      = CharField()      # auto-registered from tool_meta
     check_type  = CharField()      # tool-specific: "dns", "cve", "weak_ssh_kex", etc.
+    check_id    = CharField()      # stable per-rule identity, title-independent ("{source}:{check_type}"
+                                   # backfilled at finalize for granular tools; explicit per-rule for
+                                   # domain_security/domain_probe + CVE/secret tools). Issue.key is built from this.
     severity    = "critical" | "high" | "medium" | "low" | "info"
     title       = CharField()
     description = TextField()

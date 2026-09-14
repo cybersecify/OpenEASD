@@ -82,6 +82,8 @@ def _build_finding(session, data: dict, url_fk=None) -> Finding:
         session=session,
         source="nuclei",
         check_type=check_type,
+        # Per-rule identity is the template/CVE, not the coarse check_type.
+        check_id=f"nuclei:{cve_ids[0] if cve_ids else template_id}",
         severity=severity,
         title=title,
         description=description,

@@ -91,6 +91,7 @@ def _check_zone_transfer(session, domain, ns_records) -> list:
                 findings.append(Finding(
                     session=session, source="domain_probe", target=domain, check_type="dns",
                     severity="critical",
+                    check_id="domain_probe:axfr",
                     title=f"DNS zone transfer allowed on {ns_host}",
                     description=(
                         f"The nameserver {ns_host} allows unauthenticated AXFR zone transfers. "
@@ -128,6 +129,7 @@ def _check_mta_sts(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_probe", target=domain, check_type="email",
             severity="medium",
+            check_id="domain_probe:mta_sts_missing",
             title="MTA-STS not configured",
             description=(
                 f"{domain} has no MTA-STS policy. Email delivery to your mail server is not "
@@ -152,6 +154,7 @@ def _check_mta_sts(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_probe", target=domain, check_type="email",
             severity="high",
+            check_id="domain_probe:mta_sts_unreachable",
             title="MTA-STS policy file not reachable",
             description=(
                 f"{domain} has an MTA-STS DNS record but the policy file at {policy_url} "
@@ -193,6 +196,7 @@ def _check_mta_sts(session, domain) -> list:
     findings.append(Finding(
         session=session, source="domain_probe", target=domain, check_type="email",
         severity="medium",
+        check_id=f"domain_probe:mta_sts_{mode}",
         title=title_map.get(mode, "MTA-STS policy mode is invalid or missing"),
         description=description_map.get(mode, (
             f"{domain} MTA-STS policy at {policy_url} has an unrecognised or missing "
@@ -230,6 +234,7 @@ def _check_open_relay(session, domain) -> list:
                 return [Finding(
                     session=session, source="domain_probe", target=mx_host,
                     check_type="open_relay", severity="critical",
+                    check_id="domain_probe:open_relay",
                     title="Open mail relay detected",
                     description=(
                         f"The mail server {mx_host} (MX for {domain}) accepted a relay "
