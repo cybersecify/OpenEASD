@@ -64,10 +64,40 @@ def rollup_session_issues(session) -> None:
                 if f.asset_id:
                     issue.asset = f.asset
                 if issue.status == "resolved":
-                    issue.status = "open"
+                    issue.status = "open"      # reappeared → reopen
+                    issue.resolved_at = None   # and clear the resolution timestamp
                 issue.save(update_fields=[
                     "last_seen", "severity", "last_finding", "asset", "status", "title",
+                    "resolved_at",
                 ])
+
+        # Close Issues no longer seen (item 4) — but ONLY after a scan that could
+        # have observed everything: a *completed* run of the *default full workflow*
+        # with no tool subset. A partial scan (a tool failed), a category/tool-subset
+        # scan (`subscan_tools` set), or a non-default workflow (e.g. Passive Scan)
+        # doesn't cover all tools, so an Issue's absence there does NOT mean it's
+        # gone — auto-resolving then would wrongly close live issues. Only active
+        # statuses are closed; false_positive (a triage decision) is left untouched.
+        comprehensive = (
+            session.status == "completed"
+            and session.subscan_tools is None
+            and session.workflow_id is not None
+            and getattr(session.workflow, "is_default", False)
+        )
+        if comprehensive:
+            closed = (
+                Issue.objects.filter(
+                    domain=domain,
+                    status__in=["open", "acknowledged", "in_progress"],
+                )
+                .exclude(key__in=keys_seen)
+                .update(status="resolved", resolved_at=now)
+            )
+            if closed:
+                logger.info(
+                    "[issues:%s] auto-resolved %d issue(s) not seen in this full scan",
+                    session.id, closed,
+                )
 
     logger.info(
         "[issues:%s] rolled up %d issue key(s) for %s",

@@ -7,6 +7,19 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **Auto-resolve Issues no longer seen (identity/register item 4).** When a
+  *comprehensive* scan finalizes — a **completed** run of the **default full
+  workflow** with **no tool subset** — any active Issue (`open`/`acknowledged`/
+  `in_progress`) for that domain not observed in the scan is set to `resolved` with
+  a new `resolved_at` timestamp. Before this the register only ever grew (nothing
+  set `resolved`). Guarded hard against false closes: a **partial** scan (a tool
+  failed), a **tool-subset**/category scan (`subscan_tools` set), or a **non-default**
+  workflow (e.g. Passive Scan) never auto-resolves — an Issue's absence there
+  doesn't mean it's gone. `false_positive` (a triage decision) is never touched. If
+  a resolved Issue reappears it reopens and `resolved_at` is cleared. `Issue` gains
+  a `resolved_at` column (migration `issues/0003`).
+
 ### Changed
 - **Delta detection keyed on `check_id` (identity/register item 3).**
   `_detect_deltas` now dedups findings by the shared `issue_key(check_id, target)`
