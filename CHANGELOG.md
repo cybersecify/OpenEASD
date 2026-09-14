@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.21.0] — 2026-09-14
+
 ### Added
 - **Report reads the Issue register + exposure score excludes triaged (items 6 & 7).**
   The PDF report gains an **Issue Register** section sourced from the persistent
