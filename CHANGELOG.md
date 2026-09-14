@@ -15,6 +15,14 @@ commits to recover the reasoning.
   ("your exact name on another TLD") is the high-precision Brand Threat signal.
   Set `TLDSQUATTING_INCLUDE_TYPOS=True` to re-enable the char-mutation candidates.
 
+### Fixed
+- **Report coverage table now reflects the tools that actually ran.** A category /
+  tool-subset scan (`subscan_tools` set) listed the *entire* pipeline in the
+  "Attack Vector" coverage table, showing "0 findings" for vectors that never ran —
+  which reads as "scanned, came back clean" (a false negative in a buyer report).
+  The table now includes only the vectors whose tools actually executed. (Full
+  scans are unchanged.)
+
 ## [v2.21.0] — 2026-09-14
 
 ### Added
