@@ -13,8 +13,8 @@ def _issue(domain, **kw):
         first_seen=now, last_seen=now,
     )
     defaults.update(kw)
-    defaults["key"] = issue_key(defaults["source"], defaults["check_type"],
-                                defaults["title"], defaults["target"])
+    defaults.setdefault("check_id", f"{defaults['source']}:{defaults['check_type']}")
+    defaults["key"] = issue_key(defaults["check_id"], defaults["target"])
     return Issue.objects.create(domain=domain, **defaults)
 
 
