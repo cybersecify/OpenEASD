@@ -1,28 +1,63 @@
 import urllib.request
 import json
-from typing import Dict, List
+import re
+from typing import Dict, Optional, Tuple
 
 # Upstream: Red Hat Security Data public API (no auth required).
 # https://access.redhat.com/documentation/en-us/red_hat_security_data_api/1.0
 BASE_URL = "https://access.redhat.com/hydra/rest/securitydata/cve.json"
 PER_PAGE = 100
 
-# Only "Fixed" package states carry a usable fixed-in version. Red Hat
-# backports aggressively without bumping upstream version strings, so these
-# are exactly the records we need to suppress false-positive CVE matches.
-# "Affected" and "Will not fix" states carry no fixed_in and are ignored.
-_INCLUDED_STATES = {"Fixed"}
+# This feed carries no per-entry fix state and no `fixed_in` field. The
+# `package_state` entries (product_name / fix_state / package_name) are a
+# separate top-level field that carries no version, and they are null on the
+# list endpoint. What does carry a version is `affected_packages`: a list of
+# Name-Version-Release strings that mirrors `affected_release[].package` on the
+# per-CVE detail endpoint — i.e. the builds shipped by an RHSA that fix the
+# CVE. A CVE Red Hat never fixed (Will not fix / Affected) simply has an empty
+# list, so it contributes nothing and needs no state filter.
+_NVR_RE = re.compile(r"^(?P<name>.+)-(?P<version>[^-]+)-(?P<release>[^-]+)$")
+_EPOCH_RE = re.compile(r"^\d+:")
+# RHEL 8/9/10 builds only. The same field also lists container and module
+# builds (odf4/odf-console-rhel9:v4.15.0-57, virt:rhel-8100020240314...),
+# which carry no .elN release tag and cannot be matched against an nmap banner.
+_RHEL_RELEASE_RE = re.compile(r"\.el(?:8|9|10)(?![0-9])")
+
+try:
+    from apps.nmap.backports import compare_rpm_versions
+except ImportError:  # standalone use: python apps/nmap/sources/redhat_security.py
+    compare_rpm_versions = None
 
 
-def _normalise_fixed_in(fixed_in) -> List[str]:
-    """Red Hat reports fixed_in as a string or a list of strings."""
-    if fixed_in is None:
-        return []
-    if isinstance(fixed_in, str):
-        return [fixed_in] if fixed_in.strip() else []
-    if isinstance(fixed_in, list):
-        return [v for v in fixed_in if isinstance(v, str) and v.strip()]
-    return []
+def parse_fixed_build(entry) -> Optional[Tuple[str, str]]:
+    """
+    Splits a Red Hat Name-Version-Release string into (package, version-release).
+
+    The epoch is dropped: nmap banners and the feed disagree on whether it is
+    present, and the V-R portion is what a banner can be compared against.
+    Returns None for container/module builds, for non rpm entries and for
+    anything that is not a RHEL 8/9/10 build.
+    """
+    if not isinstance(entry, str):
+        return None
+
+    match = _NVR_RE.match(entry.strip())
+    if not match:
+        return None
+
+    name = match.group("name").strip()
+    version = _EPOCH_RE.sub("", match.group("version").strip())
+    release = match.group("release").strip()
+
+    # Container builds ("io.quarkus/quarkus-...:3.2.11.Final-redhat-00001") and
+    # module streams ("virt:rhel-810...") share this field. An rpm package name
+    # holds neither a slash nor a colon, and its version starts with a digit.
+    if not name or "/" in name or ":" in name or not version[:1].isdigit():
+        return None
+    if not _RHEL_RELEASE_RE.search(release):
+        return None
+
+    return name, f"{version}-{release}"
 
 
 def fetch_redhat_backports() -> Dict[str, Dict[str, str]]:
@@ -60,20 +95,20 @@ def fetch_redhat_backports() -> Dict[str, Dict[str, str]]:
             if not cve_id:
                 continue
 
-            for pkg in record.get("affected_packages", []) or []:
-                state = pkg.get("package_state")
-                if state not in _INCLUDED_STATES:
+            for entry in record.get("affected_packages") or []:
+                parsed = parse_fixed_build(entry)
+                if parsed is None:
                     continue
 
-                pkg_name = pkg.get("package_name")
-                if not pkg_name:
-                    continue
-
-                for fixed_version in _normalise_fixed_in(pkg.get("fixed_in")):
-                    if cve_id not in backports:
-                        backports[cve_id] = {}
-                    # Keep the most specific (last) fixed version seen.
-                    backports[cve_id][pkg_name] = fixed_version
+                pkg_name, fixed_version = parsed
+                known = backports.get(cve_id, {}).get(pkg_name)
+                # Keep the highest fixed build: a host on a newer stream must
+                # not be demoted by the lower build number of an older stream.
+                if known is None or (
+                    compare_rpm_versions is not None
+                    and compare_rpm_versions(fixed_version, known) > 0
+                ):
+                    backports.setdefault(cve_id, {})[pkg_name] = fixed_version
 
         page += 1
         # Safety bound: Red Hat has ~10k CVE records; cap well above that.
