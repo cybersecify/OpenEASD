@@ -14,15 +14,19 @@ from django.db import models
 from apps.core.data.findings.models import SEVERITY_CHOICES, STATUS_CHOICES
 
 
-def issue_key(source: str, check_type: str, title: str, target: str) -> str:
+def issue_key(check_id: str, target: str) -> str:
     """Stable cross-scan identity for a finding within a domain.
 
-    Keyed on (source, check_type, title, target) — the same detection on the same
-    host collapses to one persistent Issue across scans, while the same check on a
-    *different* host is a distinct issue (per-asset triage). Uses \\x1f (unit
-    separator) so colons in titles/targets can't collide two distinct issues.
+    Keyed on (check_id, target) — the same *rule* (``check_id``, e.g.
+    ``domain_security:spf_missing``) on the same host collapses to one persistent
+    Issue across scans, while the same rule on a *different* host is a distinct
+    issue (per-asset triage). Deliberately **excludes the human title**: titles get
+    reworded, and a reword must NOT re-key the Issue (which would orphan its triage
+    and create a duplicate). ``check_id`` is the title-independent identity built by
+    each tool (see ``findings.checkid``). Uses \\x1f (unit separator) so colons in
+    the target can't collide two distinct issues.
     """
-    return "\x1f".join((source or "", check_type or "", title or "", target or ""))
+    return "\x1f".join((check_id or "", target or ""))
 
 
 class Issue(models.Model):
@@ -34,6 +38,9 @@ class Issue(models.Model):
     )
     key = models.CharField(max_length=1024)
 
+    # check_id is the title-independent rule identity the `key` is built from
+    # (with target). source/check_type/title are kept as display metadata only.
+    check_id = models.CharField(max_length=100, blank=True, db_index=True)
     source = models.CharField(max_length=50, db_index=True)
     check_type = models.CharField(max_length=50, blank=True, db_index=True)
     title = models.CharField(max_length=500)

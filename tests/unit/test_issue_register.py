@@ -22,6 +22,9 @@ class TestIssueRollup:
             description="d", remediation="r",
         )
         defaults.update(kw)
+        # Mirror the finalize backfill: a finding has a check_id by the time the
+        # rollup runs. Default to "{source}:{check_type}" unless the test sets one.
+        defaults.setdefault("check_id", f"{defaults['source']}:{defaults['check_type']}")
         return Finding.objects.create(**defaults)
 
     def _rollup(self, sess):
@@ -39,6 +42,24 @@ class TestIssueRollup:
         i = Issue.objects.get(domain=dom, title="Missing CSP")
         assert i.status == "open" and i.severity == "medium"
         assert i.first_seen is not None and i.last_seen is not None
+
+    def test_title_reword_keeps_same_issue(self):
+        # Item 2: the key is (check_id, target), NOT the title. Rewording the title
+        # (same check_id + target) must map to the SAME Issue — not orphan its triage
+        # and create a duplicate — while the displayed title refreshes to the reword.
+        from apps.core.data.issues.models import Issue
+        dom, s1 = self._domain_and_session()
+        self._finding(s1, check_id="domain_security:dkim_unconfirmed",
+                      title="DKIM not found", target="example.com")
+        self._rollup(s1)
+        assert Issue.objects.filter(domain=dom).count() == 1
+
+        _, s2 = self._domain_and_session(status="completed")
+        self._finding(s2, check_id="domain_security:dkim_unconfirmed",
+                      title="DKIM could not be confirmed", target="example.com")
+        self._rollup(s2)
+        assert Issue.objects.filter(domain=dom).count() == 1  # same Issue, not a dup
+        assert Issue.objects.get(domain=dom).title == "DKIM could not be confirmed"
 
     def test_false_positive_persists_across_scans(self):
         # The whole point of PR2: dismissing a false positive sticks on re-scan.

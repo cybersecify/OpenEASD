@@ -8,6 +8,16 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Changed
+- **Issue register keyed on `check_id` (identity/register item 2).** `issue_key`
+  changes from `(source, check_type, title, target)` to **`(check_id, target)`** —
+  dropping the human `title` from the identity. A reworded title now keeps the same
+  `Issue` (triage preserved) instead of orphaning it and creating a duplicate; the
+  displayed title refreshes to the latest wording. `Issue` gains a `check_id`
+  column. **Fresh-register migration** (`issues/0002`): existing title-keyed Issue
+  rows are dropped (they can't be re-keyed reliably — the coarse tools embedded the
+  title in the old key); the register repopulates with stable keys on the next full
+  scan. `_detect_deltas` still uses its own key — realigning it is item 3.
+
 - **`tldsquatting` supersedes the `typosquat` tool.** New `apps/tldsquatting/`
   tool app that keeps typosquat's proven engine (8 candidate-generation
   techniques + passive public-DNS registration check + capped homepage

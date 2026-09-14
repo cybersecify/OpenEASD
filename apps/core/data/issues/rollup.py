@@ -41,11 +41,12 @@ def rollup_session_issues(session) -> None:
 
     with transaction.atomic():
         for f in session.findings.select_related("asset").exclude(source="scan_coverage"):
-            k = issue_key(f.source, f.check_type, f.title, f.target)
+            k = issue_key(f.check_id, f.target)
             keys_seen.add(k)
             issue, created = Issue.objects.get_or_create(
                 domain=domain, key=k,
                 defaults={
+                    "check_id": f.check_id,
                     "source": f.source, "check_type": f.check_type,
                     "title": f.title, "target": f.target, "severity": f.severity,
                     "status": "open", "first_seen": now, "last_seen": now,
@@ -56,12 +57,16 @@ def rollup_session_issues(session) -> None:
                 issue.last_seen = now
                 issue.severity = f.severity
                 issue.last_finding = f
+                # Refresh display metadata to the latest occurrence — the title is no
+                # longer part of the key, so a reword updates what's shown without
+                # re-keying the Issue (that's the whole point of item 2).
+                issue.title = f.title
                 if f.asset_id:
                     issue.asset = f.asset
                 if issue.status == "resolved":
                     issue.status = "open"
                 issue.save(update_fields=[
-                    "last_seen", "severity", "last_finding", "asset", "status",
+                    "last_seen", "severity", "last_finding", "asset", "status", "title",
                 ])
 
     logger.info(
