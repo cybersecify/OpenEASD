@@ -48,10 +48,10 @@ commits to recover the reasoning.
   Discovery" (beside `asn_discovery`, its passive-infra-recon analog).
 
 ### Docs
-- **Design-flow documentation** (#490): `docs/DDD.md` (the domain model in pure
+- **Design-flow documentation** (#490): `docs/02-domain.md` (the domain model in pure
   DDD terms — ubiquitous language, bounded contexts, aggregates, domain events),
-  `docs/README.md` (the docs index + reading order: PRD → DDD → System Design →
-  Technical Design → API Contract → Coding), and `docs/API.md` (API-contract
+  a docs index + reading order (PRD → DDD → System Design →
+  Technical Design → API Contract → Coding), and `docs/05-api.md` (API-contract
   conventions — auth, error shape, pagination, perspectives — pointing to the live
   OpenAPI at `/api/docs`). All existing docs cross-linked; governing rule stated
   once: the running code is the source of truth.
@@ -100,7 +100,7 @@ React SPA is updated; any other client must update paths. Migrations are
   open finding from the API security review.
 
 ### Docs
-- Added the **D-017 flow diagram** to `docs/DESIGN.md` (write → execute → promote →
+- Added the **D-017 flow diagram** to `docs/03-system.md` (write → execute → promote →
   read path of the domain-centric architecture).
 
 ## [v2.17.1] — 2026-09-13
@@ -139,7 +139,7 @@ end-to-end and is unchanged (holds).
 ### Docs
 - **D-017** recorded: OpenEASD's architecture north star — domain-centric,
   API-driven, DBOS-orchestrated, UI-agnostic data model (`docs/DECISIONS.md`,
-  `docs/DESIGN.md`).
+  `docs/03-system.md`).
 
 ## [v2.17.0] — 2026-09-13
 
@@ -190,7 +190,7 @@ deploy-incident follow-ups. No UI changes; all additive and safe when unused.
   phantom `run_scan` workflow (e.g. stranded by a worker rollout mid-scan) that
   holds a `concurrency=2` slot is auto-cancelled — `reap_orphaned_scan_workflows`
   in the watchdog + `manage.py reap_orphan_scans` for immediate cleanup — plus a
-  drain-before-rollout runbook in `docs/DEVELOPMENT.md`.
+  drain-before-rollout runbook in `docs/OPERATIONS.md`.
 
 ## [v2.16.0] — 2026-09-12
 
@@ -389,7 +389,7 @@ deploy-incident follow-ups. No UI changes; all additive and safe when unused.
   they now group under **Asset Exposure** (phase 5), leaving **Asset Discovery**
   (phases 3–4) as pure discovery: `subfinder`, `amass`, `alterx`, `asn_discovery`,
   `dnsx`. Execution order is unchanged (both still run at phase 5); display-only
-  `phase_group` change. Also refreshed the stale phase-group table in DESIGN.md.
+  `phase_group` change. Also refreshed the stale phase-group table in 03-system.md.
 - **Renamed the "Surface Enumeration" tool category to "Asset Discovery."** More
   accurate and standard: the phases-3–5 tools (`subfinder`, `amass`, `alterx`,
   `asn_discovery`, `dnsx`, `takeover_check`, `cloud_assets`) discover the org's
@@ -436,7 +436,7 @@ deploy-incident follow-ups. No UI changes; all additive and safe when unused.
   named. `docker-compose.dev.yml` takes an `OPENEASD_TAG` (default `latest`) so
   `just deploy-dev` can **smoke-test the exact release image** before promoting —
   closing the "native dev ≠ shipped artifact" gap. Full playbook added to
-  `docs/DEVELOPMENT.md` ("Ship it — verify in dev, then promote to prod").
+  `docs/OPERATIONS.md` ("Ship it — verify in dev, then promote to prod").
 
 ## [v2.14.0] — 2026-09-11
 
@@ -990,13 +990,13 @@ deploy-incident follow-ups. No UI changes; all additive and safe when unused.
   CLAUDE.md spells out the override + probe-host requirement.
 
 ### Removed
-- **Duplicate/stale docs.** Dropped the root `PRD.md` — a diverged duplicate of
-  the canonical `docs/PRD.md` whose "Delivered" section duplicated the CHANGELOG
+- **Duplicate/stale docs.** Dropped the root `01-prd.md` — a diverged duplicate of
+  the canonical `docs/01-prd.md` whose "Delivered" section duplicated the CHANGELOG
   and whose "Planned" roadmap was mostly shipped or now contradicts the
   single-user design. Also removed `docs/LOCAL_BRANCH_DBOS.md`, an unreferenced
   status doc for the long-since-merged DBOS branch, and the two historical
   `docs/specs/2026-06-01-cloud-assets-*.md` implementation specs for a shipped
-  feature (unreferenced). `docs/PRD.md` is the single canonical PRD; the WAF
+  feature (unreferenced). `docs/01-prd.md` is the single canonical PRD; the WAF
   coverage spec (still referenced from CLAUDE.md + settings) stays.
 - **Dead SQLite WAL signal handler** in settings — a leftover `connection_created`
   hook that only fired for the SQLite backend, which no longer exists (Postgres
@@ -1308,7 +1308,7 @@ deploy-incident follow-ups. No UI changes; all additive and safe when unused.
   hang the web collector was rewritten to avoid; both now share `run_capped`
   (`apps/core/workflows/proc.py`). Added a **weekly CI cron** so baked
   nuclei-templates refresh on cadence. Learnings + the corrected freeze
-  attribution recorded in `docs/SCAN_OPERATIONAL_LEARNINGS.md`.
+  attribution recorded in `docs/OPERATIONS.md`.
 
 ### Added
 - **Configurable support channel for the in-app "Report an issue" / "Request a
@@ -1329,7 +1329,7 @@ deploy-incident follow-ups. No UI changes; all additive and safe when unused.
   dropped everywhere. Overridable via `NUCLEI_SEVERITY`. Cuts template-load
   memory **and** request volume, raising signal. Combined with the existing
   low-profile `GOMEMLIMIT` cap, this is what lets nuclei complete on a 1 GB box.
-  **Learning captured in** `docs/SCAN_OPERATIONAL_LEARNINGS.md` with regression
+  **Learning captured in** `docs/OPERATIONS.md` with regression
   tests, per the standing "operational issues become tests" rule.
 
 ### Fixed
@@ -1607,7 +1607,7 @@ deploy-incident follow-ups. No UI changes; all additive and safe when unused.
 
 - **Backport-aware CVE matching in nmap analyzer** — The nmap collector now consults a curated `backports.json` knowledge file before emitting CVE findings, so distro-backported fixes are recognised. Concretely: Ubuntu 24.04 packages OpenSSH as `9.6p1-3ubuntu13.16`. The CVE-2024-6387 (regreSSHion) fix landed in `3ubuntu13.3` (USN-6859-1, July 2024), but the upstream version string stays `9.6p1` — so `nmap --script vulners` (and any tool wrapping it) reports CVE-2024-6387 as present even though the binary is patched. The analyzer now parses the distro hint from the banner, looks up `(distro, CVE, package)` in `backports.json`, and demotes the finding to `info` with `extra={"backport_applied": true, "first_fixed_in": "..."}` if the installed version is at or beyond the fixed version. The seed dataset covers the noisiest false positives on Ubuntu LTS and Debian stable (OpenSSH, OpenSSL, nginx, Apache HTTPD, Postfix). **Why:** scan-output quality is the differentiator vs. running `nmap --script vulners` directly — without backport awareness, every Linux scan carries the same false positives the upstream tool does, eroding trust in OpenEASD's other findings. **Hypothesis:** backport-aware filtering will reduce the false-positive count on Ubuntu/Debian targets significantly (rough estimate ~80% reduction on OpenSSH-related CVEs for fully-patched LTS hosts), improving end-user trust without adding new false negatives. **Evidence:** data-oriented — the issue was opened after observing this exact pattern on a real Ubuntu 24.04 host during a production scan (host's installed `openssh-server` had the regreSSHion backport but nmap NSE vulners still flagged CVE-2024-6387). Contributed by [@turfin-logic](https://github.com/turfin-logic).
 
-- **Product and architecture docs** — `docs/PRD.md` (5W PM view: audience, 11 attack vectors, constraints, anti-features, success criteria) and `docs/DESIGN.md` (full architecture reference: core apps, tool registry, scan pipeline phases, data model, REST API, frontend, deployment topologies).
+- **Product and architecture docs** — `docs/01-prd.md` (5W PM view: audience, 11 attack vectors, constraints, anti-features, success criteria) and `docs/03-system.md` (full architecture reference: core apps, tool registry, scan pipeline phases, data model, REST API, frontend, deployment topologies).
 
 ### Changed
 

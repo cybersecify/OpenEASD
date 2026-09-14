@@ -470,7 +470,7 @@ make dev
 ```
 
 Full local-dev guide (prerequisites, first-time setup, CI parity,
-troubleshooting): [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+troubleshooting): [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 ## CI/CD
 

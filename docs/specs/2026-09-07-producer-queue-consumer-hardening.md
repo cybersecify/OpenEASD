@@ -329,7 +329,7 @@ adapter). **Priority:** medium — operator-experience win.
 > `scans`-queue slot); it runs automatically in the `scheduled_watchdog` cron
 > (after `reap_stuck_scans` flips stale sessions terminal) and on demand via
 > `manage.py reap_orphan_scans [--dry-run]`. Drain runbook added to
-> `docs/DEVELOPMENT.md` (`SCHEDULED_SCANS_ENABLED=false` + wait + post-rollout
+> `docs/OPERATIONS.md` (`SCHEDULED_SCANS_ENABLED=false` + wait + post-rollout
 > reap). Tests: `tests/unit/test_orphan_reaper.py` (9). **Deferred:** the
 > *auto version-orphan reaper on worker startup* (option 2a) — it has a
 > rolling-deploy race (a still-live old-version worker's in-flight scans) and
@@ -531,7 +531,7 @@ not each run). H4 = principle #12 (per-stage safety net + alarm). The checklist'
 #3/#6/#9 (many small workflows, write-triggered stages, per-resource queues) are a
 *choreography* pattern OpenEASD deliberately does not adopt — it is an
 *orchestrated* single-workflow-per-scan pipeline (valid for a fixed dataflow); see
-DESIGN.md "Workflow vs. Pipeline". Those are not tracked as gaps.
+03-system.md "Workflow vs. Pipeline". Those are not tracked as gaps.
 
 ## 8. Verification
 

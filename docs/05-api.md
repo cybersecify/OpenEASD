@@ -1,4 +1,4 @@
-# API.md — the API contract
+# OpenEASD — API Contract
 
 OpenEASD is **API-driven and UI-agnostic**: the REST API under `/api/` is the one
 published contract. The React SPA is just one client — anything that speaks HTTP + JWT
@@ -66,8 +66,8 @@ responses carry the navigation block:
 
 ### Perspectives (the same facts, different lenses)
 
-Because the backend is a domain-centric fact graph (see [`DDD.md`](DDD.md) /
-[`DESIGN.md`](DESIGN.md)), the read API exposes several perspectives over one model —
+Because the backend is a domain-centric fact graph (see [`02-domain.md`](02-domain.md) /
+[`03-system.md`](03-system.md)), the read API exposes several perspectives over one model —
 add a new lens as a new read, with no schema change:
 
 | Path | Lens |

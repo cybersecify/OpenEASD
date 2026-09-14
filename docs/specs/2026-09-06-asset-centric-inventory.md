@@ -3,7 +3,7 @@
 > **Status:** ✅ Implemented — PR1 model + finalize rollup + `Finding.asset` +
 > backfill (#337), PR2 `/api/assets/` (#338), PR3 Assets + AssetDetail UI (#339),
 > PR4 dashboard KPI + Finding→asset cross-links (#340). Kept as the design
-> contract it was built to; the shipped architecture is described in DESIGN.md
+> contract it was built to; the shipped architecture is described in 03-system.md
 > and CLAUDE.md. One deviation from the draft: `Asset.domain` is an
 > `FK(Domain, CASCADE)` (resolved by name at rollup, skipped if no Domain row),
 > not left open — for automatic cleanup on domain delete.
@@ -183,7 +183,7 @@ scan. Runs once; idempotent if re-applied.
    migration (+ tests: upsert, honest gone-marking, dedup, resolver).
 2. `/api/assets/` endpoints (list/detail/summary) (+ API tests).
 3. `AssetsPage` + `AssetDetailPage` + nav + cross-links (+ Vitest).
-4. Docs: DESIGN.md (new inventory layer + UX model), CLAUDE.md (module +
+4. Docs: 03-system.md (new inventory layer + UX model), CLAUDE.md (module +
    endpoints + tests), README, CHANGELOG. Definition-of-done: a new
    `check_type` is not added here, but any new report surface must stay in sync.
 

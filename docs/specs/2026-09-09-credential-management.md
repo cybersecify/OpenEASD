@@ -165,7 +165,7 @@ POST /api/credentials/    → write-only: for each field, None=unchanged, ""=cle
    when set, env fallback when not). This is where DB keys start taking effect.
 3. **C5** — `CredentialsPage` + nav (+ Vitest for the presence pills).
 4. **Docs** — CLAUDE.md (new app + `/api/credentials/` + Secrets-at-rest note),
-   DESIGN.md (console app count 5→6), CHANGELOG, README (BYOK-via-UI mention).
+   03-system.md (console app count 5→6), CHANGELOG, README (BYOK-via-UI mention).
 
 ## 10. Non-goals / out of scope
 
