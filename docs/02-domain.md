@@ -1,4 +1,4 @@
-# DDD.md — OpenEASD through a Domain-Driven Design lens
+# OpenEASD — Domain Model (DDD)
 
 This document describes OpenEASD's **domain model** in Domain-Driven Design terms:
 the ubiquitous language, the core domain, bounded contexts, aggregates, entities vs
@@ -7,7 +7,7 @@ value objects, and domain events.
 It is written in **pure domain terms** — it deliberately names no technology, no
 framework, no storage mechanism, and no source files. It describes *what the model
 is*, not *how it is built*. For the implementation mapping (layers, storage, the
-execution engine, the API), see [`DESIGN.md`](DESIGN.md); for the decisions and
+execution engine, the API), see [`03-system.md`](03-system.md); for the decisions and
 trade-offs behind the model, see [`DECISIONS.md`](DECISIONS.md).
 
 The one governing decision this rests on is
@@ -80,7 +80,7 @@ using it.
 The system divides into four contexts, each with its own responsibility and its own
 vocabulary. They integrate **only through shared, stored facts and the published
 interface** — never by reaching into one another's internals. (Which code owns each
-context is a structural concern — see [`DESIGN.md`](DESIGN.md).)
+context is a structural concern — see [`03-system.md`](03-system.md).)
 
 - **Domain Model** — the core. Owns the ubiquitous language made concrete: Domains,
   Scans, Findings, Assets, Issues, and the relationship graph. Its changes ripple
@@ -274,16 +274,16 @@ runs observations can change without disturbing the domain or the observation pl
 
 ## 10. Cross-references
 
-Read in flow order (see [`README.md`](README.md) for the full reading path):
+Read in flow order (see [`CLAUDE.md`](../CLAUDE.md) for the full reading path):
 
-- **Product framing** — [`PRD.md`](PRD.md) (what / why).
-- **Structural architecture & implementation mapping** — [`DESIGN.md`](DESIGN.md)
+- **Product framing** — [`01-prd.md`](01-prd.md) (what / why).
+- **Structural architecture & implementation mapping** — [`03-system.md`](03-system.md)
   (layers, the fact-flow, the observation pipeline, and where each context lives).
 - **Decisions & trade-offs** — [`DECISIONS.md`](DECISIONS.md), esp. **D-017** and the
   raw-vs-enduring split.
-- **The published interface** — [`API.md`](API.md).
-- **Conventions** — [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
+- **The published interface** — [`05-api.md`](05-api.md).
+- **Conventions** — [`06-coding.md`](06-coding.md).
 
 This document stays in **domain terms**; anything about *how* the model is realized
-belongs in DESIGN.md. If this lens ever disagrees with the running system, the system
+belongs in 03-system.md. If this lens ever disagrees with the running system, the system
 is right and this file is corrected.

@@ -319,7 +319,7 @@ class TestScanner:
 # Regression: subzy null / non-dict array elements (scan went `partial` when a
 # subzy JSON array carried a null element → analyzer crashed on None.get()).
 # Fixed in #292 (analyzer guard) + collector filter (defence in depth). Guarded
-# here so it can't come back. See docs/SCAN_OPERATIONAL_LEARNINGS.md.
+# here so it can't come back. See docs/OPERATIONS.md.
 # ---------------------------------------------------------------------------
 
 class TestSubzyNullRecordRegression:

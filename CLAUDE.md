@@ -14,16 +14,15 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
   workflow per scan (checkpoint/resume) + `@durable_task` for one-step tasks
   (`ai_triage`, `agent_step`) + `@scheduled` crons. No SQLite, no Django-Q/Celery.
 - **AI**: optional Cloudflare Workers AI layer (BYOK, off by default, consent-gated).
-- **Docs** ([`docs/README.md`](docs/README.md) is the index + reading order —
-  PRD → DDD → System Design → Technical Design → API Contract → Coding):
-  [`docs/PRD.md`](docs/PRD.md) (product),
-  [`docs/DDD.md`](docs/DDD.md) (domain model in DDD terms — pure domain, no stack),
-  [`docs/DESIGN.md`](docs/DESIGN.md) (architecture — layers/tiers,
-  workflow-vs-pipeline, apps), [`docs/DECISIONS.md`](docs/DECISIONS.md) (why),
-  [`docs/API.md`](docs/API.md) (API-contract conventions; live spec at `/api/docs`),
-  [`docs/CODING_STANDARDS.md`](docs/CODING_STANDARDS.md) (conventions + open
-  review findings), `docs/specs/` (feature specs + producer→queue→consumer
-  hardening plan H1–H7). Release notes: `CHANGELOG.md`.
+- **Docs** (`docs/`, read as a layer chain): **PRD ([`01-prd.md`](docs/01-prd.md))
+  → DDD ([`02-domain.md`](docs/02-domain.md)) → System
+  ([`03-system.md`](docs/03-system.md)) → Technical
+  ([`04-technical.md`](docs/04-technical.md), indexes `docs/specs/`) → API
+  ([`05-api.md`](docs/05-api.md)) → Coding ([`06-coding.md`](docs/06-coding.md))**.
+  [`docs/OPERATIONS.md`](docs/OPERATIONS.md) (runbook) and
+  [`docs/DECISIONS.md`](docs/DECISIONS.md) (ADRs, incl. D-017) sit outside the
+  chain. Doc drift is treated like a failing test — the commit that changes a
+  layer updates its doc. Release notes: `CHANGELOG.md`.
 - **Health**: `GET /health/` (unauth, K8s probes) · `GET /api/version/` · `GET /metrics/` (unauth Prometheus exporter — **opt-in, OFF by default**; enable `METRICS_ENABLED=true` only once network-restricted to your scraper — M3).
 
 ## GitHub Flow
@@ -232,7 +231,7 @@ docker compose up -d --build
   `_PROFILE_TUNING`). nuclei is also severity-scoped per profile (`NUCLEI_SEVERITY`;
   low=critical/high/medium, else +low; `info` dropped everywhere) — the fix for
   its freeze/timeout since it compiles all ~13.5k templates into RAM. See
-  `docs/SCAN_OPERATIONAL_LEARNINGS.md`.
+  `docs/OPERATIONS.md`.
 - Volumes: PostgreSQL data (its own volume/PVC) and `openeasd-logs` persist across container replacements; app data lives in Postgres, not a file
 - Static files served by WhiteNoise (no nginx needed)
 - **Serve it over HTTPS.** Do NOT expose the app on bare HTTP — login sends
@@ -285,7 +284,7 @@ just deploy-dev`), then bump `newTag` to that version and `kubectl apply -k k8s/
 Rollback = set `newTag` back and re-apply. `imagePullPolicy: IfNotPresent` +
 immutable tags make this reproducible. Never pin prod to `:latest`. Enforced by
 `test_k8s_manifests.py::test_images_pinned_to_release_tag` (newTag must be `vX…`).
-See the full flow in `docs/DEVELOPMENT.md` (Ship it — verify, then promote).
+See the full flow in `docs/OPERATIONS.md` (Ship it — verify, then promote).
 
 **Key constraints:**
 - `replicas: 1` on each Deployment by default. Postgres removes the SQLite single-writer limit, so `openeasd-worker` can scale to multiple replicas pulling the same DBOS queue (`kubectl scale deploy/openeasd-worker --replicas=N`) independently of `openeasd-web`
@@ -372,7 +371,7 @@ The 16 core apps are grouped into layer subpackages: **`apps/core/console/`**
 (scans, workflows, durable, scheduler, service_detection), and
 **`apps/core/data/`** (domains, assets, web_assets, findings, asset_inventory).
 Django labels are unchanged — the nesting is organisational only (import paths are
-`apps.core.<layer>.<app>`). See `docs/DESIGN.md` for the layer model.
+`apps.core.<layer>.<app>`). See `docs/03-system.md` for the layer model.
 
 | App | Label | Purpose |
 |---|---|---|
@@ -673,7 +672,7 @@ foundational ones and consciously differs on the *choreography* ones (it's
 row notes OpenEASD's stance. Full plan + status: `docs/specs/2026-09-07-producer-queue-consumer-hardening.md`.
 
 **Design**
-1. **Draw the pipeline before writing a workflow** — name the phase, the rows it stores, what triggers the next. ✅ (13 phases in DESIGN.md)
+1. **Draw the pipeline before writing a workflow** — name the phase, the rows it stores, what triggers the next. ✅ (13 phases in 03-system.md)
 2. **Stages talk through stored data, never workflow calls** — a tool writes rows, the next phase reads them. ✅ (the empty-`models.py` rule)
 3. **One workflow per unit of work** — ⚠️ *deliberate deviation*: OpenEASD runs one multi-step `run_scan` per scan (orchestrated), not per-unit; retry granularity is per phase-group (checkpointed step).
 4. **Every workflow idempotent** (delete-then-insert / upsert, not append) — 🟡 partial: alerts ✅ (H1), phase-step idempotency is **H5**.
