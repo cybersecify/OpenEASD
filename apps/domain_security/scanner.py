@@ -71,6 +71,7 @@ def _check_caa(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="dns",
             severity="medium",
+            check_id="domain_security:caa_missing",
             title="No CAA records found",
             description=(
                 f"{domain} has no Certification Authority Authorization (CAA) records. "
@@ -88,6 +89,7 @@ def _check_caa(session, domain) -> list:
                 findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="dns",
                     severity="high",
+                    check_id="domain_security:caa_blocks_issuance",
                     title="CAA record blocks all certificate issuance",
                     description=(
                         f'{domain} has a CAA record "0 issue ;" which prevents any CA '
@@ -112,6 +114,7 @@ def _check_wildcard(session, domain) -> list:
             findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="dns",
                 severity="medium",
+                check_id="domain_security:wildcard_dns",
                 title="Wildcard DNS is enabled",
                 description=(
                     f"*.{domain} resolves to an IP address. Any subdomain — including "
@@ -164,6 +167,7 @@ def _check_lame_delegation(session, domain, ns_records) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="dns",
             severity="high",
+            check_id="domain_security:lame_delegation",
             title=f"Lame delegation detected ({len(lame_servers)} nameserver(s))",
             description=(
                 f"{domain} has nameservers that do not answer authoritatively for the zone: "
@@ -208,6 +212,7 @@ def _check_dnssec(session, domain) -> list:
         return [Finding(
             session=session, source="domain_security", target=domain,
             check_type="dnssec", severity="medium",
+            check_id="domain_security:dnssec_missing",
             title="DNSSEC not enabled",
             description=(
                 f"{domain} has no DNSSEC configured. DNS responses can be forged — "
@@ -228,6 +233,7 @@ def _check_dnssec(session, domain) -> list:
         return [Finding(
             session=session, source="domain_security", target=domain,
             check_type="dnssec", severity="medium",
+            check_id="domain_security:dnssec_ds_missing",
             title="DNSSEC chain of trust broken — DS record not published",
             description=(
                 f"{domain} has DNSKEY records but the DS record is not published at the "
@@ -247,6 +253,7 @@ def _check_dnssec(session, domain) -> list:
         return [Finding(
             session=session, source="domain_security", target=domain,
             check_type="dnssec", severity="high",
+            check_id="domain_security:dnssec_dnskey_missing",
             title="DNSSEC misconfigured — DS published but DNSKEY missing",
             description=(
                 f"{domain} has a DS record at the parent zone but no DNSKEY at the domain. "
@@ -275,6 +282,7 @@ def _check_dns(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="dns",
             severity="high",
+            check_id="domain_security:no_a_record",
             title="No A or AAAA record found",
             description=f"{domain} does not resolve to any IP address.",
             remediation="Add an A or AAAA record pointing to your server.",
@@ -286,6 +294,7 @@ def _check_dns(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="dns",
             severity="high",
+            check_id="domain_security:no_ns",
             title="No NS records found",
             description=f"{domain} has no nameserver records.",
             remediation="Configure NS records with your domain registrar.",
@@ -297,6 +306,7 @@ def _check_dns(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="dns",
             severity="medium",
+            check_id="domain_security:no_mx",
             title="No MX records found",
             description=f"{domain} has no mail exchange records.",
             remediation="Add MX records if you intend to receive email on this domain.",
@@ -363,6 +373,7 @@ def _check_spf(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="high",
+            check_id="domain_security:spf_missing",
             title="SPF record missing",
             description=f"{domain} has no SPF record. Anyone can spoof email from this domain.",
             remediation="Add a TXT record: v=spf1 include:<your-mail-provider> -all",
@@ -377,6 +388,7 @@ def _check_spf(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="critical",
+            check_id="domain_security:spf_all",
             title="SPF policy allows all senders (+all)",
             description="SPF +all means any server can send email as this domain.",
             remediation="Change +all to -all immediately.",
@@ -386,6 +398,7 @@ def _check_spf(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="medium",
+            check_id="domain_security:spf_softfail",
             title="SPF policy is soft fail (~all)",
             description="SPF is set to ~all (soft fail). Spoofed emails may still be delivered.",
             remediation="Change ~all to -all for strict enforcement.",
@@ -395,6 +408,7 @@ def _check_spf(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="medium",
+            check_id="domain_security:spf_neutral",
             title="SPF policy is neutral (?all)",
             description=(
                 "SPF ?all provides no protection — receivers treat an unauthorised "
@@ -407,6 +421,7 @@ def _check_spf(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="medium",
+            check_id="domain_security:spf_no_all",
             title="SPF record has no 'all' mechanism",
             description=(
                 "The SPF record has no trailing all mechanism, so it defaults to "
@@ -423,6 +438,7 @@ def _check_spf(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="high",
+            check_id="domain_security:spf_lookup_limit",
             title="SPF exceeds the 10 DNS-lookup limit",
             description=(
                 f"The SPF record uses {lookups} DNS-lookup mechanisms; RFC 7208 caps "
@@ -436,6 +452,7 @@ def _check_spf(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="medium",
+            check_id="domain_security:spf_lookup_near_limit",
             title="SPF is near the 10 DNS-lookup limit",
             description=(
                 f"The SPF record uses {lookups} top-level DNS-lookup mechanisms. Nested "
@@ -458,6 +475,7 @@ def _check_dmarc(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="high",
+            check_id="domain_security:dmarc_missing",
             title="DMARC record missing",
             description=f"{domain} has no DMARC record. Email spoofing is not prevented.",
             remediation=f"Add a TXT record at _dmarc.{domain}: v=DMARC1; p=reject; rua=mailto:dmarc@{domain}",
@@ -481,6 +499,7 @@ def _check_dmarc(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="medium",
+            check_id="domain_security:dmarc_policy_none",
             title="DMARC policy is none (monitoring only)",
             description="DMARC p=none means no action is taken on failing emails.",
             remediation="Change DMARC policy to p=quarantine or p=reject.",
@@ -490,6 +509,7 @@ def _check_dmarc(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="low",
+            check_id="domain_security:dmarc_policy_quarantine",
             title="DMARC policy is quarantine (not reject)",
             description="DMARC p=quarantine sends failing emails to spam. p=reject is stronger.",
             remediation="Consider upgrading DMARC policy to p=reject.",
@@ -501,6 +521,7 @@ def _check_dmarc(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="medium",
+            check_id="domain_security:dmarc_sp_none",
             title="DMARC subdomain policy is none (sp=none)",
             description=(
                 f"{domain} enforces DMARC (p={policy}) but sets sp=none, so its "
@@ -521,6 +542,7 @@ def _check_dmarc(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="low",
+            check_id="domain_security:dmarc_pct",
             title="DMARC is only partially enforced (pct<100)",
             description=(
                 f"DMARC pct={pct} applies the policy to only {pct}% of failing mail; "
@@ -535,6 +557,7 @@ def _check_dmarc(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="low",
+            check_id="domain_security:dmarc_no_rua",
             title="DMARC has no aggregate reporting (rua)",
             description=(
                 f"{domain}'s DMARC record has no rua= address, so there is no visibility "
@@ -609,6 +632,7 @@ def _check_dkim(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="medium",
+            check_id="domain_security:dkim_unconfirmed",
             title="DKIM could not be confirmed",
             description=(
                 f"DKIM could not be confirmed for {domain}: no DKIM record was found at "
@@ -632,6 +656,7 @@ def _check_tls_rpt(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="low",
+            check_id="domain_security:tls_rpt_missing",
             title="TLS-RPT not configured",
             description=(
                 f"{domain} has no SMTP TLS Reporting (TLS-RPT) record. "
@@ -656,6 +681,7 @@ def _check_bimi(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
             severity="info",
+            check_id="domain_security:bimi_missing",
             title="BIMI not configured",
             description=(
                 f"{domain} has no BIMI record. BIMI displays your brand logo in email clients "
@@ -762,6 +788,7 @@ def _check_rdap(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="rdap",
             severity="info",
+            check_id="domain_security:rdap_lookup_failed",
             title="RDAP lookup failed",
             description=(
                 f"Could not retrieve RDAP data for {domain} from rdap.org or the "
@@ -794,6 +821,7 @@ def _check_rdap(session, domain) -> list:
                 findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="rdap",
                     severity="critical",
+                    check_id="domain_security:rdap_expiring",
                     title=f"Domain expires in {days_left} day(s)",
                     description=f"{domain} expires on {expiry.date()}. Immediate renewal required.",
                     remediation="Renew the domain immediately to avoid service disruption.",
@@ -803,6 +831,7 @@ def _check_rdap(session, domain) -> list:
                 findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="rdap",
                     severity="high",
+                    check_id="domain_security:rdap_expiring",
                     title=f"Domain expires in {days_left} days",
                     description=f"{domain} expires on {expiry.date()}.",
                     remediation="Renew the domain soon to avoid disruption.",
@@ -817,6 +846,7 @@ def _check_rdap(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="rdap",
             severity="medium",
+            check_id="domain_security:rdap_transfer_lock",
             title="Domain transfer lock not enabled",
             description=(
                 f"{domain} does not have a transfer lock (clientTransferProhibited). "
@@ -832,6 +862,7 @@ def _check_rdap(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="rdap",
             severity="medium",
+            check_id="domain_security:rdap_delete_lock",
             title="Domain delete lock not enabled",
             description=(
                 f"{domain} does not have a delete lock (clientDeleteProhibited). "
@@ -847,6 +878,7 @@ def _check_rdap(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="rdap",
             severity="low",
+            check_id="domain_security:rdap_update_lock",
             title="Domain update lock not enabled",
             description=(
                 f"{domain} does not have an update lock (clientUpdateProhibited). "
@@ -861,6 +893,7 @@ def _check_rdap(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="rdap",
             severity="critical",
+            check_id="domain_security:rdap_inactive",
             title="Domain is inactive or pending deletion",
             description=f"{domain} status: {', '.join(statuses)}",
             remediation="Contact your registrar immediately.",

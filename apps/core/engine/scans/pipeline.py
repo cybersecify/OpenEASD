@@ -273,6 +273,16 @@ def _finalize_session(session):
     from apps.core.console.insights.builder import build_insights
     build_insights(session)
 
+    # Give every finding a stable per-rule check_id before the issue rollup keys the
+    # persistent register on it. Granular tools get "{source}:{check_type}" here;
+    # coarse + CVE/secret tools set it explicitly at construction (left untouched).
+    # Fail-graceful — a backfill error must never fail a scan.
+    try:
+        from apps.core.data.findings.checkid import backfill_check_ids
+        backfill_check_ids(session)
+    except Exception:  # noqa: BLE001
+        logger.exception("[%s] check_id backfill failed — scan unaffected", session.id)
+
     # Roll this scan's assets into the persistent inventory (fail-graceful —
     # a rollup error must never fail a scan). See apps/core/asset_inventory.
     try:
