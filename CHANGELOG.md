@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.22.0] — 2026-09-14
+
 ### Added
 - **`tldsquatting` risk + threat scoring model (ported).** Lookalike severity is no
   longer an ad-hoc ladder — it is the band of a two-stage score ported from the
