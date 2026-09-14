@@ -17,7 +17,15 @@ STATUS_CHOICES = [
     ("in_progress", "In Progress"),
     ("resolved", "Resolved"),
     ("false_positive", "False Positive"),
+    ("accepted", "Accepted Risk"),
 ]
+
+# Triage decisions that take an Issue out of the active risk picture: excluded from
+# the report's Issue Register and from the exposure score (register item 7).
+TRIAGED_STATUSES = ["false_positive", "accepted"]
+# Statuses that are still "live" work (shown in the report's open list, eligible for
+# auto-resolve when unseen).
+ACTIVE_STATUSES = ["open", "acknowledged", "in_progress"]
 
 
 class Finding(models.Model):

@@ -202,6 +202,38 @@
 </div>
 {% endif %}
 
+{% if issue_register.has_domain %}
+<div class="risk no-break" style="border-color:#1971c2;">
+  <div class="l" style="color:#1971c2;">Issue Register — {{ session.domain }}</div>
+  <p style="margin:8px 0 0;font-size:10px;line-height:1.5;color:#333;">The persistent, cross-scan view of this domain's issues (dismissed and accepted-risk issues excluded):
+    <strong style="color:#e03131;">{{ issue_register.new_count }} new this month</strong>,
+    <strong style="color:#333;">{{ issue_register.open_count }} still open</strong>,
+    <strong style="color:#2f9e44;">{{ issue_register.resolved_count }} resolved this month</strong>.
+  </p>
+  {% if issue_register.open_with_age %}
+  <p style="margin:8px 0 2px;font-size:9px;font-weight:bold;color:#333;">Still open (severity, then longest-open first):</p>
+  <ul style="margin:0;padding-left:14px;font-size:9px;line-height:1.45;color:#333;">
+    {% for i in issue_register.open_with_age %}<li><strong>{{ i.title }}</strong> ({{ i.severity|upper }}) — open {{ i.age_days }} day{{ i.age_days|pluralize }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if issue_register.new %}
+  <p style="margin:8px 0 2px;font-size:9px;font-weight:bold;color:#e03131;">New this month:</p>
+  <ul style="margin:0;padding-left:14px;font-size:9px;line-height:1.45;color:#333;">
+    {% for i in issue_register.new %}<li>{{ i.title }} ({{ i.severity|upper }})</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if issue_register.resolved %}
+  <p style="margin:8px 0 2px;font-size:9px;font-weight:bold;color:#2f9e44;">Resolved this month:</p>
+  <ul style="margin:0;padding-left:14px;font-size:9px;line-height:1.45;color:#333;">
+    {% for i in issue_register.resolved %}<li>{{ i.title }} ({{ i.severity|upper }})</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if not issue_register.open_with_age and not issue_register.new and not issue_register.resolved %}
+  <p style="margin:8px 0 0;font-size:9px;color:#2f9e44;">No open, new, or recently-resolved issues tracked for this domain yet.</p>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if ai_summary %}
 <div class="risk no-break" style="border-color:#2f9e44;">
   <div class="l" style="color:#2f9e44;">Analyst Summary</div>

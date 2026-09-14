@@ -84,3 +84,45 @@ class TestRebuildFindingTypeSummaries:
             rebuild_finding_type_summaries()
 
         assert FindingTypeSummary.objects.filter(title="Keep Me").exists()
+
+
+@pytest.mark.django_db
+class TestExposureScoreExcludesTriaged:
+    """Register item 7 — a finding whose Issue is triaged (false_positive/accepted)
+    is excluded from the exposure score's severity counts."""
+
+    def _crit(self, session, check_id, target="h:443"):
+        from apps.core.data.findings.models import Finding
+        return Finding.objects.create(
+            session=session, source="nmap", check_type="cve", check_id=check_id,
+            target=target, severity="critical", title=check_id,
+            description="d", remediation="r",
+        )
+
+    def test_accepted_issue_excluded_from_score_counts(self):
+        from apps.core.data.domains.models import Domain
+        from apps.core.data.issues.models import Issue, issue_key
+        from apps.core.console.insights.builder import build_insights
+        from apps.core.console.insights.models import ScanSummary
+        now = timezone.now()
+        dom, _ = Domain.objects.get_or_create(name="triage.example.com")
+        sess = _completed_session("triage.example.com")
+        self._crit(sess, "nmap:CVE-1")
+        self._crit(sess, "nmap:CVE-2")
+        # Accept the second one → it must drop out of the score's critical count.
+        Issue.objects.create(
+            domain=dom, key=issue_key("nmap:CVE-2", "h:443"), check_id="nmap:CVE-2",
+            source="nmap", check_type="cve", title="CVE-2", target="h:443",
+            severity="critical", status="accepted", first_seen=now, last_seen=now,
+        )
+        build_insights(sess)
+        assert ScanSummary.objects.get(session=sess).critical_count == 1
+
+    def test_no_triage_counts_all(self):
+        from apps.core.console.insights.builder import build_insights
+        from apps.core.console.insights.models import ScanSummary
+        sess = _completed_session("clean.example.com")
+        self._crit(sess, "nmap:CVE-1")
+        self._crit(sess, "nmap:CVE-2", target="h:80")
+        build_insights(sess)
+        assert ScanSummary.objects.get(session=sess).critical_count == 2

@@ -388,7 +388,7 @@ Django labels are unchanged — the nesting is organisational only (import paths
 | `scheduler/` | `scheduler` | Scan callables (daily_scan, run_due_monitoring_scans, run_due_user_scans, reap_stuck_scans, token purge) invoked by the DBOS `@scheduled` workflows in `apps/core/engine/durable` |
 | `notifications/` | `alerts` | Slack/Teams alerts, NotificationConfig model, alert history |
 | `insights/` | `insights` | ScanSummary (incl. per-scan Exposure Score + grade, `scoring.py`), FindingTypeSummary, charts |
-| `reports/` | `reports` | CSV + PDF export (synchronous, served by the web tier) |
+| `reports/` | `reports` | CSV + PDF export (synchronous, served by the web tier). The PDF has an **Issue Register** section from the persistent register — new-this-month / still-open-with-age / resolved-this-month, **excluding triaged** (`false_positive`/`accepted`; register items 6/7) |
 | `ai/` | `ai` | AI analysis (Cloudflare Workers AI, BYOK): finding triage, bounded adaptive orchestration, report/alert summaries, consent + per-call audit log |
 | `credentials/` | `credentials` | UI-managed BYOK API keys — `ToolCredentials` encrypted singleton + `get_credential()` resolver (DB-wins-over-env) + write-only `/api/credentials/` + the `/credentials` **CredentialsPage**. Tools read via the resolver (shodan/breach_check/github_recon/github_secrets/dns_history) — a DB key overrides env with no redeploy |
 | `api/` | — | Django Ninja API — routers, JWT auth, error handlers |
