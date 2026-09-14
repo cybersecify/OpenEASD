@@ -34,8 +34,9 @@ def run_asn_cluster(session) -> list[Finding]:
         lookalikes.append({
             "candidate": extra.get("candidate") or f.target,
             "ips": cand_ips,
-            # tldsquatting marks weaponized lookalikes (login form / brand) as high.
-            "weaponized": f.severity == "high",
+            # tldsquatting rates weaponized lookalikes (login form on the live
+            # homepage) high or critical via its threat score.
+            "weaponized": f.severity in ("high", "critical"),
         })
         ips.update(cand_ips)
 

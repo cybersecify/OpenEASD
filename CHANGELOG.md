@@ -7,6 +7,36 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Added
+- **`tldsquatting` risk + threat scoring model (ported).** Lookalike severity is no
+  longer an ad-hoc ladder — it is the band of a two-stage score ported from the
+  reference `tldsquatting` project (`apps/tldsquatting/scoring.py`):
+  - `calculate_risk_score` scores **registration timing + DNS posture** — recency,
+    infrastructure (A/AAAA/MX/NS), suspicious record combinations (MX-without-website,
+    SPF/DMARC-without-website, full email infra without a site = phishing setup),
+    security config (SPF/DMARC/CAA/DNSSEC), HTTPS/valid-cert, and NS-provider tier
+    (enterprise NS lowers, parking raises — classified from the resolved NS targets,
+    no extra network call).
+  - `calculate_threat_score` layers **live weaponization** on top (login form +3,
+    brand mentions +1/+2, parked −1). SSL/subdomain/IP-reputation signals aren't
+    gathered by OpenEASD yet and contribute 0 (graceful).
+  - The **threat band → Finding severity** (`PRE-EXISTING→info, LOW→low, MEDIUM→
+    medium, HIGH→high, CRITICAL→critical`), and the numeric `risk_score`/`threat_score`
+    + levels + creation dates are stored in `extra` so the report and AI triage can
+    show what drove the rating.
+- **`tldsquatting` RDAP registration-age enrichment.** Each registered lookalike's
+  registration date is looked up via the RDAP bootstrap (`rdap.org`, fail-graceful,
+  bounded by `TLDSQUATTING_RDAP_MAX_LOOKUPS`, off via `TLDSQUATTING_RDAP_AGE=False`)
+  and compared to the target's — the input to the scoring model's dominant
+  **PRE-EXISTING** rule: a lookalike that was registered **before the target cannot
+  be impersonating it** (it existed first — e.g. `amnic.net` 1994 vs `amnic.com`
+  1997), so it scores 0.0 and is reported as **info**, killing that class of false
+  positive. Passive (RDAP is third-party registry data; the target's own systems are
+  never contacted). The registered-lookalike DNS check was also extended to gather
+  the full posture the scorer needs (AAAA/CNAME/TXT/SPF/DMARC/CAA/DNSSEC/NS targets),
+  bounded to registered candidates only so the ~1000 NXDOMAIN candidates stay a
+  two-lookup check.
+
 ### Changed
 - **`tldsquatting` focuses on TLD cybersquatting by default.** The character-level
   mutation techniques (homoglyph/adjacent-key/omission/insertion/repetition/

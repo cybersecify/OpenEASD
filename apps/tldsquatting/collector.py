@@ -325,32 +325,67 @@ def _resolve(resolver, name: str, rdtype: str) -> list[str]:
 
 
 def _check_candidate(resolver, candidate: str) -> dict | None:
-    """Passive DNS registration check for a single candidate.
+    """Passive DNS registration check + full posture profile for one candidate.
 
-    Returns a record dict when the candidate is registered (has A, MX, or NS),
-    else None. A/MX presence marks it weaponizable (can serve phishing / receive
-    mail). Only NS present = registered / parked.
+    Cheap first: resolve A + MX (and NS only when neither is present) to decide
+    whether the candidate is even registered. NXDOMAIN / no records → None (the
+    common case, kept to two lookups). Only once a candidate is *registered* do
+    we pay for the deeper posture lookups the scoring model needs (AAAA, CNAME,
+    TXT/SPF, DMARC, CAA, DNSSEC, NS targets) — so the extra DNS load lands on the
+    handful of registered lookalikes, never on the ~1000 NXDOMAIN candidates.
+
+    Every lookup is fail-graceful (``_resolve`` swallows all errors → []); this
+    function never raises.
     """
     a_records = _resolve(resolver, candidate, "A")
     mx_records = _resolve(resolver, candidate, "MX")
 
     has_a = bool(a_records)
     has_mx = bool(mx_records)
+    ns_records: list[str] = []
     has_ns = False
     if not has_a and not has_mx:
         # Only pay for the NS lookup when there's no A/MX — catches parked /
         # registered-but-dark lookalikes without a lookup on every candidate.
-        has_ns = bool(_resolve(resolver, candidate, "NS"))
+        ns_records = _resolve(resolver, candidate, "NS")
+        has_ns = bool(ns_records)
 
     if not (has_a or has_mx or has_ns):
         return None  # NXDOMAIN / unregistered — nothing to report.
 
+    # Registered — gather the full passive posture for risk/threat scoring. NS is
+    # (re-)fetched here so we always have the targets for tier classification,
+    # even for A/MX-bearing records that skipped the NS lookup above.
+    if not ns_records:
+        ns_records = _resolve(resolver, candidate, "NS")
+        has_ns = bool(ns_records)
+    aaaa_records = _resolve(resolver, candidate, "AAAA")
+    cname_records = _resolve(resolver, candidate, "CNAME")
+    txt_records = _resolve(resolver, candidate, "TXT")
+    caa_records = _resolve(resolver, candidate, "CAA")
+    dmarc_records = _resolve(resolver, f"_dmarc.{candidate}", "TXT")
+    # DNSSEC = a signed zone: DS at the parent or DNSKEY at the apex.
+    has_dnssec = bool(
+        _resolve(resolver, candidate, "DS") or _resolve(resolver, candidate, "DNSKEY")
+    )
+
+    has_spf = any("v=spf1" in t.lower() for t in txt_records)
+    has_dmarc = any("v=dmarc1" in t.lower() for t in dmarc_records)
+
     return {
         "candidate": candidate,
         "has_a": has_a,
+        "has_aaaa": bool(aaaa_records),
         "has_mx": has_mx,
         "has_ns": has_ns,
+        "has_cname": bool(cname_records),
+        "has_txt": bool(txt_records),
+        "has_spf": has_spf,
+        "has_dmarc": has_dmarc,
+        "has_caa": bool(caa_records),
+        "has_dnssec": has_dnssec,
         "resolved_ips": a_records,
+        "ns_targets": ns_records,
     }
 
 
@@ -362,13 +397,19 @@ def _content_signals(candidate: str, brand: str) -> dict:
     fetch failure leaves content_checked=False and no signals.
     """
     out = {"content_checked": True, "login_form": False,
-           "brand_mentioned": False, "brand_mention_count": 0}
+           "brand_mentioned": False, "brand_mention_count": 0,
+           "https_enabled": False, "ssl_valid": False}
     try:
         ua = getattr(settings, "OPENEASD_USER_AGENT", "OpenEASD")
         resp = requests.get(
             f"https://{candidate}/", timeout=CONTENT_TIMEOUT,
             headers={"User-Agent": ua}, allow_redirects=True,
         )
+        # A successful HTTPS fetch (requests verifies the cert by default, raising
+        # on an invalid one) means the lookalike serves HTTPS with a valid cert —
+        # both signals the risk model rewards.
+        out["https_enabled"] = True
+        out["ssl_valid"] = True
         html = resp.text or ""
         out["login_form"] = bool(_LOGIN_FORM_RE.search(html))
         if _PARKED_CONTENT_RE.search(html):
@@ -387,11 +428,71 @@ def _content_signals(candidate: str, brand: str) -> dict:
     return out
 
 
+def _rdap_created(domain: str, timeout: int = 8) -> str | None:
+    """Look up a domain's registration (creation) date via the RDAP bootstrap.
+
+    Returns an ISO date string ``YYYY-MM-DD`` or ``None`` on any failure. Never
+    raises. Passive: RDAP is third-party registry data (rdap.org redirects to the
+    authoritative registry) — the target's own systems are never contacted.
+    """
+    try:
+        ua = getattr(settings, "OPENEASD_USER_AGENT", "OpenEASD")
+        resp = requests.get(
+            f"https://rdap.org/domain/{domain}",
+            timeout=timeout,
+            headers={"User-Agent": ua, "Accept": "application/rdap+json"},
+            allow_redirects=True,
+        )
+        if resp.status_code != 200:
+            return None
+        for ev in resp.json().get("events", []) or []:
+            if ev.get("eventAction") == "registration" and ev.get("eventDate"):
+                return str(ev["eventDate"])[:10]
+    except Exception:  # noqa: BLE001 — never let an RDAP lookup fail the scan
+        return None
+    return None
+
+
+def _enrich_registration_age(session, apex: str, results: list[dict]) -> None:
+    """Annotate each registered lookalike with its RDAP creation date vs the
+    target's (register item / brand-threat accuracy).
+
+    A lookalike registered BEFORE the target cannot be impersonating it — it
+    existed first, so it's almost always a legitimate / unrelated registrant. We
+    look up the target's creation date once, then each registered lookalike's
+    (concurrent, capped, fail-graceful), and set ``predates_target`` so the
+    analyzer downgrades those to info. No-op when disabled or dates unavailable.
+    """
+    if not getattr(settings, "TLDSQUATTING_RDAP_AGE", True) or not results:
+        return
+    timeout = getattr(settings, "TLDSQUATTING_RDAP_TIMEOUT", 8)
+    cap = getattr(settings, "TLDSQUATTING_RDAP_MAX_LOOKUPS", 60)
+    target_created = _rdap_created(apex, timeout)
+    to_age = results[:cap]
+
+    def _age(record):
+        created = _rdap_created(record["candidate"], timeout)
+        record["created"] = created
+        record["target_created"] = target_created
+        record["predates_target"] = bool(
+            created and target_created and created < target_created
+        )
+
+    workers = max(1, min(_DNS_CONCURRENCY, len(to_age)))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        list(executor.map(_age, to_age))
+    predating = sum(1 for r in to_age if r.get("predates_target"))
+    logger.info(
+        "[tldsquatting:%s] RDAP age: %d/%d registered lookalike(s) predate %s "
+        "(downgraded to info)", session.id, predating, len(to_age), apex,
+    )
+
+
 def collect(session) -> list[dict]:
     """Generate lookalike candidates for the session's apex domain and return the
     subset that is registered / weaponizable (via passive public DNS), enriched
     with weaponization signals (login form / brand impersonation) for the
-    web-serving ones.
+    web-serving ones and RDAP registration-age context (predates-target).
 
     Always returns a list; never raises.
     """
@@ -432,6 +533,10 @@ def collect(session) -> list[dict]:
         with ThreadPoolExecutor(max_workers=fetch_workers) as executor:
             list(executor.map(_probe, to_fetch))
     fetched = len(to_fetch)
+
+    # RDAP registration-age enrichment (fail-graceful, bounded) — mark lookalikes
+    # that predate the target so the analyzer deprioritises them.
+    _enrich_registration_age(session, apex, results)
 
     logger.info(
         "[tldsquatting:%s] checked %d lookalike candidate(s) for %s — %d registered, "
