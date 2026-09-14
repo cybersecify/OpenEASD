@@ -118,18 +118,13 @@ def compare_rpm_versions(v1: str, v2: str) -> int:
     return rpmvercmp(v1, v2)
 
 
-# nmap -sV emits distro markers for the Debian/Ubuntu family and the RPM-based
-# families (Red Hat / RHEL / Rocky / Alma / CentOS and SUSE / SLES / openSUSE).
-# Each rule maps a marker regex to the canonical backports.json key and the
-# comparator that understands that distro's build-version format.
+# nmap -sV emits distro markers for the Debian/Ubuntu family and for the
+# SUSE family (SLES / openSUSE / openSUSE Leap). Each rule maps a marker regex
+# to the canonical backports.json key and the comparator that understands that
+# distro's build-version format.
 _DISTRO_RULES = [
     (re.compile(r"(?i)(ubuntu)"), "ubuntu", "deb"),
     (re.compile(r"(?i)(debian)"), "debian", "deb"),
-    (
-        re.compile(r"(?i)(rhel|red\s*hat|rocky|alma|centos|oracle\s*linux)"),
-        "redhat",
-        "rpm",
-    ),
     (re.compile(r"(?i)(sles|suse|opensuse|leap)"), "suse", "rpm"),
 ]
 
@@ -139,7 +134,7 @@ _DEB_VERSION_RE = r"(?:[^;]*?[-; ])\s*(\d[a-z0-9.~+-]*)"
 
 # RPM EVR build versions: a digit-led token that contains a release separator
 # (e.g. 2.4.6-99.el7_9.2, 8.0p1-1.el9). Requiring the '-' release part avoids
-# capturing a bare distro major version like "Red Hat Enterprise Linux 9".
+# capturing a bare distro major version like "openSUSE Leap 15.6".
 _RPM_VERSION_RE = r"(?:[^;]*?[-; ])\s*([0-9][0-9A-Za-z._~+:+-]*-[0-9A-Za-z._~+:+-]+)"
 
 
@@ -163,8 +158,8 @@ def check_backport(product: str, version_string: str, cve: str) -> dict:
     #   "OpenSSH 8.4p1 Debian-5+deb11u3"              → distro_version = "5+deb11u3"
     #   "OpenSSH 9.6p1 Ubuntu Linux; 3ubuntu13.3"     → distro_version = "3ubuntu13.3"
     # RPM family (build versions carry a release tag):
-    #   "OpenSSH 8.0p1 Red Hat 8.0p1-1.el9"           → distro=redhat, "8.0p1-1.el9"
-    #   "httpd 2.4.6 SUSE 2.4.6-99.el7_9.2"           → distro=suse,   "2.4.6-99.el7_9.2"
+    #   "Apache httpd 2.4.51 SUSE 2.4.51-150000.15.35.1" → distro=suse,
+    #                                                      "2.4.51-150000.15.35.1"
     for keyword_re, key, kind in _DISTRO_RULES:
         km = keyword_re.search(version_string)
         if not km:

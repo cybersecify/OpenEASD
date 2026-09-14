@@ -6,7 +6,7 @@ upstream version string, patched build). These tests exercise the pieces
 directly:
 
   * compare_debian_versions  — Debian/Ubuntu build strings
-  * compare_rpm_versions     — RPM EVR strings (Red Hat / RHEL / Rocky / Alma / SUSE)
+  * compare_rpm_versions     — RPM EVR strings (SUSE / SLES / openSUSE)
   * check_backport           — distro detection + demotion orchestration,
     including the "protocol 2.0" false-positive guard and the new RPM families.
 """
@@ -90,8 +90,8 @@ class TestCompareRpmVersions:
 _BACKPORTS = {
     "ubuntu": {"CVE-2024-6387": {"openssh": "3ubuntu13.3"}},
     "debian": {"CVE-2024-6387": {"openssh": "5+deb11u2"}},
-    "redhat": {"CVE-2024-6387": {"openssh": "8.0p1-1.el9"}},
-    "suse": {"CVE-2020-35452": {"httpd": "2.4.6-99.el7_9.2"}},
+    # real SUSE build string: release is a plain dotted number, no .elN tag
+    "suse": {"CVE-2020-35452": {"httpd": "2.4.51-150000.15.35.1"}},
 }
 
 
@@ -169,73 +169,45 @@ class TestCheckBackportUbuntuDebian:
         assert check_backport("openssh", "OpenSSH 9.6p1", "CVE-2024-6387") is None
 
 
-class TestCheckBackportRedHat:
-    @patch("apps.nmap.backports.BACKPORTS", _BACKPORTS)
-    def test_rhel_installed_at_fix_is_backported(self):
-        # nmap emits the RHEL build string after the distro marker.
-        result = check_backport(
-            "openssh", "OpenSSH 8.0p1 Red Hat 8.0p1-1.el9", "CVE-2024-6387"
-        )
-        assert result == {"backport_applied": True, "first_fixed_in": "8.0p1-1.el9"}
-
-    @patch("apps.nmap.backports.BACKPORTS", _BACKPORTS)
-    def test_rocky_almalinux_share_redhat_key(self):
-        # Rocky / Alma consume the same upstream package state (redhat key).
-        for marker in ("Rocky", "AlmaLinux", "CentOS", "Red Hat Enterprise Linux"):
-            result = check_backport(
-                "openssh", f"OpenSSH 8.0p1 {marker} 8.0p1-1.el9", "CVE-2024-6387"
-            )
-            assert result == {"backport_applied": True, "first_fixed_in": "8.0p1-1.el9"}
-
-    @patch("apps.nmap.backports.BACKPORTS", _BACKPORTS)
-    def test_rhel_installed_below_fix_is_not_backported(self):
-        # 8.0p1-0.el9 predates the fixed 8.0p1-1.el9 → still vulnerable.
-        assert (
-            check_backport(
-                "openssh", "OpenSSH 8.0p1 Red Hat 8.0p1-0.el9", "CVE-2024-6387"
-            )
-            is None
-        )
-
-    @patch("apps.nmap.backports.BACKPORTS", _BACKPORTS)
-    def test_rhel_without_build_version_is_not_backported(self):
-        # Distro keyword present but no EVR build suffix → cannot demote.
-        assert (
-            check_backport(
-                "openssh", "OpenSSH 8.0p1 Red Hat Enterprise Linux 9", "CVE-2024-6387"
-            )
-            is None
-        )
-
-
 class TestCheckBackportSuse:
     @patch("apps.nmap.backports.BACKPORTS", _BACKPORTS)
     def test_suse_installed_at_fix_is_backported(self):
+        # SUSE build strings carry a numeric release, not a .elN tag.
         result = check_backport(
-            "httpd", "Apache httpd 2.4.6 SUSE 2.4.6-99.el7_9.2", "CVE-2020-35452"
+            "httpd", "Apache httpd 2.4.51 SUSE 2.4.51-150000.15.35.1", "CVE-2020-35452"
         )
         assert result == {
             "backport_applied": True,
-            "first_fixed_in": "2.4.6-99.el7_9.2",
+            "first_fixed_in": "2.4.51-150000.15.35.1",
         }
 
     @patch("apps.nmap.backports.BACKPORTS", _BACKPORTS)
     def test_sles_and_opensuse_markers_match(self):
         for marker in ("SLES", "openSUSE", "openSUSE Leap", "SUSE"):
             result = check_backport(
-                "httpd", f"httpd 2.4.6 {marker} 2.4.6-99.el7_9.2", "CVE-2020-35452"
+                "httpd", f"httpd 2.4.51 {marker} 2.4.51-150000.15.35.1", "CVE-2020-35452"
             )
             assert result == {
                 "backport_applied": True,
-                "first_fixed_in": "2.4.6-99.el7_9.2",
+                "first_fixed_in": "2.4.51-150000.15.35.1",
             }
 
     @patch("apps.nmap.backports.BACKPORTS", _BACKPORTS)
     def test_suse_installed_below_fix_is_not_backported(self):
-        # 2.4.6-90.el7_9.1 predates the fixed 2.4.6-99.el7_9.2 → still vulnerable.
+        # 2.4.51-150000.15.30.1 predates the fixed build → still vulnerable.
         assert (
             check_backport(
-                "httpd", "httpd 2.4.6 SUSE 2.4.6-90.el7_9.1", "CVE-2020-35452"
+                "httpd", "httpd 2.4.51 SUSE 2.4.51-150000.15.30.1", "CVE-2020-35452"
+            )
+            is None
+        )
+
+    @patch("apps.nmap.backports.BACKPORTS", _BACKPORTS)
+    def test_suse_without_build_version_is_not_backported(self):
+        # Distro keyword present but no EVR build suffix → cannot demote.
+        assert (
+            check_backport(
+                "httpd", "Apache httpd 2.4.51 openSUSE Leap 15.6", "CVE-2020-35452"
             )
             is None
         )
