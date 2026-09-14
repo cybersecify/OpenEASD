@@ -1,13 +1,17 @@
-"""Lookalike / typosquat collector — algorithmic candidate generation + passive
-public-DNS registration checks.
+"""TLD-squatting / lookalike collector — algorithmic candidate generation +
+passive public-DNS registration checks.
 
 Two stages, no external binary:
 
-  1. GENERATE lookalike candidates from the session's apex domain using classic
-     typosquatting techniques (homoglyph, adjacent-key substitution, omission,
-     insertion, repetition, transposition, hyphenation, TLD swap). Deterministic
-     and deduped. Capped at ``MAX_CANDIDATES`` — truncation is logged, never
-     silent.
+  1. GENERATE lookalike candidates from the session's apex domain. The emphasis
+     (vs. the former typosquat tool) is TLD PERMUTATION: the same registrable
+     name across a broad set of purchasable TLDs (loaded from ``tlds.txt``,
+     ~900 entries) — a small, high-precision set where every registered hit is
+     almost always meaningful. Plus classic character-level typos (homoglyph,
+     adjacent-key substitution, omission, insertion, repetition, transposition,
+     hyphenation). Deterministic and deduped; TLD-swap candidates are emitted
+     FIRST so they survive the ``MAX_CANDIDATES`` cap (truncation is logged,
+     never silent).
   2. CHECK which candidates are registered / weaponizable via PUBLIC DNS. For
      each candidate we resolve A + MX (and NS only when neither is present). A
      candidate with A or MX records can host a phishing page or receive mail
@@ -25,6 +29,7 @@ import logging
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import dns.resolver
 import requests
@@ -36,13 +41,14 @@ logger = logging.getLogger(__name__)
 # homepage probes are I/O-bound and independent, so a small thread pool collapses
 # hundreds of serial round-trips into a few rounds. Kept bounded (and hitting
 # only third-party lookalike DNS / sites, never the target) so it stays polite.
-_DNS_CONCURRENCY = getattr(settings, "TYPOSQUAT_DNS_CONCURRENCY", 16)
-_FETCH_CONCURRENCY = getattr(settings, "TYPOSQUAT_FETCH_CONCURRENCY", 8)
+_DNS_CONCURRENCY = getattr(settings, "TLDSQUATTING_DNS_CONCURRENCY", 16)
+_FETCH_CONCURRENCY = getattr(settings, "TLDSQUATTING_FETCH_CONCURRENCY", 8)
 
 # Cap on generated candidates AND the per-scan DNS-lookup budget (one candidate =
-# up to a few short lookups). Keeps a scan polite and bounded on domains whose
-# names generate a large permutation space.
-MAX_CANDIDATES = 300
+# up to a few short lookups). Raised vs. the old typosquat cap because the TLD
+# list alone is ~900 entries and TLD-swap is the high-value signal we want to
+# cover in full; still bounded so a scan stays polite. Override via settings.
+MAX_CANDIDATES = getattr(settings, "TLDSQUATTING_MAX_CANDIDATES", 1000)
 
 # Weaponization content probe (spec: distinguish an ACTIVE phishing lookalike
 # from a merely-registered one). For registered, web-serving lookalikes we fetch
@@ -50,7 +56,7 @@ MAX_CANDIDATES = 300
 # contacts the THIRD-PARTY lookalike, never the user's own domain, so the tool
 # stays passive w.r.t. the authorization boundary (like cloud_enum probing
 # buckets). Capped + short-timeout + fail-graceful for politeness.
-CONTENT_MAX_FETCHES = 25          # homepages fetched per scan
+CONTENT_MAX_FETCHES = getattr(settings, "TLDSQUATTING_CONTENT_MAX_FETCHES", 25)
 CONTENT_TIMEOUT = 6               # seconds per fetch
 _LOGIN_FORM_RE = re.compile(r"<form[^>]*(?:login|sign.?in|auth|password)[^>]*>", re.I)
 
@@ -96,12 +102,33 @@ def _parked_by_ip(ips: list[str]) -> bool:
 # NXDOMAIN and resolve fast; we never want a hung resolver to stall a scan.
 _DNS_TIMEOUT = 3
 
-# Curated common TLDs used for TLD-swap candidates (phishing kits favour cheap /
-# familiar TLDs). We swap the apex's own TLD out for each of these.
-_COMMON_TLDS = [
-    "com", "net", "org", "co", "io", "info", "xyz", "online", "site",
-    "app", "dev", "biz", "us", "cc", "top", "live", "shop",
-]
+
+def _load_tlds() -> list[str]:
+    """Load the bundled purchasable-TLD list (one per line; blanks/# ignored).
+
+    This is the TLD-permutation breadth that distinguishes this tool from a
+    handful of hard-coded common TLDs — every registered hit of your exact name
+    on another TLD is a high-precision brand-threat signal. Falls back to a small
+    built-in set if the file is missing, so the tool never hard-fails on a
+    packaging glitch.
+    """
+    path = Path(__file__).with_name("tlds.txt")
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:  # pragma: no cover - packaging safety net
+        logger.warning("tldsquatting: could not read tlds.txt (%s) — using fallback set", exc)
+        return ["com", "net", "org", "co", "io", "info", "xyz", "app", "dev", "biz"]
+    tlds = []
+    for line in lines:
+        t = line.strip().lower().lstrip(".")
+        if t and not t.startswith("#"):
+            tlds.append(t)
+    return tlds
+
+
+# Loaded once at import — the broad TLD set used for TLD-swap candidates. Override
+# the file to curate; override the concurrency/cap via settings above.
+_TLDS = _load_tlds()
 
 # Homoglyph / visually-similar single-character substitutions.
 _HOMOGLYPHS = {
@@ -134,7 +161,7 @@ _KEYBOARD = {
 # full ~9k-entry Public Suffix List: a curated set of the ones real targets use,
 # which keeps us dependency-free (tldextract fetches the PSL over the network by
 # default — a scanner worker shouldn't). Override/extend via
-# settings.TYPOSQUAT_MULTI_LABEL_SUFFIXES.
+# settings.TLDSQUATTING_MULTI_LABEL_SUFFIXES.
 _MULTI_LABEL_SUFFIXES = (
     "co.uk", "org.uk", "gov.uk", "ac.uk", "me.uk", "net.uk", "ltd.uk", "plc.uk", "sch.uk",
     "com.au", "net.au", "org.au", "edu.au", "gov.au", "id.au",
@@ -158,17 +185,13 @@ def _split_apex(domain: str) -> tuple[str, str]:
 
     Multi-label public suffixes (ccTLD second-level registries) are recognised
     from ``_MULTI_LABEL_SUFFIXES`` so char-mutation and TLD-swap operate on the
-    registrable label, not a partial suffix. The old last-dot split turned
-    ``example.co.uk`` into name=``example.co`` / tld=``uk`` and emitted garbage
-    candidates like ``example.co.net`` that never resolve — so ccTLD targets got
-    effectively no lookalike detection. Curated, not the full PSL — good enough
-    for candidate seeding.
+    registrable label, not a partial suffix.
     """
     d = (domain or "").strip().lower().rstrip(".")
     if d.startswith("www."):
         d = d[4:]
 
-    suffixes = getattr(settings, "TYPOSQUAT_MULTI_LABEL_SUFFIXES", _MULTI_LABEL_SUFFIXES)
+    suffixes = getattr(settings, "TLDSQUATTING_MULTI_LABEL_SUFFIXES", _MULTI_LABEL_SUFFIXES)
     for suffix in suffixes:
         if d.endswith("." + suffix):
             head = d[: -(len(suffix) + 1)]      # everything before ".<suffix>"
@@ -227,7 +250,9 @@ def generate_candidates(domain: str) -> list[dict]:
     """Generate deduped lookalike candidates for an apex domain.
 
     Returns a list of ``{"candidate": fqdn, "technique": str}`` dicts, capped at
-    ``MAX_CANDIDATES`` (truncation logged). The original domain is never included.
+    ``MAX_CANDIDATES`` (truncation logged). TLD-swap candidates are emitted FIRST
+    so the high-value "your exact name on another TLD" signal survives the cap.
+    The original domain is never included.
     """
     name, tld = _split_apex(domain)
     if not name:
@@ -242,20 +267,22 @@ def generate_candidates(domain: str) -> list[dict]:
         if candidate and candidate != original and candidate not in seen:
             seen[candidate] = technique
 
+    # TLD swap FIRST — same name label, a different registrable TLD. This is the
+    # highest-precision signal (your exact name elsewhere) and is prioritised
+    # ahead of the noisier char mutations so it is never truncated by the cap.
+    for alt in _TLDS:
+        if alt != tld:
+            _add(f"{name}.{alt}", "tld_swap")
+
     # Character-level mutations on the name label, keeping the real TLD.
     for variant in sorted(_char_variants(name)):
         suffix = f".{tld}" if tld else ""
         _add(f"{variant}{suffix}", "typo")
 
-    # TLD swap — same name label, a different common TLD.
-    for alt in _COMMON_TLDS:
-        if alt != tld:
-            _add(f"{name}.{alt}", "tld_swap")
-
     candidates = [{"candidate": c, "technique": t} for c, t in seen.items()]
     if len(candidates) > MAX_CANDIDATES:
         logger.info(
-            "typosquat: generated %d candidates for %s — truncating to %d "
+            "tldsquatting: generated %d candidates for %s — truncating to %d "
             "(MAX_CANDIDATES)", len(candidates), original, MAX_CANDIDATES,
         )
         candidates = candidates[:MAX_CANDIDATES]
@@ -328,8 +355,6 @@ def _content_signals(candidate: str, brand: str) -> dict:
     Contacts only the lookalike domain, never the target. Never raises — any
     fetch failure leaves content_checked=False and no signals.
     """
-    # NOTE: no "parked" default here — IP-based parking detection may already
-    # have set it on the record, and this dict is update()ed over the record.
     out = {"content_checked": True, "login_form": False,
            "brand_mentioned": False, "brand_mention_count": 0}
     try:
@@ -348,10 +373,8 @@ def _content_signals(candidate: str, brand: str) -> dict:
             out["brand_mention_count"] = count
             # A mention on the page, OR a redirect landing on the real brand, is
             # an impersonation signal — but only a SIGNAL. A short brand string
-            # legitimately appears in unrelated organizations' own names (a
-            # lookalike of "amnic" hit the Armenia Network Information Centre,
-            # whose page says AMNIC because that IS its name), so the analyzer
-            # never escalates on mentions alone.
+            # legitimately appears in unrelated organizations' own names, so the
+            # analyzer never escalates on mentions alone.
             out["brand_mentioned"] = count > 0 or b in (resp.url or "").lower()
     except Exception:  # noqa: BLE001 — never let a lookalike fetch fail the scan
         out["content_checked"] = False
@@ -369,7 +392,7 @@ def collect(session) -> list[dict]:
     apex = getattr(session, "domain", "") or ""
     candidates = generate_candidates(apex)
     if not candidates:
-        logger.info("[typosquat:%s] no candidates generated for %r", session.id, apex)
+        logger.info("[tldsquatting:%s] no candidates generated for %r", session.id, apex)
         return []
 
     # Registration check — resolve candidates concurrently (I/O-bound). map()
@@ -405,7 +428,7 @@ def collect(session) -> list[dict]:
     fetched = len(to_fetch)
 
     logger.info(
-        "[typosquat:%s] checked %d lookalike candidate(s) for %s — %d registered, "
+        "[tldsquatting:%s] checked %d lookalike candidate(s) for %s — %d registered, "
         "%d homepage(s) probed",
         session.id, len(candidates), apex, len(results), fetched,
     )

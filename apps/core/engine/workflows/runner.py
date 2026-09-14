@@ -169,7 +169,7 @@ def resolve_phase_groups(workflow, only_tools: list | None = None) -> list:
 # intelligence group finish fast on a 1 GB box without risking an OOM. A group is
 # only parallelised under low memory when EVERY tool in it is on this list.
 _LOW_MEM_PARALLEL_SAFE = frozenset({
-    "domain_security", "domain_probe", "typosquat", "dns_history",
+    "domain_security", "domain_probe", "tldsquatting", "dns_history",
     "hudson_rock", "breach_check", "github_secrets",
 })
 

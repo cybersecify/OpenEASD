@@ -53,7 +53,7 @@ def cluster(session, lookalikes: list[dict], asn_by_ip: dict) -> list[Finding]:
     asn_by_ip:  ``{ip: {"asn", "as_name", "prefix"}}``
 
     A cluster with any weaponized member (login form / brand impersonation, as
-    flagged by typosquat) is `high`; otherwise `medium`.
+    flagged by tldsquatting) is `high`; otherwise `medium`.
     """
     members: dict[str, set] = defaultdict(set)      # asn -> {candidate}
     weaponized: dict[str, set] = defaultdict(set)    # asn -> {weaponized candidate}

@@ -150,7 +150,7 @@ INSTALLED_APPS = [
     "apps.web_checker",
     "apps.js_secrets",
     "apps.shodan",
-    "apps.typosquat",
+    "apps.tldsquatting",
     "apps.github_secrets",
     "apps.github_recon",
     "apps.cve_intel",
