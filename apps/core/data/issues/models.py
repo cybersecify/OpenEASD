@@ -53,6 +53,9 @@ class Issue(models.Model):
 
     first_seen = models.DateTimeField()
     last_seen = models.DateTimeField()
+    # Set when the Issue is auto-resolved because a comprehensive full scan no
+    # longer observed it (register item 4); cleared if it reappears (reopen).
+    resolved_at = models.DateTimeField(null=True, blank=True)
 
     last_finding = models.ForeignKey(
         "findings.Finding", on_delete=models.SET_NULL, null=True, blank=True,

@@ -31,6 +31,88 @@ class TestIssueRollup:
         from apps.core.data.issues.rollup import rollup_session_issues
         rollup_session_issues(sess)
 
+    def _full_session(self, name="example.com", status="completed", subscan_tools=None):
+        """A *comprehensive* scan: default full workflow, no tool subset — the only
+        shape that auto-resolves unseen Issues (item 4)."""
+        from apps.core.data.domains.models import Domain
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.engine.workflows.models import Workflow
+        Domain.objects.get_or_create(name=name)
+        wf = (Workflow.objects.filter(is_default=True).first()
+              or Workflow.objects.create(name="Full Scan", is_default=True))
+        sess = ScanSession.objects.create(
+            domain=name, scan_type="full", status=status,
+            workflow=wf, subscan_tools=subscan_tools,
+        )
+        return Domain.objects.get(name=name), sess
+
+    # ---- item 4: close Issues not seen in the latest full scan ----
+
+    def test_unseen_issue_auto_resolved_after_full_scan(self):
+        from apps.core.data.issues.models import Issue
+        dom, s1 = self._full_session()
+        self._finding(s1, check_id="web_checker:missing_hsts", title="Missing HSTS")
+        self._rollup(s1)
+        assert Issue.objects.get(domain=dom).status == "open"
+        # A later comprehensive scan no longer sees it (a different check is present).
+        _, s2 = self._full_session()
+        self._finding(s2, check_id="web_checker:missing_csp", title="Missing CSP")
+        self._rollup(s2)
+        gone = Issue.objects.get(domain=dom, check_id="web_checker:missing_hsts")
+        assert gone.status == "resolved" and gone.resolved_at is not None
+
+    def test_subset_scan_does_not_auto_resolve(self):
+        # subscan_tools set → not comprehensive → an unseen Issue must stay open.
+        from apps.core.data.issues.models import Issue
+        dom, s1 = self._full_session()
+        self._finding(s1, check_id="web_checker:missing_hsts")
+        self._rollup(s1)
+        _, s2 = self._full_session(subscan_tools=["tls_checker"])
+        self._finding(s2, check_id="tls_checker:weak_cipher", source="tls_checker",
+                      check_type="weak_cipher")
+        self._rollup(s2)
+        assert Issue.objects.get(domain=dom, check_id="web_checker:missing_hsts").status == "open"
+
+    def test_partial_scan_does_not_auto_resolve(self):
+        from apps.core.data.issues.models import Issue
+        dom, s1 = self._full_session()
+        self._finding(s1, check_id="web_checker:missing_hsts")
+        self._rollup(s1)
+        _, s2 = self._full_session(status="partial")  # a tool failed → not authoritative
+        self._finding(s2, check_id="tls_checker:weak_cipher", source="tls_checker",
+                      check_type="weak_cipher")
+        self._rollup(s2)
+        assert Issue.objects.get(domain=dom, check_id="web_checker:missing_hsts").status == "open"
+
+    def test_false_positive_not_auto_resolved(self):
+        from apps.core.data.issues.models import Issue
+        dom, s1 = self._full_session()
+        self._finding(s1, check_id="web_checker:missing_hsts")
+        self._rollup(s1)
+        Issue.objects.filter(domain=dom).update(status="false_positive")
+        _, s2 = self._full_session()
+        self._finding(s2, check_id="tls_checker:weak_cipher", source="tls_checker",
+                      check_type="weak_cipher")
+        self._rollup(s2)
+        # A dismissed false positive is a triage decision — not auto-resolved.
+        assert Issue.objects.get(domain=dom, check_id="web_checker:missing_hsts").status == "false_positive"
+
+    def test_reopen_clears_resolved_at(self):
+        from apps.core.data.issues.models import Issue
+        dom, s1 = self._full_session()
+        self._finding(s1, check_id="web_checker:missing_hsts")
+        self._rollup(s1)
+        _, s2 = self._full_session()  # not seen → resolved
+        self._finding(s2, check_id="tls_checker:weak_cipher", source="tls_checker",
+                      check_type="weak_cipher")
+        self._rollup(s2)
+        assert Issue.objects.get(domain=dom, check_id="web_checker:missing_hsts").resolved_at is not None
+        _, s3 = self._full_session()  # reappears → reopened, resolved_at cleared
+        self._finding(s3, check_id="web_checker:missing_hsts")
+        self._rollup(s3)
+        reopened = Issue.objects.get(domain=dom, check_id="web_checker:missing_hsts")
+        assert reopened.status == "open" and reopened.resolved_at is None
+
     def test_creates_one_issue_per_identity_key(self):
         from apps.core.data.issues.models import Issue
         dom, sess = self._domain_and_session()
