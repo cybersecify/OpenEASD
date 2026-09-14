@@ -1,0 +1,110 @@
+# Auto-deploy the latest release to PREPROD (Option C: self-hosted runner + CD).
+#
+# WHY this shape: preprod is single-node microk8s behind a private network, so a
+# GitHub-hosted runner can't reach it. A SELF-HOSTED runner on the preprod host
+# (label `preprod`) runs the deploy with the cluster's own kubectl. This automates
+# the exact manual promote you already do (`kubectl set image`, incl. the init
+# container so migrations run) — Git/kustomization stays the source of truth for
+# PROD, which is deliberately left MANUAL.
+#
+# SAFETY: takes a pg_dump backup BEFORE deploying (preserving the "back up first"
+# habit — the web init container runs migrations on rollout), then verifies /health
+# reports the new version, else the job fails so you can `kubectl rollout undo`.
+#
+# ONE-TIME SETUP (on the preprod host, as a user with microk8s/kubectl access):
+#   GitHub repo → Settings → Actions → Runners → New self-hosted runner, then:
+#     ./config.sh --url https://github.com/cybersecify/OpenEASD \
+#                 --token <REG_TOKEN> --labels preprod
+#     sudo ./svc.sh install && sudo ./svc.sh start
+#   If kubectl is `microk8s kubectl`, set repo/Actions variable KUBECTL="microk8s kubectl"
+#   (or add a `kubectl` alias/shim on the runner's PATH). The runner's user must
+#   already be able to run `kubectl -n preprod get pods`.
+#
+# PROD is intentionally NOT covered here — keep prod on the deterministic
+# kustomization `newTag` bump + `kubectl apply -k k8s/` promote.
+
+name: Deploy to preprod
+
+on:
+  release:
+    types: [published]          # fires when the v* tag flow publishes a GitHub Release
+  workflow_dispatch:            # manual re-deploy of a specific tag
+    inputs:
+      tag:
+        description: "Release tag to deploy (e.g. v2.19.0)"
+        required: true
+
+concurrency:
+  group: deploy-preprod         # never let two deploys race
+  cancel-in-progress: false
+
+env:
+  NAMESPACE: preprod
+  WEB_IMAGE: ghcr.io/cybersecify/openeasd-web
+  WORKER_IMAGE: ghcr.io/cybersecify/openeasd-worker
+  # NodePort + Host used to verify /health from the preprod host (Caddy → NodePort).
+  NODE_PORT: "30808"
+  HEALTH_HOST: openeasd.local
+  # Where pg_dump backups land on the preprod host. Keep on a persistent path.
+  BACKUP_DIR: "${HOME}/openeasd-backups"
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, preprod]
+    steps:
+      - name: Resolve target tag
+        id: tag
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.release.tag_name || github.event.inputs.tag }}"
+          if [ -z "$TAG" ]; then echo "No tag resolved"; exit 1; fi
+          case "$TAG" in v*) ;; *) echo "Refusing non-release tag '$TAG' (must start with v)"; exit 1;; esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "Deploying $TAG to namespace $NAMESPACE"
+
+      - name: Resolve kubectl
+        id: kc
+        run: echo "bin=${KUBECTL:-kubectl}" >> "$GITHUB_OUTPUT"
+        env:
+          KUBECTL: ${{ vars.KUBECTL }}
+
+      - name: Backup database (pg_dump) BEFORE deploy
+        env:
+          KUBECTL: ${{ steps.kc.outputs.bin }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$BACKUP_DIR"
+          OUT="$BACKUP_DIR/preprod-${TAG}-${{ github.run_id }}.sql"
+          echo "Dumping to $OUT"
+          # Creds live in the postgres pod's env (POSTGRES_USER/POSTGRES_DB); no secrets in CI.
+          $KUBECTL exec -n "$NAMESPACE" statefulset/openeasd-postgres -c postgres -- \
+            sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$OUT"
+          test -s "$OUT" || { echo "Backup is empty — aborting deploy"; exit 1; }
+          echo "Backup OK ($(wc -c < "$OUT") bytes)"
+
+      - name: Roll out new images (web incl. init → migrations, + worker)
+        env:
+          KUBECTL: ${{ steps.kc.outputs.bin }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # MUST set the init container too, or migrate runs on the OLD image (documented gotcha).
+          $KUBECTL set image -n "$NAMESPACE" deployment/openeasd-web \
+            init="${WEB_IMAGE}:${TAG}" web="${WEB_IMAGE}:${TAG}"
+          $KUBECTL set image -n "$NAMESPACE" deployment/openeasd-worker \
+            worker="${WORKER_IMAGE}:${TAG}"
+          $KUBECTL rollout status -n "$NAMESPACE" deployment/openeasd-web    --timeout=300s
+          $KUBECTL rollout status -n "$NAMESPACE" deployment/openeasd-worker --timeout=300s
+
+      - name: Verify /health reports the new version
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          GOT="$(curl -fsS --max-time 15 -H "Host: ${HEALTH_HOST}" \
+            "http://localhost:${NODE_PORT}/health/" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("version",""))')"
+          echo "health version=$GOT expected=$VERSION"
+          [ "$GOT" = "$VERSION" ] || { echo "Version mismatch — rollback with: kubectl rollout undo deployment/openeasd-web deployment/openeasd-worker -n ${NAMESPACE}"; exit 1; }
+          echo "preprod is now on $VERSION"

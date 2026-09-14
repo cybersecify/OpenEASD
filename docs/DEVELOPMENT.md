@@ -120,6 +120,16 @@ just logs / just ps
 The rule: **verify everything in dev; never debug on the live instance.** Prod
 only ever receives an already-verified, tagged image.
 
+> **Preprod auto-deploy (CD).** Preprod is deployed automatically by
+> `.github/workflows/deploy-preprod.yml` on every published GitHub Release (and on
+> manual `workflow_dispatch`). It runs on a **self-hosted runner** on the preprod
+> host (label `preprod`): it takes a `pg_dump` backup first, then `kubectl set image`
+> on `openeasd-web` (**incl. the `init` container** so migrations run) + `openeasd-worker`
+> to the release tag, waits for the rollout, and verifies `/health` reports the new
+> version. One-time runner setup + the `KUBECTL` var override are documented in the
+> workflow's header. **Prod is deliberately NOT auto-deployed** — it stays on the
+> manual, deterministic promote below.
+
 **1 — Verify the code (native).** Build on a `feat/`/`fix/` branch with `just dev`,
 click through the feature at http://localhost:5173, run a scan on an *authorized*
 test domain, and confirm any new migrations apply (`uv run manage.py migrate`).
