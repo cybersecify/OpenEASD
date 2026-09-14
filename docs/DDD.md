@@ -4,9 +4,12 @@ This document frames OpenEASD's architecture in **Domain-Driven Design** terms:
 the ubiquitous language, the core domain, bounded contexts, aggregates, entities
 vs value objects, domain events, and the anti-corruption layer.
 
-It is a **lens over the existing design, not a new design.** The authoritative
-architecture lives in [`DESIGN.md`](DESIGN.md) (layers/tiers, flow, apps) and the
-rationale in [`DECISIONS.md`](DECISIONS.md). The single governing decision this
+It is a **companion lens, not a competing design.** It sits alongside
+[`DESIGN.md`](DESIGN.md) (layers/tiers, flow, apps) and [`DECISIONS.md`](DECISIONS.md)
+(rationale): where those describe the architecture *structurally*, this describes the
+same system in *domain-modeling* terms. **The running code is the source of truth**;
+these documents — this one included — describe it, and when any of them drifts from
+the code, the code wins and the doc is corrected. The single governing decision this
 whole document rests on is **[D-017](DECISIONS.md#d-017--architecture-north-star-domain-centric-api-driven-ui-agnostic)**:
 
 > The backend stores **facts, relationships, execution state, and normalized
@@ -289,12 +292,16 @@ execution technology can change without touching the domain or the pipeline.
 
 ## 10. Cross-references
 
-- **Authoritative architecture** — [`DESIGN.md`](DESIGN.md) (layers/tiers, the flow
+Read in flow order (see [`README.md`](README.md) for the full reading path):
+
+- **Product framing** — [`PRD.md`](PRD.md) (what/why).
+- **Structural architecture** — [`DESIGN.md`](DESIGN.md) (layers/tiers, the flow
   diagram, the app tables, the scan pipeline).
 - **Rationale + trade-offs** — [`DECISIONS.md`](DECISIONS.md), esp. **D-017**
   (domain-centric north star) and the raw-vs-persistent split.
-- **Product framing** — [`PRD.md`](PRD.md).
+- **API contract** — [`API.md`](API.md) (conventions) + the live OpenAPI at `/api/docs`.
 - **Conventions** — [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
 
-This DDD lens should stay consistent with those documents; if it ever disagrees with
-DESIGN.md/DECISIONS.md, those win, and this file should be corrected.
+This DDD lens and the structural docs are **companions describing one system**; the
+**running code is the source of truth**. If any of them drifts from the code, correct
+the doc to match — never the reverse.
