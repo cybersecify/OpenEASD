@@ -8,8 +8,13 @@ UBUNTU_MOCK_DATA = {
         {
             "cves_ids": ["CVE-2024-1234"],
             "release_packages": {
-                "noble": [{"name": "openssh", "version": "1:9.6p1-3ubuntu13.4"}]
-            },
+                "noble": [
+                    {
+                        "name": "openssh",
+                        "version": "1:9.6p1-3ubuntu13.4"
+                    }
+                ]
+            }
         }
     ]
 }
@@ -18,21 +23,23 @@ DEBIAN_MOCK_DATA = {
     "openssh": {
         "CVE-2024-5678": {
             "releases": {
-                "bookworm": {"status": "resolved", "fixed_version": "1:9.2p1-2+deb12u3"}
+                "bookworm": {
+                    "status": "resolved",
+                    "fixed_version": "1:9.2p1-2+deb12u3"
+                }
             }
         }
     }
 }
 
-
-@patch("urllib.request.urlopen")
+@patch('urllib.request.urlopen')
 def test_fetch_ubuntu_backports(mock_urlopen):
     # Setup mock response
     mock_response = MagicMock()
     # First call returns data, second call returns empty notices to break loop
     mock_response.read.side_effect = [
-        json.dumps(UBUNTU_MOCK_DATA).encode("utf-8"),
-        json.dumps({"notices": []}).encode("utf-8"),
+        json.dumps(UBUNTU_MOCK_DATA).encode('utf-8'),
+        json.dumps({"notices": []}).encode('utf-8')
     ]
     mock_response.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_response
@@ -42,12 +49,11 @@ def test_fetch_ubuntu_backports(mock_urlopen):
     assert "CVE-2024-1234" in result
     assert result["CVE-2024-1234"]["openssh"] == "1:9.6p1-3ubuntu13.4"
 
-
-@patch("urllib.request.urlopen")
+@patch('urllib.request.urlopen')
 def test_fetch_debian_backports(mock_urlopen):
     # Setup mock response
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps(DEBIAN_MOCK_DATA).encode("utf-8")
+    mock_response.read.return_value = json.dumps(DEBIAN_MOCK_DATA).encode('utf-8')
     mock_response.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_response
 
@@ -56,16 +62,13 @@ def test_fetch_debian_backports(mock_urlopen):
     assert "CVE-2024-5678" in result
     assert result["CVE-2024-5678"]["bookworm"]["openssh"] == "1:9.2p1-2+deb12u3"
 
-
-@patch("apps.nmap.management.commands.refresh_backports.fetch_ubuntu_backports")
-@patch("apps.nmap.management.commands.refresh_backports.fetch_debian_backports")
-@patch("apps.nmap.management.commands.refresh_backports.fetch_alpine_backports")
-@patch("apps.nmap.management.commands.refresh_backports.fetch_redhat_backports")
-@patch("builtins.open")
-@patch("os.replace")
-def test_do_refresh_schema_merge(
-    mock_replace, mock_open, mock_redhat, mock_alpine, mock_debian, mock_ubuntu
-):
+@patch('apps.nmap.management.commands.refresh_backports.fetch_ubuntu_backports')
+@patch('apps.nmap.management.commands.refresh_backports.fetch_debian_backports')
+@patch('apps.nmap.management.commands.refresh_backports.fetch_alpine_backports')
+@patch('apps.nmap.management.commands.refresh_backports.fetch_redhat_backports')
+@patch('builtins.open')
+@patch('os.replace')
+def test_do_refresh_schema_merge(mock_replace, mock_open, mock_redhat, mock_alpine, mock_debian, mock_ubuntu):
     mock_ubuntu.return_value = {"CVE-UBUNTU": {"pkg": "1.0"}}
     mock_debian.return_value = {"CVE-DEBIAN": {"pkg": "2.0"}}
     mock_alpine.return_value = {"CVE-ALPINE": {"pkg": "3.0"}}
