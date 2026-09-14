@@ -618,6 +618,24 @@ class TestTopRisksAndIntel:
         assert "GitHub Secret Exposure" not in captured["html"]   # github_secrets hidden
         assert "KEV" in captured["html"]
 
+    def test_subset_scan_coverage_shows_only_run_vectors(self, authed_client, session):
+        # A category / tool-subset scan (subscan_tools set) must report coverage for
+        # ONLY the tools that ran — un-run vectors listed as "0 findings" would read
+        # as "scanned, clean" when they were never scanned.
+        session.subscan_tools = ["domain_security"]
+        session.save(update_fields=["subscan_tools"])
+        self._mk(session, source="domain_security", check_type="dnssec",
+                 severity="medium", title="DNSSEC not enabled", target="report.example.com")
+        captured = {}
+        with patch("apps.core.console.reports.views._render_pdf",
+                   side_effect=lambda h: captured.update(html=h) or b"%PDF-1.7"):
+            authed_client.get(f"/reports/{session.uuid}/pdf/")
+        h = captured["html"]
+        assert "Domain Posture" in h            # the vector that ran is covered
+        assert "Credential Exposure" not in h   # un-run vectors omitted from coverage
+        assert "Network Exposure" not in h
+        assert "Web Exposure" not in h
+
 
 @pytest.mark.django_db
 class TestFindingGrouping:

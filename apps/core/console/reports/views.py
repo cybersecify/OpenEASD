@@ -1001,6 +1001,13 @@ def export_scan_pdf(request, session_uuid):
     core_tools = {n for n, i in registry.items() if i.get("core")}
     active_tools = workflow_tools | core_tools
 
+    # A category / tool-subset scan (`subscan_tools` set) runs only that subset, not
+    # the whole workflow. The coverage table must reflect what ACTUALLY ran — else
+    # un-run vectors show "0 findings", which reads as "scanned, came back clean"
+    # when they were never scanned at all (a false negative in a buyer report).
+    if session.subscan_tools:
+        active_tools &= set(session.subscan_tools)
+
     # Drop passive tools that were in the workflow but couldn't do anything for
     # lack of a key/data source — they didn't actually assess the target, so the
     # buyer report shouldn't list them as coverage (also keeps the CEO "Did we
