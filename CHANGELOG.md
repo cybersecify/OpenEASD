@@ -7,6 +7,28 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.20.0] — 2026-09-14
+
+### Added
+- **`Finding.check_id`** — a stable per-rule identity independent of the human
+  `title` (which gets reworded), and the foundation the persistent `Issue`
+  register will key on (identity/register item 1). Granular tools get
+  `"{source}:{check_type}"` backfilled at finalize; the coarse tools
+  (`domain_security` 33 rules, `domain_probe` 5) and the CVE/secret tools
+  (`nmap`/`nuclei`/`nuclei_network`/`js_secrets`/`github_secrets`) set an explicit
+  per-rule `check_id` at construction (`domain_security:spf_missing`,
+  `nmap:{cve}`, `js_secrets:{rule_id}`, …). Migration `findings/0011` (additive
+  indexed column). The rollup still uses the old `issue_key` — re-keying it onto
+  `check_id` is item 2. +8 tests (`test_check_id.py`).
+
+### CI / Infrastructure
+- **Preprod auto-deploy** (`.github/workflows/deploy-preprod.yml`): on every
+  published GitHub Release (and manual dispatch), a self-hosted runner on the
+  preprod host `pg_dump`s the DB, `kubectl set image`s web (incl. the `init`
+  container so migrations run) + worker to the release tag, waits for rollout,
+  and verifies `/health`. Preprod-only; prod stays on the manual promote.
+- Fixed the stale `k8s/kustomization.yaml` image pin (`v2.15.0` → `v2.19.0`).
+
 ## [v2.19.0] — 2026-09-14
 
 ### Added
