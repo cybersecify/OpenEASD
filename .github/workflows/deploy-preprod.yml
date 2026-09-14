@@ -1,27 +1,40 @@
-# Auto-deploy the latest release to PREPROD (Option C: self-hosted runner + CD).
+# Auto-deploy the latest release to PREPROD (self-hosted runner + on-host GitOps).
 #
 # WHY this shape: preprod is single-node microk8s behind a private network, so a
 # GitHub-hosted runner can't reach it. A SELF-HOSTED runner on the preprod host
-# (label `preprod`) runs the deploy with the cluster's own kubectl. This automates
-# the exact manual promote you already do (`kubectl set image`, incl. the init
-# container so migrations run) — Git/kustomization stays the source of truth for
-# PROD, which is deliberately left MANUAL.
+# (label `preprod`) runs the deploy with the cluster's own kubectl.
 #
-# SAFETY: takes a pg_dump backup BEFORE deploying (preserving the "back up first"
-# habit — the web init container runs migrations on rollout), then verifies /health
-# reports the new version, else the job fails so you can `kubectl rollout undo`.
+# Preprod's desired state lives in a SEPARATE private infra repo ON THE HOST
+# (PREPROD_INFRA_DIR), in its `apps/openeasd/` kustomize overlay (namespace
+# preprod, NodePort service, image pins). That overlay — NOT the upstream `k8s/`
+# base (which is PROD-only, namespace default) — is preprod's source of truth. So
+# the deploy step BUMPS THE PINS IN THAT REPO, COMMITS, and `apply -k`s it, instead
+# of `kubectl set image`. This kills the drift trap: with set-image the cluster
+# diverged from the overlay, and any later `apply -k` from the infra repo silently
+# rolled preprod back to the overlay's stale pin (observed twice: v2.16.0, v2.18.0).
+# The infra repo has NO REMOTE — it lives only on this host — so the commit is
+# purely local; there is no protected-branch / push concern. Migration-safe:
+# kustomize rewrites the init container image alongside web, so migrate runs on the
+# new code (unlike `set image web=…`, which leaves init on the old image).
 #
-# ONE-TIME SETUP (on the preprod host, as a user with microk8s/kubectl access):
-#   GitHub repo → Settings → Actions → Runners → New self-hosted runner, then:
-#     ./config.sh --url https://github.com/cybersecify/OpenEASD \
-#                 --token <REG_TOKEN> --labels preprod
-#     sudo ./svc.sh install && sudo ./svc.sh start
-#   If kubectl is `microk8s kubectl`, set repo/Actions variable KUBECTL="microk8s kubectl"
-#   (or add a `kubectl` alias/shim on the runner's PATH). The runner's user must
-#   already be able to run `kubectl -n preprod get pods`.
+# SAFETY: pg_dump backup BEFORE deploy (the web init container migrates on
+# rollout), then verify /health reports the new version, else fail for rollback.
 #
-# PROD is intentionally NOT covered here — keep prod on the deterministic
-# kustomization `newTag` bump + `kubectl apply -k k8s/` promote.
+# ONE-TIME SETUP on the preprod host:
+#   1. Register the runner (repo → Settings → Actions → Runners → New self-hosted):
+#        ./config.sh --url https://github.com/cybersecify/OpenEASD \
+#                    --token <REG_TOKEN> --labels preprod
+#        sudo ./svc.sh install && sudo ./svc.sh start
+#   2. The runner user (e.g. gha-runner) needs: `microk8s kubectl -n preprod get
+#      pods` to work, WRITE access to the infra repo dir (add it to the owning
+#      group, or move the repo to a shared path), and a `kustomize` binary on PATH.
+#   3. Repo → Settings → Secrets and variables → Actions → Variables:
+#        PREPROD_INFRA_DIR = /abs/path/to/the/infra/repo   (required)
+#        KUBECTL           = "microk8s kubectl"            (if that's your kubectl)
+#        KUSTOMIZE         = kustomize                      (optional; default `kustomize`)
+#
+# PROD is intentionally NOT covered here — it stays on the manual upstream
+# `k8s/kustomization.yaml` newTag bump + `kubectl apply -k k8s/` promote.
 
 name: Deploy to preprod
 
@@ -31,7 +44,7 @@ on:
   workflow_dispatch:            # manual re-deploy of a specific tag
     inputs:
       tag:
-        description: "Release tag to deploy (e.g. v2.19.0)"
+        description: "Release tag to deploy (e.g. v2.20.0)"
         required: true
 
 concurrency:
@@ -63,15 +76,18 @@ jobs:
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
           echo "Deploying $TAG to namespace $NAMESPACE"
 
-      - name: Resolve kubectl
-        id: kc
-        run: echo "bin=${KUBECTL:-kubectl}" >> "$GITHUB_OUTPUT"
+      - name: Resolve tools
+        id: tools
+        run: |
+          echo "kubectl=${KUBECTL:-kubectl}" >> "$GITHUB_OUTPUT"
+          echo "kustomize=${KUSTOMIZE:-kustomize}" >> "$GITHUB_OUTPUT"
         env:
           KUBECTL: ${{ vars.KUBECTL }}
+          KUSTOMIZE: ${{ vars.KUSTOMIZE }}
 
       - name: Backup database (pg_dump) BEFORE deploy
         env:
-          KUBECTL: ${{ steps.kc.outputs.bin }}
+          KUBECTL: ${{ steps.tools.outputs.kubectl }}
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
@@ -84,17 +100,42 @@ jobs:
           test -s "$OUT" || { echo "Backup is empty — aborting deploy"; exit 1; }
           echo "Backup OK ($(wc -c < "$OUT") bytes)"
 
-      - name: Roll out new images (web incl. init → migrations, + worker)
+      - name: Deploy — bump the infra-repo overlay in Git, then apply -k
         env:
-          KUBECTL: ${{ steps.kc.outputs.bin }}
+          KUBECTL: ${{ steps.tools.outputs.kubectl }}
+          KUSTOMIZE: ${{ steps.tools.outputs.kustomize }}
           TAG: ${{ steps.tag.outputs.tag }}
+          INFRA_DIR: ${{ vars.PREPROD_INFRA_DIR }}
         run: |
           set -euo pipefail
-          # MUST set the init container too, or migrate runs on the OLD image (documented gotcha).
-          $KUBECTL set image -n "$NAMESPACE" deployment/openeasd-web \
-            init="${WEB_IMAGE}:${TAG}" web="${WEB_IMAGE}:${TAG}"
-          $KUBECTL set image -n "$NAMESPACE" deployment/openeasd-worker \
-            worker="${WORKER_IMAGE}:${TAG}"
+          if [ -z "${INFRA_DIR:-}" ]; then
+            echo "PREPROD_INFRA_DIR repo variable is not set — cannot locate the preprod overlay"; exit 1
+          fi
+          OVERLAY="$INFRA_DIR/apps/openeasd"
+          test -f "$OVERLAY/kustomization.yaml" || { echo "No kustomization.yaml at $OVERLAY"; exit 1; }
+
+          # 1. Re-pin both images to the release tag IN GIT (the overlay is preprod's
+          #    source of truth). kustomize rewrites the images list; both images move
+          #    to the same release tag. (Pins by tag — the release tags are immutable.
+          #    To keep digest pins instead, resolve TAG→digest and use name@sha here.)
+          ( cd "$OVERLAY" && \
+            $KUSTOMIZE edit set image \
+              "${WEB_IMAGE}=${WEB_IMAGE}:${TAG}" \
+              "${WORKER_IMAGE}=${WORKER_IMAGE}:${TAG}" )
+
+          # 2. Commit locally — this repo has no remote; Git-on-host is the record of
+          #    what preprod runs, so a later `apply -k` can never roll it back.
+          if git -C "$INFRA_DIR" diff --quiet -- apps/openeasd/kustomization.yaml; then
+            echo "overlay already pinned to ${TAG} — nothing to commit"
+          else
+            git -C "$INFRA_DIR" \
+              -c user.name="preprod-cd" -c user.email="preprod-cd@localhost" \
+              commit -m "deploy: openeasd ${TAG} to preprod" -- apps/openeasd/kustomization.yaml
+          fi
+
+          # 3. Apply the committed overlay. kustomize sets init + web + worker images
+          #    together → migrate runs on the new code (migration-safe).
+          $KUBECTL apply -k "$OVERLAY"
           $KUBECTL rollout status -n "$NAMESPACE" deployment/openeasd-web    --timeout=300s
           $KUBECTL rollout status -n "$NAMESPACE" deployment/openeasd-worker --timeout=300s
 
