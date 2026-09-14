@@ -6,7 +6,7 @@ upstream version string, patched build). These tests exercise the pieces
 directly:
 
   * compare_debian_versions  — Debian/Ubuntu build strings
-  * compare_rpm_versions     — RPM EVR strings (Red Hat / RHEL / Rocky / Alma / SUSE)
+  * compare_rpm_versions     — RPM EVR strings (Red Hat / RHEL / Rocky / Alma)
   * check_backport           — distro detection + demotion orchestration,
     including the "protocol 2.0" false-positive guard and the new RPM families.
 """
@@ -91,7 +91,6 @@ _BACKPORTS = {
     "ubuntu": {"CVE-2024-6387": {"openssh": "3ubuntu13.3"}},
     "debian": {"CVE-2024-6387": {"openssh": "5+deb11u2"}},
     "redhat": {"CVE-2024-6387": {"openssh": "8.0p1-1.el9"}},
-    "suse": {"CVE-2020-35452": {"httpd": "2.4.6-99.el7_9.2"}},
 }
 
 
@@ -207,35 +206,3 @@ class TestCheckBackportRedHat:
             is None
         )
 
-
-class TestCheckBackportSuse:
-    @patch("apps.nmap.backports.BACKPORTS", _BACKPORTS)
-    def test_suse_installed_at_fix_is_backported(self):
-        result = check_backport(
-            "httpd", "Apache httpd 2.4.6 SUSE 2.4.6-99.el7_9.2", "CVE-2020-35452"
-        )
-        assert result == {
-            "backport_applied": True,
-            "first_fixed_in": "2.4.6-99.el7_9.2",
-        }
-
-    @patch("apps.nmap.backports.BACKPORTS", _BACKPORTS)
-    def test_sles_and_opensuse_markers_match(self):
-        for marker in ("SLES", "openSUSE", "openSUSE Leap", "SUSE"):
-            result = check_backport(
-                "httpd", f"httpd 2.4.6 {marker} 2.4.6-99.el7_9.2", "CVE-2020-35452"
-            )
-            assert result == {
-                "backport_applied": True,
-                "first_fixed_in": "2.4.6-99.el7_9.2",
-            }
-
-    @patch("apps.nmap.backports.BACKPORTS", _BACKPORTS)
-    def test_suse_installed_below_fix_is_not_backported(self):
-        # 2.4.6-90.el7_9.1 predates the fixed 2.4.6-99.el7_9.2 → still vulnerable.
-        assert (
-            check_backport(
-                "httpd", "httpd 2.4.6 SUSE 2.4.6-90.el7_9.1", "CVE-2020-35452"
-            )
-            is None
-        )

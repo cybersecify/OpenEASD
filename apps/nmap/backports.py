@@ -4,25 +4,21 @@ from pathlib import Path
 
 BACKPORTS_FILE = Path(__file__).parent / "backports.json"
 
-
 def _load_backports():
     if not BACKPORTS_FILE.exists():
         return {}
     with open(BACKPORTS_FILE, "r") as f:
         return json.load(f)
 
-
 BACKPORTS = _load_backports()
-
 
 def compare_debian_versions(v1: str, v2: str) -> int:
     """
     Simplified Debian version compare.
     Returns 1 if v1 > v2, -1 if v1 < v2, 0 if v1 == v2.
     """
-
     def parse_parts(v):
-        return [int(x) if x.isdigit() else x for x in re.split(r"([0-9]+)", v) if x]
+        return [int(x) if x.isdigit() else x for x in re.split(r'([0-9]+)', v) if x]
 
     p1 = parse_parts(v1)
     p2 = parse_parts(v2)
@@ -41,7 +37,6 @@ def compare_debian_versions(v1: str, v2: str) -> int:
         return -1
     return 0
 
-
 def compare_rpm_versions(v1: str, v2: str) -> int:
     """
     RPM-aware version compare (rpmvercmp semantics) over EVR strings.
@@ -55,7 +50,6 @@ def compare_rpm_versions(v1: str, v2: str) -> int:
     comparison — the upstream feeds and nmap banners disagree on whether the
     epoch is present, and for demotion purposes the V-R portion is what matters.
     """
-
     def rpmvercmp(a: str, b: str) -> int:
         a = re.sub(r"^\d+:", "", a or "")
         b = re.sub(r"^\d+:", "", b or "")
@@ -117,11 +111,10 @@ def compare_rpm_versions(v1: str, v2: str) -> int:
 
     return rpmvercmp(v1, v2)
 
-
-# nmap -sV emits distro markers for the Debian/Ubuntu family and the RPM-based
-# families (Red Hat / RHEL / Rocky / Alma / CentOS and SUSE / SLES / openSUSE).
-# Each rule maps a marker regex to the canonical backports.json key and the
-# comparator that understands that distro's build-version format.
+# nmap -sV emits distro markers for the Debian/Ubuntu family and for the
+# Red Hat family (RHEL / Rocky / Alma / CentOS / Oracle Linux). Each rule maps
+# a marker regex to the canonical backports.json key and the comparator that
+# understands that distro's build-version format.
 _DISTRO_RULES = [
     (re.compile(r"(?i)(ubuntu)"), "ubuntu", "deb"),
     (re.compile(r"(?i)(debian)"), "debian", "deb"),
@@ -130,7 +123,6 @@ _DISTRO_RULES = [
         "redhat",
         "rpm",
     ),
-    (re.compile(r"(?i)(sles|suse|opensuse|leap)"), "suse", "rpm"),
 ]
 
 # Debian/Ubuntu build versions: start with a digit, then deb chars; the leading
@@ -142,7 +134,6 @@ _DEB_VERSION_RE = r"(?:[^;]*?[-; ])\s*(\d[a-z0-9.~+-]*)"
 # capturing a bare distro major version like "Red Hat Enterprise Linux 9".
 _RPM_VERSION_RE = r"(?:[^;]*?[-; ])\s*([0-9][0-9A-Za-z._~+:+-]*-[0-9A-Za-z._~+:+-]+)"
 
-
 def check_backport(product: str, version_string: str, cve: str) -> dict:
     """
     Checks if a CVE has been patched via backport based on the version string.
@@ -153,24 +144,26 @@ def check_backport(product: str, version_string: str, cve: str) -> dict:
 
     product = product.lower()
 
+    # Identify the distro and its build version from nmap extrainfo strings.
+    # Examples (Debian/Ubuntu family):
+    #   "OpenSSH 9.6p1 Ubuntu Linux; protocol 2.0"   → no version suffix (skip)
+    #   "OpenSSH 9.6p1 Ubuntu-3ubuntu13.4"            → distro_version = "3ubuntu13.4"
+    #   "OpenSSH 8.4p1 Debian-5+deb11u3"              → distro_version = "5+deb11u3"
+    #   "OpenSSH 9.6p1 Ubuntu Linux; 3ubuntu13.3"     → distro_version = "3ubuntu13.3"
+    # Red Hat family (build versions carry a release tag):
+    #   "OpenSSH 8.0p1 Red Hat 8.0p1-1.el9"           → distro=redhat, "8.0p1-1.el9"
+    # We specifically require the suffix to START with a digit to avoid capturing
+    # words like "protocol" that appear in the common "Ubuntu Linux; protocol 2.0" format.
     distro = None
     distro_version = None
     comparator = compare_debian_versions
 
-    # Identify the distro and its build version from nmap extrainfo strings.
-    # Examples (Debian/Ubuntu family):
-    #   "OpenSSH 9.6p1 Ubuntu-3ubuntu13.4"            → distro_version = "3ubuntu13.4"
-    #   "OpenSSH 8.4p1 Debian-5+deb11u3"              → distro_version = "5+deb11u3"
-    #   "OpenSSH 9.6p1 Ubuntu Linux; 3ubuntu13.3"     → distro_version = "3ubuntu13.3"
-    # RPM family (build versions carry a release tag):
-    #   "OpenSSH 8.0p1 Red Hat 8.0p1-1.el9"           → distro=redhat, "8.0p1-1.el9"
-    #   "httpd 2.4.6 SUSE 2.4.6-99.el7_9.2"           → distro=suse,   "2.4.6-99.el7_9.2"
     for keyword_re, key, kind in _DISTRO_RULES:
         km = keyword_re.search(version_string)
         if not km:
             continue
         version_re = _RPM_VERSION_RE if kind == "rpm" else _DEB_VERSION_RE
-        vm = re.search(version_re, version_string[km.end() :])
+        vm = re.search(version_re, version_string[km.end():])
         if not vm:
             # Distro keyword present but no usable build version — cannot demote.
             continue
@@ -197,7 +190,7 @@ def check_backport(product: str, version_string: str, cve: str) -> dict:
     if comparator(distro_version, fixed_version) >= 0:
         return {
             "backport_applied": True,
-            "first_fixed_in": fixed_version,
+            "first_fixed_in": fixed_version
         }
 
     return None
