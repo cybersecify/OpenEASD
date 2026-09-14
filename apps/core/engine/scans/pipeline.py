@@ -65,23 +65,32 @@ def _detect_deltas(session):
     # would make it a spurious "new" delta on replay (it is created *after* this
     # runs, so a re-run would see last pass's copy) and a spurious "removed"
     # delta on the next scan that doesn't regress.
-    def _finding_keys(s):
-        return {
-            f"{f.source}:{f.check_type}:{f.title}"
-            for f in Finding.objects.filter(session=s).exclude(source="scan_coverage")
-        }
+    # Identity must match the Issue register (item 3): dedup on (check_id, target)
+    # via the shared issue_key — NOT source:check_type:title. The old title-based key
+    # disagreed with the register (a reworded title showed as a phantom new+removed
+    # delta, and the same rule on different hosts collapsed). We map that identity to
+    # a readable "source:check_type:title" label for item_identifier (the change feed
+    # + dispatcher display that format), so detection agrees with the register while
+    # the stored identifier stays human-readable.
+    from apps.core.data.issues.models import issue_key
 
-    current_keys = _finding_keys(session)
-    prev_keys = _finding_keys(previous)
+    def _finding_map(s):
+        m = {}
+        for f in Finding.objects.filter(session=s).exclude(source="scan_coverage"):
+            m[issue_key(f.check_id, f.target)] = f"{f.source}:{f.check_type}:{f.title}"
+        return m
+
+    current = _finding_map(session)
+    prev = _finding_map(previous)
     deltas = []
-    for key in current_keys - prev_keys:
+    for key in current.keys() - prev.keys():
         deltas.append(ScanDelta(session=session, previous_session=previous,
                                 change_type="new", change_category="finding",
-                                item_identifier=key))
-    for key in prev_keys - current_keys:
+                                item_identifier=current[key]))
+    for key in prev.keys() - current.keys():
         deltas.append(ScanDelta(session=session, previous_session=previous,
                                 change_type="removed", change_category="finding",
-                                item_identifier=key))
+                                item_identifier=prev[key]))
     if deltas:
         ScanDelta.objects.bulk_create(deltas)
 

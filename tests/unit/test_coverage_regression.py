@@ -208,14 +208,16 @@ class TestFinalizeReplayIdempotency:
         )
         Finding.objects.create(
             session=base, source="web_checker", target="example.com",
-            check_type="missing_header", severity="medium",
+            check_type="missing_header", check_id="web_checker:missing_header",
+            severity="medium",
             title="Baseline only finding", description="d", remediation="f",
         )
         # High block ratio → coverage_regression fires.
         cur = _session(status="running", endpoints_probed=10, endpoints_blocked=10)
         Finding.objects.create(
             session=cur, source="web_checker", target="example.com",
-            check_type="missing_header", severity="medium",
+            check_type="directory_listing", check_id="web_checker:directory_listing",
+            severity="medium",
             title="Current only finding", description="d", remediation="f",
         )
         wf = Workflow.objects.create(name="wf")
