@@ -1,7 +1,9 @@
 # OpenEASD — Product Requirements Document
 
-> **Audience:** product / PM view. For architecture see [DESIGN.md](DESIGN.md).
-> For engineering decisions see [DECISIONS.md](DECISIONS.md).
+> **Audience:** product / PM view. This is the first doc in the design flow;
+> next is the domain model ([DDD.md](DDD.md)), then architecture ([DESIGN.md](DESIGN.md)).
+> For engineering decisions see [DECISIONS.md](DECISIONS.md); full index + reading
+> order in [README.md](README.md).
 
 ---
 

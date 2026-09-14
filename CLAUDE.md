@@ -14,9 +14,13 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
   workflow per scan (checkpoint/resume) + `@durable_task` for one-step tasks
   (`ai_triage`, `agent_step`) + `@scheduled` crons. No SQLite, no Django-Q/Celery.
 - **AI**: optional Cloudflare Workers AI layer (BYOK, off by default, consent-gated).
-- **Docs**: [`docs/DESIGN.md`](docs/DESIGN.md) (architecture — layers/tiers,
-  workflow-vs-pipeline, apps), [`docs/DECISIONS.md`](docs/DECISIONS.md) (why),
+- **Docs** ([`docs/README.md`](docs/README.md) is the index + reading order —
+  PRD → DDD → System Design → Technical Design → API Contract → Coding):
   [`docs/PRD.md`](docs/PRD.md) (product),
+  [`docs/DDD.md`](docs/DDD.md) (domain model in DDD terms — pure domain, no stack),
+  [`docs/DESIGN.md`](docs/DESIGN.md) (architecture — layers/tiers,
+  workflow-vs-pipeline, apps), [`docs/DECISIONS.md`](docs/DECISIONS.md) (why),
+  [`docs/API.md`](docs/API.md) (API-contract conventions; live spec at `/api/docs`),
   [`docs/CODING_STANDARDS.md`](docs/CODING_STANDARDS.md) (conventions + open
   review findings), `docs/specs/` (feature specs + producer→queue→consumer
   hardening plan H1–H7). Release notes: `CHANGELOG.md`.
