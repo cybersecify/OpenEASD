@@ -152,6 +152,7 @@ INSTALLED_APPS = [
     "apps.shodan",
     "apps.typosquat",
     "apps.github_secrets",
+    "apps.github_recon",
     "apps.cve_intel",
 ]
 

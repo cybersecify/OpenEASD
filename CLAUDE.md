@@ -8,7 +8,7 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 - **Released**: v2.16.0 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
   `:v2.16.0` / `:v2.16` / `:latest` (web on python:3.12-slim, worker on Ubuntu 24.04/3.12 — both Python 3.12; Django 5.2 LTS). 3-tier deploy: `db` (postgres:17) + `web`
   (gunicorn, no tools) + `worker` (`dbos_worker` + scanner matrix, `NET_RAW`).
-- **Scope**: 29 registered scan tools across 13 pipeline phases; single-user
+- **Scope**: 30 registered scan tools across 13 pipeline phases; single-user
   (one admin, no RBAC) by design.
 - **Engine**: DBOS durable workflows on PostgreSQL — one multi-step `run_scan`
   workflow per scan (checkpoint/resume) + `@durable_task` for one-step tasks
@@ -480,7 +480,7 @@ a terminal tree (`--format text`), or JSON (`--format json`). Because it reads
 `tool_meta` live, it can never drift; a test (`test_render_pipeline_diagram.py`)
 guards that every registered tool appears in the output.
 
-### Tool apps (29 registered tools)
+### Tool apps (30 registered tools)
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
@@ -494,6 +494,7 @@ guards that every registered tool appears in the output.
 | `apps/subfinder/` | 3 | Asset Discovery | No | Passive subdomain enumeration |
 | `apps/amass/` | 3 | Asset Discovery | No | Active subdomain enumeration |
 | `apps/asn_discovery/` | 3 | Asset Discovery | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
+| `apps/github_recon/` | 3 | Asset Discovery | Yes | **Passive** GitHub Org Recon — enumerates the target org's PUBLIC GitHub repos via GitHub's REST API and surfaces infrastructure references (internal hostnames/subdomains, cloud-bucket URLs, API endpoints) leaked in that public code/config (`check_type` `github_public_repos`/`github_infra_exposure`; complements `github_secrets`, which finds actual secrets). Queries GitHub, not the target → no auth; keyless at 60 req/hr (capped), richer with `GITHUB_TOKEN`; fail-graceful |
 | `apps/alterx/` | 3 | Asset Discovery | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
 | `apps/dnsx/` | 4 | Asset Discovery | No | DNS resolution, public IP filtering |
 | `apps/takeover_check/` | 5 | Asset Exposure | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
@@ -544,6 +545,7 @@ Phase 2  breach_check        → Finding (data-breach exposure: XposedOrNot / HI
 Phase 3  subfinder          → Subdomain (passive enumeration)
 Phase 3  amass              → Subdomain (active enumeration)
 Phase 3  asn_discovery      → Finding (owned ASN/CIDR ranges via amass intel — informational)
+Phase 3  github_recon       → Finding (infra refs in the org's public GitHub repos — passive)
 Phase 3  alterx             → Subdomain (permutation candidates from existing subdomains)
 Phase 4  dnsx               → IPAddress (public-only filter)
 Phase 5  takeover_check     → Finding (subzy — dangling DNS → unclaimed cloud)
@@ -577,8 +579,8 @@ the registry via `get_tool_active()` and `is_passive_tool_set(tools)`.
   `DomainAuthorization`**.
   Passive tools: `domain_security`, `subfinder`, `alterx`, `dnsx`,
   `historical_urls`, `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`,
-  `shodan`, `typosquat`, `breach_check`, `github_secrets`, `dns_history`,
-  `asn_cluster`.
+  `shodan`, `typosquat`, `breach_check`, `github_secrets`, `github_recon`,
+  `dns_history`, `asn_cluster`.
 - **Active** (`active=True`): probes the target directly (port scans, HTTP/TLS/SSH
   connections, crawling, vuln templates, AXFR/SMTP/mta-sts probes). **Requires
   `DomainAuthorization`.**
@@ -855,6 +857,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_breach_check.py` | 29 | Two-tier BYOK — free XposedOrNot parse (keyless + honest UA) + HIBP `breacheddomain` path (key set → HIBP used, `hibp-api-key` header sent, 404/403 = no-data), fail-graceful (timeout/500/429/bad-JSON never raise), 429 backoff, analyzer (severity high on large-account/recent, counts + attribution, no-finding-when-zero, breach-name cap), **PRIVACY: alias keys/emails/credentials never persisted (collector + analyzer + end-to-end)**, scanner |
 | `tests/unit/test_shodan.py` | 20 | collector tier selection (free InternetDB vs paid host API, BYO-key), `SHODAN_MAX_IPS` cap on paid path only, fail-graceful (404/timeout/500/429/bad-JSON never raise), analyzer (exposure + CVE findings, `extra["cve_ids"]` for cve_intel enrichment, invalid-CVE filter), scanner |
 | `tests/unit/test_js_secrets.py` | 26 | `.js` URL filter + cap, fetch-error handling, gitleaks JSON parser, analyzer Findings + dedup + secret redaction (full secret never stored), scanner, binary-missing/timeout |
+| `tests/unit/test_github_recon.py` | 39 | GitHub Org Recon — org resolution (override / apex-label derivation), org/user account confirmation, repo listing (fork-skip, cap, pagination), well-known-file fetch (base64 decode, size/count caps), request-budget guard, rate-limit backoff (403/429 + Retry-After), collector fail-graceful (network/non-200/bad-JSON never raise), `extract_infra_refs` (hostname/api_endpoint/cloud_bucket, apex-excluded), analyzer Findings (`github_public_repos` info + `github_infra_exposure` low, dedup, cap), scanner |
 | `tests/unit/test_github_secrets.py` | 32 | no-token skip (BYOK gate), org resolution (override high-confidence / apex-label low-confidence), org-scoped query building + global-search opt-in, rate-limit helpers (429/403-zero-remaining/secondary + capped backoff), collector fail-graceful (network/500/429-exhausted/bad-JSON never raise) + 429-then-success backoff, search→fetch→gitleaks happy path, gitleaks binary-missing/timeout raise, redaction (full secret never persisted — asserted at DB level), analyzer Finding shape + dedup, scanner |
 | `tests/unit/test_k8s_manifests.py` | 66 | k8s manifest structure — split web/worker Deployments, tier labels, Service→web-only selector, envFrom order, probes + probe-host, worker NET_RAW/role/entrypoint, no-PVC, kustomization |
 | `tests/unit/test_katana.py` | 19 | JSONL parser, Port/Subdomain FK links, scanner orchestrator, honest UA |
@@ -924,6 +927,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
 
-**Total: 1901 tests** (1855 fast + 46 slow domain_security)
+**Total: 2012 tests** (1966 fast + 46 slow domain_security)
 
 Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.

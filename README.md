@@ -164,7 +164,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 
 ## Features
 
-- **Automated pipeline**: 29-tool scan workflow from domain to findings
+- **Automated pipeline**: 30-tool scan workflow from domain to findings
 - **Network attack surface scanning**: CVEs, TLS/cert issues, SSH config, network protocol vulnerabilities
 - **CVE prioritisation**: EPSS exploit-probability scores + CISA KEV (known-exploited-in-the-wild) flags enrich CVE findings in place, so you triage by real-world risk rather than severity alone
 - **Dynamic workflows**: Create custom scan configurations, enable/disable tools per workflow
@@ -213,6 +213,8 @@ Phase 3  Subfinder         - Passive subdomain enumeration
 Phase 3  Amass             - Active subdomain enumeration
 Phase 3  Alterx            - Subdomain permutation from discovered subdomains
 Phase 3  ASN Discovery     - Owned ASN/CIDR ranges via amass intel (reports only)
+Phase 3  GitHub Org Recon  - Infra references (hostnames/buckets/API endpoints) in
+                             the org's public GitHub repos (passive; BYO token opt.)
 Phase 4  DNSx              - DNS resolution, public IP filtering
 
 ── Asset Exposure ───────────────────────────────────────────────────────────
@@ -285,6 +287,7 @@ apps/                   - Tool apps (add/remove freely)
   domain_security/      - DNS, email, RDAP checks
   hudson_rock/          - Infostealer-log exposure (Hudson Rock Cavalier API)
   github_secrets/       - Leaked secrets in public GitHub (gitleaks, BYO token)
+  github_recon/         - Infra references in the org's public GitHub repos (BYO token opt.)
   breach_check/         - Data-breach exposure (XposedOrNot free / HIBP BYO key)
   subfinder/            - Passive subdomain enumeration
   amass/                - Active subdomain enumeration
