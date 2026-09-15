@@ -29,3 +29,7 @@ spec that drifts from the shipped behaviour is corrected like a failing test.
 - [Finding-Centric UI, Grounded on Asset-Centric](specs/2026-09-12-finding-centric-ui-direction.md)
   — the direction for the finding/issue register views over the domain-centric
   backend.
+- [Finding Verification](specs/2026-09-15-finding-verification.md) *(proposed)* —
+  re-probe a finding's own check to label it verified / inconclusive / unverified
+  (deterministic baseline + optional AI adjudication); the verdict persists on the
+  `Issue`. Builds on the Issue Register.
