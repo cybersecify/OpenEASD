@@ -227,8 +227,8 @@ The 16 core apps map cleanly to three of the four logical layers (see
 
 **Total: 16 core apps.** The `api/` module is part of the console tier but is
 **not** a registered app (no models — it only mounts routers), so it's not in the
-16. The fourth logical layer, **Tools**, is the 27 `apps/<tool>/` plugins (next
-section) — bringing the first-party total to 43 apps / 28 registered tools
+16. The fourth logical layer, **Tools**, is the 29 `apps/<tool>/` plugins (next
+section) — bringing the first-party total to 45 apps / 30 registered tools
 (`service_detection` is the one app counted in both core and the tool registry).
 
 Notes on the mapping's soft edges:
@@ -259,7 +259,8 @@ apps/<tool>/
     analyzer.py   — parses raw data; builds Asset / Finding objects
 ```
 
-**28 registered tools.** Each carries an `active` flag: **passive** tools use only
+**30 registered tools** (29 user-selectable; `service_detection` is auto-injected
+when `naabu` runs, not chosen). Each carries an `active` flag: **passive** tools use only
 public/third-party data (no packets to the target → no authorization needed);
 **active** tools probe the target directly (require a `DomainAuthorization`). The
 full per-tool table is in [CLAUDE.md](../CLAUDE.md); by phase group:
@@ -267,9 +268,9 @@ full per-tool table is in [CLAUDE.md](../CLAUDE.md); by phase group:
 | Phase group | Phases | Tools |
 |---|---|---|
 | Domain Posture | 1 | domain_security, domain_probe, dns_history |
-| Brand Threat | 1, 13 | typosquat, asn_cluster |
+| Brand Threat | 1, 13 | tldsquatting, asn_cluster |
 | Credential Exposure | 2 | breach_check, hudson_rock, github_secrets |
-| Asset Discovery | 3–4 | subfinder, amass, alterx, asn_discovery, dnsx |
+| Asset Discovery | 3–4 | subfinder, amass, asn_discovery, github_recon, alterx, dnsx |
 | Asset Exposure | 5 | takeover_check, cloud_assets |
 | Port Discovery | 6–7 | naabu, shodan, service_detection |
 | Network Exposure | 8 | nmap, tls_checker, ssh_checker, nuclei_network |
@@ -299,7 +300,7 @@ Deletion cascades top-down: deleting a Domain wipes all session data.
 ### Pipeline phases
 
 ```
-Phase 1   Domain Posture + Brand Threat → Finding (DNS/DNSSEC/email-auth/RDAP, domain_probe, dns_history; typosquat lookalikes)
+Phase 1   Domain Posture + Brand Threat → Finding (DNS/DNSSEC/email-auth/RDAP, domain_probe, dns_history; tldsquatting lookalikes)
 Phase 2   Credential Exposure            → Finding (breach_check, hudson_rock infostealer, github_secrets)
 Phase 3   Asset Discovery  → Subdomain (subfinder/amass/alterx) + Finding (asn_discovery)
 Phase 4   dnsx                 → IPAddress (public-IP filter)

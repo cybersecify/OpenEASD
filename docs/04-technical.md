@@ -17,6 +17,10 @@ spec that drifts from the shipped behaviour is corrected like a failing test.
   honest scan coverage rather than a false "clean".
 - [Asset-Centric Inventory](specs/2026-09-06-asset-centric-inventory.md) — the
   persistent, deduplicated per-domain `Asset` inventory and its finalize rollup.
+- [Issue Register](specs/2026-09-15-issue-register.md) — the persistent,
+  cross-scan `Issue` register (Aggregate B): `check_id`/`issue_key` identity, the
+  finalize rollup with triage carry-forward + auto-resolve, and the canonical
+  triage write path. Sibling of the asset inventory.
 - [Producer → Queue → Consumer Hardening](specs/2026-09-07-producer-queue-consumer-hardening.md)
   — the H1–H10 durability/observability plan for the scan pipeline.
 - [Credential Management — UI-managed BYOK keys](specs/2026-09-09-credential-management.md)
