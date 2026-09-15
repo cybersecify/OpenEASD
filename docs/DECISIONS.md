@@ -155,28 +155,43 @@ to one and patronizing the other.
 
 ---
 
-## D-007 — Canonical 11 attack vectors (customer-facing)
-**Status:** locked · **Decided:** 2026-05-20
+## D-007 — Canonical attack vectors (customer-facing)
+**Status:** locked · **Decided:** 2026-05-20 · **Revised:** 2026-09-15 (11 → 16)
 
 **Decision.** When listing what OpenEASD does in customer copy, use these
-11 vectors (in this order):
+16 vectors (in this order). Customer copy names the **vector only** — no tool
+names, protocols, or template counts (that technical detail lives in
+`03-system.md` / `04-technical.md` / CLAUDE.md, not the product view):
 
 1. Subdomain Discovery
-2. Open Ports
-3. DNS Security (DNSSEC / CAA / AXFR / wildcard / lame-delegation)
-4. Email Security (MTA-STS / TLS-RPT / BIMI)
-5. TLS/SSL
-6. SSH Configuration Audit
-7. CVE Detection (Nmap NSE + 319 Nuclei templates)
-8. Domain Registration Health (RDAP)
-9. Web Probing & URL Discovery (httpx)
-10. Web Vulnerability Scanning (Nuclei community)
-11. HTTP Security Headers / Cookies / CORS (Web Checker)
+2. Open Ports & Services
+3. DNS Security
+4. Email Security
+5. TLS / SSL
+6. SSH Configuration
+7. CVE Detection
+8. Domain Registration Health
+9. Web Probing & URL Discovery
+10. Web Vulnerability Scanning
+11. HTTP Security Headers, Cookies & CORS
+12. Brand Threat
+13. Credential & Breach Exposure
+14. Leaked Secrets
+15. Cloud & Takeover Exposure
+16. External Asset Intelligence
 
-**Note on 11 vs 12.** The internal pipeline has 12 phases. Internal phases
-like `service_detection` aren't customer-facing vectors — they're
-classification steps that feed other tools. Don't reconcile 11 and 12;
-they're different abstractions.
+**History.** Originally 11 vectors (2026-05-20). Revised to 16 on 2026-09-15
+to fold in the capability categories shipped since — Brand Threat (tldsquatting
++ asn_cluster), Credential & Breach Exposure (breach_check + hudson_rock),
+Leaked Secrets (github_secrets + js_secrets), Cloud & Takeover Exposure
+(cloud_assets + takeover_check), and External Asset Intelligence (asn_discovery
++ github_recon).
+
+**Note on vectors vs phases.** Customer-facing vectors are a different, coarser
+abstraction than the internal 13-phase pipeline. Internal steps like
+`service_detection`, `dnsx`, and `cve_intel` aren't standalone vectors —
+they're classification/enrichment steps that feed other tools. Don't try to
+reconcile the vector count with the phase count; they're different abstractions.
 
 ---
 
@@ -427,7 +442,7 @@ than nesting it under an existing owner.
 | D-004 | Product boundary: OpenEASD vs Brand Protection | superseded | 2026-05-22 |
 | D-005 | Verification discipline (claims-trace) | locked | 2026-05-20 |
 | D-006 | Wording conventions per surface | locked | 2026-05-22 |
-| D-007 | Canonical 11 attack vectors | locked | 2026-05-20 |
+| D-007 | Canonical 16 attack vectors | locked | 2026-05-20 (rev 2026-09-15) |
 | D-008 | Anti-features (deliberate omissions) | locked | 2026-05-21 |
 | D-009 | v2.0 direction: Agentic AI / LLM-triage | locked (amended by D-015) | 2026-05-31 |
 | D-010 | LLM-triage privacy stance: hybrid local + cloud opt-in | superseded | 2026-05-31 |

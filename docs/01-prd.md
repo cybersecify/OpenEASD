@@ -64,24 +64,32 @@ engineers spend time on findings, not on pipeline plumbing.
 
 ---
 
-## What It Does — 11 Attack Vectors
+## What It Does — 16 Attack Vectors
 
 These are the customer-facing attack vectors in canonical order
-(see [D-007](DECISIONS.md#d-007--canonical-11-attack-vectors-customer-facing)):
+(see [D-007](DECISIONS.md#d-007--canonical-attack-vectors-customer-facing)).
+This is the product view — what each vector *surfaces*, in plain terms. The
+tools behind each one live in the system + technical docs
+([03-system.md](03-system.md), [CLAUDE.md](../CLAUDE.md) pipeline), not here.
 
-| # | Vector | Tools |
+| # | Attack Vector | What it surfaces |
 |---|---|---|
-| 1 | Subdomain Discovery | subfinder (passive), amass (active) |
-| 2 | Open Ports | naabu (top-100 TCP) |
-| 3 | DNS Security | domain_security — DNSSEC, CAA, AXFR, wildcard, lame-delegation |
-| 4 | Email Security | domain_security — SPF, DMARC, DKIM, MTA-STS, TLS-RPT, BIMI |
-| 5 | TLS / SSL | tls_checker — cipher suites, protocol versions, cert expiry, HSTS |
-| 6 | SSH Configuration | ssh_checker — root login, weak kex/cipher/MAC, SSHv1 |
-| 7 | CVE Detection | nmap NSE vulners + service-aware nuclei network templates (non-web ports) |
-| 8 | Domain Registration Health | domain_security — RDAP expiry, registrar, WHOIS |
-| 9 | Web Probing & URL Discovery | httpx — CDN-aware via SNI, URL seeding |
-| 10 | Web Vulnerability Scanning | nuclei community templates (web URLs) |
-| 11 | HTTP Security Headers / Cookies / CORS | web_checker |
+| 1 | Subdomain Discovery | The full set of subdomains exposed to the internet |
+| 2 | Open Ports & Services | Which network ports and services are reachable |
+| 3 | DNS Security | Weaknesses and misconfigurations in DNS |
+| 4 | Email Security | Gaps in email anti-spoofing and delivery protection |
+| 5 | TLS / SSL | Weak encryption, expiring or misconfigured certificates |
+| 6 | SSH Configuration | Insecure remote-access settings |
+| 7 | CVE Detection | Known vulnerabilities in exposed software, prioritized by real-world exploitability |
+| 8 | Domain Registration Health | Expiry, ownership and registrar risk |
+| 9 | Web Probing & URL Discovery | The live web footprint and reachable pages |
+| 10 | Web Vulnerability Scanning | Exploitable flaws in web applications |
+| 11 | HTTP Security Headers, Cookies & CORS | Missing browser-side protections |
+| 12 | Brand Threat | Lookalike and cybersquatting domains impersonating the brand |
+| 13 | Credential & Breach Exposure | Company credentials leaked in breaches and infostealer logs |
+| 14 | Leaked Secrets | API keys and secrets exposed in public code and web assets |
+| 15 | Cloud & Takeover Exposure | Open cloud storage and hijackable dangling assets |
+| 16 | External Asset Intelligence | Owned IP ranges and infrastructure referenced in public sources |
 
 ---
 
@@ -106,10 +114,13 @@ for the full rationale.
 - No RBAC, SAML, or multi-tenant support (single-user by design)
 - No hosted "scan any domain" UI — domain-ownership verification for a public
   scanner isn't built
-- No deep brand-impersonation / dark-web monitoring — out of scope by focus
-  (note: a *passive* typosquat/lookalike-domain check and a per-scan Exposure
-  Score with an A–F grade **were** added since the original PRD; the boundary is
-  brand *monitoring*, not the surface-adjacent signals now included)
+- No deep brand-impersonation / dark-web *monitoring* — out of scope by focus.
+  The boundary is continuous brand/dark-web *monitoring*, not the point-in-time,
+  surface-adjacent signals that ship as scan vectors: Brand Threat (vector 12 —
+  passive lookalike/cybersquatting detection), Credential & Breach Exposure
+  (vector 13 — aggregate breach/infostealer counts, never plaintext credentials),
+  and a per-scan Exposure Score with an A–F grade were all added since the
+  original PRD
 - No "AI-powered" marketing copy — the optional AI analysis layer (BYOK,
   off by default) is described by what it does, never as "AI-powered" (D-008)
 
