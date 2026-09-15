@@ -162,6 +162,27 @@ class TestIssueRollup:
         assert issue.status == "false_positive"          # dismissal survived
         assert Issue.objects.filter(domain=dom).count() == 1  # not duplicated
 
+    def test_triage_metadata_persists_across_scans(self):
+        # The gap this fix closes: assignee + resolution note must survive a
+        # re-scan, exactly like status does. They live on the enduring Issue.
+        from apps.core.data.issues.models import Issue
+        from apps.core.engine.scans.models import ScanSession
+        dom, s1 = self._domain_and_session()
+        self._finding(s1); self._rollup(s1)
+        Issue.objects.filter(domain=dom).update(
+            status="acknowledged", assigned_to="alice",
+            resolution_note="tracked in JIRA-42",
+        )
+
+        s2 = ScanSession.objects.create(domain="example.com", scan_type="full", status="completed")
+        self._finding(s2)  # same identity → same Issue
+        self._rollup(s2)
+
+        issue = Issue.objects.get(domain=dom)
+        assert issue.assigned_to == "alice"                 # survived re-scan
+        assert issue.resolution_note == "tracked in JIRA-42"
+        assert issue.status == "acknowledged"
+
     def test_acknowledged_persists_across_scans(self):
         from apps.core.data.issues.models import Issue
         from apps.core.engine.scans.models import ScanSession

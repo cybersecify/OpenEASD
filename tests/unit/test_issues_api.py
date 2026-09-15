@@ -79,6 +79,49 @@ class TestIssuesAPI:
                                content_type="application/json")
         assert res.status_code == 400
 
+    def test_status_update_persists_triage_metadata(self, auth_client):
+        # Assignee + resolution note are triage metadata — they must live on the
+        # enduring Issue (not the disposable Finding) so they survive re-scans.
+        dom = self._domain()
+        i = _issue(dom, status="open")
+        res = auth_client.post(
+            f"/api/issues/{i.id}/status/",
+            data={"status": "acknowledged", "assigned_to": "alice",
+                  "resolution_note": "tracked in JIRA-42"},
+            content_type="application/json",
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["assigned_to"] == "alice"
+        assert body["resolution_note"] == "tracked in JIRA-42"
+        i.refresh_from_db()
+        assert i.assigned_to == "alice"
+        assert i.resolution_note == "tracked in JIRA-42"
+
+    def test_status_metadata_omitted_is_unchanged(self, auth_client):
+        # None = leave as-is (matches the write-only convention used elsewhere).
+        dom = self._domain()
+        i = _issue(dom, status="open", assigned_to="bob", resolution_note="keep me")
+        auth_client.post(f"/api/issues/{i.id}/status/",
+                         data={"status": "in_progress"},
+                         content_type="application/json")
+        i.refresh_from_db()
+        assert i.assigned_to == "bob" and i.resolution_note == "keep me"
+
+    def test_resolve_stamps_and_reopen_clears_resolved_at(self, auth_client):
+        dom = self._domain()
+        i = _issue(dom, status="open")
+        auth_client.post(f"/api/issues/{i.id}/status/",
+                         data={"status": "resolved"},
+                         content_type="application/json")
+        i.refresh_from_db()
+        assert i.resolved_at is not None
+        auth_client.post(f"/api/issues/{i.id}/status/",
+                         data={"status": "open"},
+                         content_type="application/json")
+        i.refresh_from_db()
+        assert i.resolved_at is None
+
     def test_status_update_404(self, auth_client):
         res = auth_client.post("/api/issues/999999/status/",
                                data={"status": "open"},
