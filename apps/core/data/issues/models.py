@@ -53,6 +53,12 @@ class Issue(models.Model):
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default="open", db_index=True
     )
+    # Triage metadata lives here (on the enduring Issue), not on the disposable
+    # per-scan Finding, so an assignment + a dismissal rationale survive re-scans
+    # alongside `status`. The rollup never resets them (it updates an explicit
+    # field list), so they carry forward for free once an Issue exists.
+    assigned_to = models.CharField(max_length=150, blank=True)
+    resolution_note = models.TextField(blank=True)
 
     first_seen = models.DateTimeField()
     last_seen = models.DateTimeField()

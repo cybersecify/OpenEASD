@@ -29,6 +29,9 @@ _ACTIONABLE = ("open", "acknowledged", "in_progress")
 
 class StatusIn(Schema):
     status: str
+    # Triage metadata (write-only convention: None = leave unchanged).
+    assigned_to: str | None = None
+    resolution_note: str | None = None
 
 
 def _row(i) -> dict:
@@ -41,8 +44,11 @@ def _row(i) -> dict:
         "target": i.target,
         "severity": i.severity,
         "status": i.status,
+        "assigned_to": i.assigned_to,
+        "resolution_note": i.resolution_note,
         "first_seen": i.first_seen.isoformat(),
         "last_seen": i.last_seen.isoformat(),
+        "resolved_at": i.resolved_at.isoformat() if i.resolved_at else None,
         "asset_id": i.asset_id,
     }
 
@@ -107,10 +113,30 @@ def issues_summary(request, domain: str = ""):
 
 @router.post("/{issue_id}/status/")
 def set_issue_status(request, issue_id: int, data: StatusIn):
+    """Canonical triage write path — status + assignee + resolution note all
+    persist on the enduring Issue (they survive re-scans, unlike per-scan
+    Finding.status). ``resolved_at`` is stamped on resolve and cleared otherwise.
+    """
+    from django.utils import timezone
+
     if data.status not in _VALID_STATUSES:
         raise HttpError(400, f"status must be one of {sorted(_VALID_STATUSES)}")
     issue = get_object_or_404(Issue, id=issue_id)
+
     issue.status = data.status
-    issue.save(update_fields=["status"])
+    if data.status == "resolved":
+        if not issue.resolved_at:
+            issue.resolved_at = timezone.now()
+    else:
+        issue.resolved_at = None
+
+    if data.assigned_to is not None:
+        issue.assigned_to = str(data.assigned_to)[:150]
+    if data.resolution_note is not None:
+        issue.resolution_note = str(data.resolution_note)[:5000]
+
+    issue.save(update_fields=[
+        "status", "resolved_at", "assigned_to", "resolution_note",
+    ])
     logger.info("[issues] %s → %s", issue_id, data.status)
     return _row(issue)
