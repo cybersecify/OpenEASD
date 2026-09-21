@@ -14,7 +14,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1: frontend build → static bundle (build-time only; no Node at runtime)
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM node:20-slim AS frontend-builder
+FROM --platform=$BUILDPLATFORM node:25-slim AS frontend-builder
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --prefer-offline
