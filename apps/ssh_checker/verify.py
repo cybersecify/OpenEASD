@@ -1,7 +1,7 @@
 """Re-probe verifier for ssh_checker findings.
 
 Real finding shape (confirmed by reading analyzer.py + collector.py, not the
-design brief's guess): there is no check_type="weak_kex" and no
+design brief's guess): there is no "weak_kex" check_type and no
 extra["algorithm"]. ``analyzer.py`` emits seven check_types, all sourced from
 the same per-port probe dict ``collector.collect()`` builds out of
 ``collector._probe_ssh`` (banner/host-key/auth-method negotiation) and

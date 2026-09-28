@@ -1,7 +1,7 @@
 """Re-probe verifier for tls_checker findings.
 
 Real finding shape (confirmed by reading analyzer.py, not the design brief's
-guess): there is no check_type="weak_protocol" and no extra["protocol"]. The
+guess): there is no "weak_protocol" check_type and no extra["protocol"]. The
 deprecated-protocol findings that ``analyzer._protocol_findings`` actually
 emits are two check_types:
 
