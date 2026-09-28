@@ -223,8 +223,8 @@ docker compose up -d --build
   github_secrets) runs concurrently *even under low memory* (they never OOM like
   nuclei/amass), so the phase-1 intelligence group stays fast on a 1GB box;
   override via `SCAN_LOW_MEM_PARALLEL_SAFE`. `tldsquatting` also resolves its
-  candidates and probes homepages concurrently (`TYPOSQUAT_DNS_CONCURRENCY`=16 /
-  `TYPOSQUAT_FETCH_CONCURRENCY`=8) instead of serially. Per-target request rate stays
+  candidates and probes homepages concurrently (`TLDSQUATTING_DNS_CONCURRENCY`=16 /
+  `TLDSQUATTING_FETCH_CONCURRENCY`=8) instead of serially. Per-target request rate stays
   capped across all profiles (politeness — a big box is no licence to hammer the
   target; higher rates just trip WAFs, which the coverage report flags). Add
   swap on 1GB hosts. Resolver + tuning in settings/base.py (`_resolve_profile`,
@@ -381,7 +381,7 @@ Django labels are unchanged — the nesting is organisational only (import paths
 | `web_assets/` | `web_assets` | Web assets: URL |
 | `service_detection/` | `service_detection` | Enriches Port.service + Port.is_web via nmap -sV |
 | `findings/` | `findings` | Unified **raw** `Finding` model (per-scan) — all finding-producing tools write here; `/api/findings/` |
-| `issues/` | `issues` | Persistent, cross-scan **`Issue`** register (the deduped promotion of Findings; triage status persists across scans) — populated by a finalize rollup, mirrors `asset_inventory`; `/api/issues/`. `issue_key = (check_id, target)` — title-independent, so a reworded title keeps the same Issue (register item 2). Split out of `findings` (D-017); keeps table `findings_issue` |
+| `issues/` | `issues` | Persistent, cross-scan **`Issue`** register (the deduped promotion of Findings) — populated by a finalize rollup, mirrors `asset_inventory`; `/api/issues/`. `issue_key = (check_id, target)` — title-independent, so a reworded title keeps the same Issue (register item 2). **Triage persists here across scans** — `status` **+ `assigned_to` + `resolution_note`** (the full triage record, not on the disposable `Finding`; #517), set via `POST /api/issues/<id>/status/` (the canonical triage writer). Split out of `findings` (D-017); keeps table `findings_issue` |
 | `asset_inventory/` | `asset_inventory` | Persistent, deduplicated `Asset` inventory (domain-scoped, first/last-seen + status) — populated by a fail-graceful rollup at finalize; `Finding.asset` links findings to it. Spec: `docs/specs/2026-09-06-asset-centric-inventory.md` (PR1: model + rollup + backfill) |
 | `scans/` | `scans` | ScanSession, ScanDelta, pipeline orchestrator |
 | `workflows/` | `workflow` | Workflow CRUD, dynamic runner, tool registry |
@@ -534,8 +534,8 @@ All scans run through the **dynamic workflow system**. The default "Full Scan"
 workflow executes the full tool set in phase order. Custom workflows can include
 any subset of tools. (A newly registered tool is available to any workflow, but
 only joins the default Full Scan when a data migration appends it — see
-`workflows/migrations/0021_*`; `asn_discovery` and `js_secrets` are registered
-but not yet in the default set.)
+`workflows/migrations/`. Full Scan currently covers **all 29 non-core registered
+tools**, enforced by `test_default_workflow::test_full_scan_covers_every_registered_tool`.)
 
 ```
 Phase 1  domain_security    → Finding (DNS/DNSSEC/email-auth/RDAP — passive)
@@ -907,7 +907,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_web_checker.py` | 58 | Headers, cookies, CORS, disclosure, collector; security.txt (RFC 9116) — expires parsing, SPA-catch-all guard, missing=info/expired=low findings, reachable-vs-absent (unreachable ⇒ no false "missing"), apex-only collection + fail-graceful |
 | `tests/unit/test_passive_scan.py` | 27 | registry `active` classification (domain_security passive / domain_probe active), `is_passive_tool_set`, Credential Exposure grouping, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
 | `tests/unit/test_workflow_runner.py` | 38 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism (concurrent same-phase; LOW_MEMORY serialises heavy phases but light phase-1 tools still parallel); **H5 resume idempotency** (crash-resume re-run deletes the tool's stale Findings first → no duplicates; completed tool not re-run; first run normal) |
-| `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow with the complete 18-tool set (migration 0021), idempotent gap-fill |
+| `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow covering every registered non-core tool (29), idempotent gap-fill; `test_full_scan_covers_every_registered_tool` fails CI on any gap |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/unit/test_update_check.py` | 22 | Update-available check — version parse/compare, cached GitHub fetch, fail-graceful on timeout/HTTP-error/bad-payload, endpoint shape |
 | `tests/unit/test_proc_env.py` | 4 | `go_memory_env()` — GOMEMLIMIT/GOGC set in low profile, unchanged otherwise, preserves existing env |
@@ -932,7 +932,9 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
 | `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
+| `tests/unit/test_issue_register.py` | 17 | Issue-register rollup — `issue_key`/`check_id` identity, triage persists across scans (status + assignee + resolution note), title-reword keeps same Issue, auto-resolve unseen (comprehensive-scan-only), regression reopen, idempotent replay, subscan no-op, asset grounding |
+| `tests/unit/test_issues_api.py` | 10 | `/api/issues/` — auth, ranked list + filters, summary, canonical triage writer (status + assigned_to + resolution_note persist, omitted-unchanged, resolved_at stamp/clear), bad-status 400 |
 
-**Total: 2012 tests** (1966 fast + 46 slow domain_security)
+**Total: 2055 tests** (2009 fast + 46 slow domain_security)
 
 Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.
