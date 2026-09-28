@@ -542,18 +542,20 @@ def delete_scan(request, session_uuid: uuid.UUID):
 def verify_scan(request, session_uuid: uuid.UUID):
     """Re-run deterministic verification over this scan's findings on demand.
 
-    409 while the scan is still running (verification reads the finalized
-    finding set); otherwise runs verify_session synchronously and returns the
-    resulting verification_status counts.
+    409 while the scan is running or still pending (verification reads the
+    finalized finding set, which a pending scan doesn't have yet); otherwise
+    runs verify_session synchronously and returns the resulting
+    verification_status counts.
     """
     session = get_object_or_404(ScanSession, uuid=str(session_uuid))
-    if session.status == "running":
-        raise HttpError(409, "scan is still running")
+    if session.status in ("running", "pending"):
+        raise HttpError(409, "scan is not finished")
 
     verify_session(session)
 
     counts = dict(
-        session.findings.values_list("verification_status")
+        session.findings.exclude(source="scan_coverage")
+        .values_list("verification_status")
         .annotate(n=Count("id"))
         .values_list("verification_status", "n")
     )
