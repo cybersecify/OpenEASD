@@ -254,3 +254,12 @@ class TestIssueRollup:
         self._finding(sess, asset=asset)
         self._rollup(sess)
         assert Issue.objects.get(domain=dom).asset_id == asset.id
+
+    def test_verification_status_mirrors_onto_issue(self):
+        from apps.core.data.issues.models import Issue
+        dom, s1 = self._domain_and_session()
+        f = self._finding(s1)
+        f.verification_status = "verified"
+        f.save(update_fields=["verification_status"])
+        self._rollup(s1)
+        assert Issue.objects.get(domain=dom).verification_status == "verified"

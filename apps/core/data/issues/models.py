@@ -60,6 +60,11 @@ class Issue(models.Model):
     assigned_to = models.CharField(max_length=150, blank=True)
     resolution_note = models.TextField(blank=True)
 
+    # Latest occurrence's verification verdict, mirrored by the rollup (display).
+    verification_status = models.CharField(
+        max_length=20, default="unverified", db_index=True
+    )
+
     first_seen = models.DateTimeField()
     last_seen = models.DateTimeField()
     # Set when the Issue is auto-resolved because a comprehensive full scan no

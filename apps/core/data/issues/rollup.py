@@ -51,12 +51,14 @@ def rollup_session_issues(session) -> None:
                     "title": f.title, "target": f.target, "severity": f.severity,
                     "status": "open", "first_seen": now, "last_seen": now,
                     "last_finding": f, "asset": f.asset,
+                    "verification_status": f.verification_status,
                 },
             )
             if not created:
                 issue.last_seen = now
                 issue.severity = f.severity
                 issue.last_finding = f
+                issue.verification_status = f.verification_status
                 # Refresh display metadata to the latest occurrence — the title is no
                 # longer part of the key, so a reword updates what's shown without
                 # re-keying the Issue (that's the whole point of item 2).
@@ -68,7 +70,7 @@ def rollup_session_issues(session) -> None:
                     issue.resolved_at = None   # and clear the resolution timestamp
                 issue.save(update_fields=[
                     "last_seen", "severity", "last_finding", "asset", "status", "title",
-                    "resolved_at",
+                    "resolved_at", "verification_status",
                 ])
 
         # Close Issues no longer seen (item 4) — but ONLY after a scan that could
