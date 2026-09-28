@@ -46,6 +46,9 @@ def _serialize_finding(finding) -> dict:
         "assigned_to": finding.assigned_to,
         "resolved_at": finding.resolved_at.isoformat() if finding.resolved_at else None,
         "resolution_note": finding.resolution_note,
+        "verification_status": finding.verification_status,
+        "verified_at": finding.verified_at.isoformat() if finding.verified_at else None,
+        "verification": (finding.extra or {}).get("verification"),
     }
 
 
