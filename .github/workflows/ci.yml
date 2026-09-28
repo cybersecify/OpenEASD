@@ -55,7 +55,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install system dependencies
-        run: sudo apt-get install -y libcairo2-dev gcc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0
+        # `apt-get update` first: the runner image ships a stale package index, so
+        # a bare `install` pins versions the mirror has already superseded and 404s
+        # (e.g. libglib2.0-dev point-release bump) — refresh the index first.
+        run: sudo apt-get update && sudo apt-get install -y libcairo2-dev gcc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0
 
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh && echo "$HOME/.local/bin" >> $GITHUB_PATH
