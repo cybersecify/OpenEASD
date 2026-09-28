@@ -14,4 +14,5 @@ class WebCheckerConfig(AppConfig):
         "requires": ["httpx"],
         "produces_findings": True,
         "active": True,
+        "verifier": "apps.web_checker.verify.verify_finding",
     }
