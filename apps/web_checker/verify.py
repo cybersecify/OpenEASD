@@ -71,9 +71,12 @@ def verify_finding(finding) -> Verdict:
     if finding.check_type not in _MISSING_HEADER_CHECK_TYPES or not header:
         return Verdict(Verdict.INCONCLUSIVE, detail=f"no re-probe rule for {finding.check_type}")
 
-    url = finding.target if finding.target.startswith("http") else f"https://{finding.target}"
+    # analyzer._security_header_findings/_hsts_findings always set target=url
+    # (a full "https://..."/"http://..." URL, never a bare host) for every
+    # check_type in _MISSING_HEADER_CHECK_TYPES, so no reconstruction fallback
+    # is needed here.
     try:
-        headers = _fetch_headers(url)
+        headers = _fetch_headers(finding.target)
     except Exception as exc:  # noqa: BLE001 — any fetch failure -> inconclusive, never raise
         return Verdict(Verdict.INCONCLUSIVE, detail=f"fetch failed: {exc}")
 
