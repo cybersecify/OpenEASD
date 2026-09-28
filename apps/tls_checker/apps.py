@@ -14,4 +14,5 @@ class TlsCheckerConfig(AppConfig):
         "requires": ["naabu", "service_detection"],
         "produces_findings": True,
         "active": True,
+        "verifier": "apps.tls_checker.verify.verify_finding",
     }
