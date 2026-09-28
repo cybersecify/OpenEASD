@@ -15,15 +15,15 @@ subdomains, open ports, TLS weaknesses, CVEs, web vulnerabilities, SSH
 misconfigurations, DNS/email security gaps, and HTTP header issues.
 
 Users point it at their domains, click Scan, and receive a structured,
-exportable report — without needing to orchestrate subfinder, naabu, nuclei,
-nmap, and friends by hand.
+exportable report — without orchestrating a dozen specialized scanning tools by
+hand.
 
 ---
 
 ## Who
 
-**Primary audience:** the security community — people who already know what
-nuclei, subfinder, and nmap are and prefer a GUI over manual CLI orchestration.
+**Primary audience:** the security community — people already fluent in the
+standard offensive-security CLI tools who prefer a GUI over manual orchestration.
 
 | User type | Fit |
 |---|---|
@@ -41,9 +41,8 @@ See [D-001](DECISIONS.md#d-001--audience-security-literate-users-not-non-technic
 
 ## Why
 
-The ProjectDiscovery toolchain (subfinder, dnsx, naabu, httpx, nuclei) and
-adjacent tools (nmap, amass) are individually excellent but require
-per-tool knowledge, manual chaining, and result aggregation. OpenEASD
+The standard external-recon and scanning tools are individually excellent but
+require per-tool knowledge, manual chaining, and result aggregation. OpenEASD
 provides the orchestration layer and a unified findings surface so security
 engineers spend time on findings, not on pipeline plumbing.
 
@@ -51,13 +50,11 @@ engineers spend time on findings, not on pipeline plumbing.
 
 ## Where / Distribution
 
-- **Delivery:** `ghcr.io/cybersecify/openeasd-web` + `ghcr.io/cybersecify/openeasd-worker`
-  (Docker, published `:latest` and `:vX.Y.Z`) run via `docker compose` alongside
-  PostgreSQL, plus `k8s/` Kubernetes manifests. `docker compose up -d` is the
-  load-bearing install experience.
+- **Delivery:** self-hosted, distributed as Docker images (Kubernetes manifests
+  also provided). Docker-only — there is no hosted service.
+  See [D-003](DECISIONS.md#d-003--distribution-docker-only).
 - **No hosted scan UI.** Domain-ownership verification for a public scanner
   is a hard prerequisite; it isn't built yet.
-  See [D-003](DECISIONS.md#d-003--distribution-docker-only).
 - **License:** MIT. Chosen deliberately to match the security community's
   expectation of genuine open source.
   See [D-002](DECISIONS.md#d-002--license-mit-not-sul-or-fair-code).
@@ -93,19 +90,6 @@ tools behind each one live in the system + technical docs
 
 ---
 
-## Key Constraints
-
-| Constraint | Value |
-|---|---|
-| Auth | Single admin user, JWT (no RBAC, no SAML) |
-| Database | **PostgreSQL** (via `DB_*` env or `DATABASE_URL`) — holds app data **and** the DBOS checkpoint schema |
-| Concurrency | The worker scales independently (Postgres has no single-writer lock); `DBOS_SCAN_CONCURRENCY` caps parallel scans |
-| Background tasks | **DBOS** durable workflows (checkpoint/resume) + `@scheduled` crons — no Django-Q/Celery/Redis |
-| External binaries | subfinder, dnsx, naabu, httpx, nuclei, nmap, amass (+ the passive-tool CLIs) — on PATH or via `TOOL_*` env vars |
-| Capabilities | `NET_RAW` required on the worker container for nmap raw socket scanning |
-
----
-
 ## What It Deliberately Does Not Do
 
 See [D-008](DECISIONS.md#d-008--things-we-deliberately-dont-have-anti-features)
@@ -130,7 +114,7 @@ for the full rationale.
 
 A successful install meets all of these:
 
-1. `docker run` completes without error; UI loads at `:8000`
+1. A fresh install starts cleanly and the UI loads
 2. First scan against a real domain returns subdomains, open ports, and at
    least one finding within the expected tool runtime
 3. PDF and CSV export buttons produce valid downloads
