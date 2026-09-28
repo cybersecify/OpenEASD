@@ -72,10 +72,12 @@ def test_verify_finding_calls_rescan_with_host_and_port():
         verify_finding(f)
     assert mock_rescan.called
     call_args = mock_rescan.call_args
-    # host and port must appear somewhere in the call args (positional or kw)
+    # host and port must appear somewhere in the call args (positional or kw).
+    # Use equality (not `x in url`) so this stays a membership check, not a
+    # URL-substring test.
     all_args = list(call_args.args) + list(call_args.kwargs.values())
-    assert "scanme.example.com" in all_args
-    assert 22 in all_args
+    assert any(a == "scanme.example.com" for a in all_args)
+    assert any(a == 22 for a in all_args)
 
 
 @pytest.mark.django_db

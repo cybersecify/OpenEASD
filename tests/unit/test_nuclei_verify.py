@@ -34,7 +34,8 @@ def test_template_matches_again_is_verified():
                return_value=[{"template-id": "CVE-2024-1234", "matched-at": "https://example.com/x"}]):
         v = verify_finding(f)
     assert v.verdict == Verdict.VERIFIED
-    assert "matched-at" in v.evidence or "example.com" in v.evidence
+    # Exact evidence for the mocked hit (avoids a bare-host substring check).
+    assert v.evidence == "matched-at https://example.com/x"
 
 
 @pytest.mark.django_db
