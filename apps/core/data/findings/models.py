@@ -106,6 +106,12 @@ class Finding(models.Model):
     resolved_at = models.DateTimeField(null=True, blank=True)
     resolution_note = models.TextField(blank=True)
 
+    # Verification (deterministic re-probe at finalize; see engine/verification).
+    verification_status = models.CharField(
+        max_length=20, default="unverified", db_index=True
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["-discovered_at"]
         indexes = [
