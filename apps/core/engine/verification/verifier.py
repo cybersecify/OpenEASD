@@ -102,3 +102,27 @@ def verify_session(session, *, threshold: str | None = None) -> None:
 
     logger.info("[verify:%s] %d verified / %d inconclusive (threshold=%s)",
                 session.id, n_verified, n_inconclusive, threshold)
+
+
+def verify_one_finding(finding) -> Verdict:
+    """Re-verify a single finding on demand (used by the per-finding API).
+
+    Mirrors verify_session's per-finding logic exactly, without the severity
+    threshold gate (an explicit on-demand request always runs, regardless of
+    severity). Fail-graceful: a raising verifier becomes an inconclusive
+    verdict. Active tools require DomainAuthorization before re-probing.
+    """
+    verifiers = get_tool_verifiers()
+    verifier = verifiers.get(finding.source)
+    if verifier is None:
+        verdict = Verdict(Verdict.INCONCLUSIVE, detail="no verifier for this tool")
+    elif get_tool_active().get(finding.source, True) and not _authorized_for(finding.session):
+        verdict = Verdict(Verdict.INCONCLUSIVE, detail="verification skipped: no authorization")
+    else:
+        try:
+            verdict = verifier(finding)
+        except Exception:  # noqa: BLE001 — fail-graceful; a verifier never fails the request
+            logger.exception("[verify:%s] verifier for %s raised", finding.session_id, finding.source)
+            verdict = Verdict(Verdict.INCONCLUSIVE, detail="verifier error")
+    _apply(finding, verdict)
+    return verdict

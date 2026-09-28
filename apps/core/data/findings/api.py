@@ -16,6 +16,7 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from apps.core.console.api.auth import JWTAuth
+from apps.core.engine.verification.verifier import verify_one_finding
 
 from .models import STATUS_CHOICES
 
@@ -164,4 +165,15 @@ def update_finding_status(request, finding_id: int, data: FindingStatusRequest):
         finding.resolution_note = str(data.resolution_note)[:5000]
 
     finding.save(update_fields=["status", "resolved_at", "assigned_to", "resolution_note"])
+    return _serialize_finding(finding)
+
+
+@router.post("/{finding_id}/verify/")
+def verify_finding_endpoint(request, finding_id: int):
+    """Re-run deterministic verification for a single finding on demand."""
+    from apps.core.data.findings.models import Finding
+
+    finding = get_object_or_404(Finding, id=finding_id)
+    verdict = verify_one_finding(finding)
+    finding.verification_status = verdict.verdict
     return _serialize_finding(finding)

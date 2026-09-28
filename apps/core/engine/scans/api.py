@@ -17,6 +17,7 @@ from apps.core.console.api.auth import JWTAuth
 from apps.core.constants import SEVERITY_LEVELS
 from apps.core.console.insights.builder import rebuild_finding_type_summaries
 from apps.core.engine.scans.models import ScanSession
+from apps.core.engine.verification.verifier import verify_session
 
 logger = logging.getLogger(__name__)
 
@@ -535,6 +536,32 @@ def delete_scan(request, session_uuid: uuid.UUID):
     logger.info(f"Scan deleted via API: uuid={session_uuid}")
     rebuild_finding_type_summaries()
     return {"deleted": session_uuid}
+
+
+@router.post("/{session_uuid}/verify/")
+def verify_scan(request, session_uuid: uuid.UUID):
+    """Re-run deterministic verification over this scan's findings on demand.
+
+    409 while the scan is still running (verification reads the finalized
+    finding set); otherwise runs verify_session synchronously and returns the
+    resulting verification_status counts.
+    """
+    session = get_object_or_404(ScanSession, uuid=str(session_uuid))
+    if session.status == "running":
+        raise HttpError(409, "scan is still running")
+
+    verify_session(session)
+
+    counts = dict(
+        session.findings.values_list("verification_status")
+        .annotate(n=Count("id"))
+        .values_list("verification_status", "n")
+    )
+    return {
+        "verified": counts.get("verified", 0),
+        "inconclusive": counts.get("inconclusive", 0),
+        "unverified": counts.get("unverified", 0),
+    }
 
 
 class SubScanRequest(Schema):

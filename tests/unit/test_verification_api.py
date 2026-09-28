@@ -1,4 +1,40 @@
 import pytest
+from unittest.mock import patch
+
+
+@pytest.mark.django_db
+def test_scan_verify_endpoint_409_when_running(auth_client):
+    from apps.core.engine.scans.models import ScanSession
+    s = ScanSession.objects.create(domain="example.com", scan_type="full", status="running")
+    r = auth_client.post(f"/api/scans/{s.uuid}/verify/", data={}, content_type="application/json")
+    assert r.status_code == 409
+
+
+@pytest.mark.django_db
+def test_scan_verify_endpoint_runs_and_returns_counts(auth_client):
+    from apps.core.engine.scans.models import ScanSession
+    s = ScanSession.objects.create(domain="example.com", scan_type="full", status="completed")
+    with patch("apps.core.engine.scans.api.verify_session") as mock_v:
+        r = auth_client.post(f"/api/scans/{s.uuid}/verify/", data={}, content_type="application/json")
+    assert r.status_code == 200
+    mock_v.assert_called_once()
+    body = r.json()
+    assert set(body.keys()) == {"verified", "inconclusive", "unverified"}
+
+
+@pytest.mark.django_db
+def test_finding_verify_endpoint(auth_client):
+    from apps.core.engine.scans.models import ScanSession
+    from apps.core.data.findings.models import Finding
+    s = ScanSession.objects.create(domain="example.com", scan_type="full", status="completed")
+    f = Finding.objects.create(session=s, source="web_checker", check_type="missing_header",
+                               severity="high", title="t", target="example.com")
+    from apps.core.engine.verification.verdict import Verdict
+    with patch("apps.core.data.findings.api.verify_one_finding",
+               return_value=Verdict(Verdict.VERIFIED, evidence="absent")):
+        r = auth_client.post(f"/api/findings/{f.id}/verify/", data={}, content_type="application/json")
+    assert r.status_code == 200
+    assert r.json()["verification_status"] == "verified"
 
 
 @pytest.mark.django_db
