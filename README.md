@@ -32,6 +32,23 @@ Built by [Rathnakara G N](https://www.linkedin.com/in/rathnakaragn/) and [Ashok 
 - **Enterprise SOCs**: no RBAC, SAML, multi-tenant, or Postgres (yet)
 - **Anyone needing to scan domains they don't own or aren't authorised to test**: OpenEASD is intentionally not a "scan-anyone" hosted service. Running it implies you own or have written authorisation for your targets
 
+## Compliance evidence
+
+OpenEASD is not a compliance product and does not make anyone certified. What it does produce is the external scanning evidence auditors ask for, dated and exportable, instead of a screenshot taken the week before the audit.
+
+| What an auditor asks for | Where it comes from |
+| --- | --- |
+| Scanning happens on a defined cadence | Per domain monitoring (6h / 12h / 24h / 48h / weekly) plus one time and recurring schedules, with every run recorded |
+| An inventory of internet facing assets | Assets page and `/api/assets/`: subdomains, IPs, ports and URLs deduplicated across scans, each with first seen, last seen, and active or gone status |
+| Findings ranked by real world risk | Severity enriched with EPSS exploit probability and CISA KEV flags, plus an exposure score and grade with movement against the previous scan |
+| Evidence that findings get triaged and closed | Issue status (open, acknowledged, in progress, resolved, false positive, accepted risk) with owner, resolution note, first seen, last seen and resolved date |
+| Something you can hand over | Per scan PDF and CSV export, including the Issue Register |
+| Authority to scan the target | Each domain carries a recorded authorization (owner, written consent or bug bounty) with who gave it and when, enforced server side before any active scan |
+
+Control references that usually apply: ISO/IEC 27001:2022 Annex A 8.8 (technical vulnerability management) and A 5.9 (inventory of information and other associated assets); SOC 2 Trust Services Criteria CC7.1 (detection and monitoring) and CC6.6 (boundary protection). Auditors word their requests differently, so treat this as a starting point, not a mapping to cite.
+
+What it does not do: it is not a penetration test, so it does not satisfy requirements that call for one, such as Amazon SP-API Data Protection Policy reviews or most enterprise security questionnaires. It does not look at internal networks, cloud configuration posture, or the policy and process side of either framework.
+
 ## Supply chain transparency
 
 OpenEASD is a security tool, so it's reasonable to ask whether the tool

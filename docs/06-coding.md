@@ -301,7 +301,7 @@ fail the whole scan. Specifically:
   `scan_session`, `completed_session`, …). **Use them — don't redefine local
   shadows** (finding F9). Import models lazily inside fixtures.
 - **Mock externals at the module-local import site**, never globally: patch
-  `apps.typosquat.collector.requests.get`, `apps.*.scanner.collect`,
+  `apps.tldsquatting.collector.requests.get`, `apps.*.scanner.collect`,
   `apps.core.console.reports.views._render_pdf`, etc. PDF tests mock `_render_pdf`
   and assert on the captured HTML — no WeasyPrint native libs needed.
 - **Assert behavior, not rendered markup.** Exact HTML strings / CSS classes /
@@ -456,7 +456,7 @@ blockers. Fixed items are struck through with the PR that closed them.
   and TLD-swap/char-mutation operate on the registrable label (was emitting
   non-resolving garbage like `example.co.com`, i.e. no ccTLD detection). Curated
   set, not the full PSL — dependency-free/offline; extend via
-  `TYPOSQUAT_MULTI_LABEL_SUFFIXES`.
+  `TLDSQUATTING_MULTI_LABEL_SUFFIXES`.
 - **F9 — local fixtures shadow `conftest.py`** in `test_api_endpoints.py` and
   `test_reports.py`; the two `auth_client`s differ subtly and can drift.
 - **F11 — brittle report tests** assert exact HTML/CSS/copy strings rather than
