@@ -93,3 +93,44 @@ def test_idempotent_rerun_overwrites_not_appends():
     f.refresh_from_db()
     assert f.verification_status == "inconclusive"
     assert f.extra["verification"]["evidence"] == "b"
+
+
+@pytest.mark.django_db
+def test_verify_one_finding_active_tool_without_authorization_is_inconclusive_no_call():
+    """Mirrors test_active_tool_without_authorization_is_inconclusive_no_call,
+    but for the single-finding on-demand path — this is the security gate on
+    verify_one_finding and needs its own direct coverage, not just
+    code-inspection against verify_session's twin logic."""
+    from apps.core.engine.verification.verifier import verify_one_finding
+    s = _session(); f = _finding(s, source="nuclei", sev="high")  # nuclei is active
+    called = {"n": 0}
+
+    def _verifier(finding):
+        called["n"] += 1
+        return Verdict(Verdict.VERIFIED)
+
+    with patch("apps.core.engine.verification.verifier.get_tool_verifiers",
+               return_value={"nuclei": _verifier}), \
+         patch("apps.core.engine.verification.verifier._authorized_for", return_value=False):
+        verdict = verify_one_finding(f)
+    f.refresh_from_db()
+    assert verdict.verdict == Verdict.INCONCLUSIVE
+    assert f.verification_status == "inconclusive"
+    assert called["n"] == 0  # never re-probed the target without authorization
+
+
+@pytest.mark.django_db
+def test_verify_one_finding_passive_authorized_verified_persists():
+    """Happy path: a passive tool's verifier returning VERIFIED is called and
+    the verdict is fully persisted (status + verified_at + extra.verification)."""
+    from apps.core.engine.verification.verifier import verify_one_finding
+    s = _session(); f = _finding(s, source="breach_check", sev="high")  # passive
+    v = Verdict(Verdict.VERIFIED, evidence="still 3 breaches", detail="XposedOrNot")
+    with patch("apps.core.engine.verification.verifier.get_tool_verifiers",
+               return_value={"breach_check": lambda finding: v}):
+        verdict = verify_one_finding(f)
+    f.refresh_from_db()
+    assert verdict.verdict == Verdict.VERIFIED
+    assert f.verification_status == "verified"
+    assert f.verified_at is not None
+    assert f.extra["verification"]["evidence"] == "still 3 breaches"

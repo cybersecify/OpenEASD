@@ -174,6 +174,5 @@ def verify_finding_endpoint(request, finding_id: int):
     from apps.core.data.findings.models import Finding
 
     finding = get_object_or_404(Finding, id=finding_id)
-    verdict = verify_one_finding(finding)
-    finding.verification_status = verdict.verdict
+    verify_one_finding(finding)  # mutates + saves `finding` in place via _apply
     return _serialize_finding(finding)
