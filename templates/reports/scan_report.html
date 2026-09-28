@@ -424,7 +424,7 @@
 {% for g in groups %}
 <div class="fcard no-break">
   <div class="fkicker">{{ g.fid }} · {{ g.scope }} · {{ g.source }}</div>
-  <div class="ftitle">{{ g.title }} <span class="pill-open" style="float:right;">Open</span></div>
+  <div class="ftitle">{{ g.title }}{% if g.verification_badge %} <span class="badge" style="background:{% if g.verification_badge == "Verified" %}#2f9e57{% else %}#d9822b{% endif %};">{{ g.verification_badge }}</span>{% endif %} <span class="pill-open" style="float:right;">Open</span></div>
 
   <table class="kv">
     <tr><th>Severity</th><td><div class="sevbar bg-{{ g.severity }}">{{ g.severity|upper }}</div></td></tr>
@@ -451,6 +451,9 @@
 
   <div class="sect-lbl">Evidence</div>
   <div class="evidence">{{ g.source }} reported {{ g.check_type }} on {{ g.instances|length }} endpoint{{ g.instances|length|pluralize }} (first observed {{ g.instances.0.discovered_at|date:"Y-m-d H:i" }}).</div>
+  {% if g.verification_evidence %}
+  <div class="evidence">Evidence: {{ g.verification_evidence }}</div>
+  {% endif %}
 
   {% if g.remediation %}
   <div class="sect-lbl">Remediation</div>
