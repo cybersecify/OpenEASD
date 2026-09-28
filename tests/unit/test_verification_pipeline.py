@@ -27,6 +27,24 @@ def test_finalize_skips_verify_when_disabled(settings):
 
 
 @pytest.mark.django_db
+def test_disabled_leaves_findings_unverified(settings):
+    """Regression lock: with the flag off, finalize never touches verification
+    fields — a finding created during a disabled scan stays "unverified", not
+    just "verify_session wasn't called" (Task 6 gates this; this asserts the
+    observable outcome end-to-end through the real Finding row)."""
+    settings.FINDING_VERIFICATION_ENABLED = False
+    from apps.core.engine.scans import pipeline
+    from apps.core.engine.scans.models import ScanSession
+    from apps.core.data.findings.models import Finding
+    s = ScanSession.objects.create(domain="example.com", scan_type="full", status="running")
+    f = Finding.objects.create(session=s, source="web_checker", check_type="missing_header",
+                               severity="high", title="t", target="example.com")
+    pipeline._finalize_session(s)
+    f.refresh_from_db()
+    assert f.verification_status == "unverified"  # untouched when disabled
+
+
+@pytest.mark.django_db
 def test_verify_error_does_not_fail_finalize(settings):
     settings.FINDING_VERIFICATION_ENABLED = True
     from apps.core.engine.scans import pipeline
