@@ -21,8 +21,11 @@ After tools complete: finalise session, delta detection, insights, alerts.
 
 import logging
 
+from django.conf import settings
 from django.db import transaction, DatabaseError
 from django.utils import timezone as django_tz
+
+from apps.core.engine.verification.verifier import verify_session
 
 from .models import ScanSession, ScanDelta
 
@@ -299,6 +302,14 @@ def _finalize_session(session):
         rollup_session(session)
     except Exception:  # noqa: BLE001
         logger.exception("[%s] asset-inventory rollup failed — scan unaffected", session.id)
+
+    # Deterministic finding verification — re-probe medium+ findings before the
+    # issue rollup so the verdict mirrors onto the Issue. Gated + fail-graceful.
+    if getattr(settings, "FINDING_VERIFICATION_ENABLED", True):
+        try:
+            verify_session(session)
+        except Exception:  # noqa: BLE001
+            logger.exception("[%s] verification failed — scan unaffected", session.id)
 
     # Roll findings into the persistent Issue register so triage status persists
     # across scans (after the asset rollup, so Finding.asset links exist to ground
