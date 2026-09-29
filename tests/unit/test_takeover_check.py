@@ -155,6 +155,8 @@ class TestAnalyze:
             findings = analyze(sess, records)
         assert len(findings) == 1
         assert "unidentified service" in findings[0].title
+        # Lower-confidence signal (no service fingerprint) — medium, not high.
+        assert findings[0].severity == "medium"
 
     def test_dedupes_by_subdomain_name(self):
         sess = self._session()
