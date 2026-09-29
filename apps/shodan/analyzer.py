@@ -92,7 +92,7 @@ def analyze(session, results) -> list[Finding]:
                 session=session,
                 source="shodan",
                 check_type="cve",
-                severity="medium",
+                severity="low",
                 target=ip,
                 title=f"{len(vulns)} known CVE(s) on exposed host {ip} (via Shodan)",
                 description=(
