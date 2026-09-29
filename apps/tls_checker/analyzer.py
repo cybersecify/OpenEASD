@@ -383,7 +383,7 @@ def _cert_findings(result: dict, session) -> list[Finding]:
                 session=session,
                 source="tls_checker",
                 check_type="cert_expiring_critical",
-                severity="critical",
+                severity="high",
                 title=f"TLS certificate expires in {days} day(s) on {ip}:{port_num}",
                 description=(
                     f"The TLS certificate on {ip}:{port_num} expires in {days} day(s). "
@@ -402,7 +402,7 @@ def _cert_findings(result: dict, session) -> list[Finding]:
                 session=session,
                 source="tls_checker",
                 check_type="cert_expiring_soon",
-                severity="high",
+                severity="medium",
                 title=f"TLS certificate expires in {days} days on {ip}:{port_num}",
                 description=(
                     f"The TLS certificate on {ip}:{port_num} expires in {days} days. "
@@ -421,7 +421,7 @@ def _cert_findings(result: dict, session) -> list[Finding]:
                 session=session,
                 source="tls_checker",
                 check_type="cert_expiring",
-                severity="medium",
+                severity="low",
                 title=f"TLS certificate expires in {days} days on {ip}:{port_num}",
                 description=(
                     f"The TLS certificate on {ip}:{port_num} expires in {days} days. "
