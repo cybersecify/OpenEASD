@@ -394,6 +394,9 @@ class TestAnalyzer:
     def test_weighted_email_infra_combo_is_critical(self):
         # MX + SPF + DMARC without an A record — the classic phishing-setup
         # fingerprint; the weighted suspicious-combo bonuses stack to CRITICAL.
+        # This is email-only (no A/AAAA), so the no-weaponization cap does NOT
+        # apply — it's the model's strongest phishing-prep signal and must
+        # keep its full mapped severity.
         sess = _session("example.com")
         f = self._find(sess, {
             "candidate": "examp1e.com", "technique": "typo",
@@ -402,6 +405,19 @@ class TestAnalyzer:
         })
         assert f.extra["threat_level"] == "CRITICAL"
         assert f.severity == "critical"
+
+    def test_email_only_phishing_prep_not_capped(self):
+        # Email-only lookalike (MX, no A/AAAA) with no login_form/brand_mentioned
+        # (there's no website to carry either signal) — must NOT be capped to
+        # low; email-spoofing infrastructure is a real, live threat on its own.
+        sess = _session("example.com")
+        f = self._find(sess, {
+            "candidate": "examp1e.com", "technique": "typo",
+            "has_a": False, "has_mx": True, "resolved_ips": [],
+            "login_form": False, "brand_mentioned": False,
+        })
+        assert f.extra["threat_level"] == "MEDIUM"
+        assert f.severity == "medium"
 
     def test_login_form_with_infra_is_high(self):
         # A + MX + a live login form → HIGH threat (credential phishing).
@@ -466,6 +482,24 @@ class TestAnalyzer:
                               "has_mx": True, "resolved_ips": ["1.2.3.4"]})
         assert f.extra["risk_level"] != "PRE-EXISTING"
         assert f.severity in ("low", "medium", "high", "critical")
+
+    def test_no_weaponization_signal_caps_severity_to_low(self):
+        # Infra-heavy (email + web records) but zero live-impersonation
+        # evidence (no login form, no brand mention) — the raw model would
+        # band this MEDIUM/HIGH from infra alone, but with nothing actually
+        # observed live on the lookalike, severity is capped to low. The raw
+        # scores/levels stay uncapped in extra for the report/AI triage.
+        sess = _session("example.com")
+        f = self._find(sess, {
+            "candidate": "examp1e.com", "technique": "typo",
+            "has_a": True, "has_mx": True, "has_spf": True, "has_dmarc": True,
+            "resolved_ips": ["1.2.3.4"],
+            "login_form": False, "brand_mentioned": False, "content_checked": True,
+        })
+        assert f.severity == "low"
+        assert f.extra["risk_level"] == "HIGH"
+        assert f.extra["threat_level"] == "MEDIUM"
+        assert f.extra["threat_score"] == 7.0
 
     def test_one_finding_per_candidate(self):
         sess = _session("example.com")

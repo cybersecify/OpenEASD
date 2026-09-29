@@ -172,7 +172,8 @@ class TestShodanAnalyzer:
         assert len(cve) == 1
         # cve_intel enriches via extra["cve_ids"] — this MUST be present.
         assert cve[0].extra["cve_ids"] == ["CVE-2021-1", "CVE-2021-2"]
-        assert cve[0].severity == "medium"
+        # Version-approximate/unconfirmed banner match — low, not medium.
+        assert cve[0].severity == "low"
 
     def test_no_finding_when_no_ports_and_no_vulns(self):
         sess = _session()

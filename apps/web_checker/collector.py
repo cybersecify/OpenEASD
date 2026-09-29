@@ -97,17 +97,28 @@ def collect(session) -> list[dict]:
     """
     from apps.core.data.web_assets.models import URL
 
-    # Deduplicate to one representative URL per (host, port_number).
+    # Deduplicate to one representative URL per (host, effective port).
     # Security headers and cookies are server-wide — checking 50 katana-crawled
     # paths on the same host would produce 50 identical findings and 50× the
     # HTTP requests. httpx URLs (ordered first) are the canonical root URLs.
+    #
+    # `port_number` is populated by httpx but is often None/blank on
+    # katana/gau-sourced rows, and a bare trailing slash produces a distinct
+    # URL string — either alone would let the same endpoint slip past this
+    # dedup and get probed twice. Fall back to the scheme's default port when
+    # `port_number` is missing so https://host, https://host:443, and
+    # https://host:443/ all collapse to one key (http:80 vs https:443 stay
+    # distinct — that split is intentional).
     all_urls = URL.objects.filter(session=session).select_related(
         "port", "subdomain"
     ).order_by("source")  # "httpx" < "katana" alphabetically → httpx wins
     seen_hosts: set[tuple] = set()
     urls = []
     for u in all_urls:
-        key = (u.host, u.port_number)
+        effective_port = u.port_number or (
+            443 if u.scheme == "https" else 80 if u.scheme == "http" else None
+        )
+        key = (u.host, effective_port)
         if key not in seen_hosts:
             seen_hosts.add(key)
             urls.append(u)
