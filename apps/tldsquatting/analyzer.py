@@ -119,8 +119,29 @@ def analyze(session, results) -> list[Finding]:
             threat_score, threat_level = calculate_threat_score(record, risk_score)
 
         severity = _SEVERITY_BY_LEVEL.get(threat_level, "low")
+
+        # Cap severity when there's no LIVE weaponization signal. Infra alone
+        # (A/MX/SPF/DMARC/etc.) can push the raw threat band to medium/high/
+        # critical, but without an observed login form or brand mention on
+        # the lookalike's homepage there is zero evidence of active
+        # impersonation — that's a monitoring signal, not an incident. The
+        # raw risk_score/threat_score/levels are left untouched in `extra`.
+        no_weaponization_signal = not record.get("login_form") and not record.get("brand_mentioned")
+        capped = (
+            no_weaponization_signal
+            and threat_level != "PRE-EXISTING"
+            and severity in ("medium", "high", "critical")
+        )
+        if capped:
+            severity = "low"
+
         summary = _record_summary(record)
         drivers = _drivers(record, apex, threat_level)
+        if capped:
+            drivers += (
+                " (Severity capped to low: no active-impersonation evidence "
+                "observed — treat as a monitoring signal.)"
+            )
 
         findings.append(Finding(
             session=session,

@@ -393,7 +393,10 @@ class TestAnalyzer:
 
     def test_weighted_email_infra_combo_is_critical(self):
         # MX + SPF + DMARC without an A record — the classic phishing-setup
-        # fingerprint; the weighted suspicious-combo bonuses stack to CRITICAL.
+        # fingerprint; the weighted suspicious-combo bonuses stack to CRITICAL
+        # in the raw model. But there's no live-weaponization evidence (no
+        # login form / brand mention observed), so the reported severity is
+        # capped to low — the raw threat_level/score still read CRITICAL.
         sess = _session("example.com")
         f = self._find(sess, {
             "candidate": "examp1e.com", "technique": "typo",
@@ -401,7 +404,7 @@ class TestAnalyzer:
             "resolved_ips": [],
         })
         assert f.extra["threat_level"] == "CRITICAL"
-        assert f.severity == "critical"
+        assert f.severity == "low"
 
     def test_login_form_with_infra_is_high(self):
         # A + MX + a live login form → HIGH threat (credential phishing).
@@ -466,6 +469,24 @@ class TestAnalyzer:
                               "has_mx": True, "resolved_ips": ["1.2.3.4"]})
         assert f.extra["risk_level"] != "PRE-EXISTING"
         assert f.severity in ("low", "medium", "high", "critical")
+
+    def test_no_weaponization_signal_caps_severity_to_low(self):
+        # Infra-heavy (email + web records) but zero live-impersonation
+        # evidence (no login form, no brand mention) — the raw model would
+        # band this MEDIUM/HIGH from infra alone, but with nothing actually
+        # observed live on the lookalike, severity is capped to low. The raw
+        # scores/levels stay uncapped in extra for the report/AI triage.
+        sess = _session("example.com")
+        f = self._find(sess, {
+            "candidate": "examp1e.com", "technique": "typo",
+            "has_a": True, "has_mx": True, "has_spf": True, "has_dmarc": True,
+            "resolved_ips": ["1.2.3.4"],
+            "login_form": False, "brand_mentioned": False, "content_checked": True,
+        })
+        assert f.severity == "low"
+        assert f.extra["risk_level"] == "HIGH"
+        assert f.extra["threat_level"] == "MEDIUM"
+        assert f.extra["threat_score"] == 7.0
 
     def test_one_finding_per_candidate(self):
         sess = _session("example.com")
