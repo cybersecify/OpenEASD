@@ -7,6 +7,53 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.23.0] — 2026-09-29
+
+### Added
+- **Finding verification (#530).** At scan finalize, medium-or-higher findings are
+  re-probed by their originating tool and labeled **`verified` / `inconclusive` /
+  `unverified`**; the verdict is mirrored onto the enduring `Issue` (persists across
+  scans) and surfaced in the API + PDF report (badge + evidence line).
+  - New engine package `apps/core/engine/verification/` — a `Verdict` value object
+    and a `verify_session` orchestrator that is **severity-gated** (min severity via
+    `FINDING_VERIFICATION_MIN_SEVERITY`, default `medium`), **authorization-gated**
+    (active-tool re-probes reuse `DomainAuthorization.is_authorized()` — no target
+    contact without authorization), fail-graceful, and idempotent. Master toggle
+    `FINDING_VERIFICATION_ENABLED` (default on); disabled ⇒ finalize is byte-identical.
+  - **Approach A** registry: tools opt in via `tool_meta["verifier"]`
+    (`get_tool_verifiers()`); a tool without one leaves its findings honestly
+    `unverified`. Seed verifiers ship for `web_checker`, `tls_checker`, `ssh_checker`,
+    `nuclei` (single-template re-run) and `nmap` (backport-aware CVE re-match, so a
+    backport-patched CVE is never falsely re-verified).
+  - New fields `Finding.verification_status`/`verified_at`, `Issue.verification_status`
+    (migrations findings `0013`, issues `0006`); on-demand `POST /api/scans/<uuid>/verify/`
+    and `POST /api/findings/<id>/verify/`.
+  - Optional **AI adjudication** layer — advisory only: annotates
+    `extra["verification"]["ai"]`, never changes the deterministic verdict or
+    `Finding.status`, no-op when AI is inactive, audited + budget-bounded.
+  - **Why:** move from "here is a finding" to "here is a finding, and we re-checked it
+    still reproduces" — separating real issues from stale/parked/unconfirmed noise,
+    honestly (a maybe is never dressed up as confirmed).
+
+### Fixed
+- **Scanner false-positive reduction (#531).** Triaging a real scan report surfaced
+  over-severe / duplicate findings across five tools:
+  - **TLS cert-expiry rebanding** (`tls_checker`): a healthy cert 31–90 days out was
+    MEDIUM → now **low**; ≤14d critical → **high**; ≤30d high → **medium**; expired
+    stays critical. **Why:** a 55-day cert is normal, not a medium risk.
+  - **Subdomain-takeover confidence** (`takeover_check`): an unidentified-service
+    subzy hit was HIGH → now **medium**; HIGH is reserved for an identified fingerprint.
+  - **Shodan banner-CVE severity** (`shodan`): version-approximate banner CVEs
+    MEDIUM → **low** (cve_intel still re-prioritizes confirmed ones).
+  - **tldsquatting no-weaponization cap** (`tldsquatting`): a resolving-website
+    lookalike with no login form and no brand mention is capped at **low**
+    (monitor-only); the ported risk/threat scores are unchanged in `extra`, and
+    **email-only phishing-prep fingerprints (MX/SPF/DMARC, no site) are exempt** and
+    keep full severity — no false negatives.
+  - **web_checker dedup normalization** (`web_checker`): the same endpoint probed
+    twice (trailing-slash / missing-port variants) → dedup now keys on
+    `(host, effective_port)` with a scheme-default fallback, collapsing duplicates.
+
 ## [v2.22.0] — 2026-09-14
 
 ### Added
