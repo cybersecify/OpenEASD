@@ -1156,3 +1156,54 @@ class TestIssueRegisterSection:
         from apps.core.data.findings.models import STATUS_CHOICES, TRIAGED_STATUSES
         assert "accepted" in dict(STATUS_CHOICES)
         assert set(TRIAGED_STATUSES) == {"false_positive", "accepted"}
+
+
+@pytest.mark.django_db
+class TestVerificationBadgeAndEvidence:
+    """Task 14: the PDF's per-finding card shows a verification badge and,
+    only when evidence is present, an 'Evidence: <text>' line. A finding left
+    at the default unverified/no-evidence state must render byte-identically
+    to a pre-verification report (no badge, no Evidence: line)."""
+
+    def _render_report_html_with_finding(self, authed_client, session, verification_status, extra):
+        from apps.core.data.findings.models import Finding
+        Finding.objects.create(
+            session=session, source="web_checker", check_type="missing_csp",
+            severity="high", title="Missing CSP", target="report.example.com",
+            description="No CSP header.", remediation="Add CSP.", status="open",
+            verification_status=verification_status, extra=extra,
+        )
+        captured = {}
+
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert res.status_code == 200
+        return captured["html"]
+
+    def test_report_shows_verified_badge_and_evidence(self, authed_client, session):
+        html = self._render_report_html_with_finding(
+            authed_client, session,
+            verification_status="verified",
+            extra={"verification": {"verdict": "verified", "evidence": "CSP still absent"}},
+        )
+        assert "Verified" in html
+        assert "CSP still absent" in html
+
+    def test_report_unverified_finding_shows_no_evidence_line(self, authed_client, session):
+        html = self._render_report_html_with_finding(
+            authed_client, session, verification_status="unverified", extra={},
+        )
+        assert "Evidence:" not in html
+
+    def test_inconclusive_badge_renders(self, authed_client, session):
+        html = self._render_report_html_with_finding(
+            authed_client, session,
+            verification_status="inconclusive",
+            extra={"verification": {"verdict": "inconclusive", "evidence": "Could not re-probe: timeout"}},
+        )
+        assert "Inconclusive" in html
+        assert "Evidence: Could not re-probe: timeout" in html

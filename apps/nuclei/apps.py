@@ -14,4 +14,5 @@ class NucleiConfig(AppConfig):
         "requires": ["httpx"],
         "produces_findings": True,
         "active": True,
+        "verifier": "apps.nuclei.verify.verify_finding",
     }

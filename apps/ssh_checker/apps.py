@@ -9,6 +9,7 @@ class SshCheckerConfig(AppConfig):
     tool_meta = {
         "label": "SSH Checker",
         "runner": "apps.ssh_checker.scanner.run_ssh_check",
+        "verifier": "apps.ssh_checker.verify.verify_finding",
         "phase": 8,
         "phase_group": "Network Exposure",
         "requires": ["naabu", "service_detection"],

@@ -347,6 +347,10 @@ SCAN_RETENTION_MAX_AGE_DAYS = config("SCAN_RETENTION_MAX_AGE_DAYS", default=180,
 # activity) to any caller. (M3, API security review.)
 METRICS_ENABLED = config("METRICS_ENABLED", default=False, cast=bool)
 
+# Finding verification — deterministic re-probe of medium+ findings at finalize.
+FINDING_VERIFICATION_ENABLED = config("FINDING_VERIFICATION_ENABLED", default=True, cast=bool)
+FINDING_VERIFICATION_MIN_SEVERITY = config("FINDING_VERIFICATION_MIN_SEVERITY", default="medium")
+
 # Scanner timeouts (seconds) — override in .env if needed
 SCANNER_DNS_TIMEOUT = config("SCANNER_DNS_TIMEOUT", default=5, cast=int)
 SCANNER_HTTP_TIMEOUT = config("SCANNER_HTTP_TIMEOUT", default=10, cast=int)

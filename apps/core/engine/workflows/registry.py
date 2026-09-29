@@ -19,6 +19,7 @@ Core modules read from the registry instead of hardcoded dicts.
 import logging
 
 from django.apps import apps
+from django.utils.module_loading import import_string
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ def _discover_tools():
         _registry[tool_name] = {
             "label": meta.get("label", app_config.verbose_name or tool_name),
             "runner": meta["runner"],
+            "verifier": meta.get("verifier"),
             "phase": meta.get("phase", 99),
             "phase_group": meta.get("phase_group", ""),
             "requires": meta.get("requires", []),
@@ -81,6 +83,18 @@ def get_tool_choices() -> list[tuple[str, str]]:
 def get_tool_runners() -> dict[str, str]:
     """Dynamic _TOOL_RUNNERS: tool_name → "module.path.function_name"."""
     return {name: info["runner"] for name, info in get_registry().items()}
+
+
+def get_tool_verifiers() -> dict[str, callable]:
+    """source -> verify_finding callable, for tools that declare tool_meta['verifier'].
+
+    Optional per tool: a tool without a verifier is honestly left un-reprobed.
+    """
+    return {
+        name: import_string(info["verifier"])
+        for name, info in get_registry().items()
+        if info.get("verifier")
+    }
 
 
 def get_tool_phases() -> dict[str, int]:

@@ -9,6 +9,7 @@ class NmapConfig(AppConfig):
     tool_meta = {
         "label": "Nmap (NSE Vuln Scan)",
         "runner": "apps.nmap.scanner.run_nmap",
+        "verifier": "apps.nmap.verify.verify_finding",
         "phase": 8,
         "phase_group": "Network Exposure",
         "requires": ["naabu", "service_detection"],

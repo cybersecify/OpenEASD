@@ -1,9 +1,9 @@
 # Finding Verification — Design Spec
 
-> **Status:** 📝 Proposed — not yet implemented. Design agreed via brainstorming
-> (mechanism, scope, trigger, and re-probe approach all decided — see §2). This is
-> the design contract to build against; on implementation, update this header and
-> the shipped behaviour in `03-system.md` / CLAUDE.md.
+> **Status:** ✅ Implemented — shipped on `feat/finding-verification` (the
+> deterministic verification engine, 5 seed verifiers, API fields + verify
+> endpoints, report badge, and optional AI adjudication). The shipped behaviour
+> is reflected in `03-system.md` and `CLAUDE.md`.
 
 **Goal:** Move OpenEASD from *"here is a finding"* to *"here is a finding, and we
 re-checked that it still reproduces."* Each medium-or-higher finding gets an honest
