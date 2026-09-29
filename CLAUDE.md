@@ -368,7 +368,9 @@ request-counting proxy C4 is deferred).
 
 The 16 core apps are grouped into layer subpackages: **`apps/core/console/`**
 (dashboard, insights, reports, notifications, ai, credentials, api), **`apps/core/engine/`**
-(scans, workflows, durable, scheduler, service_detection), and
+(scans, workflows, durable, scheduler, service_detection, plus the internal
+`verification/` sub-package — not a registered app, no models — invoked
+directly by the scan pipeline's finalize step), and
 **`apps/core/data/`** (domains, assets, web_assets, findings, asset_inventory).
 Django labels are unchanged — the nesting is organisational only (import paths are
 `apps.core.<layer>.<app>`). See `docs/03-system.md` for the layer model.
@@ -627,7 +629,11 @@ create_scan_session(domain)          # auto-assigns default workflow
         → run_workflow(run_id)       # loops enabled tools, records StepResults
       → _finalize_session(session)   # count findings → coverage → status
           → _detect_deltas / _check_coverage_regression / build_insights
-          → run_ai_post_scan(session)     # AI triage + summaries (no-op unless keys+consent)
+          → rollup_session(session)       # asset-inventory rollup (fail-graceful)
+          → verify_session(session)       # deterministic finding verification (fail-graceful,
+          │                                #   gated by FINDING_VERIFICATION_ENABLED, default True)
+          → rollup_session_issues(session) # persistent Issue register rollup (fail-graceful)
+          → run_ai_post_scan(session)     # AI triage + summaries + adjudication (no-op unless keys+consent)
           → _dispatch_alerts(session)     # Slack/Teams (carries the AI alert summary)
           → maybe_start_agent(session)    # queues the bounded orchestration agent
 ```
@@ -713,7 +719,16 @@ class Finding(models.Model):
     port        = FK(Port, null=True)
     url         = FK(web_assets.URL, null=True)
     extra       = JSONField()      # tool-specific: cve, cvss_score, cipher_name, etc.
+    verification_status = CharField(default="unverified")  # "unverified"|"verified"|"inconclusive"
+    verified_at = DateTimeField(null=True)  # set only when verification_status="verified"
 ```
+
+**Finding verification:** `verification_status`/`verified_at` are set by the
+deterministic re-probe (`apps/core/engine/verification/verifier.py::verify_session`,
+run at finalize — see Scan flow) and stamp `extra["verification"]` with the
+verdict's evidence/detail. `Issue.verification_status` (`apps/core/data/issues/`)
+mirrors the latest occurrence's verdict for display on the persistent register.
+See `docs/specs/2026-09-15-finding-verification.md`.
 
 **JSON-field aggregation:** the codebase groups JSON-extracted fields (e.g. `extra__cvss_score`) in Python rather than via `Max(...)` DB aggregation — a habit from the former SQLite backend. PostgreSQL supports these aggregations natively, but the Python-side grouping is kept for portability; no need to "fix" it.
 
@@ -908,6 +923,17 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_passive_scan.py` | 27 | registry `active` classification (domain_security passive / domain_probe active), `is_passive_tool_set`, Credential Exposure grouping, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
 | `tests/unit/test_workflow_runner.py` | 38 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism (concurrent same-phase; LOW_MEMORY serialises heavy phases but light phase-1 tools still parallel); **H5 resume idempotency** (crash-resume re-run deletes the tool's stale Findings first → no duplicates; completed tool not re-run; first run normal) |
 | `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow covering every registered non-core tool (29), idempotent gap-fill; `test_full_scan_covers_every_registered_tool` fails CI on any gap |
+| `tests/unit/test_verification_verdict.py` | 3 | `Verdict` value object — construction defaults, evidence/detail carried, closed status vocabulary |
+| `tests/unit/test_verification_registry.py` | 2 | `get_tool_verifiers()` — returns callables for tools declaring a verifier, skips tools without one |
+| `tests/unit/test_verification_model.py` | 1 | `Finding.verification_status` defaults to `"unverified"` |
+| `tests/unit/test_verification_orchestrator.py` | 8 | `verify_session`/`verify_one_finding` — below-threshold left unverified, passive-tool verified writes verdict+evidence, active-tool-without-authorization is inconclusive with no verifier call, verifier exception is inconclusive (scan unaffected), tool without a verifier stays unverified, idempotent re-run overwrites not appends |
+| `tests/unit/test_verification_pipeline.py` | 4 | `_finalize_session` wiring — verify runs before the issue rollup, skipped when `FINDING_VERIFICATION_ENABLED=False` (mocked), disabled leaves a real Finding row `"unverified"` end-to-end (regression lock), a raising `verify_session` never fails finalize |
+| `tests/unit/test_verification_api.py` | 5 | `/api/scans/<uuid>/verify/` (409 while running, runs + returns counts) + `/api/findings/<id>/verify/`, `/api/findings/` and `/api/issues/` expose verification fields |
+| `tests/unit/test_web_checker_verify.py` | 6 | web_checker seed verifier — missing-header/HSTS still missing = verified, now present = inconclusive, fetch failure inconclusive, unmapped check_type inconclusive, registered in `tool_meta` |
+| `tests/unit/test_tls_checker_verify.py` | 6 | tls_checker seed verifier — weak protocol (incl. TLS 1.1) still offered = verified, no longer offered = inconclusive, connection failure inconclusive, unmapped check_type inconclusive, registered in `tool_meta` |
+| `tests/unit/test_ssh_checker_verify.py` | 15 | ssh_checker seed verifier — weak kex/cipher/mac/host-key(DSA/short RSA)/SSHv1/password-auth/root-login still offered = verified, each remediated = inconclusive, connect failure + unrecognized check_type inconclusive |
+| `tests/unit/test_nuclei_verify.py` | 8 | nuclei seed verifier — template re-match = verified (web check_type also covered), no match/different-template-hit/missing template_id or target/binary error = inconclusive, registered in `tool_meta` |
+| `tests/unit/test_nmap_verify.py` | 9 | nmap seed verifier — CVE still reported = verified, gone/scan-error/missing-CVE/missing-port = inconclusive, `verify_finding` calls rescan with host+port, `_rescan_cves` backport-exclusion/inclusion/empty-output |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
 | `tests/unit/test_update_check.py` | 22 | Update-available check — version parse/compare, cached GitHub fetch, fail-graceful on timeout/HTTP-error/bad-payload, endpoint shape |
 | `tests/unit/test_proc_env.py` | 4 | `go_memory_env()` — GOMEMLIMIT/GOGC set in low profile, unchanged otherwise, preserves existing env |
@@ -921,6 +947,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_ai_summaries.py` | 7 | Report + alert kinds, absent-on-failure, triage overview feeds prompt, update-in-place |
 | `tests/unit/test_ai_pipeline.py` | 10 | Invariants 1 + 5 — AI-off finalize byte-identical, hook ordering before alerts, subscan skip, failure swallowing |
 | `tests/unit/test_ai_orchestrator.py` | 22 | Agent loop — gate/revocation terminal, iteration pre-consumption, caps, denied-without-auth, sanctioned subscan path (`triggered_by="agent"`), flag never mutates Finding.status, chain hooks |
+| `tests/unit/test_ai_adjudication.py` | 5 | Advisory AI adjudication of verification verdicts — no-op when AI inactive, annotates `extra["verification"]["ai"]` but never flips `verification_status`, AI failure swallowed, low-severity/unverified findings skipped, a None model response is skipped without error |
 | `tests/unit/test_ai_invariants.py` | 3 | Grep-style: AI layer only Finding.objects.filter, audit writer has no body params, client creates only AIInvocation |
 | `tests/integration/test_ai_flow.py` | 6 | AI end-to-end (only the Cloudflare HTTP edge + queue mocked): finalize → triage/summaries/agent/audit, report + alert carry output, subscan chain roundtrip, AI-off zero traces, Cloudflare-down scan still completes; plus an opt-in LIVE smoke test (runs only with real `CLOUDFLARE_*` env: `pytest tests/integration/test_ai_flow.py -k live`) |
 | `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
@@ -935,6 +962,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_issue_register.py` | 17 | Issue-register rollup — `issue_key`/`check_id` identity, triage persists across scans (status + assignee + resolution note), title-reword keeps same Issue, auto-resolve unseen (comprehensive-scan-only), regression reopen, idempotent replay, subscan no-op, asset grounding |
 | `tests/unit/test_issues_api.py` | 10 | `/api/issues/` — auth, ranked list + filters, summary, canonical triage writer (status + assigned_to + resolution_note persist, omitted-unchanged, resolved_at stamp/clear), bad-status 400 |
 
-**Total: 2055 tests** (2009 fast + 46 slow domain_security)
+**Total: 2131 tests** (2085 fast + 46 slow domain_security)
 
 Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.

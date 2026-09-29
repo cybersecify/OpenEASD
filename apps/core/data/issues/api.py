@@ -50,6 +50,7 @@ def _row(i) -> dict:
         "last_seen": i.last_seen.isoformat(),
         "resolved_at": i.resolved_at.isoformat() if i.resolved_at else None,
         "asset_id": i.asset_id,
+        "verification_status": i.verification_status,
     }
 
 

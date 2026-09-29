@@ -64,6 +64,8 @@ def _fake_cloudflare(finding_ids, orchestration_script):
         if "actions" in props:
             return _envelope(script.pop(0) if script else {"actions": [
                 {"action": "done", "summary": "nothing left to check"}]})
+        if "confidence" in props:
+            return _envelope({"confidence": 0.8, "rationale": "consistent with the evidence"})
         return _envelope({"text": "Plain-language summary of the scan."})
 
     return responder
@@ -146,9 +148,21 @@ class TestAiFullFlow:
         assert run.status == "done"
         assert run.final_summary == "surface fully covered"
 
-        # Audit: one metadata-only row per call, tokens recorded.
+        # Audit: one metadata-only row per call, tokens recorded. The one
+        # finding is critical severity and comes out of verification as
+        # inconclusive (no DomainAuthorization for nuclei's active re-probe),
+        # so it is also eligible for advisory AI adjudication.
         purposes = sorted(AIInvocation.objects.values_list("purpose", flat=True))
-        assert purposes == ["alert_summary", "orchestration", "report_summary", "triage"]
+        assert purposes == [
+            "adjudication", "alert_summary", "orchestration", "report_summary", "triage",
+        ]
+
+        # Adjudication only annotates — it never touches the deterministic verdict.
+        f.refresh_from_db()
+        assert f.verification_status == "inconclusive"
+        assert f.extra["verification"]["ai"] == {
+            "confidence": 0.8, "rationale": "consistent with the evidence",
+        }
         for row in AIInvocation.objects.all():
             assert row.status == "ok"
             assert row.total_tokens == 1050

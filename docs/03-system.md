@@ -206,6 +206,7 @@ the folder move is purely organisational; the table lists each app by name.
 | `workflows/` | `workflow` | Workflow CRUD, dynamic runner, tool registry |
 | `scheduler/` | `scheduler` | Scan callables (daily/monitoring/user sweeps, watchdog, JWT purge) invoked by the DBOS `@scheduled` workflows |
 | `durable/` | `durable` | DBOS app config + `@DBOS.workflow`/`@DBOS.step`/`@DBOS.scheduled` definitions; `dbos_worker` command |
+| `verification/` | — | Deterministic finding verification (`verify_session`) — re-probes medium+ findings at finalize via each tool's registered verifier, writing `Finding.verification_status`/`verified_at`; active re-probes gated by `DomainAuthorization`. Internal sub-package (no models, not in `INSTALLED_APPS`) invoked directly by `apps/core/engine/scans/pipeline.py` |
 | `notifications/` | `alerts` | `NotificationConfig` singleton, Slack/Teams dispatcher, alert history |
 | `insights/` | `insights` | `ScanSummary` (incl. Exposure Score + grade), `FindingTypeSummary`, trend charts |
 | `reports/` | `reports` | CSV + PDF export (synchronous Django views, on the web tier) |
@@ -221,7 +222,7 @@ The 16 core apps map cleanly to three of the four logical layers (see
 | Layer | Apps | Count |
 |---|---|---|
 | **Console** (presentation) | `dashboard`, `insights`, `reports`, `notifications`, `ai`, `credentials` | **6** |
-| **Engine** (orchestration) | `scans`, `workflows`, `durable`, `scheduler` | **4** |
+| **Engine** (orchestration) | `scans`, `workflows`, `durable`, `scheduler` (+ `verification` sub-package, not a registered app) | **4** |
 | **Data** (dataflow models) | `domains`, `assets`, `web_assets`, `findings`, `asset_inventory` | **5** |
 | *(core + registry tool)* | `service_detection` — a core app that is *also* a phase-6 scan tool | **1** |
 
@@ -230,6 +231,9 @@ The 16 core apps map cleanly to three of the four logical layers (see
 16. The fourth logical layer, **Tools**, is the 29 `apps/<tool>/` plugins (next
 section) — bringing the first-party total to 45 apps / 30 registered tools
 (`service_detection` is the one app counted in both core and the tool registry).
+Likewise, `apps/core/engine/verification/` is a plain internal sub-package (no
+models, not in `INSTALLED_APPS`) invoked directly by the scan pipeline — not
+counted in the 16 either.
 
 Notes on the mapping's soft edges:
 - **`scheduler`** sits in *engine* as its **automated-operations** sub-part (cron
@@ -237,6 +241,9 @@ Notes on the mapping's soft edges:
   not the execution core — the one app where the two lenses disagree on placement.
 - **`service_detection`** is the only app that is both core infrastructure and a
   registry tool (nmap -sV, phase 7).
+- **`verification`** (`apps/core/engine/verification/`) is an internal engine
+  sub-package, not a registered app — same treatment as `api/` — so it isn't
+  counted in the Engine total; the scan pipeline's finalize step calls it directly.
 
 Secrets at rest (`apps/core/crypto.py` + `fields.py`): BYOK API keys and webhook
 URLs stored in the DB are Fernet-encrypted via `EncryptedCharField`/`EncryptedTextField`.
@@ -331,7 +338,10 @@ POST /api/scans/start/  (authorization gate: active tools need DomainAuthorizati
 
 `_finalize_session` order: build deltas → coverage/WAF regression → `build_insights`
 (Exposure Score) → asset-inventory rollup (`rollup_session`, fail-graceful) →
-`run_ai_post_scan` (triage + summaries, inline) → `_dispatch_alerts`
+finding verification (`verify_session`, re-probes medium+ findings, fail-graceful,
+gated by `FINDING_VERIFICATION_ENABLED`) → issue-register rollup
+(`rollup_session_issues`, fail-graceful) → `run_ai_post_scan` (triage + summaries
++ AI adjudication of verification verdicts, inline) → `_dispatch_alerts`
 (Slack/Teams) → `maybe_start_agent` (queues the bounded AI orchestration chain).
 
 ### Scan statuses

@@ -47,6 +47,13 @@ _SCOPE_BY_CHECK = {
     "open_relay": "Email / DNS", "lookalike_cluster": "Attack Surface",
 }
 
+# Verification badge label per Finding.verification_status. "unverified" (the
+# default for every finding predating this feature, and any finding the
+# verification pass never re-probed) deliberately has no entry — rendering no
+# badge for it keeps a report with no verification data byte-identical to a
+# pre-verification report.
+_VERIFICATION_BADGE = {"verified": "Verified", "inconclusive": "Inconclusive"}
+
 # CWE mapping per check_type. Unmapped check types render "—".
 _CWE_BY_CHECK = {
     "unencrypted_service": "CWE-319: Cleartext Transmission of Sensitive Information",
@@ -446,6 +453,23 @@ def _group_findings_by_issue(findings):
                 if c and c not in cves:
                     cves.append(c)
         grp["cves"] = cves
+        # Verification badge + evidence (per-instance, rolled up onto the group):
+        # "verified" wins over "inconclusive" if instances disagree; a group left
+        # entirely at the default "unverified" with no evidence gets no badge and
+        # no evidence text, so it renders exactly as it did before verification
+        # existed (additive/guarded — see docs/specs).
+        badge = None
+        verification_evidence = ""
+        for inst in grp["instances"]:
+            label = _VERIFICATION_BADGE.get(inst.verification_status)
+            if label and (badge is None or inst.verification_status == "verified"):
+                badge = label
+            if not verification_evidence and isinstance(inst.extra, dict):
+                inst_evidence = (inst.extra.get("verification") or {}).get("evidence")
+                if inst_evidence:
+                    verification_evidence = inst_evidence
+        grp["verification_badge"] = badge
+        grp["verification_evidence"] = verification_evidence
         # Threat intel rollup from cve_intel (extra: cisa_kev / epss_score /
         # epss_percentile). KEV = at least one CVE is on CISA's actively-exploited
         # list; EPSS percentile is the highest across the group's CVEs.
