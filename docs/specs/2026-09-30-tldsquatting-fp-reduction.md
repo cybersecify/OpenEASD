@@ -1,8 +1,10 @@
 # tldsquatting False-Positive Reduction — Design Spec
 
-> **Status:** 📝 Proposed — not yet implemented. Design agreed via brainstorming
-> (output behavior = collapse benign into rollups; unrelated handling = conservative
-> override — see §3/§4). Build to this contract; flip the header on implementation.
+> **Status:** ✅ Implemented — shipped on `feat/tldsquatting-fp-reduction`
+> (`apps/tldsquatting/classify.py` + the analyzer collapse/rollup path +
+> `TLDSQUATTING_COLLAPSE_BENIGN`). Design agreed via brainstorming (output
+> behavior = collapse benign into rollups; unrelated handling = conservative
+> override — see §3/§4); built to this contract.
 
 **Goal:** Shrink tldsquatting output on large brands from *hundreds* of individual
 lookalike findings to a **readable handful of real threats plus a few info
