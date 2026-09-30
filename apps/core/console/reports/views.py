@@ -128,6 +128,13 @@ _CWE_BY_CHECK = {
     # A registered lookalike domain is infrastructure built to be visually
     # confused with the org's real domain — the essence of CWE-451.
     "lookalike_domain": "CWE-451: User Interface (UI) Misrepresentation of Critical Information",
+    # tldsquatting benign-class rollups (check_type=f"lookalike_{cls}") — same
+    # underlying issue class as lookalike_domain, just batched into one info
+    # rollup Finding per benign class instead of one Finding per domain.
+    "lookalike_owned": "CWE-451: User Interface (UI) Misrepresentation of Critical Information",
+    "lookalike_parked": "CWE-451: User Interface (UI) Misrepresentation of Critical Information",
+    "lookalike_unrelated": "CWE-451: User Interface (UI) Misrepresentation of Critical Information",
+    "lookalike_pre_existing": "CWE-451: User Interface (UI) Misrepresentation of Critical Information",
     # asn_cluster — lookalikes sharing one ASN = coordinated impersonation infra.
     "lookalike_cluster": "CWE-451: User Interface (UI) Misrepresentation of Critical Information",
     # github_recon — infra references (internal hostnames/subdomains, cloud-bucket
@@ -470,6 +477,18 @@ def _group_findings_by_issue(findings):
                     verification_evidence = inst_evidence
         grp["verification_badge"] = badge
         grp["verification_evidence"] = verification_evidence
+        # tldsquatting benign-class rollup findings (check_type="lookalike_owned"
+        # / "lookalike_parked" / "lookalike_unrelated" / "lookalike_pre_existing")
+        # carry the member domains in extra["domains"] — collect them here so the
+        # template can render the list beneath the title. Guarded on presence so
+        # every other finding (no extra["domains"]) renders unchanged.
+        rollup_domains = []
+        for inst in grp["instances"]:
+            if isinstance(inst.extra, dict):
+                for d in inst.extra.get("domains") or []:
+                    if isinstance(d, dict) and d.get("domain"):
+                        rollup_domains.append(d)
+        grp["rollup_domains"] = rollup_domains
         # Threat intel rollup from cve_intel (extra: cisa_kev / epss_score /
         # epss_percentile). KEV = at least one CVE is on CISA's actively-exploited
         # list; EPSS percentile is the highest across the group's CVEs.
