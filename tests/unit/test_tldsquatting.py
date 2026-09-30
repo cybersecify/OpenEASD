@@ -372,7 +372,8 @@ class TestRdapAge:
         with patch("apps.tldsquatting.collector._thread_resolver") as mk:
             mk.return_value.resolve.return_value = ans
             ns = collector._resolve_target_ns("zoho.com")
-        assert "ns1.zoho.com" in ns and "ns2.zoho.com" in ns
+        # exact membership (not `host in x`) so the URL-substring linter stays quiet
+        assert sorted(ns) == ["ns1.zoho.com", "ns2.zoho.com"]
 
     def test_enrich_noop_when_disabled(self):
         from apps.tldsquatting import collector as C
