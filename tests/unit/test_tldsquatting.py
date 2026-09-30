@@ -394,7 +394,16 @@ class TestAnalyzer:
     ad-hoc ladder."""
 
     def _find(self, sess, record):
-        return analyze(sess, [record])[0]
+        # These tests predate the classify.py grouping feature and assert
+        # per-domain scoring/severity nuances (PRE-EXISTING, capping, parked
+        # dampening, etc.) — that logic lives in `_individual_finding` and is
+        # unaffected by classification/collapsing. Force the toggle off so
+        # `_find` keeps returning exactly one individual Finding per record
+        # regardless of which class.py bucket the record now falls into;
+        # the collapse-into-rollup behavior itself is covered separately by
+        # TestBenignRollup below.
+        with override_settings(TLDSQUATTING_COLLAPSE_BENIGN=False):
+            return analyze(sess, [record])[0]
 
     def test_finding_shape(self):
         sess = _session("example.com")
@@ -557,6 +566,57 @@ class TestAnalyzer:
 
     def test_empty_results(self):
         assert analyze(_session("example.com"), []) == []
+
+
+# ---------------------------------------------------------------------------
+# classify.py grouping — benign classes collapse into info rollups, threats
+# always stay individual, and the collapse is toggleable.
+# ---------------------------------------------------------------------------
+
+
+def _analyze(session, recs):
+    from apps.tldsquatting.analyzer import analyze
+    return analyze(session, recs)
+
+
+@pytest.mark.django_db
+class TestBenignRollup:
+    def test_owned_lookalikes_collapse_to_one_info_rollup(self, settings):
+        settings.TLDSQUATTING_COLLAPSE_BENIGN = True
+        from apps.core.engine.scans.models import ScanSession
+        s = ScanSession.objects.create(domain="zoho.com", scan_type="full", status="completed")
+        base = dict(has_a=True, content_checked=True, target_ns=["ns1.zoho.com"], target_created="2000-01-01")
+        recs = [
+            {**base, "candidate": "zoho.io", "ns_targets": ["ns1.zoho.com."], "technique": "tld_swap"},
+            {**base, "candidate": "zoho.co", "ns_targets": ["ns2.zoho.com."], "technique": "tld_swap"},
+        ]
+        findings = _analyze(s, recs)
+        owned = [f for f in findings if f.check_type == "lookalike_owned"]
+        assert len(owned) == 1
+        assert owned[0].severity == "info"
+        assert len(owned[0].extra["domains"]) == 2
+        assert not [f for f in findings if f.check_type == "lookalike_domain"]  # none individual
+
+    def test_threat_stays_individual(self, settings):
+        settings.TLDSQUATTING_COLLAPSE_BENIGN = True
+        from apps.core.engine.scans.models import ScanSession
+        s = ScanSession.objects.create(domain="zoho.com", scan_type="full", status="completed")
+        rec = {"candidate": "zoho-login.com", "ns_targets": ["ns1.evil.com."], "has_a": True,
+               "content_checked": True, "brand_mentioned": True, "login_form": True,
+               "target_ns": ["ns1.zoho.com"], "target_created": "2000-01-01", "technique": "combo"}
+        findings = _analyze(s, [rec])
+        ind = [f for f in findings if f.check_type == "lookalike_domain"]
+        assert len(ind) == 1 and ind[0].target == "zoho-login.com"
+        assert not [f for f in findings if f.check_type.startswith("lookalike_") and f.check_type != "lookalike_domain"]
+
+    def test_toggle_off_keeps_per_domain(self, settings):
+        settings.TLDSQUATTING_COLLAPSE_BENIGN = False
+        from apps.core.engine.scans.models import ScanSession
+        s = ScanSession.objects.create(domain="zoho.com", scan_type="full", status="completed")
+        rec = {"candidate": "zoho.io", "ns_targets": ["ns1.zoho.com."], "has_a": True,
+               "content_checked": True, "target_ns": ["ns1.zoho.com"], "target_created": "2000-01-01", "technique": "x"}
+        findings = _analyze(s, [rec])
+        assert [f for f in findings if f.check_type == "lookalike_domain"]  # individual, not a rollup
 
 
 # ---------------------------------------------------------------------------
