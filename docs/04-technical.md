@@ -33,3 +33,6 @@ spec that drifts from the shipped behaviour is corrected like a failing test.
   re-probe a finding's own check to label it verified / inconclusive / unverified
   (deterministic baseline + optional AI adjudication); the verdict persists on the
   `Issue`. Builds on the Issue Register.
+- [tldsquatting False-Positive Reduction](specs/2026-09-30-tldsquatting-fp-reduction.md)
+  — classify lookalikes (owned/parked/unrelated/pre_existing/threat) and collapse
+  benign classes into info rollups.

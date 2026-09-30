@@ -1,4 +1,4 @@
-from apps.tldsquatting.classify import classify_lookalike, ns_operators
+from apps.tldsquatting.classify import classify_lookalike, ns_operators, _is_redacted_registrant
 
 
 def _rec(**kw):
@@ -56,3 +56,39 @@ def test_resolving_no_content_check_is_threat():
     # has_a but homepage never fetched (content_checked False) and no other signal → threat (don't collapse blindly)
     assert classify_lookalike(_rec(ns_targets=["ns1.x.com."], content_checked=False),
                               {"zoho.com"}, None, None) == "threat"
+
+
+def test_shared_privacy_proxy_registrant_does_not_hide_brand_impersonator():
+    # Two unrelated domains behind the same GDPR privacy-proxy registrant must NOT
+    # match on registrant alone — the impersonator has to surface as threat.
+    r = _rec(registrant="Withheld for Privacy ehf.", brand_mentioned=True)
+    assert classify_lookalike(r, {"other.com"}, "Withheld for Privacy ehf.", None) == "threat"
+
+
+def test_real_distinct_registrant_match_still_owned():
+    r = _rec(registrant="Zoho Corporation Pvt. Ltd.")
+    assert classify_lookalike(r, {"other.com"}, "Zoho Corporation Pvt. Ltd.", None) == "owned"
+
+
+def test_is_redacted_registrant_true_cases():
+    for value in [
+        "REDACTED FOR PRIVACY",
+        "Withheld for Privacy ehf.",
+        "Domains By Proxy, LLC",
+        "Contact Privacy Inc.",
+        "Perfect Privacy, LLC",
+        "Identity Protection Service",
+        "Whois Privacy",
+        "Data Protected",
+        "Not Disclosed",
+        "GDPR Masked",
+        "Private Registrant",
+        "Registration on behalf of a domain owner",
+        "",
+        None,
+    ]:
+        assert _is_redacted_registrant(value) is True
+
+
+def test_is_redacted_registrant_false_for_real_org():
+    assert _is_redacted_registrant("Zoho Corporation Pvt. Ltd.") is False

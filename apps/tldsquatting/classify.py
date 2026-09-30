@@ -29,6 +29,39 @@ def _registrable(host: str) -> str:
     return host
 
 
+_REDACTION_MARKERS = (
+    "redact",
+    "privacy",
+    "withheld",
+    "data protected",
+    "not disclosed",
+    "gdpr",
+    "whois",
+    "identity protection",
+    "proxy",
+    "private",
+    "masked",
+    "on behalf of",
+)
+
+
+def _is_redacted_registrant(value: str) -> bool:
+    """True when ``value`` is empty or looks like a GDPR redaction / privacy-proxy
+    placeholder rather than a real registrant name.
+
+    Post-GDPR, RDAP registrant is almost always a shared placeholder (e.g.
+    "REDACTED FOR PRIVACY", "Withheld for Privacy ehf.", "Domains By Proxy, LLC").
+    Two unrelated domains behind the same proxy would otherwise match on
+    registrant alone. Over-filtering here is safe: it only drops the *registrant*
+    ownership signal, never the NS-operator match, which remains the strong
+    ``owned`` signal.
+    """
+    text = (value or "").strip().lower()
+    if not text:
+        return True
+    return any(marker in text for marker in _REDACTION_MARKERS)
+
+
 def ns_operators(ns_targets) -> set:
     ops = set()
     for t in ns_targets or []:
@@ -50,7 +83,14 @@ def classify_lookalike(record, target_ns_ops, target_registrant, target_registra
     cand_ns = ns_operators(record.get("ns_targets"))
     ns_match = bool(cand_ns & (target_ns_ops or set()))
     reg = (record.get("registrant") or "").strip().lower()
-    reg_match = bool(reg and target_registrant and reg == str(target_registrant).strip().lower())
+    target_reg = (target_registrant or "").strip().lower() if target_registrant else ""
+    reg_match = bool(
+        reg
+        and target_reg
+        and not _is_redacted_registrant(reg)
+        and not _is_redacted_registrant(target_reg)
+        and reg == target_reg
+    )
     if ns_match or reg_match:
         return "owned"
 
