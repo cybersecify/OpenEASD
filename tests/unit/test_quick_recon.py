@@ -59,3 +59,25 @@ class TestLightPassiveHelper:
         }
         monkeypatch.setattr(reg, "get_registry", lambda: fake)
         assert reg.light_passive_tools() == {"domain_security"}
+
+
+@pytest.mark.django_db
+class TestQuickReconWorkflow:
+    def test_workflow_exists_and_is_not_default(self):
+        from apps.core.engine.workflows.models import Workflow
+        wf = Workflow.objects.get(name="Quick Recon")
+        assert wf.is_default is False
+
+    def test_workflow_membership_equals_light_passive_set(self):
+        # Drift lock: the workflow's tools == light_passive_tools(), both ways.
+        from apps.core.engine.workflows.models import Workflow
+        from apps.core.engine.workflows.registry import light_passive_tools
+        wf = Workflow.objects.get(name="Quick Recon")
+        assert set(wf.enabled_tools()) == light_passive_tools()
+
+    def test_workflow_is_entirely_passive(self):
+        # No-auth property: every tool in Quick Recon must be passive.
+        from apps.core.engine.workflows.models import Workflow
+        from apps.core.engine.workflows.registry import is_passive_tool_set
+        wf = Workflow.objects.get(name="Quick Recon")
+        assert is_passive_tool_set(wf.enabled_tools()) is True
