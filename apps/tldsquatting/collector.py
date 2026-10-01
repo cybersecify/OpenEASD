@@ -428,13 +428,35 @@ def _content_signals(candidate: str, brand: str) -> dict:
     return out
 
 
-def _rdap_created(domain: str, timeout: int = 8) -> str | None:
-    """Look up a domain's registration (creation) date via the RDAP bootstrap.
+def _rdap_entity_name(entity: dict) -> str | None:
+    """Extract a human-readable name for an RDAP ``entities`` object: the vCard
+    ``fn`` (formatted name) when present, else the entity ``handle``.
 
-    Returns an ISO date string ``YYYY-MM-DD`` or ``None`` on any failure. Never
-    raises. Passive: RDAP is third-party registry data (rdap.org redirects to the
-    authoritative registry) — the target's own systems are never contacted.
+    Returns ``None`` when neither is present. Never raises on malformed shapes —
+    callers wrap this in the same broad ``_rdap_info`` try/except.
     """
+    vcard = entity.get("vcardArray")
+    if isinstance(vcard, list) and len(vcard) > 1 and isinstance(vcard[1], list):
+        for item in vcard[1]:
+            if isinstance(item, (list, tuple)) and len(item) >= 4 and item[0] == "fn":
+                return item[3]
+    handle = entity.get("handle")
+    return str(handle) if handle else None
+
+
+def _rdap_info(domain: str, timeout: int = 8) -> dict:
+    """Look up a domain's RDAP registration date, registrant, and registrar via
+    the RDAP bootstrap.
+
+    Returns ``{"created": <iso-date|None>, "registrant": <str|None>,
+    "registrar": <str|None>}``. ``registrant``/``registrar`` are parsed from the
+    RDAP ``entities`` array (role ``"registrant"``/``"registrar"`` → vCard ``fn``,
+    falling back to the entity ``handle``); ``registrar`` also honours a
+    top-level ``"registrar"`` field when present. Never raises — all-None on any
+    failure. Passive: RDAP is third-party registry data (rdap.org redirects to
+    the authoritative registry) — the target's own systems are never contacted.
+    """
+    info = {"created": None, "registrant": None, "registrar": None}
     try:
         ua = getattr(settings, "OPENEASD_USER_AGENT", "OpenEASD")
         resp = requests.get(
@@ -444,38 +466,101 @@ def _rdap_created(domain: str, timeout: int = 8) -> str | None:
             allow_redirects=True,
         )
         if resp.status_code != 200:
-            return None
-        for ev in resp.json().get("events", []) or []:
+            return info
+        data = resp.json()
+        for ev in data.get("events", []) or []:
             if ev.get("eventAction") == "registration" and ev.get("eventDate"):
-                return str(ev["eventDate"])[:10]
+                info["created"] = str(ev["eventDate"])[:10]
+                break
+
+        registrar = data.get("registrar")
+        registrant = None
+        for ent in data.get("entities", []) or []:
+            roles = ent.get("roles") or []
+            if registrant is None and "registrant" in roles:
+                registrant = _rdap_entity_name(ent)
+            if not registrar and "registrar" in roles:
+                registrar = _rdap_entity_name(ent)
+        info["registrant"] = registrant
+        info["registrar"] = str(registrar) if registrar else None
     except Exception:  # noqa: BLE001 — never let an RDAP lookup fail the scan
-        return None
-    return None
+        return {"created": None, "registrant": None, "registrar": None}
+    return info
+
+
+def _rdap_created(domain: str, timeout: int = 8) -> str | None:
+    """Look up a domain's registration (creation) date via the RDAP bootstrap.
+
+    Thin wrapper over ``_rdap_info`` — kept for existing callers that only need
+    the registration date. Returns an ISO date string ``YYYY-MM-DD`` or ``None``
+    on any failure. Never raises.
+    """
+    return _rdap_info(domain, timeout)["created"]
+
+
+def _resolve_target_ns(apex: str, timeout: int | None = None) -> list[str]:
+    """Resolve the target apex's authoritative NS hosts, normalized
+    (``.rstrip(".").lower()``).
+
+    Part of the target OWNERSHIP BASELINE: a lookalike sharing the target's own
+    nameservers is far more likely to be the target's own registration (a
+    defensive/brand registration) than a threat. Passive — queries only the
+    public resolver about the apex's own published NS records, never the
+    target's own systems. Never raises → ``[]`` on any failure.
+    """
+    try:
+        resolver = _thread_resolver()
+        if timeout is not None:
+            resolver.timeout = timeout
+            resolver.lifetime = timeout
+        answers = resolver.resolve(apex, "NS")
+        return sorted({str(a.to_text()).rstrip(".").lower() for a in answers})
+    except Exception:  # noqa: BLE001 — any resolver failure = no data
+        return []
 
 
 def _enrich_registration_age(session, apex: str, results: list[dict]) -> None:
     """Annotate each registered lookalike with its RDAP creation date vs the
-    target's (register item / brand-threat accuracy).
+    target's, plus the target's OWNERSHIP BASELINE — RDAP registrant/registrar
+    and authoritative NS hosts — so a later classifier can tell "owned by the
+    target" apart from a real threat (register item / brand-threat accuracy).
 
     A lookalike registered BEFORE the target cannot be impersonating it — it
     existed first, so it's almost always a legitimate / unrelated registrant. We
-    look up the target's creation date once, then each registered lookalike's
-    (concurrent, capped, fail-graceful), and set ``predates_target`` so the
-    analyzer downgrades those to info. No-op when disabled or dates unavailable.
+    look up the target's RDAP info + NS once, then each registered lookalike's
+    RDAP info (concurrent, capped, fail-graceful), and set ``predates_target`` so
+    the analyzer downgrades those to info. The target baseline (``target_ns`` /
+    ``target_registrant`` / ``target_registrar``) is stamped on EVERY result —
+    not only the RDAP-capped subset — so classification works regardless of the
+    cap; only the per-candidate RDAP lookup (``created``/``registrant``) is
+    cap-bounded. No-op when disabled or results empty.
     """
     if not getattr(settings, "TLDSQUATTING_RDAP_AGE", True) or not results:
         return
     timeout = getattr(settings, "TLDSQUATTING_RDAP_TIMEOUT", 8)
     cap = getattr(settings, "TLDSQUATTING_RDAP_MAX_LOOKUPS", 60)
-    target_created = _rdap_created(apex, timeout)
+
+    target_info = _rdap_info(apex, timeout)
+    target_created = target_info["created"]
+    target_ns = _resolve_target_ns(apex, timeout)
+
+    # Ownership baseline applies to every candidate, even past the RDAP cap —
+    # classification needs it regardless of how many lookalikes got a
+    # per-candidate RDAP lookup.
+    for record in results:
+        record["target_created"] = target_created
+        record["target_registrant"] = target_info["registrant"]
+        record["target_registrar"] = target_info["registrar"]
+        record["target_ns"] = target_ns
+
     to_age = results[:cap]
 
     def _age(record):
-        created = _rdap_created(record["candidate"], timeout)
-        record["created"] = created
-        record["target_created"] = target_created
+        info = _rdap_info(record["candidate"], timeout)
+        record["created"] = info["created"]
+        record["registrant"] = info["registrant"]
         record["predates_target"] = bool(
-            created and target_created and created < target_created
+            record["created"] and target_created and record["created"] < target_created
         )
 
     workers = max(1, min(_DNS_CONCURRENCY, len(to_age)))

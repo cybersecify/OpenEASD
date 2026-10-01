@@ -788,9 +788,12 @@ from pathlib import Path
 def _emitted_check_types() -> set:
     """Collect every check_type string value emitted across all tool apps.
 
-    Two sources:
+    Three sources:
     - Literal check_type="..." assignments (covers most tools)
     - _HEADER_CHECKS tuple table in web_checker (check_type passed via variable)
+    - tldsquatting's dynamic check_type=f"lookalike_{cls}" rollup findings
+      (Task 3) — expanded against the real class list below, since the literal
+      regex can't resolve an f-string interpolation.
     """
     literal = re.compile(r'check_type=["\']([^"\']+)["\']')
     apps_dir = Path(__file__).parents[2] / "apps"
@@ -800,10 +803,22 @@ def _emitted_check_types() -> set:
         if "test" in py_file.name:
             continue
         src = py_file.read_text(encoding="utf-8", errors="ignore")
-        found.update(literal.findall(src))
+        for value in literal.findall(src):
+            # Skip doc/comment placeholders like "lookalike_<class>" — not a
+            # real emitted value, just documentation shorthand in a docstring.
+            if "<" in value or "{" in value:
+                continue
+            found.add(value)
 
     from apps.web_checker.analyzer import _HEADER_CHECKS
     found.update(row[1] for row in _HEADER_CHECKS)
+
+    # tldsquatting's benign-class rollup findings (analyzer._rollup_finding)
+    # build check_type=f"lookalike_{cls}" dynamically for every non-"threat"
+    # class; "threat" lookalikes stay individual findings under the existing
+    # literal check_type="lookalike_domain".
+    from apps.tldsquatting.classify import CLASSES
+    found.update(f"lookalike_{cls}" for cls in CLASSES if cls != "threat")
 
     return found
 
@@ -1207,3 +1222,54 @@ class TestVerificationBadgeAndEvidence:
         )
         assert "Inconclusive" in html
         assert "Evidence: Could not re-probe: timeout" in html
+
+
+# ---------------------------------------------------------------------------
+# tldsquatting rollup findings (Task 4) — the PDF renders the member domain
+# list (domain + reason) from extra["domains"] beneath the finding title.
+# Every other finding (no extra["domains"]) must render unchanged.
+# ---------------------------------------------------------------------------
+
+class TestLookalikeRollupBlock:
+    def _render_report_html_with_finding(self, authed_client, session, source, check_type,
+                                          severity, title, extra):
+        from apps.core.data.findings.models import Finding
+        Finding.objects.create(
+            session=session, source=source, check_type=check_type,
+            severity=severity, title=title, target="example.com",
+            description="Rollup of benign lookalike domains.",
+            remediation="No action required.", status="open", extra=extra,
+        )
+        captured = {}
+
+        def capture_html(html):
+            captured["html"] = html
+            return b"%PDF-1.7"
+
+        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
+            res = authed_client.get(f"/reports/{session.uuid}/pdf/")
+        assert res.status_code == 200
+        return captured["html"]
+
+    def test_report_renders_lookalike_rollup_list(self, authed_client, session):
+        html = self._render_report_html_with_finding(
+            authed_client, session,
+            source="tldsquatting", check_type="lookalike_owned", severity="info",
+            title="2 owned lookalike domains (share nameservers with zoho.com)",
+            extra={"count": 2, "domains": [
+                {"domain": "zoho.io", "reason": "same nameservers as target"},
+                {"domain": "zoho.co", "reason": "same nameservers as target"}]},
+        )
+        # .count() (not `host in html`) keeps the URL-substring linter quiet
+        assert html.count("zoho.io") >= 1 and html.count("zoho.co") >= 1
+        assert "owned lookalike domains" in html
+
+    def test_report_finding_without_domains_unaffected(self, authed_client, session):
+        # A regular finding (no extra["domains"]) must render exactly as before —
+        # no rollup list markup leaks in when the key is absent.
+        html = self._render_report_html_with_finding(
+            authed_client, session,
+            source="web_checker", check_type="missing_csp", severity="high",
+            title="Missing CSP", extra={},
+        )
+        assert "rollup-domains" not in html

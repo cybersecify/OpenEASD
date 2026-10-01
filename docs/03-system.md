@@ -288,6 +288,15 @@ Binaries: ProjectDiscovery tools (`subfinder`/`dnsx`/`naabu`/`httpx`/`katana`/
 `nuclei`) + `amass`, `gitleaks`, `subzy`, `gau` are pinned static binaries;
 `nmap` is the one distro package. All live only in the **worker** image.
 
+**Brand Threat FP reduction (tldsquatting):** every registered lookalike is
+classified against a passive target baseline (NS operator + RDAP registrant)
+into `owned` / `parked` / `unrelated` / `pre_existing` / `threat`. The four
+benign classes collapse into one `info` rollup finding per class (full member
+list preserved for audit); only `threat` stays an individual finding, so
+`asn_cluster` naturally clusters real threats only. Toggle:
+`TLDSQUATTING_COLLAPSE_BENIGN` (default on). See
+`docs/specs/2026-09-30-tldsquatting-fp-reduction.md`.
+
 ---
 
 ## Scan Pipeline

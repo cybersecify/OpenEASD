@@ -351,6 +351,12 @@ METRICS_ENABLED = config("METRICS_ENABLED", default=False, cast=bool)
 FINDING_VERIFICATION_ENABLED = config("FINDING_VERIFICATION_ENABLED", default=True, cast=bool)
 FINDING_VERIFICATION_MIN_SEVERITY = config("FINDING_VERIFICATION_MIN_SEVERITY", default="medium")
 
+# tldsquatting FP reduction — collapse benign lookalike classes (owned/parked/
+# unrelated/pre_existing, from apps/tldsquatting/classify.py) into a single
+# info-severity rollup Finding per class instead of one Finding per domain.
+# Threat-classified lookalikes always stay individual regardless of this flag.
+TLDSQUATTING_COLLAPSE_BENIGN = config("TLDSQUATTING_COLLAPSE_BENIGN", default=True, cast=bool)
+
 # Scanner timeouts (seconds) — override in .env if needed
 SCANNER_DNS_TIMEOUT = config("SCANNER_DNS_TIMEOUT", default=5, cast=int)
 SCANNER_HTTP_TIMEOUT = config("SCANNER_HTTP_TIMEOUT", default=10, cast=int)
