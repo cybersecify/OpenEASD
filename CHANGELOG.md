@@ -7,6 +7,38 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.24.0] — 2026-10-01
+
+### Added
+- **Quick Recon — light passive tier + workflow (#536).** The passive tool set is
+  now split into a **light** tier and a derived **deep** complement, and the light
+  tier is backed by a predefined, non-default **"Quick Recon"** workflow — an
+  instant, no-auth first look made of the four apex-scoped, keyless-capable passive
+  tools (`domain_security`, `dns_history`, `hudson_rock`, `breach_check`) that each
+  hit the apex (or a third-party API keyed on it) with a handful of lookups and
+  finish in seconds, versus the full Passive Scan which fans out into minutes of
+  subdomain/CT/archive enumeration.
+  - **Classification:** a `tool_meta["quick_recon"]` flag (registry default `False` —
+    safe, mirroring `active` defaulting `True`, so an unclassified tool is never
+    light), a `get_tool_quick_recon()` accessor, and a single-source-of-truth
+    `light_passive_tools()` helper (passive **AND** `quick_recon`). *Deep passive* is
+    the derived complement; active tools have no tier — a stray flag on an active tool
+    is a no-op, never an authorization hole.
+  - **Workflow:** migration `0036_create_quick_recon_workflow.py` (non-default,
+    idempotent). All four tools are passive, so Quick Recon inherits the existing
+    no-auth bypass for `now` scans with zero new authorization code.
+  - **Drift lock:** `tests/unit/test_quick_recon.py` binds the workflow membership to
+    `light_passive_tools()` with bidirectional set equality, so the flag and the
+    migration can never drift apart (fails CI otherwise).
+  - **Why:** there was no way to ask for *just the instant read* — a quick posture +
+    credential-exposure snapshot previously meant running the full Passive Scan and
+    waiting out the heavy enumeration. The light/deep split is deliberately its own
+    cost/scope axis, distinct from `runner._LOW_MEM_PARALLEL_SAFE` (a memory/IO axis).
+  - Additive only: no change to Full Scan, Passive Scan, the authorization boundary,
+    or any tool's runtime behavior. The tier is exposed additively in
+    `GET /api/workflows/tools/`; a React badge is a documented follow-up. Spec:
+    `docs/specs/2026-10-01-quick-recon-passive-tier.md`.
+
 ## [v2.23.1] — 2026-10-01
 
 ### Changed
