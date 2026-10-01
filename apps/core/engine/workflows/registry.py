@@ -58,6 +58,12 @@ def _discover_tools():
             # unauthorized target. (Classification idea seeded by vennela's parked
             # ACTIVE_SCANNING_ENABLED work, commit 4e47c0c.)
             "active": meta.get("active", True),
+            # quick_recon=True marks a LIGHT passive tool — apex-scoped, fast,
+            # no discovery fan-out — eligible for the Quick Recon workflow.
+            # Default False (safe): an unclassified tool is never light, so a
+            # new tool can't silently join the fast mode. Only meaningful on
+            # passive tools; light_passive_tools() gates on active=False.
+            "quick_recon": meta.get("quick_recon", False),
         }
         logger.debug(f"[registry] Registered tool: {tool_name}")
 
@@ -122,6 +128,15 @@ def get_tool_active() -> dict[str, bool]:
     return {name: info["active"] for name, info in get_registry().items()}
 
 
+def get_tool_quick_recon() -> dict[str, bool]:
+    """Dynamic map: tool_name → True if the tool is a LIGHT passive tool.
+
+    Light = apex-scoped, fast, no discovery fan-out (Quick Recon eligible).
+    Default False; only meaningful on passive tools (see light_passive_tools).
+    """
+    return {name: info["quick_recon"] for name, info in get_registry().items()}
+
+
 def is_passive_tool_set(tools) -> bool:
     """True only if EVERY tool in `tools` is passive (active=False).
 
@@ -134,6 +149,22 @@ def is_passive_tool_set(tools) -> bool:
     if not tools:
         return False
     return all(not active_map.get(t, True) for t in tools)
+
+
+def light_passive_tools() -> set[str]:
+    """The light passive tier: tools that are PASSIVE and quick_recon.
+
+    Single source of truth for the taxonomy. "Deep passive" is the derived
+    complement (passive and not in this set); active tools have no tier — a
+    stray quick_recon=True on an active tool is excluded here (no-op), never
+    an authorization hole.
+    """
+    reg = get_registry()
+    return {
+        name
+        for name, info in reg.items()
+        if info.get("quick_recon") and not info["active"]
+    }
 
 
 def get_tool_phase_groups() -> dict[str, str]:

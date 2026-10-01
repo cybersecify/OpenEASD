@@ -284,6 +284,16 @@ full per-tool table is in [CLAUDE.md](../CLAUDE.md); by phase group:
 | Web Exposure | 9–12 | httpx, historical_urls, katana, nuclei, web_checker, js_secrets |
 | Prioritization | 13 | cve_intel (enriches CVEs with EPSS + CISA-KEV in place) |
 
+The passive set is further split along a cost/scope axis: **light** passive
+tools (`quick_recon` flag — apex-scoped, fast, no discovery fan-out:
+`domain_security`, `dns_history`, `hudson_rock`, `breach_check`) feed the
+predefined "Quick Recon" workflow, an instant no-auth first look; **deep**
+passive is the derived complement (everything else passive, e.g.
+`tldsquatting`, `subfinder`, `shodan`). This is distinct from the
+`runner._LOW_MEM_PARALLEL_SAFE` memory/IO axis, which groups tools by whether
+they're safe to run concurrently under low memory — it mixes passive and
+active tools and includes the heavier `tldsquatting`.
+
 Binaries: ProjectDiscovery tools (`subfinder`/`dnsx`/`naabu`/`httpx`/`katana`/
 `nuclei`) + `amass`, `gitleaks`, `subzy`, `gau` are pinned static binaries;
 `nmap` is the one distro package. All live only in the **worker** image.

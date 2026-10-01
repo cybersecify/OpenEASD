@@ -448,6 +448,11 @@ the registry and 19 in every actual scan):
    `tests/unit/test_default_workflow.py::test_full_scan_covers_every_registered_tool`,
    which fails CI if a registered non-core tool is missing from Full Scan.
 3. Set the `"active"` flag correctly (passive = no target contact → no auth).
+   - If the tool is passive AND apex-scoped + fast (no discovery fan-out —
+     a handful of lookups against the apex or a third-party API keyed on it),
+     set `"quick_recon": True` so it joins the light passive tier. The
+     `test_quick_recon.py` drift lock then requires it in the "Quick Recon"
+     workflow migration too — keep the flag and the migration in sync.
 4. Update `README.md` — the tool count, the tool list, and the pipeline diagram.
 5. Update `CHANGELOG.md` (What + Why) and the tool tables in this file.
 6. **Flag the website session** — cybersecify.com's tool count, feature cards,
@@ -618,6 +623,21 @@ authorization for the parent scan's domain.
 predefined, non-default, contains only passive tools — a no-auth recon mode.
 `tests/unit/test_passive_scan.py` asserts every step is passive, so adding an
 active tool there fails CI.
+
+**"Quick Recon" workflow** (migration `0036_create_quick_recon_workflow.py`):
+predefined, non-default, instant no-auth first look — four apex-scoped
+passive tools that each do a handful of lookups and finish in seconds, with
+no discovery fan-out: `domain_security`, `dns_history`, `hudson_rock`,
+`breach_check`. Being all-passive, it inherits the same no-auth bypass as
+Passive Scan above. This splits the passive tool set along a cost/scope axis:
+**light passive** = passive AND `quick_recon` (`registry.light_passive_tools()`)
+— exactly the Quick Recon four; **deep passive** = passive and not light (the
+derived complement — e.g. `tldsquatting`, `subfinder`, `shodan`). The
+`quick_recon` flag defaults `False` and is exposed via
+`registry.get_tool_quick_recon()`. `tests/unit/test_quick_recon.py` is the
+drift lock: it binds the workflow's tool membership to `light_passive_tools()`
+in both directions and asserts every step stays passive, so flag/workflow
+drift fails CI.
 
 **Runner safety fix:** `service_detection` (active nmap -sV) is auto-injected only
 when `naabu` is in the run. A passive/naabu-less workflow therefore never triggers
