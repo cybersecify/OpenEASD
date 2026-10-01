@@ -7,6 +7,34 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.23.1] — 2026-10-01
+
+### Changed
+- **tldsquatting false-positive reduction (#533).** Registered lookalikes are now
+  **classified** — `owned` / `parked` / `unrelated` / `pre_existing` / `threat` — and
+  the four benign classes **collapse into one `info` rollup finding each**
+  (`check_type` `lookalike_owned` / `_parked` / `_unrelated` / `_pre_existing`), with
+  the full member list + per-domain reason/scores in `extra["domains"]` (auditable,
+  nothing dropped). Only `threat` lookalikes stay as individual `lookalike_domain`
+  findings, with the ported scoring + the v2.23.0 no-weaponization cap unchanged.
+  Classification uses a **passive** target baseline (authoritative NS + registrant via
+  public DNS/RDAP — the org's own systems are never contacted); `scoring.py` is
+  untouched and the `asn_cluster` contract is preserved.
+  - **False-negative safety:** a brand mention or the email-only phishing-prep
+    fingerprint always forces `threat` (never collapsed); `owned` requires a positive
+    NS or **non-redacted** registrant match (a redaction/privacy-proxy guard prevents a
+    shared proxy registrant from masking an impersonator).
+  - Toggle `TLDSQUATTING_COLLAPSE_BENIGN` (default on) reverts to per-domain findings.
+  - **Why:** large-brand scans produced hundreds of lookalike rows that were
+    overwhelmingly the company's own domains, parked/for-sale, or unrelated businesses;
+    this turns a ~200-finding report into a handful of real threats plus a few
+    auditable rollups.
+
+### Fixed
+- **Dependency CVEs (#534).** Bumped **pyjwt 2.13.0 → 2.15.1** (CVE-2026-101917/101918/
+  102265–102274 — the JWT auth library) and **urllib3 2.7.0 → 2.8.0** (CVE-2026-97687/
+  97688/97689). pip-audit clean; JWT/auth suites unaffected.
+
 ## [v2.23.0] — 2026-09-29
 
 ### Added
