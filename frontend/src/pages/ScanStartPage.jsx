@@ -15,11 +15,14 @@ function enabledToolCount(wf) {
   return wf.steps.filter(s => s.enabled).length;
 }
 
-function PresetCard({ active, onClick, title, desc, scope, auth }) {
+function PresetCard({ active, onClick, title, desc, scope, auth, tag }) {
   return (
     <button type="button" onClick={onClick}
       className={`flex-1 text-left rounded-xl border p-3.5 transition-colors
         ${active ? 'border-brand/50 bg-brand/10' : 'border-rim bg-canvas hover:border-dim'}`}>
+      {tag && (
+        <div className="text-[10px] uppercase tracking-wide text-dim mb-1.5 font-medium">{tag}</div>
+      )}
       <div className="flex items-center gap-2">
         <span className={`h-3.5 w-3.5 rounded-full border-2 shrink-0
           ${active ? 'border-brand bg-brand' : 'border-dim'}`} />
@@ -223,6 +226,7 @@ export default function ScanStartPage() {
                       <PresetCard
                         key={m.key}
                         active={scanType === m.key} onClick={() => setScanType(m.key)}
+                        tag={`${m.axis[0].toUpperCase()}${m.axis.slice(1)} · ${m.depth[0].toUpperCase()}${m.depth.slice(1)}`}
                         title={m.title}
                         desc={m.desc}
                         scope={`${enabledToolCount(m.workflow)} tools`}
