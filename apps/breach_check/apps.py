@@ -19,4 +19,5 @@ class BreachCheckConfig(AppConfig):
         # optional: with no key it uses the free keyless XposedOrNot tier, so the
         # tool always adds value out of the box.
         "active": False,
+        "quick_recon": True,  # light passive — apex-scoped, fast (Quick Recon)
     }

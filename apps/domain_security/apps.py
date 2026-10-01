@@ -18,4 +18,5 @@ class DomainSecurityConfig(AppConfig):
         # (AXFR / open-relay / MTA-STS fetch) moved to apps.domain_probe, so this
         # tool can run in a no-auth passive scan.
         "active": False,
+        "quick_recon": True,  # light passive — apex-scoped, fast (Quick Recon)
     }
