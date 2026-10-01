@@ -15,11 +15,14 @@ function enabledToolCount(wf) {
   return wf.steps.filter(s => s.enabled).length;
 }
 
-function PresetCard({ active, onClick, title, desc, scope, auth }) {
+function PresetCard({ active, onClick, title, desc, scope, auth, tag }) {
   return (
     <button type="button" onClick={onClick}
       className={`flex-1 text-left rounded-xl border p-3.5 transition-colors
         ${active ? 'border-brand/50 bg-brand/10' : 'border-rim bg-canvas hover:border-dim'}`}>
+      {tag && (
+        <div className="text-[10px] uppercase tracking-wide text-dim mb-1.5 font-medium">{tag}</div>
+      )}
       <div className="flex items-center gap-2">
         <span className={`h-3.5 w-3.5 rounded-full border-2 shrink-0
           ${active ? 'border-brand bg-brand' : 'border-dim'}`} />
@@ -32,6 +35,29 @@ function PresetCard({ active, onClick, title, desc, scope, auth }) {
       </div>
     </button>
   );
+}
+
+// The four scan-mode cells, in matrix order (passive→active, light→deep).
+// Each binds to its predefined workflow by name; a cell whose workflow is
+// absent (older DB) is omitted so the grid degrades gracefully.
+const SCAN_MODE_DEFS = [
+  { key: 'quick',        axis: 'passive', depth: 'light', wfName: 'Quick Recon',
+    title: 'Quick Recon', desc: 'Apex posture + credential exposure — a few checks, seconds.' },
+  { key: 'passive',      axis: 'passive', depth: 'deep',  wfName: 'Passive Scan',
+    title: 'Passive Scan', desc: 'Full passive sweep — public & third-party data only.' },
+  { key: 'active_light', axis: 'active',  depth: 'light', wfName: 'Active Light',
+    title: 'Active Light', desc: 'Discovery + quick config/exposure probes. Skips the slow engines.' },
+  { key: 'full',         axis: 'active',  depth: 'deep',  wfName: 'Full Scan',
+    title: 'Full Scan', desc: 'Complete assessment — every tool, all phases.' },
+];
+
+export function buildScanModes(workflows) {
+  const byName = new Map((workflows || []).map(w => [w.name, w]));
+  return SCAN_MODE_DEFS.flatMap(def => {
+    const workflow = byName.get(def.wfName);
+    if (!workflow) return [];
+    return [{ ...def, workflow, needsAuth: !workflow.is_passive }];
+  });
 }
 
 export default function ScanStartPage() {
@@ -56,8 +82,8 @@ export default function ScanStartPage() {
   const workflows = workflowsData || [];
   const allTools  = toolsData?.tools || [];
   const defaultWf = workflows.find(w => w.is_default);
-  const passiveWf = workflows.find(w => w.name === 'Passive Scan')
-                 || workflows.find(w => w.is_passive && !w.is_default);
+
+  const modes = React.useMemo(() => buildScanModes(workflows), [workflows]);
 
   // Categories (phase_group) ordered by earliest phase — Domain Intelligence first.
   const categories = React.useMemo(() => {
@@ -70,7 +96,7 @@ export default function ScanStartPage() {
     return [...byGroup.values()].sort((a, b) => a.minPhase - b.minPhase);
   }, [allTools]);
 
-  const [scanType,   setScanType]  = useState('passive');   // 'passive' | 'full' | 'custom'
+  const [scanType,   setScanType]  = useState('');          // mode key ('quick'|'passive'|'active_light'|'full') | 'custom'
   const [customMode, setCustomMode] = useState('category'); // 'category' | 'workflow'
   const [selectedCats, setSelectedCats] = useState(['Domain Intelligence']);
   const [domain,     setDomain]    = useState(initDomain);
@@ -87,30 +113,35 @@ export default function ScanStartPage() {
   // Tools of the ticked categories → the subset a category scan will run.
   const selectedTools = allTools.filter(t => selectedCats.includes(t.phase_group));
 
-  // If there's no passive workflow available, fall back to the full-scan preset.
+  // Default selection once workflows have loaded: first available of
+  // quick → passive → full, else custom.
   useEffect(() => {
-    if (!lw && !passiveWf && scanType === 'passive') setScanType('full');
-  }, [lw, passiveWf, scanType]);
+    if (!lw && !scanType) {
+      const byKey = Object.fromEntries(modes.map(m => [m.key, m]));
+      setScanType(byKey.quick ? 'quick' : byKey.passive ? 'passive' : byKey.full ? 'full' : 'custom');
+    }
+  }, [lw, modes, scanType]);
 
   // Custom defaults its dropdown to the default workflow.
   useEffect(() => {
     if (scanType === 'custom' && defaultWf && !workflowId) setWorkflow(String(defaultWf.id));
   }, [scanType, defaultWf, workflowId]);
 
+  const selectedMode = modes.find(m => m.key === scanType);
+
   // Resolve the preset → the workflow that will actually run (workflow-based paths).
   const resolvedWf =
-    scanType === 'passive' ? passiveWf
-    : scanType === 'full'  ? defaultWf
-    : (workflows.find(w => String(w.id) === workflowId) || defaultWf);
+    scanType === 'custom' ? (workflows.find(w => String(w.id) === workflowId) || defaultWf)
+    : selectedMode?.workflow;
 
-  // Is the selection passive-only? Passive preset → yes; full → no; custom by
+  // Is the selection passive-only? Named cell → its needsAuth flag; custom by
   // category → all selected tools passive; custom by workflow → the workflow's flag.
   const isCategoryScan = scanType === 'custom' && customMode === 'category';
   const selectionIsPassive =
-    scanType === 'passive' ? true
-    : scanType === 'full'  ? false
-    : isCategoryScan       ? (selectedTools.length > 0 && selectedTools.every(t => !t.active))
-    : !!resolvedWf?.is_passive;
+    scanType === 'custom' ? (isCategoryScan
+      ? (selectedTools.length > 0 && selectedTools.every(t => !t.active))
+      : !!resolvedWf?.is_passive)
+    : !!selectedMode && !selectedMode.needsAuth;
 
   // Attestation is required unless the selection is passive-only AND runs now —
   // the exact condition the API's scan-start gate uses to bypass DomainAuthorization.
@@ -121,6 +152,10 @@ export default function ScanStartPage() {
     const target = domain.trim().toLowerCase();
     if (!target) { setError('Enter a domain.'); return; }
     if (!HOSTNAME_RE.test(target)) { setError('Enter a valid domain name.'); return; }
+    if (scanType !== 'custom' && !selectedMode) {
+      setError('Select a scan type.');
+      return;
+    }
     if (isCategoryScan && selectedTools.length === 0) {
       setError('Select at least one category.');
       return;
@@ -161,8 +196,6 @@ export default function ScanStartPage() {
   }
 
   const loading = ld || lw;
-  const passiveScope = passiveWf ? `${enabledToolCount(passiveWf)} passive checks` : 'passive checks';
-  const fullScope    = defaultWf ? `${enabledToolCount(defaultWf)} tools, all phases` : 'all tools';
 
   return (
     <Layout>
@@ -188,19 +221,20 @@ export default function ScanStartPage() {
 
                 <div>
                   <label className="block text-xs text-dim mb-2 font-medium">Scan type</label>
-                  <div className="flex flex-col sm:flex-row gap-2.5">
-                    <PresetCard
-                      active={scanType === 'passive'} onClick={() => setScanType('passive')}
-                      title="Passive recon"
-                      desc="Public &amp; third-party data only — no packets to the target."
-                      scope={passiveScope} auth={{ needed: false }}
-                    />
-                    <PresetCard
-                      active={scanType === 'full'} onClick={() => setScanType('full')}
-                      title="Full scan"
-                      desc="Complete assessment — probes the target directly."
-                      scope={fullScope} auth={{ needed: true }}
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {modes.map(m => (
+                      <PresetCard
+                        key={m.key}
+                        active={scanType === m.key} onClick={() => setScanType(m.key)}
+                        tag={`${m.axis[0].toUpperCase()}${m.axis.slice(1)} · ${m.depth[0].toUpperCase()}${m.depth.slice(1)}`}
+                        title={m.title}
+                        desc={m.desc}
+                        scope={`${enabledToolCount(m.workflow)} tools`}
+                        auth={{ needed: m.needsAuth }}
+                      />
+                    ))}
+                  </div>
+                  <div className="mt-2.5">
                     <PresetCard
                       active={scanType === 'custom'} onClick={() => setScanType('custom')}
                       title="Custom"
