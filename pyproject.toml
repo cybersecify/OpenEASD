@@ -30,10 +30,11 @@ dependencies = [
     "defusedxml>=0.7.1",
     # Auth
     "django-ninja-jwt>=5.0",
+    "pyjwt>=2.15.0",  # security: CVE-2026-10xxxx cluster (fixed 2.14/2.15)
     "whitenoise>=6.7",
     "lxml>=6.1.0",
     "pypdf>=6.15",
-    "urllib3>=2.7.0",
+    "urllib3>=2.8.0",
     "idna>=3.15",
     "psycopg[binary]>=3.2",
     "dbos>=0.26",
