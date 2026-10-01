@@ -7,6 +7,42 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.25.0] — 2026-10-01
+
+### Added
+- **Scan Modes 2×2 — Active Light workflow + Start-Scan matrix (#538).** The
+  Start-Scan page is now a **passive/active × light/deep** matrix (plus Custom),
+  backed by four predefined workflows, with the missing cell filled in:
+  **Active Light**.
+  - **Active Light** (migration `0037_create_active_light_workflow.py`, non-default)
+    is the fast *authorized* scan: a discovery backbone (`subfinder`, `dnsx`,
+    `naabu`, `httpx`) feeding quick config/exposure checks (`domain_probe`,
+    `web_checker`, `tls_checker`, `ssh_checker`) — 8 steps; `service_detection`
+    auto-injects after `naabu`. It deliberately **excludes the slow engines**
+    (nmap NSE, nuclei/nuclei_network, katana, amass, cloud_assets, takeover_check,
+    js_secrets, historical_urls) — that is what keeps it "light." It contains
+    active tools, so it requires `DomainAuthorization` (no new auth code).
+  - **The four modes:** Quick Recon (passive light) · Passive Scan (passive deep) ·
+    Active Light (active light) · Full Scan (active deep). The **authorization
+    boundary runs along the passive/active axis** — both passive cells need no
+    authorization; both active cells require it.
+  - **Start-Scan UI** restructured into a 2×2 grid + Custom (`ScanStartPage.jsx`),
+    each cell bound to its workflow by name via a pure `buildScanModes()` helper
+    (Vitest-covered); a cell whose workflow is absent on an older DB hides
+    gracefully; default = Quick Recon. Every card shows a consistent
+    `Passive/Active · Light/Deep` eyebrow so the matrix reads uniformly.
+  - **Why:** there was no fast *authorized* mode — only the full active sweep
+    (Full Scan) or passive-only. Active Light gives a quick directed probe without
+    the minutes-long template/enumeration engines. "Light" is realized as **curated
+    workflows** (not one flag) because it means different things per axis
+    (passive-light = apex-only, no fan-out; active-light = discovery + cheap checks).
+  - Additive: Quick Recon, Passive Scan, Full Scan, the `quick_recon` flag, and the
+    authorization boundary are unchanged. Spec:
+    `docs/specs/2026-10-01-scan-modes-2x2.md`.
+  - **Known follow-up (non-blocking):** a one-frame "Authorization required" flash
+    on page load before the default applies — flashes toward the *more* restrictive
+    state, zero safety impact.
+
 ## [v2.24.0] — 2026-10-01
 
 ### Added
