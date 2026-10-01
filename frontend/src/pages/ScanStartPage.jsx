@@ -38,17 +38,19 @@ function PresetCard({ active, onClick, title, desc, scope, auth, tag }) {
 }
 
 // The four scan-mode cells, in matrix order (passive→active, light→deep).
-// Each binds to its predefined workflow by name; a cell whose workflow is
-// absent (older DB) is omitted so the grid degrades gracefully.
+// `title` is the quadrant name so the 2×2 reads consistently; `wfName` is the
+// underlying predefined workflow it binds to by name (also shown as the muted
+// eyebrow when it differs from the title). A cell whose workflow is absent
+// (older DB) is omitted so the grid degrades gracefully.
 const SCAN_MODE_DEFS = [
   { key: 'quick',        axis: 'passive', depth: 'light', wfName: 'Quick Recon',
-    title: 'Quick Recon', desc: 'Apex posture + credential exposure — a few checks, seconds.' },
+    title: 'Passive Light', desc: 'Apex posture + credential exposure — a few checks, seconds.' },
   { key: 'passive',      axis: 'passive', depth: 'deep',  wfName: 'Passive Scan',
-    title: 'Passive Scan', desc: 'Full passive sweep — public & third-party data only.' },
+    title: 'Passive Deep', desc: 'Full passive sweep — public & third-party data only.' },
   { key: 'active_light', axis: 'active',  depth: 'light', wfName: 'Active Light',
     title: 'Active Light', desc: 'Discovery + quick config/exposure probes. Skips the slow engines.' },
   { key: 'full',         axis: 'active',  depth: 'deep',  wfName: 'Full Scan',
-    title: 'Full Scan', desc: 'Complete assessment — every tool, all phases.' },
+    title: 'Active Deep', desc: 'Complete assessment — every tool, all phases.' },
 ];
 
 export function buildScanModes(workflows) {
@@ -226,7 +228,7 @@ export default function ScanStartPage() {
                       <PresetCard
                         key={m.key}
                         active={scanType === m.key} onClick={() => setScanType(m.key)}
-                        tag={`${m.axis[0].toUpperCase()}${m.axis.slice(1)} · ${m.depth[0].toUpperCase()}${m.depth.slice(1)}`}
+                        tag={m.wfName !== m.title ? m.wfName : undefined}
                         title={m.title}
                         desc={m.desc}
                         scope={`${enabledToolCount(m.workflow)} tools`}
