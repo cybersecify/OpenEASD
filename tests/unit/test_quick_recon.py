@@ -52,13 +52,16 @@ class TestLightPassiveHelper:
 
     def test_active_tool_with_stray_flag_is_not_light(self, monkeypatch):
         # Defensive: quick_recon=True on an active tool must be a no-op.
-        import apps.core.engine.workflows.registry as reg
+        from apps.core.engine.workflows.registry import light_passive_tools
         fake = {
             "mystery": {"active": True, "quick_recon": True},
             "domain_security": {"active": False, "quick_recon": True},
         }
-        monkeypatch.setattr(reg, "get_registry", lambda: fake)
-        assert reg.light_passive_tools() == {"domain_security"}
+        # Patch get_registry where light_passive_tools looks it up (its own module).
+        monkeypatch.setattr(
+            "apps.core.engine.workflows.registry.get_registry", lambda: fake
+        )
+        assert light_passive_tools() == {"domain_security"}
 
 
 @pytest.mark.django_db
