@@ -639,6 +639,47 @@ drift lock: it binds the workflow's tool membership to `light_passive_tools()`
 in both directions and asserts every step stays passive, so flag/workflow
 drift fails CI.
 
+**The 2×2 scan modes:** Quick Recon and Active Light complete the matrix —
+light/deep crossed with passive/active, plus Custom for an arbitrary tool
+subset:
+
+| | **light** | **deep** |
+|---|---|---|
+| **passive** | Quick Recon | Passive Scan |
+| **active** | Active Light | Full Scan |
+
+The authorization boundary runs along the passive/active axis, not the
+light/deep one: both passive-row modes (Quick Recon, Passive Scan) bypass
+`DomainAuthorization` per the rule above; both active-row modes (Active Light,
+Full Scan) require it, as does Custom whenever the selected tools include any
+active one. The Start-Scan page (`frontend/src/pages/ScanStartPage.jsx`) renders
+the four named cells as a 2×2 grid via `buildScanModes()`, which binds each
+`SCAN_MODE_DEFS` entry to its predefined workflow by name and derives
+`needsAuth` from `workflow.is_passive`; a cell whose workflow doesn't exist yet
+(older DB, migration not applied) is simply omitted so the grid degrades
+gracefully.
+
+**"Active Light" workflow** (migration `0037_create_active_light_workflow.py`):
+predefined, non-default, the active counterpart of Quick Recon — a fast
+*authorized* scan. 8 steps: a discovery backbone (`subfinder` → `dnsx` →
+`naabu` → `httpx`) feeding four cheap config/exposure checks (`domain_probe`,
+`web_checker`, `tls_checker`, `ssh_checker`). `service_detection` is **not** a
+stored step — like every other naabu-driven workflow it's `core: True` and the
+runner auto-injects it after `naabu`. Deliberately excludes the slow engines
+(`nmap`, `nuclei`, `nuclei_network`, `katana`, `amass`, `cloud_assets`,
+`takeover_check`, `js_secrets`, `historical_urls`, `asn_discovery`,
+`asn_cluster`, `github_recon`, `github_secrets`, `shodan`, `tldsquatting`,
+`cve_intel`). Because it contains active tools, `is_passive_tool_set()` is
+`False` for it, so it requires `DomainAuthorization` — the same gate as Full
+Scan, no new auth code.
+
+**Why "light" is a curated workflow, not a flag:** light means different
+things on each axis — passive-light (Quick Recon) is apex-only, no discovery
+fan-out at all; active-light (Active Light) is the opposite shape, it runs the
+discovery backbone (subfinder/dnsx/naabu/httpx) but skips the slow engines
+downstream of it. One boolean can't express both, so each matrix cell is its
+own named, explicit-tool-list workflow rather than a shared "light" flag.
+
 **Runner safety fix:** `service_detection` (active nmap -sV) is auto-injected only
 when `naabu` is in the run. A passive/naabu-less workflow therefore never triggers
 an active probe.

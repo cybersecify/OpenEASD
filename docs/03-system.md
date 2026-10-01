@@ -294,6 +294,18 @@ passive is the derived complement (everything else passive, e.g.
 they're safe to run concurrently under low memory — it mixes passive and
 active tools and includes the heavier `tldsquatting`.
 
+Crossing that light/deep split with the passive/active axis gives four named
+scan modes (plus Custom, for an arbitrary tool subset), presented as a 2×2
+matrix on the Start-Scan page: Quick Recon (passive, light), Passive Scan
+(passive, deep), Active Light (active, light), Full Scan (active, deep). The
+authorization boundary still runs along the passive/active axis only — both
+passive-row modes need no `DomainAuthorization`, both active-row modes do.
+Active Light is the active counterpart of Quick Recon: the same discovery
+backbone (subfinder → dnsx → naabu → httpx) feeding a handful of cheap
+config/exposure checks (domain_probe, web_checker, tls_checker, ssh_checker),
+excluding the heavy engines (nmap, nuclei/nuclei_network, katana, amass, and
+the rest of the deep-only tool set).
+
 Binaries: ProjectDiscovery tools (`subfinder`/`dnsx`/`naabu`/`httpx`/`katana`/
 `nuclei`) + `amass`, `gitleaks`, `subzy`, `gau` are pinned static binaries;
 `nmap` is the one distro package. All live only in the **worker** image.
