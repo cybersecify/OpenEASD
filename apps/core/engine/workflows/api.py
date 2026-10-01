@@ -16,6 +16,7 @@ from apps.core.engine.workflows.registry import (
     get_tool_phase_groups,
     get_tool_phases,
     get_tool_produces_findings,
+    get_tool_quick_recon,
     get_tool_requires,
     is_passive_tool_set,
 )
@@ -73,6 +74,7 @@ def list_tools(request):
     produces = get_tool_produces_findings()
     groups = get_tool_phase_groups()
     active = get_tool_active()
+    quick_recon = get_tool_quick_recon()
     tools = [
         {
             "key": key,
@@ -84,6 +86,9 @@ def list_tools(request):
             # tools use only public/third-party data. Drives the start form's
             # dynamic attestation for a category selection.
             "active": active.get(key, True),
+            # quick_recon = light passive tier (apex-scoped, fast). Lets the UI
+            # badge light vs deep passive and offer the Quick Recon mode.
+            "quick_recon": quick_recon.get(key, False),
         }
         for key, label in get_tool_choices()
     ]

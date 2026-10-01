@@ -81,3 +81,23 @@ class TestQuickReconWorkflow:
         from apps.core.engine.workflows.registry import is_passive_tool_set
         wf = Workflow.objects.get(name="Quick Recon")
         assert is_passive_tool_set(wf.enabled_tools()) is True
+
+
+@pytest.mark.django_db
+class TestQuickReconToolsApi:
+    def test_tools_endpoint_exposes_quick_recon_flag(self, client):
+        from django.contrib.auth.models import User
+        from ninja_jwt.tokens import AccessToken
+
+        user = User.objects.create_user(username="qr", password="pw-123456")
+        token = str(AccessToken.for_user(user))
+        resp = client.get(
+            "/api/workflows/tools/",
+            HTTP_AUTHORIZATION=f"Bearer {token}"
+        )
+        assert resp.status_code == 200
+        by_key = {t["key"]: t for t in resp.json()["tools"]}
+        assert by_key["domain_security"]["quick_recon"] is True
+        assert by_key["tldsquatting"]["quick_recon"] is False
+        # additive: the existing active flag is untouched
+        assert by_key["domain_security"]["active"] is False
