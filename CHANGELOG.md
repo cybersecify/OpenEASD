@@ -7,6 +7,20 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.25.1] — 2026-10-01
+
+### Changed
+- **Scan-mode cards titled by quadrant (#540).** The Start-Scan 2×2 now reads as
+  one consistent taxonomy: **Passive Light / Passive Deep / Active Light / Active
+  Deep**. The underlying predefined workflow name (Quick Recon / Passive Scan /
+  Full Scan) moves to the muted card eyebrow — cards still bind to their workflow
+  by name, and DB/API/report names are unchanged. UI-only; no logic change.
+
+### Security
+- **pypdf → 6.19.0 (#540).** Clears the CVE-2026-10299x cluster (8 CVEs in
+  pypdf 6.16.1, all fixed by 6.19.0). pip-audit had gone red repo-wide; bumped to
+  unblock CI.
+
 ## [v2.25.0] — 2026-10-01
 
 ### Added
