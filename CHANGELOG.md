@@ -7,6 +7,17 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.25.3] — 2026-10-02
+
+### Changed
+- **Passive predefined workflows renamed to Light / Deep (#544).** "Quick Recon"
+  → **"Passive Scan Light"** (migration 0038) and "Passive Scan" →
+  **"Passive Scan Deep"** (migration 0039), so the two passive workflows read as a
+  matched pair in the scan-mode UI eyebrow, scan history, and reports. Display-name
+  only — workflow membership, the `quick_recon` tool flag, and `light_passive_tools()`
+  are unchanged; both migrations are idempotent + reversible. The scan-mode card
+  quadrant titles (Passive Light / Passive Deep) are unchanged.
+
 ## [v2.25.2] — 2026-10-02
 
 ### Fixed
