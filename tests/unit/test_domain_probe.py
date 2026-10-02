@@ -277,3 +277,87 @@ class TestDomainProbeScanner:
             # MTA-STS DNS present but policy unreachable → one high finding; no raise.
             findings = run_domain_probe(session)
         assert isinstance(findings, list)
+
+
+# ---------------------------------------------------------------------------
+# Lame delegation checks (moved here from test_domain_security — it sends a
+# direct SOA query to each nameserver, so it is an ACTIVE probe)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestLameDelegationChecks:
+    def _make_session(self, db):
+        from apps.core.engine.scans.models import ScanSession
+        return ScanSession.objects.create(domain="example.com", scan_type="full", status="pending")
+
+    def _mock_ns(self, ns_host="ns1.example.com"):
+        ns = MagicMock()
+        ns.target = MagicMock()
+        ns.target.__str__ = lambda s: f"{ns_host}."
+        return [ns]
+
+    def test_authoritative_ns_no_finding(self, db):
+        from apps.domain_probe.scanner import _check_lame_delegation
+        import dns.flags
+        session = self._make_session(db)
+        ns_records = self._mock_ns()
+
+        mock_response = MagicMock()
+        mock_response.flags = dns.flags.AA  # AA bit set — authoritative
+        mock_response.rcode.return_value = 0  # NOERROR
+
+        with patch("apps.domain_probe.scanner.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.return_value = [MagicMock(address="1.2.3.4")]
+            with patch("apps.domain_probe.scanner.dns.message.make_query"):
+                with patch("apps.domain_probe.scanner.dns.query.udp", return_value=mock_response):
+                    findings = _check_lame_delegation(session, "example.com", ns_records)
+
+        assert len(findings) == 0
+
+    def test_non_authoritative_ns_creates_high_finding(self, db):
+        from apps.domain_probe.scanner import _check_lame_delegation
+        session = self._make_session(db)
+        ns_records = self._mock_ns()
+
+        mock_response = MagicMock()
+        mock_response.flags = 0  # AA bit NOT set — non-authoritative
+
+        with patch("apps.domain_probe.scanner.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.return_value = [MagicMock(address="1.2.3.4")]
+            with patch("apps.domain_probe.scanner.dns.message.make_query"):
+                with patch("apps.domain_probe.scanner.dns.query.udp", return_value=mock_response):
+                    findings = _check_lame_delegation(session, "example.com", ns_records)
+
+        assert len(findings) == 1
+        assert findings[0].severity == "high"
+        assert findings[0].source == "domain_probe"
+        assert findings[0].check_id == "domain_probe:lame_delegation"
+        assert "Lame delegation" in findings[0].title
+
+    def test_ns_with_no_a_record_creates_high_finding(self, db):
+        from apps.domain_probe.scanner import _check_lame_delegation
+        session = self._make_session(db)
+        ns_records = self._mock_ns("ghost-ns.example.com")
+
+        with patch("apps.domain_probe.scanner.dns.resolver.resolve",
+                   side_effect=Exception("NXDOMAIN")):
+            findings = _check_lame_delegation(session, "example.com", ns_records)
+
+        assert len(findings) == 1
+        assert findings[0].severity == "high"
+        assert "no A record" in findings[0].extra["lame_servers"][0]
+
+    def test_ns_timeout_counts_as_lame(self, db):
+        from apps.domain_probe.scanner import _check_lame_delegation
+        session = self._make_session(db)
+        ns_records = self._mock_ns()
+
+        with patch("apps.domain_probe.scanner.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.return_value = [MagicMock(address="1.2.3.4")]
+            with patch("apps.domain_probe.scanner.dns.message.make_query"):
+                with patch("apps.domain_probe.scanner.dns.query.udp",
+                           side_effect=Exception("timed out")):
+                    findings = _check_lame_delegation(session, "example.com", ns_records)
+
+        assert len(findings) == 1
+        assert "timeout" in findings[0].extra["lame_servers"][0]

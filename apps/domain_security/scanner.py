@@ -3,12 +3,13 @@ Domain security scanner for OpenEASD — PASSIVE domain/email/RDAP intelligence.
 
 Checks (all passive — public resolvers / third-party RDAP, no packets to the
 target's own systems, so this tool needs no DomainAuthorization):
-  - DNS: A/AAAA, NS, MX, DNSSEC, CAA, Wildcard, Lame Delegation
+  - DNS: A/AAAA, NS, MX, DNSSEC, CAA, Wildcard
   - Email: SPF, DMARC, DKIM, TLS-RPT, BIMI
   - RDAP: domain expiry, transfer/delete/update locks, domain status
 
-The ACTIVE probes that touch the target directly — AXFR zone transfer, SMTP
-open-relay, and the MTA-STS policy fetch — live in ``apps.domain_probe``.
+The ACTIVE probes that touch the target directly — AXFR zone transfer, lame
+delegation (a direct SOA query to each nameserver), SMTP open-relay, and the
+MTA-STS policy fetch — live in ``apps.domain_probe``.
 
 All private helpers live inline in this module so that test mocks targeting
 ``apps.domain_security.scanner.*`` patch the functions that are actually called.
@@ -20,10 +21,6 @@ import time
 import urllib.parse
 
 import dns.resolver
-import dns.message
-import dns.flags
-import dns.rcode
-import dns.rdatatype
 # Import DNS exception classes directly so they remain bound to real exception
 # types even when tests patch the `dns` module-level reference.
 from dns.resolver import NXDOMAIN as _DNS_NXDOMAIN, NoAnswer as _DNS_NoAnswer, NoNameservers as _DNS_NoNameservers
@@ -131,56 +128,6 @@ def _check_wildcard(session, domain) -> list:
         pass  # No wildcard — expected
     except Exception as e:
         logger.debug(f"[domain_security] Wildcard probe failed for {domain}: {e}")
-
-    return findings
-
-
-def _check_lame_delegation(session, domain, ns_records) -> list:
-    """Check for lame delegation — NS records that don't answer authoritatively."""
-    findings = []
-    lame_servers = []
-
-    for ns in ns_records:
-        try:
-            ns_host = str(ns.target).rstrip(".")
-        except AttributeError:
-            ns_host = str(ns).rstrip(".")
-
-        try:
-            ns_ips = dns.resolver.resolve(ns_host, "A", lifetime=_DNS_TIMEOUT)
-            ns_ip = str(ns_ips[0])
-        except Exception:
-            lame_servers.append(f"{ns_host} (no A record)")
-            continue
-
-        try:
-            request = dns.message.make_query(domain, dns.rdatatype.SOA)
-            response = dns.query.udp(request, ns_ip, _DNS_TIMEOUT)
-            if not response.flags & dns.flags.AA:
-                lame_servers.append(f"{ns_host} (non-authoritative response)")
-            elif response.rcode() in (dns.rcode.SERVFAIL, dns.rcode.REFUSED, dns.rcode.NXDOMAIN):
-                lame_servers.append(f"{ns_host} (rcode={dns.rcode.to_text(response.rcode())})")
-        except Exception:
-            lame_servers.append(f"{ns_host} (no response / timeout)")
-
-    if lame_servers:
-        findings.append(Finding(
-            session=session, source="domain_security", target=domain, check_type="dns",
-            severity="high",
-            check_id="domain_security:lame_delegation",
-            title=f"Lame delegation detected ({len(lame_servers)} nameserver(s))",
-            description=(
-                f"{domain} has nameservers that do not answer authoritatively for the zone: "
-                f"{', '.join(lame_servers)}. "
-                "This causes intermittent DNS resolution failures and, if the NS hostname is "
-                "unregistered, can be hijacked by an attacker who registers it."
-            ),
-            remediation=(
-                "Ensure all NS records listed for the domain are configured to host the zone. "
-                "Remove any NS records pointing to servers not authoritative for this domain."
-            ),
-            extra={"lame_servers": lame_servers},
-        ))
 
     return findings
 
@@ -321,11 +268,10 @@ def _check_dns(session, domain) -> list:
     # Wildcard DNS
     findings += _check_wildcard(session, domain)
 
-    # Zone Transfer (AXFR) is an ACTIVE probe → apps.domain_probe, not here.
-
-    # Lame delegation
-    if ns_records:
-        findings += _check_lame_delegation(session, domain, ns_records)
+    # Zone Transfer (AXFR) and lame delegation are ACTIVE probes (they query the
+    # target's nameservers directly) → apps.domain_probe, not here. Keeping them
+    # out keeps domain_security strictly passive: public resolvers + RDAP only,
+    # no packets to the target's own infrastructure.
 
     return findings
 
