@@ -494,8 +494,8 @@ guards that every registered tool appears in the output.
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
-| `apps/domain_security/` | 1 | Domain Posture | Yes | **Passive** DNS/DNSSEC/CAA/wildcard/lame-delegation, email-auth (SPF/DMARC/DKIM/TLS-RPT/BIMI) via public resolvers, and RDAP (expiry/locks/status). No packets to the target — needs no authorization |
-| `apps/domain_probe/` | 1 | Domain Posture | Yes | **Active** domain probes split out of domain_security: AXFR zone transfer (nameservers), SMTP open-relay (MX:25), and MTA-STS policy fetch (`mta-sts.<domain>`). Touches the target directly → requires `DomainAuthorization` |
+| `apps/domain_security/` | 1 | Domain Posture | Yes | **Passive** DNS/DNSSEC/CAA/wildcard, email-auth (SPF/DMARC/DKIM/TLS-RPT/BIMI) via public resolvers, and RDAP (expiry/locks/status). No packets to the target — needs no authorization |
+| `apps/domain_probe/` | 1 | Domain Posture | Yes | **Active** domain probes split out of domain_security: AXFR zone transfer (nameservers), **lame delegation** (direct SOA query to each nameserver), SMTP open-relay (MX:25), and MTA-STS policy fetch (`mta-sts.<domain>`). Touches the target directly → requires `DomainAuthorization` |
 | `apps/hudson_rock/` | 2 | Credential Exposure | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
 | `apps/dns_history/` | 1 | Domain Posture | Yes | Historical A/AAAA/MX records via a passive-DNS dataset — surfaces past hosting / stale records (info findings). Passive, BYO `DNS_HISTORY_API_URL` (no-op if unset), fail-graceful |
 | `apps/github_secrets/` | 2 | Credential Exposure | Yes | Leaked secrets in PUBLIC GitHub — searches GitHub's code-search API (org-scoped by default) for the target org's committed credentials, fetches the hits, runs gitleaks over them (same engine as `js_secrets`), REDACTS before storage (`check_type="exposed_secret"`, shared with js_secrets). Passive (queries GitHub, not the target); BYOK MANDATORY (`GITHUB_TOKEN` — code-search needs auth; no token → logged no-op); fail-graceful |
@@ -607,8 +607,9 @@ missing flag can never let a scanner probe an unauthorized target.
 **`domain_security` is now passive; its active probes live in `domain_probe`.**
 The passive tool does DNS/DNSSEC/CAA/email-auth via public resolvers and RDAP via
 rdap.org — no packets to the target. The active probes that DO touch the target —
-AXFR zone transfers, SMTP open-relay, and the MTA-STS policy-file fetch — were
-split into `apps/domain_probe` (active). A tool with ANY code path that touches
+AXFR zone transfers, lame delegation (a direct SOA query to each nameserver's IP,
+not via a public resolver), SMTP open-relay, and the MTA-STS policy-file fetch —
+were split into `apps/domain_probe` (active). A tool with ANY code path that touches
 the target is active; keeping those paths isolated lets the passive DNS/email/RDAP
 intelligence run in a no-auth passive scan.
 
@@ -931,9 +932,9 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_cve_intel.py` | 24 | EPSS/KEV enrichment, CVE extraction (both finding shapes), feed-failure fallback |
 | `tests/unit/test_dnsx.py` | 21 | Public IP filter, analyzer, scanner |
 | `tests/unit/test_domain_authorization.py` | 10 | DomainAuthorization model + scan-entry gating |
-| `tests/unit/test_domain_security.py` | 46 | Passive DNS/DNSSEC/email-auth/RDAP — **slow, real network** (active AXFR/open-relay/MTA-STS tests moved to test_domain_probe) |
+| `tests/unit/test_domain_security.py` | 42 | Passive DNS/DNSSEC/email-auth/RDAP — **slow, real network** (active AXFR/open-relay/MTA-STS/lame-delegation tests moved to test_domain_probe) |
 | `tests/unit/test_domain_security_email.py` | 15 | Email-auth DEPTH (fast, mocked): SPF neutral/no-all/soft-fail/+all, RFC-7208 lookup-limit (>10 permerror / near-limit) + counter; DMARC p/quarantine, sp=none-not-misread-as-p=none regression, pct<100, missing rua, malformed pct |
-| `tests/unit/test_domain_probe.py` | 17 | Active domain probes — tool_meta (active/runner/group), AXFR zone transfer, MTA-STS policy fetch, SMTP open-relay (all mocked, source="domain_probe"), orchestrator stamps controls |
+| `tests/unit/test_domain_probe.py` | 21 | Active domain probes — tool_meta (active/runner/group), AXFR zone transfer, lame delegation (direct SOA to NS; authoritative/non-auth/no-A/timeout), MTA-STS policy fetch, SMTP open-relay (all mocked, source="domain_probe"), orchestrator stamps controls |
 | `tests/unit/test_domains.py` | 13 | Domain CRUD |
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
 | `tests/unit/test_httpx.py` | 16 | JSON parser, Port lookup, Subdomain link, honest UA, tech-detect flag + technology storage/dedup |
