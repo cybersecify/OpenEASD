@@ -115,32 +115,33 @@ export default function ScanStartPage() {
   // Tools of the ticked categories → the subset a category scan will run.
   const selectedTools = allTools.filter(t => selectedCats.includes(t.phase_group));
 
-  // Default selection once workflows have loaded: first available of
-  // quick → passive → full, else custom.
-  useEffect(() => {
-    if (!lw && !scanType) {
-      const byKey = Object.fromEntries(modes.map(m => [m.key, m]));
-      setScanType(byKey.quick ? 'quick' : byKey.passive ? 'passive' : byKey.full ? 'full' : 'custom');
-    }
-  }, [lw, modes, scanType]);
+  // Default selection, derived synchronously so the first painted frame already
+  // shows a real mode (no one-frame "authorization required" flash): first
+  // available of quick → passive → full, else custom. The user's explicit
+  // choice (scanType) wins once set.
+  const defaultScanKey = React.useMemo(() => {
+    const byKey = Object.fromEntries(modes.map(m => [m.key, m]));
+    return byKey.quick ? 'quick' : byKey.passive ? 'passive' : byKey.full ? 'full' : 'custom';
+  }, [modes]);
+  const effectiveScanType = scanType || defaultScanKey;
 
   // Custom defaults its dropdown to the default workflow.
   useEffect(() => {
-    if (scanType === 'custom' && defaultWf && !workflowId) setWorkflow(String(defaultWf.id));
-  }, [scanType, defaultWf, workflowId]);
+    if (effectiveScanType === 'custom' && defaultWf && !workflowId) setWorkflow(String(defaultWf.id));
+  }, [effectiveScanType, defaultWf, workflowId]);
 
-  const selectedMode = modes.find(m => m.key === scanType);
+  const selectedMode = modes.find(m => m.key === effectiveScanType);
 
   // Resolve the preset → the workflow that will actually run (workflow-based paths).
   const resolvedWf =
-    scanType === 'custom' ? (workflows.find(w => String(w.id) === workflowId) || defaultWf)
+    effectiveScanType === 'custom' ? (workflows.find(w => String(w.id) === workflowId) || defaultWf)
     : selectedMode?.workflow;
 
   // Is the selection passive-only? Named cell → its needsAuth flag; custom by
   // category → all selected tools passive; custom by workflow → the workflow's flag.
-  const isCategoryScan = scanType === 'custom' && customMode === 'category';
+  const isCategoryScan = effectiveScanType === 'custom' && customMode === 'category';
   const selectionIsPassive =
-    scanType === 'custom' ? (isCategoryScan
+    effectiveScanType === 'custom' ? (isCategoryScan
       ? (selectedTools.length > 0 && selectedTools.every(t => !t.active))
       : !!resolvedWf?.is_passive)
     : !!selectedMode && !selectedMode.needsAuth;
@@ -154,7 +155,7 @@ export default function ScanStartPage() {
     const target = domain.trim().toLowerCase();
     if (!target) { setError('Enter a domain.'); return; }
     if (!HOSTNAME_RE.test(target)) { setError('Enter a valid domain name.'); return; }
-    if (scanType !== 'custom' && !selectedMode) {
+    if (effectiveScanType !== 'custom' && !selectedMode) {
       setError('Select a scan type.');
       return;
     }
@@ -227,7 +228,7 @@ export default function ScanStartPage() {
                     {modes.map(m => (
                       <PresetCard
                         key={m.key}
-                        active={scanType === m.key} onClick={() => setScanType(m.key)}
+                        active={effectiveScanType === m.key} onClick={() => setScanType(m.key)}
                         tag={m.wfName !== m.title ? m.wfName : undefined}
                         title={m.title}
                         desc={m.desc}
@@ -238,19 +239,19 @@ export default function ScanStartPage() {
                   </div>
                   <div className="mt-2.5">
                     <PresetCard
-                      active={scanType === 'custom'} onClick={() => setScanType('custom')}
+                      active={effectiveScanType === 'custom'} onClick={() => setScanType('custom')}
                       title="Custom"
                       desc="Pick categories or a saved workflow."
-                      scope={scanType === 'custom'
+                      scope={effectiveScanType === 'custom'
                         ? (isCategoryScan ? `${selectedTools.length} tools · ${selectedCats.length} categories`
                                           : `${enabledToolCount(resolvedWf)} tools`)
                         : ' '}
-                      auth={{ needed: scanType === 'custom' ? needsAttestation : true }}
+                      auth={{ needed: effectiveScanType === 'custom' ? needsAttestation : true }}
                     />
                   </div>
                 </div>
 
-                {scanType === 'custom' && (
+                {effectiveScanType === 'custom' && (
                   <div className="space-y-3 rounded-lg border border-rim p-3">
                     <div className="inline-flex rounded-md border border-rim overflow-hidden text-xs">
                       {['category', 'workflow'].map(m => (
