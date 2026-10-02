@@ -3,7 +3,7 @@ import ScanStartPage, { buildScanModes } from './ScanStartPage.jsx';
 
 const WF = [
   { id: 1, name: 'Full Scan',    is_default: true,  is_passive: false, steps: [{enabled:true},{enabled:true}] },
-  { id: 2, name: 'Passive Scan', is_default: false, is_passive: true,  steps: [{enabled:true}] },
+  { id: 2, name: 'Passive Scan Deep', is_default: false, is_passive: true,  steps: [{enabled:true}] },
   { id: 3, name: 'Passive Scan Light',  is_default: false, is_passive: true,  steps: [{enabled:true}] },
   { id: 4, name: 'Active Light', is_default: false, is_passive: false, steps: [{enabled:true}] },
 ];
@@ -17,7 +17,7 @@ describe('buildScanModes', () => {
   it('binds each cell to its workflow by name', () => {
     const byKey = Object.fromEntries(buildScanModes(WF).map(m => [m.key, m]));
     expect(byKey.quick.workflow.name).toBe('Passive Scan Light');
-    expect(byKey.passive.workflow.name).toBe('Passive Scan');
+    expect(byKey.passive.workflow.name).toBe('Passive Scan Deep');
     expect(byKey.active_light.workflow.name).toBe('Active Light');
     expect(byKey.full.workflow.name).toBe('Full Scan');
   });
