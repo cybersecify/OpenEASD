@@ -7,6 +7,21 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.25.4] — 2026-10-02
+
+### Security
+- **Passive scans are now provably zero-packets-to-target (#546).** The
+  lame-delegation check moved from the passive `domain_security` tool to the active
+  `domain_probe` tool. It sends a direct `SOA` query over UDP to each of the
+  target's authoritative nameservers (`dns.query.udp`) — a packet to the target's
+  DNS infrastructure — and was the one remaining path by which a Passive scan
+  (Light or Deep) contacted the target. Detecting lame delegation inherently
+  requires querying the delegated nameserver directly, so it can only be an active
+  probe (requires `DomainAuthorization`), mirroring the earlier AXFR / open-relay /
+  MTA-STS split. All 16 passive tools audited: no direct-to-target DNS/socket/SMTP
+  primitives remain — passive = public resolvers + RDAP + third-party feeds only.
+  The 4 (mocked) lame tests moved to `test_domain_probe`.
+
 ## [v2.25.3] — 2026-10-02
 
 ### Changed
