@@ -7,6 +7,16 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.25.2] — 2026-10-02
+
+### Fixed
+- **No scan-type flash on the Start-Scan page load (#542).** `ScanStartPage`
+  initialized the selection to empty and applied the default (Passive Light) in a
+  post-paint effect, so the first frame briefly showed "Authorization required"
+  before snapping to the no-auth default. The effective selection is now derived
+  synchronously during render (`effectiveScanType = scanType || defaultScanKey`);
+  an explicit click still wins. UI-only; no behavior change.
+
 ## [v2.25.1] — 2026-10-01
 
 ### Changed
