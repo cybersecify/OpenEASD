@@ -2,7 +2,7 @@
 Django settings for OpenEASD project.
 
 OpenEASD - Automated External Attack Surface Detection
-Company: Cybersecify | Author: Rathnakara G N
+Company: Cybersecify | Authors: Rathnakara GN, Ashok Kamat
 """
 
 import os

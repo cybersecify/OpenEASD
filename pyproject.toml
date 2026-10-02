@@ -5,7 +5,8 @@ description = "OpenEASD - Automated External Attack Surface Detection"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [
-    {name = "Rathnakara G N", email = "contact@cybersecify.com"},
+    {name = "Rathnakara GN", email = "contact@cybersecify.com"},
+    {name = "Ashok Kamat", email = "contact@cybersecify.com"},
 ]
 dependencies = [
     # Web framework
