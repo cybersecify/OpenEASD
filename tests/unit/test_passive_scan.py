@@ -136,11 +136,11 @@ class TestIsPassiveToolSet:
 class TestPassiveScanWorkflow:
     def test_workflow_exists(self):
         from apps.core.engine.workflows.models import Workflow
-        assert Workflow.objects.filter(name="Passive Scan").exists()
+        assert Workflow.objects.filter(name="Passive Scan Deep").exists()
 
     def test_workflow_is_not_default(self):
         from apps.core.engine.workflows.models import Workflow
-        wf = Workflow.objects.get(name="Passive Scan")
+        wf = Workflow.objects.get(name="Passive Scan Deep")
         assert wf.is_default is False
 
     def test_every_step_is_passive(self):
@@ -148,7 +148,7 @@ class TestPassiveScanWorkflow:
         # workflow, or a passive scan would probe an unauthorized target.
         from apps.core.engine.workflows.models import Workflow
         from apps.core.engine.workflows.registry import get_tool_active
-        wf = Workflow.objects.get(name="Passive Scan")
+        wf = Workflow.objects.get(name="Passive Scan Deep")
         active = get_tool_active()
         for tool in wf.enabled_tools():
             assert active.get(tool, True) is False, f"{tool} in Passive Scan is active!"
@@ -156,7 +156,7 @@ class TestPassiveScanWorkflow:
     def test_workflow_is_passive_tool_set(self):
         from apps.core.engine.workflows.models import Workflow
         from apps.core.engine.workflows.registry import is_passive_tool_set
-        wf = Workflow.objects.get(name="Passive Scan")
+        wf = Workflow.objects.get(name="Passive Scan Deep")
         assert is_passive_tool_set(wf.enabled_tools()) is True
 
 
@@ -168,7 +168,7 @@ class TestPassiveScanWorkflow:
 class TestPassiveScanAuthorizationGate:
     def _passive_workflow_id(self):
         from apps.core.engine.workflows.models import Workflow
-        return Workflow.objects.get(name="Passive Scan").id
+        return Workflow.objects.get(name="Passive Scan Deep").id
 
     def test_passive_scan_bypasses_authorization(self, auth_client, domain):
         # domain fixture (example.com) has NO DomainAuthorization. A passive-only

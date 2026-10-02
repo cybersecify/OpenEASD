@@ -451,7 +451,7 @@ the registry and 19 in every actual scan):
    - If the tool is passive AND apex-scoped + fast (no discovery fan-out —
      a handful of lookups against the apex or a third-party API keyed on it),
      set `"quick_recon": True` so it joins the light passive tier. The
-     `test_quick_recon.py` drift lock then requires it in the "Quick Recon"
+     `test_quick_recon.py` drift lock then requires it in the "Passive Scan Light"
      workflow migration too — keep the flag and the migration in sync.
 4. Update `README.md` — the tool count, the tool list, and the pipeline diagram.
 5. Update `CHANGELOG.md` (What + Why) and the tool tables in this file.
@@ -619,19 +619,19 @@ Full Scan), or any scheduled (`once`/`recurring`) scan keeps the gate. The
 `subscan` endpoint applies the same rule: an active-tool subscan requires
 authorization for the parent scan's domain.
 
-**"Passive Scan" workflow** (migration `0022_create_passive_scan_workflow.py`):
+**"Passive Scan Deep" workflow** (migration `0022_create_passive_scan_workflow.py`):
 predefined, non-default, contains only passive tools — a no-auth recon mode.
 `tests/unit/test_passive_scan.py` asserts every step is passive, so adding an
 active tool there fails CI.
 
-**"Quick Recon" workflow** (migration `0036_create_quick_recon_workflow.py`):
+**"Passive Scan Light" workflow** (migration `0036_create_quick_recon_workflow.py`):
 predefined, non-default, instant no-auth first look — four apex-scoped
 passive tools that each do a handful of lookups and finish in seconds, with
 no discovery fan-out: `domain_security`, `dns_history`, `hudson_rock`,
 `breach_check`. Being all-passive, it inherits the same no-auth bypass as
-Passive Scan above. This splits the passive tool set along a cost/scope axis:
+Passive Scan Deep above. This splits the passive tool set along a cost/scope axis:
 **light passive** = passive AND `quick_recon` (`registry.light_passive_tools()`)
-— exactly the Quick Recon four; **deep passive** = passive and not light (the
+— exactly the Passive Scan Light four; **deep passive** = passive and not light (the
 derived complement — e.g. `tldsquatting`, `subfinder`, `shodan`). The
 `quick_recon` flag defaults `False` and is exposed via
 `registry.get_tool_quick_recon()`. `tests/unit/test_quick_recon.py` is the
@@ -639,17 +639,17 @@ drift lock: it binds the workflow's tool membership to `light_passive_tools()`
 in both directions and asserts every step stays passive, so flag/workflow
 drift fails CI.
 
-**The 2×2 scan modes:** Quick Recon and Active Light complete the matrix —
+**The 2×2 scan modes:** Passive Scan Light and Active Light complete the matrix —
 light/deep crossed with passive/active, plus Custom for an arbitrary tool
 subset:
 
 | | **light** | **deep** |
 |---|---|---|
-| **passive** | Quick Recon | Passive Scan |
+| **passive** | Passive Scan Light | Passive Scan Deep |
 | **active** | Active Light | Full Scan |
 
 The authorization boundary runs along the passive/active axis, not the
-light/deep one: both passive-row modes (Quick Recon, Passive Scan) bypass
+light/deep one: both passive-row modes (Passive Scan Light, Passive Scan Deep) bypass
 `DomainAuthorization` per the rule above; both active-row modes (Active Light,
 Full Scan) require it, as does Custom whenever the selected tools include any
 active one. The Start-Scan page (`frontend/src/pages/ScanStartPage.jsx`) renders
@@ -660,7 +660,7 @@ the four named cells as a 2×2 grid via `buildScanModes()`, which binds each
 gracefully.
 
 **"Active Light" workflow** (migration `0037_create_active_light_workflow.py`):
-predefined, non-default, the active counterpart of Quick Recon — a fast
+predefined, non-default, the active counterpart of Passive Scan Light — a fast
 *authorized* scan. 8 steps: a discovery backbone (`subfinder` → `dnsx` →
 `naabu` → `httpx`) feeding four cheap config/exposure checks (`domain_probe`,
 `web_checker`, `tls_checker`, `ssh_checker`). `service_detection` is **not** a
@@ -674,7 +674,7 @@ runner auto-injects it after `naabu`. Deliberately excludes the slow engines
 Scan, no new auth code.
 
 **Why "light" is a curated workflow, not a flag:** light means different
-things on each axis — passive-light (Quick Recon) is apex-only, no discovery
+things on each axis — passive-light (Passive Scan Light) is apex-only, no discovery
 fan-out at all; active-light (Active Light) is the opposite shape, it runs the
 discovery backbone (subfinder/dnsx/naabu/httpx) but skips the slow engines
 downstream of it. One boolean can't express both, so each matrix cell is its
@@ -985,7 +985,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_insights_builder.py` | 4 | FindingTypeSummary prune only when aggregation_complete |
 | `tests/unit/test_exposure_score.py` | 38 | Exposure Score — formula (clean=0, weights, saturation cap), grade bands, trend delta (up/down/flat/no-baseline), builder populates ScanSummary, insights + dashboard API fields, PDF report exposure block |
 | `tests/unit/test_web_checker.py` | 58 | Headers, cookies, CORS, disclosure, collector; security.txt (RFC 9116) — expires parsing, SPA-catch-all guard, missing=info/expired=low findings, reachable-vs-absent (unreachable ⇒ no false "missing"), apex-only collection + fail-graceful |
-| `tests/unit/test_passive_scan.py` | 27 | registry `active` classification (domain_security passive / domain_probe active), `is_passive_tool_set`, Credential Exposure grouping, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
+| `tests/unit/test_passive_scan.py` | 27 | registry `active` classification (domain_security passive / domain_probe active), `is_passive_tool_set`, Credential Exposure grouping, Passive Scan Deep workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
 | `tests/unit/test_workflow_runner.py` | 38 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism (concurrent same-phase; LOW_MEMORY serialises heavy phases but light phase-1 tools still parallel); **H5 resume idempotency** (crash-resume re-run deletes the tool's stale Findings first → no duplicates; completed tool not re-run; first run normal) |
 | `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow covering every registered non-core tool (29), idempotent gap-fill; `test_full_scan_covers_every_registered_tool` fails CI on any gap |
 | `tests/unit/test_verification_verdict.py` | 3 | `Verdict` value object — construction defaults, evidence/detail carried, closed status vocabulary |

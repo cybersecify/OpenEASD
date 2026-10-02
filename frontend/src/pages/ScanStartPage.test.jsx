@@ -3,8 +3,8 @@ import ScanStartPage, { buildScanModes } from './ScanStartPage.jsx';
 
 const WF = [
   { id: 1, name: 'Full Scan',    is_default: true,  is_passive: false, steps: [{enabled:true},{enabled:true}] },
-  { id: 2, name: 'Passive Scan', is_default: false, is_passive: true,  steps: [{enabled:true}] },
-  { id: 3, name: 'Quick Recon',  is_default: false, is_passive: true,  steps: [{enabled:true}] },
+  { id: 2, name: 'Passive Scan Deep', is_default: false, is_passive: true,  steps: [{enabled:true}] },
+  { id: 3, name: 'Passive Scan Light',  is_default: false, is_passive: true,  steps: [{enabled:true}] },
   { id: 4, name: 'Active Light', is_default: false, is_passive: false, steps: [{enabled:true}] },
 ];
 
@@ -16,8 +16,8 @@ describe('buildScanModes', () => {
 
   it('binds each cell to its workflow by name', () => {
     const byKey = Object.fromEntries(buildScanModes(WF).map(m => [m.key, m]));
-    expect(byKey.quick.workflow.name).toBe('Quick Recon');
-    expect(byKey.passive.workflow.name).toBe('Passive Scan');
+    expect(byKey.quick.workflow.name).toBe('Passive Scan Light');
+    expect(byKey.passive.workflow.name).toBe('Passive Scan Deep');
     expect(byKey.active_light.workflow.name).toBe('Active Light');
     expect(byKey.full.workflow.name).toBe('Full Scan');
   });
@@ -31,7 +31,7 @@ describe('buildScanModes', () => {
   });
 
   it('omits a cell whose workflow is absent (older DB)', () => {
-    const noLight = WF.filter(w => w.name !== 'Active Light' && w.name !== 'Quick Recon');
+    const noLight = WF.filter(w => w.name !== 'Active Light' && w.name !== 'Passive Scan Light');
     const keys = buildScanModes(noLight).map(m => m.key);
     expect(keys).toEqual(['passive', 'full']);
   });
