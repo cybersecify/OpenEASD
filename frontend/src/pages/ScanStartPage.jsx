@@ -43,7 +43,7 @@ function PresetCard({ active, onClick, title, desc, scope, auth, tag }) {
 // eyebrow when it differs from the title). A cell whose workflow is absent
 // (older DB) is omitted so the grid degrades gracefully.
 const SCAN_MODE_DEFS = [
-  { key: 'quick',        axis: 'passive', depth: 'light', wfName: 'Quick Recon',
+  { key: 'quick',        axis: 'passive', depth: 'light', wfName: 'Passive Scan Light',
     title: 'Passive Light', desc: 'Apex posture + credential exposure — a few checks, seconds.' },
   { key: 'passive',      axis: 'passive', depth: 'deep',  wfName: 'Passive Scan',
     title: 'Passive Deep', desc: 'Full passive sweep — public & third-party data only.' },

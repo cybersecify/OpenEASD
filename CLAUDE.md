@@ -451,7 +451,7 @@ the registry and 19 in every actual scan):
    - If the tool is passive AND apex-scoped + fast (no discovery fan-out —
      a handful of lookups against the apex or a third-party API keyed on it),
      set `"quick_recon": True` so it joins the light passive tier. The
-     `test_quick_recon.py` drift lock then requires it in the "Quick Recon"
+     `test_quick_recon.py` drift lock then requires it in the "Passive Scan Light"
      workflow migration too — keep the flag and the migration in sync.
 4. Update `README.md` — the tool count, the tool list, and the pipeline diagram.
 5. Update `CHANGELOG.md` (What + Why) and the tool tables in this file.
@@ -624,14 +624,14 @@ predefined, non-default, contains only passive tools — a no-auth recon mode.
 `tests/unit/test_passive_scan.py` asserts every step is passive, so adding an
 active tool there fails CI.
 
-**"Quick Recon" workflow** (migration `0036_create_quick_recon_workflow.py`):
+**"Passive Scan Light" workflow** (migration `0036_create_quick_recon_workflow.py`):
 predefined, non-default, instant no-auth first look — four apex-scoped
 passive tools that each do a handful of lookups and finish in seconds, with
 no discovery fan-out: `domain_security`, `dns_history`, `hudson_rock`,
 `breach_check`. Being all-passive, it inherits the same no-auth bypass as
 Passive Scan above. This splits the passive tool set along a cost/scope axis:
 **light passive** = passive AND `quick_recon` (`registry.light_passive_tools()`)
-— exactly the Quick Recon four; **deep passive** = passive and not light (the
+— exactly the Passive Scan Light four; **deep passive** = passive and not light (the
 derived complement — e.g. `tldsquatting`, `subfinder`, `shodan`). The
 `quick_recon` flag defaults `False` and is exposed via
 `registry.get_tool_quick_recon()`. `tests/unit/test_quick_recon.py` is the
@@ -639,17 +639,17 @@ drift lock: it binds the workflow's tool membership to `light_passive_tools()`
 in both directions and asserts every step stays passive, so flag/workflow
 drift fails CI.
 
-**The 2×2 scan modes:** Quick Recon and Active Light complete the matrix —
+**The 2×2 scan modes:** Passive Scan Light and Active Light complete the matrix —
 light/deep crossed with passive/active, plus Custom for an arbitrary tool
 subset:
 
 | | **light** | **deep** |
 |---|---|---|
-| **passive** | Quick Recon | Passive Scan |
+| **passive** | Passive Scan Light | Passive Scan |
 | **active** | Active Light | Full Scan |
 
 The authorization boundary runs along the passive/active axis, not the
-light/deep one: both passive-row modes (Quick Recon, Passive Scan) bypass
+light/deep one: both passive-row modes (Passive Scan Light, Passive Scan) bypass
 `DomainAuthorization` per the rule above; both active-row modes (Active Light,
 Full Scan) require it, as does Custom whenever the selected tools include any
 active one. The Start-Scan page (`frontend/src/pages/ScanStartPage.jsx`) renders
@@ -660,7 +660,7 @@ the four named cells as a 2×2 grid via `buildScanModes()`, which binds each
 gracefully.
 
 **"Active Light" workflow** (migration `0037_create_active_light_workflow.py`):
-predefined, non-default, the active counterpart of Quick Recon — a fast
+predefined, non-default, the active counterpart of Passive Scan Light — a fast
 *authorized* scan. 8 steps: a discovery backbone (`subfinder` → `dnsx` →
 `naabu` → `httpx`) feeding four cheap config/exposure checks (`domain_probe`,
 `web_checker`, `tls_checker`, `ssh_checker`). `service_detection` is **not** a
@@ -674,7 +674,7 @@ runner auto-injects it after `naabu`. Deliberately excludes the slow engines
 Scan, no new auth code.
 
 **Why "light" is a curated workflow, not a flag:** light means different
-things on each axis — passive-light (Quick Recon) is apex-only, no discovery
+things on each axis — passive-light (Passive Scan Light) is apex-only, no discovery
 fan-out at all; active-light (Active Light) is the opposite shape, it runs the
 discovery backbone (subfinder/dnsx/naabu/httpx) but skips the slow engines
 downstream of it. One boolean can't express both, so each matrix cell is its
