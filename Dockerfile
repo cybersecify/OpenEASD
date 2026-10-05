@@ -139,7 +139,7 @@ CMD ["gunicorn", "openeasd.wsgi:application", "--bind", "0.0.0.0:8000", "--worke
 # scanner tools were validated on. The code targets requires-python >=3.12, and CI
 # runs the suite on 3.12.
 # ===========================================================================
-FROM ubuntu:24.04 AS worker
+FROM ubuntu:25.10 AS worker
 
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     VIRTUAL_ENV=/app/.venv PATH="/app/.venv/bin:/usr/local/bin:/root/.local/bin:${PATH}" \
