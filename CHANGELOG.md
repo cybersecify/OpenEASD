@@ -7,7 +7,23 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
-## [v2.25.8] — 2026-10-06
+## [v2.25.9] — 2026-10-06
+
+### Changed
+- **Shodan web-only exposures collapsed into one info rollup (#559).** A Passive
+  Scan Deep review found Shodan "exposed services" findings were ~99% noise: one
+  `shodan_exposure` info finding per resolved IP that exposes only standard web
+  ports (80/443 and common CDN/proxy alt-ports like Cloudflare's 2052–8880) —
+  expected for any load-balanced or CDN-fronted site, and already assessed by the
+  active web tools (httpx/web_checker/nuclei). **Why:** on a CDN-heavy target this
+  produced hundreds of near-identical info rows (stripe.com alone: 248) that
+  buried Shodan's actually-useful signal — *non-web* services (databases, SSH/RDP,
+  admin panels). The analyzer now classifies each host's ports: a host exposing
+  any non-web port still gets its own individual `shodan_exposure` finding
+  (actionable), while web-only hosts are collapsed into a single
+  `shodan_web_exposure` info rollup (`extra["hosts"]` carries the full list).
+  CDN-edge IPs are still skipped entirely (v2.25.5) and CVE findings are
+  unchanged.
 
 ### Changed
 - **Two more lookalike false-positive reductions (#557)** — completing the FP
