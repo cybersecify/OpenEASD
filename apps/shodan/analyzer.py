@@ -17,6 +17,7 @@ says so and points at the active nmap results for confirmation.
 import logging
 
 from apps.core.data.findings.models import Finding
+from apps.shodan.cdn import is_cdn_ip
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,14 @@ def analyze(session, results) -> list[Finding]:
         vulns = sorted({c.strip().upper() for c in (host.get("vulns") or []) if _valid_cve(c)})
         tier = host.get("tier", "internetdb")
 
-        if ports or services:
+        # A CDN edge IP (Cloudflare/Fastly/…) is the CDN's shared infrastructure,
+        # not the target's asset — ports 80/443 there are expected for every site
+        # on that CDN, so an "exposed services" finding is pure noise. Skip it (a
+        # leaked origin server is on a non-CDN IP and is still flagged). CVE
+        # findings below are kept regardless (rare, high-signal).
+        cdn = is_cdn_ip(ip)
+
+        if (ports or services) and not cdn:
             findings.append(Finding(
                 session=session,
                 source="shodan",
@@ -84,6 +92,10 @@ def analyze(session, results) -> list[Finding]:
                     "source_data": "shodan",
                 },
             ))
+        elif (ports or services) and cdn:
+            logger.debug(
+                "shodan: skipping CDN-edge exposure finding for %s (%s)", ip, cdn
+            )
 
         if vulns:
             shown = ", ".join(vulns[:_MAX_CVES_IN_DESC])

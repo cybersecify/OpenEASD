@@ -257,7 +257,7 @@ class TestEmailChecks:
             findings = _check_email(session, "example.com")
 
         titles = [f.title for f in findings]
-        assert "DKIM could not be confirmed" in titles
+        assert any(t.startswith("DKIM not found") for t in titles)
 
     def test_email_findings_are_stamped_with_control(self, db):
         # The LIVE email path must tag each finding with extra["control"], or the
