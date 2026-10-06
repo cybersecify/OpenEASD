@@ -194,8 +194,54 @@ class TestShodanAnalyzer:
         results = ["junk", {"tier": "internetdb", "ports": [80]}]  # no ip
         assert analyze(sess, results) == []
 
+    def test_cdn_edge_ip_skips_exposure_finding(self):
+        # A Cloudflare edge IP (104.16.0.0/13) — ports 80/443 there are the CDN's,
+        # not the target's; no "exposed services" finding should be emitted.
+        sess = _session()
+        results = [{"ip": "104.21.55.55", "tier": "internetdb", "ports": [80, 443],
+                    "services": [], "vulns": [], "hostnames": [], "tags": []}]
+        exp = [f for f in analyze(sess, results) if f.check_type == "shodan_exposure"]
+        assert exp == []
+
+    def test_cdn_edge_ipv6_skips_exposure_finding(self):
+        sess = _session()
+        results = [{"ip": "2606:4700:3037::6815:3737", "tier": "internetdb",
+                    "ports": [80, 443], "services": [], "vulns": [], "hostnames": [], "tags": []}]
+        exp = [f for f in analyze(sess, results) if f.check_type == "shodan_exposure"]
+        assert exp == []
+
+    def test_cdn_edge_ip_still_reports_cve(self):
+        # Exposure is skipped on a CDN edge, but a CVE is high-signal — keep it.
+        sess = _session()
+        results = [{"ip": "104.21.55.55", "tier": "internetdb", "ports": [443],
+                    "services": [], "vulns": ["CVE-2021-1"], "hostnames": [], "tags": []}]
+        findings = analyze(sess, results)
+        assert [f for f in findings if f.check_type == "shodan_exposure"] == []
+        assert [f for f in findings if f.check_type == "cve"] != []
+
+    def test_non_cdn_ip_still_reports_exposure(self):
+        sess = _session()
+        results = [{"ip": "1.2.3.4", "tier": "internetdb", "ports": [443],
+                    "services": [], "vulns": [], "hostnames": [], "tags": []}]
+        exp = [f for f in analyze(sess, results) if f.check_type == "shodan_exposure"]
+        assert len(exp) == 1
+
+
     def test_empty_results(self):
         assert analyze(_session(), []) == []
+
+
+class TestIsCdnIp:
+    def test_cloudflare_ipv4_and_ipv6(self):
+        from apps.shodan.cdn import is_cdn_ip
+        assert is_cdn_ip("104.21.55.55") == "Cloudflare"
+        assert is_cdn_ip("2606:4700:3037::6815:3737") == "Cloudflare"
+
+    def test_non_cdn_and_bad_input_return_none(self):
+        from apps.shodan.cdn import is_cdn_ip
+        assert is_cdn_ip("1.2.3.4") is None
+        assert is_cdn_ip("8.8.8.8") is None
+        assert is_cdn_ip("not-an-ip") is None
 
 
 # ---------------------------------------------------------------------------

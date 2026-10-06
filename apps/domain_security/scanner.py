@@ -575,15 +575,25 @@ def _check_dkim(session, domain) -> list:
                 "without knowing it, so this may be a lookup limitation rather than a "
                 "definitively missing record."
             )
+        # Severity is confidence-aware: DKIM selectors are not enumerable, so a
+        # missing record can't be proven. Only elevate to MEDIUM when we detected
+        # the mail provider and checked its real selectors (a miss is then likely
+        # genuine). With just the generic guess-list we can't verify absence, so
+        # keep it LOW and say so in the title — avoids a false "missing DKIM".
+        if provider:
+            severity = "medium"
+            title = f"DKIM not found for detected provider ({provider})"
+        else:
+            severity = "low"
+            title = "DKIM not found on common selectors (could not verify)"
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="email",
-            severity="medium",
+            severity=severity,
             check_id="domain_security:dkim_unconfirmed",
-            title="DKIM could not be confirmed",
+            title=title,
             description=(
-                f"DKIM could not be confirmed for {domain}: no DKIM record was found at "
-                f"the selectors checked.{provider_line} Verify against your mail "
-                "provider's published selector."
+                f"No DKIM record was found for {domain} at the selectors checked."
+                f"{provider_line} Verify against your mail provider's published selector."
             ),
             remediation="Configure DKIM signing with your email provider and publish the public key as a TXT record.",
             extra={"mail_provider": provider, "selectors_checked": selectors},

@@ -111,3 +111,37 @@ class TestDMARCDepth:
         # pct=abc must not crash and must not flag partial enforcement.
         titles = {f.title for f in _dmarc("v=DMARC1; p=reject; rua=mailto:d@x; pct=abc")}
         assert "DMARC is only partially enforced (pct<100)" not in titles
+
+
+# ---------------------------------------------------------------------------
+# DKIM — confidence-aware severity (selectors aren't enumerable, so a missing
+# record can't be proven; only elevate when a provider's real selectors checked)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestDkimConfidence:
+    def _dkim(self, provider, inferred):
+        from apps.domain_security.scanner import _check_dkim
+        with patch("apps.domain_security.scanner._infer_dkim_selectors",
+                   return_value=(provider, inferred)):
+            with patch("apps.domain_security.scanner._get_txt_record", return_value=[]):
+                return _check_dkim(_session(), "example.com")
+
+    def test_no_provider_is_low_and_unverifiable_wording(self):
+        findings = self._dkim(None, [])
+        assert len(findings) == 1
+        assert findings[0].severity == "low"
+        assert "could not verify" in findings[0].title.lower()
+
+    def test_detected_provider_is_medium(self):
+        findings = self._dkim("Google Workspace", ["google"])
+        assert len(findings) == 1
+        assert findings[0].severity == "medium"
+        assert "Google Workspace" in findings[0].title
+
+    def test_dkim_present_no_finding(self):
+        from apps.domain_security.scanner import _check_dkim
+        with patch("apps.domain_security.scanner._infer_dkim_selectors", return_value=(None, [])):
+            with patch("apps.domain_security.scanner._get_txt_record",
+                       return_value=["v=DKIM1; k=rsa; p=MIGf..."]):
+                assert _check_dkim(_session(), "example.com") == []
