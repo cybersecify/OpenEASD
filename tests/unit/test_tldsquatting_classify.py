@@ -92,3 +92,28 @@ def test_is_redacted_registrant_true_cases():
 
 def test_is_redacted_registrant_false_for_real_org():
     assert _is_redacted_registrant("Zoho Corporation Pvt. Ltd.") is False
+
+
+def test_redirects_to_target_is_owned():
+    # A lookalike whose homepage redirects to the target's own site is a
+    # defensive registration (owned), NOT a threat — even though the redirect
+    # lands on the brand URL (which would otherwise read as brand_mentioned).
+    r = _rec(ns_targets=["ns1.other.com."], brand_mentioned=True, redirects_to_target=True)
+    assert classify_lookalike(r, {"zoho.com"}, None, None) == "owned"
+
+
+def test_no_redirect_with_brand_still_threat():
+    # Without the redirect-to-target signal, a brand-mentioning lookalike on
+    # someone else's NS is still a threat (no regression).
+    r = _rec(ns_targets=["ns1.other.com."], brand_mentioned=True, redirects_to_target=False)
+    assert classify_lookalike(r, {"zoho.com"}, None, None) == "threat"
+
+
+def test_redirects_helper_matches_apex_and_subdomain():
+    from apps.tldsquatting.collector import _redirects_to
+    assert _redirects_to("https://stripe.com/", "stripe.com") is True
+    assert _redirects_to("https://www.stripe.com/x", "stripe.com") is True
+    assert _redirects_to("https://support.stripe.com/", "stripe.com") is True
+    assert _redirects_to("https://stripe-phishing.com/", "stripe.com") is False
+    assert _redirects_to("https://notstripe.com/", "stripe.com") is False
+    assert _redirects_to("", "stripe.com") is False

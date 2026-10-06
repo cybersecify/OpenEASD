@@ -38,6 +38,8 @@ _GENERIC_ASNS = frozenset({
     "16276",            # OVH
     "24940",            # Hetzner
     "47846",            # Sedo parking
+    "60819",            # Safenames — corporate brand-protection registrar
+                        #   (domains here are typically the brand's OWN defensive regs)
 })
 
 
@@ -80,18 +82,24 @@ def cluster(session, lookalikes: list[dict], asn_by_ip: dict) -> list[Finding]:
     apex = getattr(session, "domain", "") or ""
     generic = _generic_asns()
     for asn, candidates in members.items():
-        if len(candidates) < 2:
-            continue  # not a cluster — a single lookalike per ASN is unremarkable
         cands = sorted(candidates)
         weap = sorted(weaponized[asn])
-        if str(asn) in generic and not weap:
-            # Shared hyperscaler/CDN/parking hosting proves nothing by itself.
-            logger.info(
-                "asn_cluster: skipping AS%s (%s) — generic shared infrastructure, "
-                "no weaponized member (%d lookalikes: %s)",
-                asn, as_names.get(asn, ""), len(cands), ", ".join(cands),
-            )
-            continue
+        if str(asn) in generic:
+            # Shared hyperscaler / CDN / parking / brand-protection hosting: the
+            # co-location of benign lookalikes carries NO campaign signal (half the
+            # internet is on AWS). Only WEAPONIZED members hint at coordination, and
+            # only when >=2 share the ASN — one weaponized domain on AWS is just one
+            # domain, not a 40-member campaign. Report only the weaponized members.
+            if len(weap) < 2:
+                logger.info(
+                    "asn_cluster: skipping AS%s (%s) — generic shared infrastructure "
+                    "(%d lookalikes, %d weaponized)",
+                    asn, as_names.get(asn, ""), len(cands), len(weap),
+                )
+                continue
+            cands = weap
+        elif len(candidates) < 2:
+            continue  # not a cluster — a single lookalike on dedicated hosting
         name = as_names.get(asn) or "unknown network"
         severity = "high" if weap else "medium"
         weap_note = (

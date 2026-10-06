@@ -146,9 +146,10 @@ class TestCluster:
         }
         assert cluster(sess, lookalikes, asn_by_ip) == []
 
-    def test_generic_asn_with_weaponized_member_still_reported(self):
-        # A confirmed phishing member makes the grouping meaningful even on
-        # shared infrastructure.
+    def test_generic_asn_one_weaponized_is_skipped(self):
+        # On shared infra (Cloudflare/AWS/parking), a SINGLE weaponized member
+        # among co-located lookalikes is just one domain, not a campaign — skip it
+        # (avoids the "40 lookalikes share AWS" FP).
         from apps.asn_cluster.analyzer import cluster
         sess = _session()
         lookalikes = [
@@ -159,9 +160,32 @@ class TestCluster:
             "1.1.1.1": {"asn": "13335", "as_name": "CLOUDFLARENET", "prefix": ""},
             "1.1.1.2": {"asn": "13335", "as_name": "CLOUDFLARENET", "prefix": ""},
         }
+        assert cluster(sess, lookalikes, asn_by_ip) == []
+
+    def test_generic_asn_two_weaponized_clusters_only_weaponized(self):
+        # >=2 weaponized sharing a generic ASN IS a weak campaign signal — report
+        # it, but cluster ONLY the weaponized members (not the co-located benign).
+        from apps.asn_cluster.analyzer import cluster
+        sess = _session()
+        lookalikes = [
+            {"candidate": "a.com", "ips": ["1.1.1.1"], "weaponized": True},
+            {"candidate": "b.com", "ips": ["1.1.1.2"], "weaponized": True},
+            {"candidate": "benign.com", "ips": ["1.1.1.3"], "weaponized": False},
+        ]
+        asn_by_ip = {
+            "1.1.1.1": {"asn": "16509", "as_name": "AMAZON-02", "prefix": ""},
+            "1.1.1.2": {"asn": "16509", "as_name": "AMAZON-02", "prefix": ""},
+            "1.1.1.3": {"asn": "16509", "as_name": "AMAZON-02", "prefix": ""},
+        }
         out = cluster(sess, lookalikes, asn_by_ip)
         assert len(out) == 1
         assert out[0].severity == "high"
+        assert sorted(out[0].extra["candidates"]) == ["a.com", "b.com"]  # benign excluded
+        assert out[0].extra["member_count"] == 2
+
+    def test_safenames_asn_is_generic(self):
+        from apps.asn_cluster.analyzer import _generic_asns
+        assert "60819" in _generic_asns()
 
     def test_unresolved_ips_ignored(self):
         from apps.asn_cluster.analyzer import cluster

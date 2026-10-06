@@ -389,15 +389,30 @@ def _check_candidate(resolver, candidate: str) -> dict | None:
     }
 
 
-def _content_signals(candidate: str, brand: str) -> dict:
+def _redirects_to(final_url: str, target_domain: str) -> bool:
+    """True if ``final_url`` (the URL a lookalike's homepage landed on after
+    redirects) is on the TARGET's own domain — the target apex or a subdomain of
+    it. A lookalike that redirects to your own site is a defensive registration
+    you (or an affiliate) own, not an impersonator."""
+    from urllib.parse import urlparse
+    tdom = (target_domain or "").strip().lower().strip(".")
+    if not tdom:
+        return False
+    host = (urlparse(final_url).hostname or "").lower().strip(".")
+    return host == tdom or host.endswith("." + tdom)
+
+
+def _content_signals(candidate: str, brand: str, target_domain: str = "") -> dict:
     """Fetch a registered lookalike's homepage and look for weaponization signals:
-    a login form (credential-phishing) and mentions of the brand (impersonation).
+    a login form (credential-phishing) and mentions of the brand (impersonation);
+    also whether it redirects to the target's own site (→ defensive registration).
 
     Contacts only the lookalike domain, never the target. Never raises — any
     fetch failure leaves content_checked=False and no signals.
     """
     out = {"content_checked": True, "login_form": False,
            "brand_mentioned": False, "brand_mention_count": 0,
+           "redirects_to_target": False,
            "https_enabled": False, "ssl_valid": False}
     try:
         ua = getattr(settings, "OPENEASD_USER_AGENT", "OpenEASD")
@@ -410,6 +425,7 @@ def _content_signals(candidate: str, brand: str) -> dict:
         # both signals the risk model rewards.
         out["https_enabled"] = True
         out["ssl_valid"] = True
+        out["redirects_to_target"] = _redirects_to(resp.url or "", target_domain)
         html = resp.text or ""
         out["login_form"] = bool(_LOGIN_FORM_RE.search(html))
         if _PARKED_CONTENT_RE.search(html):
@@ -612,7 +628,7 @@ def collect(session) -> list[dict]:
     to_fetch = [r for r in results if r.get("has_a")][:CONTENT_MAX_FETCHES]
     if to_fetch:
         def _probe(record):
-            record.update(_content_signals(record["candidate"], brand))
+            record.update(_content_signals(record["candidate"], brand, apex))
 
         fetch_workers = max(1, min(_FETCH_CONCURRENCY, len(to_fetch)))
         with ThreadPoolExecutor(max_workers=fetch_workers) as executor:

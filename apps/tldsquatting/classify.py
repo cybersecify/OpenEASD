@@ -91,6 +91,15 @@ def classify_lookalike(record, target_ns_ops, target_registrant, target_registra
         and not _is_redacted_registrant(target_reg)
         and reg == target_reg
     )
+    # A lookalike whose homepage redirects to the target's OWN site is a defensive
+    # registration (you/an affiliate own it and point it at the real site), not an
+    # impersonator. Checked before the brand-mention forcing rule, because such a
+    # redirect lands on the brand's URL and would otherwise read as "brand
+    # mentioned" → a false THREAT. An attacker cannot make a lookalike redirect to
+    # your authoritative domain, so this is safe as an owned signal.
+    if record.get("redirects_to_target"):
+        return "owned"
+
     if ns_match or reg_match:
         return "owned"
 
