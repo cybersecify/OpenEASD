@@ -7,6 +7,22 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.25.6] — 2026-10-06
+
+### Fixed
+- **Durable (worker) scans now report `partial` when a tool fails (#553).** The
+  DBOS worker runs phases via `run_one_phase_group` and left the `WorkflowRun`
+  in `pending` through execution (only the non-durable `run_workflow()` flips it
+  to `running`). `finalize_session_by_id` guarded its terminal partial/completed
+  decision on `run.status == "running"`, so for a pending run the decision was
+  **skipped** — a failed/timed-out tool left the run `pending` and the scan
+  finalized as `completed` instead of `partial`, the "fake-complete" the pipeline
+  rules forbid. Every worker-run scan with a failed tool was mislabeled. Fix:
+  `prepare_session_assets` now marks the run `running`, and the finalize guard was
+  widened to `("running","pending")` as a safety net. Regression-locked by new
+  durable-path tests. (Tests missed it because they exercise `run_workflow()`,
+  not the durable phase-by-phase path.)
+
 ## [v2.25.5] — 2026-10-06
 
 ### Changed
