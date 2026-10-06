@@ -288,3 +288,53 @@ class TestPartialStatus:
         _finalize_session(s)
         s.refresh_from_db()
         assert s.status == "partial"
+
+
+@pytest.mark.django_db
+class TestDurableFinalizePartialStatus:
+    """Regression (durable path): the DBOS worker runs phases via
+    run_one_phase_group and leaves the WorkflowRun 'pending' through execution
+    (unlike run_workflow(), which flips it to 'running'). finalize_session_by_id
+    must STILL give a terminal partial/completed decision for a pending run, or a
+    failed tool is silently masked as 'completed'. The older TestPartialStatus
+    tests only cover _finalize_session with a pre-set terminal run status."""
+
+    def _setup(self, step_statuses):
+        from apps.core.engine.workflows.models import Workflow, WorkflowRun, WorkflowStepResult
+        s = _session(status="running")
+        wf = Workflow.objects.create(name="wf")
+        run = WorkflowRun.objects.create(workflow=wf, session=s, status="pending")  # durable state
+        for i, (tool, st) in enumerate(step_statuses, start=1):
+            WorkflowStepResult.objects.create(run=run, tool=tool, status=st, order=i)
+        return s, run
+
+    def test_failed_step_on_pending_run_marks_partial(self):
+        from apps.core.engine.scans.pipeline import finalize_session_by_id
+        s, run = self._setup([("domain_security", "completed"), ("cloud_assets", "failed")])
+        finalize_session_by_id(s.id)
+        s.refresh_from_db(); run.refresh_from_db()
+        assert run.status == "partial"
+        assert s.status == "partial"
+
+    def test_all_completed_on_pending_run_marks_completed(self):
+        from apps.core.engine.scans.pipeline import finalize_session_by_id
+        s, run = self._setup([("domain_security", "completed"), ("subfinder", "completed")])
+        finalize_session_by_id(s.id)
+        s.refresh_from_db(); run.refresh_from_db()
+        assert run.status == "completed"
+        assert s.status == "completed"
+
+
+@pytest.mark.django_db
+class TestPrepareAssetsMarksRunRunning:
+    """prepare_session_assets (durable path) must flip the run to 'running'."""
+
+    def test_new_run_is_running(self):
+        from apps.core.engine.scans.pipeline import prepare_session_assets
+        from apps.core.engine.workflows.models import Workflow, WorkflowRun
+        wf = Workflow.objects.create(name="wf")
+        s = _session(status="running", workflow=wf)
+        prepare_session_assets(s.id)
+        run = WorkflowRun.objects.get(session=s)
+        assert run.status == "running"
+        assert run.started_at is not None

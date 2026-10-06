@@ -646,7 +646,20 @@ def prepare_session_assets(session_id: int) -> None:
         _copy_assets_from_parent(session)
     else:
         _seed_apex_into_assets(session)
-    WorkflowRun.objects.get_or_create(session=session, defaults={"workflow": session.workflow})
+    # Mark the run "running" here (the durable path's equivalent of
+    # run_workflow()'s status flip). Without this the run stays "pending" through
+    # execution, and finalize_session_by_id's terminal-status decision — which
+    # flips a scan to "partial" when a tool failed — would be skipped, letting a
+    # failed tool masquerade as "completed" (the fake-complete the pipeline rules
+    # forbid). A resume reuses the existing run; leave a terminal one untouched.
+    run, created = WorkflowRun.objects.get_or_create(
+        session=session,
+        defaults={"workflow": session.workflow, "status": "running", "started_at": django_tz.now()},
+    )
+    if not created and run.status == "pending":
+        run.status = "running"
+        run.started_at = run.started_at or django_tz.now()
+        run.save(update_fields=["status", "started_at"])
 
 
 def phase_groups_for_session(session_id: int) -> list:
@@ -683,7 +696,11 @@ def finalize_session_by_id(session_id: int) -> None:
     session = ScanSession.objects.get(id=session_id)
     session.refresh_from_db(fields=["status"])
     run = WorkflowRun.objects.filter(session=session).order_by("-id").first()
-    if run is not None and run.status == "running":
+    # Decide the terminal status for a run still in flight — "running" normally,
+    # but also "pending" as a safety net: if a run never got flipped to running
+    # (a missed transition), it must still get a terminal partial/completed
+    # decision here rather than silently finalizing the scan as "completed".
+    if run is not None and run.status in ("running", "pending"):
         if session.status == "cancelled":
             run.status = "cancelled"
         elif WorkflowStepResult.objects.filter(run=run, status="failed").exists():
