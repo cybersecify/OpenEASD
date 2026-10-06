@@ -219,12 +219,44 @@ class TestShodanAnalyzer:
         assert [f for f in findings if f.check_type == "shodan_exposure"] == []
         assert [f for f in findings if f.check_type == "cve"] != []
 
-    def test_non_cdn_ip_still_reports_exposure(self):
+    def test_non_web_port_gets_individual_exposure(self):
+        # A non-web port (e.g. 3306 MySQL) is the actionable signal — individual.
         sess = _session()
-        results = [{"ip": "1.2.3.4", "tier": "internetdb", "ports": [443],
+        results = [{"ip": "1.2.3.4", "tier": "internetdb", "ports": [443, 3306],
                     "services": [], "vulns": [], "hostnames": [], "tags": []}]
         exp = [f for f in analyze(sess, results) if f.check_type == "shodan_exposure"]
         assert len(exp) == 1
+        assert exp[0].target == "1.2.3.4"
+
+    def test_web_only_host_is_collapsed_into_rollup(self):
+        # 80/443 only on a non-CDN IP is just a web endpoint — no individual
+        # "exposed services" finding; it lands in one web-exposure rollup instead.
+        sess = _session()
+        results = [{"ip": "1.2.3.4", "tier": "internetdb", "ports": [80, 443],
+                    "services": [], "vulns": [], "hostnames": [], "tags": []}]
+        out = analyze(sess, results)
+        assert [f for f in out if f.check_type == "shodan_exposure"] == []
+        roll = [f for f in out if f.check_type == "shodan_web_exposure"]
+        assert len(roll) == 1
+        assert roll[0].severity == "info"
+        assert roll[0].extra["host_count"] == 1
+        assert roll[0].extra["hosts"][0]["ip"] == "1.2.3.4"
+
+    def test_cloudflare_alt_ports_are_web_only(self):
+        # The cPanel-looking ports 2082/2083/8880 are Cloudflare's alt-HTTP ports.
+        sess = _session()
+        results = [{"ip": "1.2.3.4", "tier": "internetdb", "ports": [2082, 2083, 8880],
+                    "services": [], "vulns": [], "hostnames": [], "tags": []}]
+        out = analyze(sess, results)
+        assert [f for f in out if f.check_type == "shodan_exposure"] == []
+        assert len([f for f in out if f.check_type == "shodan_web_exposure"]) == 1
+
+    def test_web_only_rollup_collapses_many_into_one(self):
+        sess = _session()
+        results = [{"ip": f"1.2.3.{i}", "tier": "internetdb", "ports": [443],
+                    "services": [], "vulns": [], "hostnames": [], "tags": []} for i in range(1, 6)]
+        roll = [f for f in analyze(sess, results) if f.check_type == "shodan_web_exposure"]
+        assert len(roll) == 1 and roll[0].extra["host_count"] == 5
 
 
     def test_empty_results(self):
