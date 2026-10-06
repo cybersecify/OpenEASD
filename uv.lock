@@ -1132,7 +1132,7 @@ wheels = [
 
 [[package]]
 name = "openeasd"
-version = "2.25.8"
+version = "2.25.9"
 source = { editable = "." }
 dependencies = [
     { name = "croniter" },
