@@ -48,15 +48,58 @@ _HTTP_TIMEOUT = getattr(settings, "SCANNER_HTTP_TIMEOUT", 10)
 # DNS helpers
 # ---------------------------------------------------------------------------
 
+class _DnsResult(list):
+    """A list of DNS answers that also records whether the lookup *resolved*.
+
+    ``resolved`` is True when we got a definitive answer — the records, or an
+    authoritative "no such record" (NXDOMAIN / NoAnswer). It is False when the
+    lookup itself FAILED (timeout / SERVFAIL / NoNameservers / network): in that
+    case an empty result means "unknown", NOT "missing". Checks that flag a
+    record as missing gate on ``resolved`` (via ``_resolved(records)``) so a
+    failed lookup never fabricates a "No A record / SPF missing" HIGH finding
+    (the false positives seen on live domains when the resolver was rate-limited).
+    It subclasses ``list`` so every existing caller — and every test that mocks
+    _resolve/_get_txt_record with a plain list — keeps working unchanged
+    (``_resolved`` defaults to True for a plain list).
+    """
+
+    def __new__(cls, items=(), resolved=True):
+        obj = super().__new__(cls, items)
+        return obj
+
+    def __init__(self, items=(), resolved=True):
+        super().__init__(items)
+        self.resolved = resolved
+
+    # Equality is intentionally by LIST CONTENT only — ``resolved`` is transient
+    # lookup metadata (read via _resolved(), never compared). Defined explicitly
+    # so the semantics are unambiguous and equality is not silently inherited.
+    __eq__ = list.__eq__
+    __ne__ = list.__ne__
+    __hash__ = None  # same as list — unhashable
+
+
+def _resolved(records) -> bool:
+    """Did the lookup that produced ``records`` actually resolve? Plain lists
+    (e.g. test mocks) default to True, so only a _DnsResult(resolved=False)
+    signals a failed lookup."""
+    return getattr(records, "resolved", True)
+
+
 def _resolve(domain, record_type):
-    """Resolve a DNS record, return answers or empty list."""
-    try:
-        return dns.resolver.resolve(domain, record_type, lifetime=_DNS_TIMEOUT)
-    except (_DNS_NoAnswer, _DNS_NXDOMAIN, _DNS_NoNameservers):
-        return []
-    except Exception as e:
-        logger.debug(f"[domain_security] DNS {record_type} lookup failed for {domain}: {e}")
-        return []
+    """Resolve a DNS record → a _DnsResult (empty on absence OR failure; carries
+    ``.resolved``). One retry rides out a transient blip / resolver rate-limiting."""
+    for attempt in range(2):
+        try:
+            return _DnsResult(dns.resolver.resolve(domain, record_type, lifetime=_DNS_TIMEOUT), resolved=True)
+        except (_DNS_NoAnswer, _DNS_NXDOMAIN):
+            return _DnsResult([], resolved=True)  # authoritative: record absent
+        except Exception as e:  # NoNameservers / timeout / network — lookup failed
+            if attempt == 0:
+                continue
+            logger.debug(f"[domain_security] DNS {record_type} lookup failed for {domain}: {e}")
+            return _DnsResult([], resolved=False)
+    return _DnsResult([], resolved=False)  # unreachable; explicit for clarity
 
 
 def _check_caa(session, domain) -> list:
@@ -64,7 +107,7 @@ def _check_caa(session, domain) -> list:
     findings = []
     caa_records = _resolve(domain, "CAA")
 
-    if not caa_records:
+    if _resolved(caa_records) and not caa_records:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="dns",
             severity="medium",
@@ -222,10 +265,12 @@ def _check_dns(session, domain) -> list:
     """Run all DNS checks and return list of DomainFinding objects (not yet saved)."""
     findings = []
 
-    # A / AAAA
+    # A / AAAA — only flag "does not resolve" when BOTH lookups succeeded and
+    # returned nothing. A failed lookup (timeout/SERVFAIL/rate-limit) must not be
+    # misread as "missing" — that produced false HIGH findings on live domains.
     a_records = _resolve(domain, "A")
     aaaa_records = _resolve(domain, "AAAA")
-    if not a_records and not aaaa_records:
+    if _resolved(a_records) and _resolved(aaaa_records) and not a_records and not aaaa_records:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="dns",
             severity="high",
@@ -237,7 +282,7 @@ def _check_dns(session, domain) -> list:
 
     # NS records
     ns_records = _resolve(domain, "NS")
-    if not ns_records:
+    if _resolved(ns_records) and not ns_records:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="dns",
             severity="high",
@@ -249,7 +294,7 @@ def _check_dns(session, domain) -> list:
 
     # MX records
     mx_records = _resolve(domain, "MX")
-    if not mx_records:
+    if _resolved(mx_records) and not mx_records:
         findings.append(Finding(
             session=session, source="domain_security", target=domain, check_type="dns",
             severity="medium",
@@ -280,13 +325,24 @@ def _check_dns(session, domain) -> list:
 # Email helpers
 # ---------------------------------------------------------------------------
 
-def _get_txt_record(domain) -> list:
-    """Return all TXT record strings for a domain."""
-    try:
-        answers = dns.resolver.resolve(domain, "TXT", lifetime=_DNS_TIMEOUT)
-        return [b"".join(r.strings).decode("utf-8", errors="ignore") for r in answers]
-    except Exception:
-        return []
+def _get_txt_record(domain):
+    """Return TXT record strings for a domain → a _DnsResult (empty on absence OR
+    failure; carries ``.resolved`` so SPF/DMARC "missing" findings don't fire on a
+    failed TXT lookup). One retry on a transient failure."""
+    for attempt in range(2):
+        try:
+            answers = dns.resolver.resolve(domain, "TXT", lifetime=_DNS_TIMEOUT)
+            return _DnsResult(
+                [b"".join(r.strings).decode("utf-8", errors="ignore") for r in answers],
+                resolved=True,
+            )
+        except (_DNS_NoAnswer, _DNS_NXDOMAIN):
+            return _DnsResult([], resolved=True)  # authoritative: no TXT records
+        except Exception:
+            if attempt == 0:
+                continue
+            return _DnsResult([], resolved=False)
+    return _DnsResult([], resolved=False)  # unreachable; explicit for clarity
 
 
 _SPF_LOOKUP_LIMIT = 10  # RFC 7208 §4.6.4 — over this, receivers return permerror.
@@ -313,6 +369,8 @@ def _spf_lookup_count(spf: str) -> int:
 def _check_spf(session, domain) -> list:
     findings = []
     txt_records = _get_txt_record(domain)
+    if not _resolved(txt_records):
+        return findings  # TXT lookup failed — can't tell if SPF is missing
     spf_records = [r for r in txt_records if r.startswith("v=spf1")]
 
     if not spf_records:
@@ -415,6 +473,8 @@ def _check_spf(session, domain) -> list:
 def _check_dmarc(session, domain) -> list:
     findings = []
     dmarc_records = _get_txt_record(f"_dmarc.{domain}")
+    if not _resolved(dmarc_records):
+        return findings  # TXT lookup failed — can't tell if DMARC is missing
     dmarc = next((r for r in dmarc_records if r.startswith("v=DMARC1")), None)
 
     if not dmarc:

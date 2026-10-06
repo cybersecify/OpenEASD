@@ -145,3 +145,55 @@ class TestDkimConfidence:
             with patch("apps.domain_security.scanner._get_txt_record",
                        return_value=["v=DKIM1; k=rsa; p=MIGf..."]):
                 assert _check_dkim(_session(), "example.com") == []
+
+
+# ---------------------------------------------------------------------------
+# DNS-failure vs record-absent: a failed lookup (timeout/SERVFAIL/rate-limit)
+# must NOT be reported as "missing" (the false HIGH findings seen on live
+# domains like stripe.com/gitlab.com when the resolver was rate-limited).
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestDnsFailureNotMissing:
+    def test_resolve_distinguishes_failure_from_absence(self):
+        import dns.resolver
+        from apps.domain_security.scanner import _resolve, _resolved
+        with patch("apps.domain_security.scanner.dns.resolver.resolve", side_effect=dns.resolver.NXDOMAIN):
+            r = _resolve("example.com", "A")                 # authoritative absence
+            assert list(r) == [] and _resolved(r) is True
+        with patch("apps.domain_security.scanner.dns.resolver.resolve", side_effect=Exception("timed out")):
+            r = _resolve("example.com", "A")                 # lookup failed
+            assert list(r) == [] and _resolved(r) is False
+
+    def test_failed_lookup_does_not_emit_missing_dns(self):
+        from apps.domain_security.scanner import _check_dns
+        with patch("apps.domain_security.scanner.dns.resolver.resolve", side_effect=Exception("timed out")):
+            titles = [f.title for f in _check_dns(_session(), "example.com")]
+        assert "No A or AAAA record found" not in titles
+        assert "No NS records found" not in titles
+        assert "No MX records found" not in titles
+
+    def test_authoritative_absence_still_emits_missing_dns(self):
+        import dns.resolver
+        from apps.domain_security.scanner import _check_dns
+        with patch("apps.domain_security.scanner.dns.resolver.resolve", side_effect=dns.resolver.NXDOMAIN):
+            titles = [f.title for f in _check_dns(_session(), "example.com")]
+        assert "No A or AAAA record found" in titles
+        assert "No NS records found" in titles
+
+    def test_failed_txt_lookup_does_not_emit_spf_dmarc_missing(self):
+        from apps.domain_security.scanner import _check_spf, _check_dmarc
+        s = _session()
+        with patch("apps.domain_security.scanner.dns.resolver.resolve", side_effect=Exception("timed out")):
+            assert _check_spf(s, "example.com") == []
+            assert _check_dmarc(s, "example.com") == []
+
+    def test_authoritative_absence_emits_spf_dmarc_missing(self):
+        import dns.resolver
+        from apps.domain_security.scanner import _check_spf, _check_dmarc
+        s = _session()
+        with patch("apps.domain_security.scanner.dns.resolver.resolve", side_effect=dns.resolver.NXDOMAIN):
+            spf = _check_spf(s, "example.com")
+            dmarc = _check_dmarc(s, "example.com")
+        assert any("SPF record missing" in f.title for f in spf)
+        assert any("DMARC record missing" in f.title for f in dmarc)
