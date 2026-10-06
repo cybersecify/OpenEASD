@@ -71,6 +71,13 @@ class _DnsResult(list):
         super().__init__(items)
         self.resolved = resolved
 
+    # Equality is intentionally by LIST CONTENT only — ``resolved`` is transient
+    # lookup metadata (read via _resolved(), never compared). Defined explicitly
+    # so the semantics are unambiguous and equality is not silently inherited.
+    __eq__ = list.__eq__
+    __ne__ = list.__ne__
+    __hash__ = None  # same as list — unhashable
+
 
 def _resolved(records) -> bool:
     """Did the lookup that produced ``records`` actually resolve? Plain lists
@@ -92,6 +99,7 @@ def _resolve(domain, record_type):
                 continue
             logger.debug(f"[domain_security] DNS {record_type} lookup failed for {domain}: {e}")
             return _DnsResult([], resolved=False)
+    return _DnsResult([], resolved=False)  # unreachable; explicit for clarity
 
 
 def _check_caa(session, domain) -> list:
@@ -334,6 +342,7 @@ def _get_txt_record(domain):
             if attempt == 0:
                 continue
             return _DnsResult([], resolved=False)
+    return _DnsResult([], resolved=False)  # unreachable; explicit for clarity
 
 
 _SPF_LOOKUP_LIMIT = 10  # RFC 7208 §4.6.4 — over this, receivers return permerror.
