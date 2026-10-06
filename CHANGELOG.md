@@ -7,6 +7,21 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.25.7] — 2026-10-06
+
+### Fixed
+- **DNS records no longer reported "missing" when the lookup failed (#555).** A
+  Passive Scan Deep FP review surfaced false HIGH findings — "No A/AAAA record",
+  "No NS records", "SPF record missing", "DMARC record missing" — on live domains
+  (stripe.com, gitlab.com) that demonstrably have all of them. Root cause:
+  `_resolve`/`_get_txt_record` returned `[]` for both "record absent" and a
+  *failed* lookup (timeout/SERVFAIL/NoNameservers/resolver rate-limiting), so an
+  empty result read as "missing". They now return a `_DnsResult` carrying
+  `.resolved` (plus one retry); the missing-record checks (A/AAAA, NS, MX, CAA,
+  SPF, DMARC) gate on it, so a failed lookup is treated as "unknown", never
+  "missing". `_DnsResult` subclasses `list`, so existing callers/mocks are
+  unchanged.
+
 ## [v2.25.6] — 2026-10-06
 
 ### Fixed
