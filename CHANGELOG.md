@@ -7,6 +7,22 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.25.5] — 2026-10-06
+
+### Changed
+- **Two passive-scan false-positive reductions (#549).** Found during a Passive
+  Scan Deep FP review.
+  - **Shodan CDN-edge noise:** a CDN-fronted domain resolves to the CDN's shared
+    edge IPs (Cloudflare/Fastly/CloudFront), where ports 80/443 are open for every
+    site on that CDN — not the target's asset. New `apps/shodan/cdn.py::is_cdn_ip()`
+    skips the `shodan_exposure` finding for those ranges. Never hides a real origin
+    exposure (a leaked origin is on a non-CDN IP, still flagged); CVE findings kept.
+  - **DKIM over-confidence:** DKIM selectors aren't enumerable, so a missing record
+    can't be proven. `domain_security` DKIM severity is now confidence-aware —
+    MEDIUM only when a mail provider was detected (its real selectors were checked);
+    otherwise LOW with "DKIM not found on common selectors (could not verify)"
+    wording, instead of a flat MEDIUM "DKIM could not be confirmed".
+
 ## [v2.25.4] — 2026-10-02
 
 ### Security
