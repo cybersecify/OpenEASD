@@ -7,6 +7,22 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.25.8] — 2026-10-06
+
+### Changed
+- **Two more lookalike false-positive reductions (#557)** — completing the FP
+  sweep from the 5-domain Passive Scan Deep review.
+  - **tldsquatting owned-via-redirect:** a lookalike whose homepage redirects to
+    the brand's own site (e.g. `stripe.blog` → stripe.com) was classified a THREAT
+    (even CRITICAL) because the redirect landed on the brand URL (`brand_mentioned`).
+    The collector now records `redirects_to_target` and `classify` treats it as
+    **owned**, before the brand-mention forcing rule.
+  - **asn_cluster generic-ASN clustering:** "40 lookalikes share AWS" was emitted
+    whenever ≥1 member was weaponized, lumping co-located benign domains into a
+    "campaign". On a generic ASN (hyperscaler/CDN/parking/brand-protection) it now
+    requires **≥2 weaponized** members and clusters only those; dedicated-hosting
+    clusters are unchanged. Added Safenames (AS60819) to the generic set.
+
 ## [v2.25.7] — 2026-10-06
 
 ### Fixed
