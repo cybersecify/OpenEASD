@@ -362,7 +362,7 @@ class TestFetchPriority:
             collect(sess)
 
         assert len(fetched) == 1
-        assert "staged.com" in fetched[0]
+        assert fetched[0] == "https://staged.com/"   # exact URL, not substring
 
 
 # ---------------------------------------------------------------------------
