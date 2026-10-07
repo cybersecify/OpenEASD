@@ -35,6 +35,8 @@ import dns.resolver
 import requests
 from django.conf import settings
 
+from .scoring import _age_days
+
 logger = logging.getLogger(__name__)
 
 # Bounded concurrency for the two network-bound passes. Candidate resolution and
@@ -589,6 +591,32 @@ def _enrich_registration_age(session, apex: str, results: list[dict]) -> None:
     )
 
 
+def _fetch_priority(record) -> tuple:
+    """Sort key (higher sorts first) for spending the capped content-fetch budget
+    on the most suspicious A-bearing lookalikes.
+
+    Priority, in order: a configured mail-auth stack (MX + SPF/DMARC — the
+    deliberate phishing-staging shape), recent registration (<= 365 days), then
+    partial mail signals. A lookalike that PREDATES the target is pre-existing /
+    benign and sorts last so it never consumes a fetch slot. Pure; no I/O.
+    ``sorted(..., reverse=True)`` is stable, so equal-priority candidates keep
+    their original generation order (TLD swaps ahead of char mutations).
+    """
+    if record.get("predates_target"):
+        return (-1, 0, 0, 0)
+    has_mx = bool(record.get("has_mx"))
+    has_auth = bool(record.get("has_spf") or record.get("has_dmarc"))
+    email_capable = has_mx and has_auth
+    age = _age_days(record.get("created"))
+    recent = age is not None and age <= 365
+    return (
+        1 if email_capable else 0,
+        1 if recent else 0,
+        1 if has_mx else 0,
+        1 if has_auth else 0,
+    )
+
+
 def collect(session) -> list[dict]:
     """Generate lookalike candidates for the session's apex domain and return the
     subset that is registered / weaponizable (via passive public DNS), enriched
@@ -621,11 +649,24 @@ def collect(session) -> list[dict]:
         if r.get("has_a") and _parked_by_ip(r.get("resolved_ips") or []):
             r["parked"] = True
 
+    # RDAP registration-age enrichment (fail-graceful, bounded) — mark lookalikes
+    # that predate the target so the analyzer deprioritises them. Runs BEFORE the
+    # content fetch so `created`/`predates_target` are available to rank the
+    # capped fetch budget by recency (and skip pre-existing/benign domains).
+    _enrich_registration_age(session, apex, results)
+
     # Weaponization pass: for registered lookalikes that serve web (have an A
     # record), fetch the homepage to spot active phishing / impersonation. Capped,
     # and probed concurrently — each _content_signals mutates its record in place.
+    # The budget is spent on the MOST suspicious candidates first (configured
+    # mail-auth stack / recent registration) rather than candidate-generation
+    # order, so a staged mail-configured lookalike past the cap still gets
+    # inspected instead of an alphabetically-first inert TLD swap.
     brand, _ = _split_apex(apex)
-    to_fetch = [r for r in results if r.get("has_a")][:CONTENT_MAX_FETCHES]
+    to_fetch = sorted(
+        (r for r in results if r.get("has_a")),
+        key=_fetch_priority, reverse=True,
+    )[:CONTENT_MAX_FETCHES]
     if to_fetch:
         def _probe(record):
             record.update(_content_signals(record["candidate"], brand, apex))
@@ -634,10 +675,6 @@ def collect(session) -> list[dict]:
         with ThreadPoolExecutor(max_workers=fetch_workers) as executor:
             list(executor.map(_probe, to_fetch))
     fetched = len(to_fetch)
-
-    # RDAP registration-age enrichment (fail-graceful, bounded) — mark lookalikes
-    # that predate the target so the analyzer deprioritises them.
-    _enrich_registration_age(session, apex, results)
 
     logger.info(
         "[tldsquatting:%s] checked %d lookalike candidate(s) for %s — %d registered, "

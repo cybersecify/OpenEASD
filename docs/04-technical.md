@@ -36,3 +36,7 @@ spec that drifts from the shipped behaviour is corrected like a failing test.
 - [tldsquatting False-Positive Reduction](specs/2026-09-30-tldsquatting-fp-reduction.md)
   — classify lookalikes (owned/parked/unrelated/pre_existing/threat) and collapse
   benign classes into info rollups.
+- [tldsquatting Email-Capable Severity + Fetch Prioritization](specs/2026-10-07-tldsquatting-email-capable-severity.md)
+  — a lookalike with a configured mail-auth stack (MX + SPF/DMARC) escapes the
+  no-weaponization severity cap, and the capped content-fetch budget is spent on
+  the most suspicious (mail-configured / recent) candidates first.

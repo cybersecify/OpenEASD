@@ -21,6 +21,7 @@ from apps.tldsquatting.analyzer import analyze
 from apps.tldsquatting.collector import (
     MAX_CANDIDATES,
     _TLDS,
+    _fetch_priority,
     collect,
     generate_candidates,
 )
@@ -295,6 +296,76 @@ class TestCollector:
 
 
 # ---------------------------------------------------------------------------
+# Content-fetch prioritization (spend the capped budget on the suspicious ones)
+# ---------------------------------------------------------------------------
+
+class TestFetchPriority:
+    def _recent(self):
+        from datetime import datetime, timedelta, timezone
+        return (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+
+    def test_email_capable_ranks_first(self):
+        # MX + SPF/DMARC (configured sender identity) outranks a plain A-only
+        # website regardless of generation order.
+        email = {"candidate": "a.com", "has_a": True, "has_mx": True, "has_spf": True}
+        plain = {"candidate": "b.com", "has_a": True}
+        assert _fetch_priority(email) > _fetch_priority(plain)
+
+    def test_recent_ranks_above_old(self):
+        recent = {"candidate": "a.com", "has_a": True, "created": self._recent()}
+        old = {"candidate": "b.com", "has_a": True, "created": "2001-01-01"}
+        assert _fetch_priority(recent) > _fetch_priority(old)
+
+    def test_pre_existing_ranks_last(self):
+        pre = {"candidate": "a.com", "has_a": True, "has_mx": True, "has_spf": True,
+               "predates_target": True}
+        inert = {"candidate": "b.com", "has_a": True}
+        assert _fetch_priority(pre) < _fetch_priority(inert)
+
+    def test_stable_sort_preserves_order_within_tier(self):
+        a = {"candidate": "a.com", "has_a": True}
+        b = {"candidate": "b.com", "has_a": True}
+        ordered = sorted([a, b], key=_fetch_priority, reverse=True)
+        assert [r["candidate"] for r in ordered] == ["a.com", "b.com"]
+
+    @pytest.mark.django_db
+    def test_collect_fetches_suspicious_candidate_within_cap(self):
+        # Two registered lookalikes, fetch budget of 1, email-capable one emitted
+        # SECOND in generation order — it must still be the one fetched.
+        sess = _session("example.com")
+
+        def fake_resolve(name, rdtype):
+            host = str(name).rstrip(".")
+            if rdtype == "A":
+                return ["1.2.3.4"]
+            # only inert.com gets no mail; staged.com carries MX+SPF
+            if host == "staged.com" and rdtype == "MX":
+                return ["10 mail.staged.com."]
+            if host == "staged.com" and rdtype == "TXT":
+                return ['"v=spf1 include:example.com -all"']
+            raise dns.resolver.NoAnswer()
+
+        fetched = []
+
+        def fake_get(url, **kw):
+            fetched.append(url)
+            return type("R", (), {"text": "<html>hi</html>", "url": url})()
+
+        with override_settings(), \
+             patch("apps.tldsquatting.collector.CONTENT_MAX_FETCHES", 1), \
+             patch("apps.tldsquatting.collector.generate_candidates",
+                   return_value=[{"candidate": "inert.com", "technique": "typo"},
+                                 {"candidate": "staged.com", "technique": "typo"}]), \
+             patch("dns.resolver.Resolver.resolve", side_effect=fake_resolve), \
+             patch("apps.tldsquatting.collector._enrich_registration_age"), \
+             patch("apps.tldsquatting.collector.requests.get", side_effect=fake_get):
+            collect(sess)
+
+        assert len(fetched) == 1
+        assert fetched[0] == "https://staged.com/"   # exact URL, not substring
+
+
+# ---------------------------------------------------------------------------
 # Analyzer
 # ---------------------------------------------------------------------------
 
@@ -531,12 +602,13 @@ class TestAnalyzer:
         assert f.extra["risk_level"] != "PRE-EXISTING"
         assert f.severity in ("low", "medium", "high", "critical")
 
-    def test_no_weaponization_signal_caps_severity_to_low(self):
-        # Infra-heavy (email + web records) but zero live-impersonation
-        # evidence (no login form, no brand mention) — the raw model would
-        # band this MEDIUM/HIGH from infra alone, but with nothing actually
-        # observed live on the lookalike, severity is capped to low. The raw
-        # scores/levels stay uncapped in extra for the report/AI triage.
+    def test_email_capable_lookalike_not_capped(self):
+        # A lookalike with a website AND a configured mail-auth stack
+        # (MX + SPF + DMARC) is staged to impersonate the brand over email —
+        # impersonation infrastructure in its own right. Even with no live
+        # login form / brand mention observed, it must KEEP its mapped severity
+        # (not be demoted to low by the no-weaponization cap). The raw
+        # scores/levels stay in extra unchanged.
         sess = _session("example.com")
         f = self._find(sess, {
             "candidate": "examp1e.com", "technique": "typo",
@@ -544,10 +616,25 @@ class TestAnalyzer:
             "resolved_ips": ["1.2.3.4"],
             "login_form": False, "brand_mentioned": False, "content_checked": True,
         })
-        assert f.severity == "low"
+        assert f.severity == "medium"           # NOT capped to low
         assert f.extra["risk_level"] == "HIGH"
         assert f.extra["threat_level"] == "MEDIUM"
         assert f.extra["threat_score"] == 7.0
+
+    def test_plain_website_no_mail_still_capped_to_low(self):
+        # The cap still fires for an ordinary website with NO mail-auth stack and
+        # no live-impersonation evidence: infra (A + unknown-tier NS) bands it
+        # MEDIUM, but with nothing observed live and no sender identity it's a
+        # monitoring signal, not an incident → capped to low.
+        sess = _session("example.com")
+        f = self._find(sess, {
+            "candidate": "examp1e.com", "technique": "typo",
+            "has_a": True, "has_ns": True, "ns_targets": ["ns1.randomhost.io."],
+            "resolved_ips": ["1.2.3.4"],
+            "login_form": False, "brand_mentioned": False, "content_checked": True,
+        })
+        assert f.severity == "low"
+        assert f.extra["threat_level"] in ("MEDIUM", "HIGH")  # raw band uncapped
 
     def test_one_finding_per_candidate(self):
         sess = _session("example.com")
