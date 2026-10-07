@@ -7,6 +7,8 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+## [v2.25.10] — 2026-10-07
+
 ### Changed
 - **tldsquatting: email-capable lookalikes keep their severity + smarter fetch
   budget.** A Passive Scan Deep review found the LOW bucket was hiding staged
