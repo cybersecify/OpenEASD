@@ -7,6 +7,23 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **tldsquatting: email-capable lookalikes keep their severity + smarter fetch
+  budget.** A Passive Scan Deep review found the LOW bucket was hiding staged
+  impersonation infrastructure: lookalikes with a website **and** a configured
+  mail-auth stack (MX + SPF/DMARC) — e.g. `gitlab.xyz` (threat_score 7.5) — were
+  demoted to LOW. Two causes: (1) the no-weaponization severity cap only exempted
+  *email-only* lookalikes (no website), so a mail-configured domain that also had
+  a website got capped; (2) the capped homepage-fetch budget (25) was spent in
+  candidate-generation order, so staged domains past the cap were never inspected
+  (`content_checked=False`), which guaranteed the cap fired. **Fix:** a lookalike
+  with MX + SPF/DMARC now escapes the cap and keeps its mapped severity even with
+  a website; and the fetch budget is ranked by suspicion (mail-auth stack /
+  recent registration first, pre-existing last) instead of generation order.
+  Genuinely inert bare registrations (A record, no mail, no brand/login) still
+  cap to LOW — the FP protection from the FP-reduction work is preserved.
+  Spec: `docs/specs/2026-10-07-tldsquatting-email-capable-severity.md`.
+
 ## [v2.25.9] — 2026-10-06
 
 ### Changed

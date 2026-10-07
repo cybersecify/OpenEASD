@@ -189,9 +189,22 @@ def _individual_finding(session, apex: str, record: dict) -> Finding:
     # levels are left untouched in `extra` either way.
     no_weaponization_signal = not record.get("login_form") and not record.get("brand_mentioned")
     has_live_website = bool(record.get("has_a") or record.get("has_aaaa"))
+    # A lookalike carrying a configured sender identity — a mail server AND an
+    # SPF/DMARC policy — is staged to send/receive authenticated mail as the
+    # brand: impersonation infrastructure in its own right, even with a website
+    # and no inspected login form / brand mention. It keeps its full mapped
+    # severity (the minimal-but-deliberate phishing-staging shape would otherwise
+    # be buried at low). MX alone (common on parked/default setups) is NOT enough
+    # — it stays capped as a monitoring signal; the fetch pass prioritises it for
+    # the content inspection that can confirm or clear it. Email-ONLY lookalikes
+    # (no website) already escape the cap via has_live_website=False.
+    email_capable = bool(record.get("has_mx")) and (
+        bool(record.get("has_spf")) or bool(record.get("has_dmarc"))
+    )
     capped = (
         no_weaponization_signal
         and has_live_website
+        and not email_capable
         and threat_level != "PRE-EXISTING"
         and severity in ("medium", "high", "critical")
     )
