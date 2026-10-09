@@ -7,6 +7,21 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Fixed
+- **Postgres OOM + worker connection resilience (preprod outage).** A batch of
+  Passive·Deep scans failed because `openeasd-postgres` was OOM-killed under
+  concurrent scan load (1Gi limit, exit 137, killed 8×); each kill dropped every
+  worker DB connection, and with persistent connections but no health checks the
+  worker kept reusing the dead ones ("the connection is closed") for ~18h until
+  it was manually restarted. Three-part fix: (1) `k8s/postgres.yaml` memory
+  limit 1Gi→**4Gi** (request 256Mi→1Gi) so a batch of concurrent scans doesn't
+  OOM the DB; (2) `CONN_HEALTH_CHECKS=True` on the Django DB config so a reused
+  connection is verified + transparently reconnected after a server restart,
+  instead of raising until it ages out; (3) a **worker liveness probe** (exec DB
+  round-trip; no HTTP listener on the worker) that restarts the pod after ~2 min
+  of Postgres unreachability so it re-establishes fresh connections. The
+  OpenEASD-MSSP wrapper reported these faithfully — it was not the cause.
+
 ## [v2.25.10] — 2026-10-07
 
 ### Changed

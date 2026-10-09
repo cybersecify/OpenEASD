@@ -58,3 +58,20 @@ spec:
             limits:
               cpu: "2000m"
               memory: "4Gi"
+          # The worker has no HTTP listener (no Service), so liveness is an exec
+          # DB round-trip. If Postgres is unreachable from the worker for ~2 min
+          # (4×30s), restart the pod so it re-establishes fresh connections —
+          # the self-heal that was missing when a Postgres OOM/restart left the
+          # worker wedged on dead connections ("the connection is closed") for
+          # hours. A direct psycopg connect (not django.setup()) keeps the probe
+          # cheap; DB_* come from the configmap/secret via envFrom.
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import os,psycopg;psycopg.connect(host=os.environ.get('DB_HOST','127.0.0.1'),port=os.environ.get('DB_PORT','5432'),dbname=os.environ.get('DB_NAME','openeasd'),user=os.environ.get('DB_USER','openeasd'),password=os.environ.get('DB_PASSWORD',''),connect_timeout=10).cursor().execute('SELECT 1')"
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 4

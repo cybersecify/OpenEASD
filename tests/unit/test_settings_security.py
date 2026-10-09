@@ -11,6 +11,16 @@ from openeasd.settings import (
 )
 
 
+class TestDatabaseResilience:
+    def test_conn_health_checks_enabled(self):
+        # Persistent connections (CONN_MAX_AGE>0) without health checks hand out
+        # dead connections after a Postgres restart ("the connection is closed")
+        # until they age out — the error that wedged the worker for hours. Health
+        # checks verify + reconnect on reuse.
+        from django.conf import settings
+        assert settings.DATABASES["default"].get("CONN_HEALTH_CHECKS") is True
+
+
 class TestResourceProfile:
     def test_profile_tuning_values(self):
         assert _PROFILE_TUNING["low"]["nuclei_c"] == 10
