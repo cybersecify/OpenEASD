@@ -233,7 +233,7 @@ def _validate_db_password(using_database_url: bool, db_password: str, debug: boo
 if _DATABASE_URL:
     import dj_database_url  # type: ignore
 
-    DATABASES = {"default": dj_database_url.parse(_DATABASE_URL, conn_max_age=600)}
+    DATABASES = {"default": dj_database_url.parse(_DATABASE_URL, conn_max_age=600, conn_health_checks=True)}
 else:
     DATABASES = {
         "default": {
@@ -244,6 +244,13 @@ else:
             "HOST": config("DB_HOST", default="127.0.0.1"),
             "PORT": config("DB_PORT", default="5432"),
             "CONN_MAX_AGE": config("DB_CONN_MAX_AGE", default=600, cast=int),
+            # With persistent connections (CONN_MAX_AGE>0), verify a reused
+            # connection is still alive before handing it out and transparently
+            # reconnect if the server dropped it (e.g. a Postgres restart/OOM).
+            # Without this, a reused dead connection raises "the connection is
+            # closed" until it ages out — the error that wedged the worker for
+            # hours after a Postgres OOM.
+            "CONN_HEALTH_CHECKS": config("DB_CONN_HEALTH_CHECKS", default=True, cast=bool),
         }
     }
 
