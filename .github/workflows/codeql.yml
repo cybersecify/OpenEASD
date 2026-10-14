@@ -31,6 +31,11 @@ jobs:
         include:
           - language: python
             build-mode: none
+          # Kept to match main's CodeQL config (a required status check compares the
+          # two); there is no JS/TS left after the React SPA removal, so this scans an
+          # empty set. Drop it only together with the branch-protection requirement.
+          - language: javascript-typescript
+            build-mode: none
 
     steps:
       - name: Checkout
