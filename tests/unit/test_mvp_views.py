@@ -15,7 +15,7 @@ def _plain_staticfiles(settings):
 class TestAuthShell:
     def test_dashboard_requires_login(self, client):
         resp = client.get("/")
-        assert resp.status_code == 302 and "/login/" in resp["Location"]
+        assert resp.status_code == 302 and resp["Location"].startswith("/login/")
 
     def test_dashboard_renders_when_logged_in(self, client):
         User.objects.create_user("admin", password="pw12345!")
@@ -318,7 +318,7 @@ class TestFindings:
     def test_requires_login(self, client):
         client.logout()
         resp = client.get("/findings/")
-        assert resp.status_code == 302 and "/login/" in resp["Location"]
+        assert resp.status_code == 302 and resp["Location"].startswith("/login/")
 
     def test_lists_all_sorted_by_severity(self, client):
         resp = client.get("/findings/")
