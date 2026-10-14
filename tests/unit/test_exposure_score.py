@@ -10,7 +10,6 @@ Covers:
 """
 
 import pytest
-from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.test import Client
 from django.utils import timezone
@@ -258,66 +257,3 @@ class TestDashboardAPIExposure:
         assert resp.status_code == 200
         statuses = {s["domain"]: s for s in resp.json()["domain_status"]}
         assert statuses["d.example.com"]["exposure_score"] == 41
-        assert statuses["d.example.com"]["exposure_grade"] == "C"
-
-
-# ---------------------------------------------------------------------------
-# PDF report context — exposure block
-# ---------------------------------------------------------------------------
-
-@pytest.mark.django_db
-class TestReportExposureContext:
-    def _authed(self):
-        user = User.objects.create_user("reportexp", password="x")
-        c = Client()
-        c.force_login(user)
-        return c
-
-    def _session_with_findings(self, domain="rep.example.com"):
-        from apps.core.engine.scans.models import ScanSession
-        s = ScanSession.objects.create(
-            domain=domain, scan_type="full", status="completed",
-            end_time=timezone.now(), total_findings=3,
-        )
-        _finding(s, "critical", "c1")
-        _finding(s, "high", "h1")
-        _finding(s, "high", "h2")
-        return s
-
-    def _capture_html(self, client, session):
-        captured = {}
-
-        def capture(html):
-            captured["html"] = html
-            return b"%PDF-1.7"
-
-        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture):
-            resp = client.get(f"/reports/{session.uuid}/pdf/")
-        assert resp.status_code == 200
-        return captured["html"]
-
-    def test_exposure_block_renders(self, db):
-        client = self._authed()
-        session = self._session_with_findings()
-        html = self._capture_html(client, session)
-        assert "Exposure Score" in html
-        # 1 critical (25) + 2 high (16) = 41 -> grade C
-        assert "41/100" in html
-        assert "Grade C" in html
-
-    def test_baseline_when_no_previous(self, db):
-        client = self._authed()
-        session = self._session_with_findings()
-        html = self._capture_html(client, session)
-        assert "baseline" in html
-
-    def test_trend_up_when_previous_lower(self, db):
-        client = self._authed()
-        import datetime
-        # a prior, cleaner summary for the same domain
-        _domain_and_summary(
-            "rep.example.com", 10, timezone.now() - datetime.timedelta(days=1)
-        )
-        session = self._session_with_findings()
-        html = self._capture_html(client, session)
-        assert "posture worsened" in html

@@ -657,16 +657,6 @@ LOGGING = {
             "level": "WARNING",
             "propagate": False,
         },
-        "weasyprint": {
-            "handlers": ["file"],
-            "level": "WARNING",
-            "propagate": False,
-        },
-        "fontTools": {
-            "handlers": ["file"],
-            "level": "WARNING",
-            "propagate": False,
-        },
     },
 }
 
