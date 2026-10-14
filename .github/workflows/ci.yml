@@ -119,6 +119,17 @@ jobs:
           cache-from: type=gha,scope=singleimage
           cache-to: type=gha,mode=max,scope=singleimage
 
+  frontend:
+    # Legacy no-op shim. The React SPA was removed (the UI is server-rendered
+    # Django now), but main's branch protection still REQUIRES a "Frontend Build"
+    # status check. This job satisfies it so PRs can merge. Remove this job once
+    # "Frontend Build" is dropped from the main branch-protection required checks.
+    if: github.event_name == 'pull_request'
+    name: Frontend Build
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "No frontend to build (server-rendered Django UI); no-op shim for the legacy required check."
+
   publish:
     name: Publish to GHCR
     runs-on: ubuntu-24.04
