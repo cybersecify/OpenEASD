@@ -11,7 +11,6 @@ updates:
       django-stack:
         patterns:
           - "django*"
-          - "django-ninja*"
           - "django-q*"
       tooling:
         patterns:
@@ -22,37 +21,6 @@ updates:
     labels:
       - "dependencies"
       - "python"
-
-  # Frontend npm deps
-  - package-ecosystem: "npm"
-    directory: "/frontend"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
-    groups:
-      react-stack:
-        patterns:
-          - "react"
-          - "react-dom"
-          - "vite"
-          - "@vitejs/plugin-react"
-      shadcn-radix:
-        patterns:
-          - "@radix-ui/*"
-          - "class-variance-authority"
-          - "tailwind*"
-    ignore:
-      # Tailwind v4 is a breaking migration (PostCSS plugin moved to
-      # @tailwindcss/postcss, CSS-first config). We intentionally pin
-      # Tailwind 3; the v4 jump will be handled as its own tracked
-      # migration, not an unattended group bump. Minor/patch v3 updates
-      # still flow through.
-      - dependency-name: "tailwindcss"
-        update-types: ["version-update:semver-major"]
-    labels:
-      - "dependencies"
-      - "frontend"
 
   # GitHub Actions versions
   - package-ecosystem: "github-actions"

@@ -134,7 +134,7 @@ class ScheduledScan(models.Model):
 
 class ScheduledJob(models.Model):
     """System cron registry (H7) — one editable row per unattended backbone job
-    (daily scan, monitoring/user sweeps, watchdog, token purge, scan prune).
+    (daily scan, monitoring/user sweeps, watchdog, scan prune).
 
     Timing still comes from the DBOS ``@scheduled`` decorators (DBOS owns the tick
     + exactly-once), so ``cron`` here is the informational/current schedule. What

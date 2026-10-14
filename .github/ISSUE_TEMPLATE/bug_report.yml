@@ -35,7 +35,7 @@ body:
         - Docker (single container)
         - Kubernetes (manifests in k8s/)
         - Standalone (no Docker, install.sh)
-        - Local dev (uv run python main.py + vite)
+        - Local dev (uv run manage.py runserver)
     validations:
       required: true
 

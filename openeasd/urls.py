@@ -3,11 +3,10 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.contrib.auth import views as auth_views
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import render
+from django.shortcuts import redirect
 from django.urls import path, include, re_path
-
-from apps.core.console.api.ninja import api
 
 
 def metrics(request):
@@ -37,26 +36,23 @@ def health(request):
     return resp
 
 
-def spa(request):
-    """Serve the SPA entry point with no caching.
+def favicon(request):
+    return HttpResponse(status=204)
 
-    index.html references content-hashed JS/CSS bundles, so a CDN/browser that
-    caches it keeps serving the OLD bundle (stale UI) after a deploy even though
-    the backend is new — exactly what happened when Cloudflare cached index.html
-    with max-age=3600 and showed the pre-release UI post-v2.10.0. The hashed
-    assets under /static/ stay long-cached (WhiteNoise); only this mutable entry
-    point must always revalidate. Same class of fix as /health above.
-    """
-    resp = render(request, "index.html")
-    resp["Cache-Control"] = "no-store"
-    return resp
+
+def catch_all(request):
+    """Unmatched non-API paths land on the dashboard."""
+    return redirect("mvp:dashboard")
 
 
 urlpatterns = [
     path("health/", health),
+    path("favicon.ico", favicon),
     path("metrics/", metrics),
     path("admin/", admin.site.urls),
-    path("api/", api.urls),
     path("reports/", include("apps.core.console.reports.urls")),
-    re_path(r'^(?!api/|admin|static/|media/|metrics/).*$', spa, name='spa'),
+    path("login/", auth_views.LoginView.as_view(), name="login"),
+    path("logout/", auth_views.LogoutView.as_view(next_page="login"), name="logout"),
+    path("", include("apps.mvp.urls")),
+    re_path(r"^(?!admin|static/|media/|metrics/|reports/|login/|logout/).*$", catch_all),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

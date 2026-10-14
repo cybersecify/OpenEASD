@@ -7,7 +7,6 @@ Company: Cybersecify | Authors: Rathnakara GN, Ashok Kamat
 
 import os
 import sys
-from datetime import timedelta
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -31,8 +30,8 @@ DEBUG = config("DEBUG", default=False, cast=bool)
 def _validate_secret_key(secret_key: str, debug: bool) -> None:
     """Fail fast in production on an unset/placeholder SECRET_KEY.
 
-    The key also signs JWTs (NINJA_JWT["SIGNING_KEY"] below), so the well-known
-    default would let anyone forge access/refresh tokens for any user. DEBUG
+    The key signs Django session cookies, CSRF tokens, and password-reset
+    tokens, so the well-known default would let anyone forge them. DEBUG
     builds keep the default for local dev.
     """
     if not debug and secret_key.startswith("django-insecure"):
@@ -91,10 +90,12 @@ def _security_settings(debug: bool) -> dict:
 
 globals().update(_security_settings(DEBUG))
 
-# Allow Vite dev server to make CSRF-protected POST requests in development
+# Trusted origins for CSRF-protected POST requests. The UI is same-origin
+# (Django serves it directly), so the local default is the runserver origin;
+# real deployed hosts (behind the TLS proxy) are set via the env var.
 CSRF_TRUSTED_ORIGINS = config(
     "CSRF_TRUSTED_ORIGINS",
-    default="http://localhost:5173,http://127.0.0.1:5173",
+    default="http://localhost:8001,http://127.0.0.1:8001",
 ).split(",")
 
 INSTALLED_APPS = [
@@ -122,8 +123,6 @@ INSTALLED_APPS = [
     "apps.core.console.reports",
     "apps.core.console.ai",
     "apps.core.engine.durable",
-    "ninja_jwt",
-    "ninja_jwt.token_blacklist",
     "apps.domain_security",
     "apps.domain_probe",
     "apps.asn_cluster",
@@ -148,6 +147,7 @@ INSTALLED_APPS = [
     "apps.nuclei",
     "apps.nuclei_network",
     "apps.web_checker",
+    "apps.mvp",
     "apps.js_secrets",
     "apps.shodan",
     "apps.tldsquatting",
@@ -163,32 +163,17 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.mvp.middleware.MustChangePasswordMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "apps.core.console.api.ratelimit.LoginRateLimitMiddleware",
 ]
-
-# Brute-force rate limiting for POST /api/token/pair (see apps/core/api/ratelimit.py).
-LOGIN_RATELIMIT_ENABLED = config("LOGIN_RATELIMIT_ENABLED", default=True, cast=bool)
-# Whether to key the limiter on the leftmost X-Forwarded-For entry (the client,
-# behind the mandated TLS reverse proxy) vs the raw REMOTE_ADDR. Keep True for the
-# standard proxied deployment. Set False ONLY if OpenEASD is somehow exposed
-# without a trusted proxy — then XFF is attacker-controllable and would let a
-# brute-forcer rotate the header to evade the per-IP limit; REMOTE_ADDR (the TCP
-# peer) is unspoofable but, behind a proxy, is the proxy itself (one shared IP).
-LOGIN_RATELIMIT_TRUST_FORWARDED_FOR = config(
-    "LOGIN_RATELIMIT_TRUST_FORWARDED_FOR", default=True, cast=bool
-)
-LOGIN_RATELIMIT_MAX_FAILURES = config("LOGIN_RATELIMIT_MAX_FAILURES", default=5, cast=int)
-LOGIN_RATELIMIT_WINDOW_SECONDS = config("LOGIN_RATELIMIT_WINDOW_SECONDS", default=900, cast=int)
-LOGIN_RATELIMIT_LOCKOUT_SECONDS = config("LOGIN_RATELIMIT_LOCKOUT_SECONDS", default=900, cast=int)
 
 ROOT_URLCONF = "openeasd.urls"
 
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates", BASE_DIR / "frontend" / "dist"],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -281,9 +266,9 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [
-    BASE_DIR / "frontend" / "dist",
-]
+# No project-level static dir — the mvp app's static (Bulma/HTMX) is collected
+# via AppDirectoriesFinder. (The React SPA's frontend/dist was removed.)
+STATICFILES_DIRS = []
 STORAGES = {
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
@@ -655,16 +640,6 @@ LOGGING = {
             "level": "WARNING",
             "propagate": False,
         },
-        "weasyprint": {
-            "handlers": ["file"],
-            "level": "WARNING",
-            "propagate": False,
-        },
-        "fontTools": {
-            "handlers": ["file"],
-            "level": "WARNING",
-            "propagate": False,
-        },
     },
 }
 
@@ -681,14 +656,3 @@ LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/login/"
 
-# ninja-jwt token configuration
-NINJA_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-    "ALGORITHM": "HS256",
-    "SIGNING_KEY": SECRET_KEY,
-    "AUTH_HEADER_TYPES": ("Bearer",),
-    "ROTATE_REFRESH_TOKENS": False,
-    "BLACKLIST_AFTER_ROTATION": False,
-    "UPDATE_LAST_LOGIN": False,
-}

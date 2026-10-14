@@ -1,0 +1,41 @@
+<div class="grid">
+  <div class="kv"><b class="scan-{{ session.status }}">{{ session.get_status_display }}</b><span class="muted">status</span></div>
+  <div class="kv"><b>{{ steps_done }}/{{ steps_total }}</b><span class="muted">tools</span></div>
+  <div class="kv"><b>{{ finding_count }}</b><span class="muted">findings</span></div>
+  {% if active %}
+  <div class="kv" style="display:flex;align-items:center">
+    <form action="{% url 'mvp:scan-cancel' session.uuid %}" method="post">{% csrf_token %}
+      <button class="button is-danger is-small" type="submit">Stop scan</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+<div class="panel-sev">
+  {% for sev,n in by_severity %}<span class="pill sev-{{ sev }}">{{ n }} {{ sev }}</span> {% empty %}<span class="muted">No findings yet.</span>{% endfor %}
+</div>
+
+{% if failed_tools or skipped_tools %}
+<p class="msg warning" style="margin-top:10px">
+  {% if failed_tools %}<strong>Failed:</strong> {{ failed_tools|join:", " }}. {% endif %}
+  {% if skipped_tools %}<strong>Skipped:</strong> {{ skipped_tools|join:", " }}. {% endif %}
+  Coverage is incomplete — these tools contributed no findings.
+</p>
+{% endif %}
+
+<div class="box" style="margin-top:12px">
+  <table class="table is-fullwidth is-hoverable">
+    <thead><tr><th>#</th><th>Tool</th><th>Status</th><th>Findings</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for s in steps %}
+    <tr>
+      <td class="muted">{{ s.order }}</td>
+      <td>{{ s.tool }}</td>
+      <td><span class="scan-{{ s.status }}" style="font-weight:600">{{ s.status }}</span></td>
+      <td>{{ s.findings_count }}</td>
+      <td class="muted">{{ s.error|truncatechars:80 }}</td>
+    </tr>
+    {% empty %}<tr><td colspan="5" class="muted">No tool steps recorded yet (scan starting).</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>

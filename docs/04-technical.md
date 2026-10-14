@@ -40,3 +40,7 @@ spec that drifts from the shipped behaviour is corrected like a failing test.
   — a lookalike with a configured mail-auth stack (MX + SPF/DMARC) escapes the
   no-weaponization severity cap, and the capped content-fetch budget is spent on
   the most suspicious (mail-configured / recent) candidates first.
+- [Plain-Django UI](specs/2026-10-14-plain-django-ui.md) — replace the served
+  React SPA with a server-rendered `apps/mvp` UI (Bulma + HTMX, session auth); Ninja
+  API/JWT removed, SPA left dormant; PDF reports dropped; single-image deploy added.
+  Plan: [plain-django-ui-plan](specs/2026-10-14-plain-django-ui-plan.md).

@@ -103,29 +103,9 @@ class TestCoverageRegression:
 
 @pytest.mark.django_db
 class TestCoverageRegressionReport:
-    """End-to-end: the coverage-regression Finding must surface in the rendered
-    report AND must never be flagged as a 'new finding' delta (it is created after
-    delta detection by design)."""
-
-    def _render_html(self, session):
-        from unittest.mock import patch
-        from django.contrib.auth.models import User
-        from django.test import Client
-
-        user = User.objects.create_user("covrepuser", password="x")
-        client = Client()
-        client.force_login(user)
-
-        captured = {}
-
-        def capture_html(html):
-            captured["html"] = html
-            return b"%PDF-1.7"
-
-        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
-            res = client.get(f"/reports/{session.uuid}/pdf/")
-        assert res.status_code == 200
-        return captured["html"]
+    """End-to-end: the coverage-regression Finding must be created at finalize AND
+    must never be flagged as a 'new finding' delta (it is created after delta
+    detection by design)."""
 
     def test_regression_finding_renders_and_is_not_a_new_delta(self):
         from django.utils import timezone
@@ -157,12 +137,7 @@ class TestCoverageRegressionReport:
         reg = Finding.objects.get(session=cur, check_type="coverage_regression")
         assert reg.title == "Scan coverage dropped sharply — results may be incomplete"
 
-        # 2. Its title renders in the report HTML.
-        cur.refresh_from_db()
-        html = self._render_html(cur)
-        assert "Scan coverage dropped sharply" in html
-
-        # 3. Deltas ran (the normal finding is a 'new' delta) but the synthetic
+        # 2. Deltas ran (the normal finding is a 'new' delta) but the synthetic
         #    coverage-regression finding is NOT a 'new' delta — _check_coverage_
         #    regression runs after _detect_deltas by design.
         new_deltas = ScanDelta.objects.filter(session=cur, change_type="new")

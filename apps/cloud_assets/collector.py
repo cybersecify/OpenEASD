@@ -6,6 +6,7 @@ import tempfile
 from django.conf import settings
 
 from apps.core.engine.workflows.exceptions import ToolBinaryMissing, ToolTimeout
+from apps.core.engine.workflows.proc import run_capped
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +32,16 @@ def collect(keywords: list[str]) -> list[str]:
     try:
         cmd = [binary, "-kf", keywords_path, "-l", output_path, "-t", "10"]
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=_TIMEOUT,
-                stdin=subprocess.DEVNULL,
-            )
+            # run_capped (not subprocess.run): cloud_enum forks worker processes
+            # per cloud provider, and a surviving grandchild holding the captured
+            # stdout pipe can make subprocess.run block PAST its timeout —
+            # TimeoutExpired fires internally but communicate() never returns, so
+            # the step wedges and the scan never degrades. run_capped redirects to
+            # temp files and wait()s on the direct child, so the SIGKILL at the cap
+            # always unblocks us and the timeout reliably surfaces as a ToolTimeout
+            # → the runner marks this step failed → the scan finalizes "partial"
+            # (with a report) instead of hanging until the no-progress watchdog.
+            result = run_capped(cmd, _TIMEOUT)
         except subprocess.TimeoutExpired:
             logger.warning("cloud_enum timed out after %ss", _TIMEOUT)
             raise ToolTimeout(f"cloud_enum timed out after {_TIMEOUT}s")

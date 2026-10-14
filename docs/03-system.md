@@ -74,11 +74,11 @@ presentation run in their own lanes and meet only through stored facts.
         │                                   ╚════════════════════╤════════════════════╝
         │                                                        │ ④ READ (traverse the graph)
         │         the SAME backend, queried per perspective      ▼
-   ┌────┴───────────────── API (Django Ninja, flat JSON — the one contract) ──────────────────┐
+   ┌────┴───────────────── service layer (read per perspective) ───────────────────────────┐
    │  /scans → scan-centric   /assets → asset-centric   /issues → finding/issue-centric   …    │
    └────────────────────────────────────────────────┬──────────────────────────────────────────┘
                                                      ▼
-                            UI decides PRESENTATION only (React SPA, or any client)
+                            UI decides PRESENTATION only (the server-rendered `apps/mvp` UI, or any future client)
                             new perspective = new read + view, NO schema change
 ```
 
@@ -94,12 +94,12 @@ writes normalized rows and the graph + every perspective pick it up for free.
 ## System Overview
 
 ```
-Browser (React 19 SPA)
-       │  JWT Bearer (Authorization: Bearer …)
+Browser (server-rendered pages, vendored Bulma + HTMX)
+       │  Django session cookie
        ▼
 web tier — gunicorn (python:3.12-slim image, no scanner tools)
-  ├── Django Ninja REST API  (/api/)   + login rate-limit middleware
-  ├── WhiteNoise             (frontend/dist/, static/)
+  ├── apps/mvp plain-Django UI (/)     + must-change-password middleware
+  ├── WhiteNoise             (static/)
   ├── Django Admin           (/admin/)
   └── enqueue-only: durably enqueues scans onto the DBOS queue
        │  Django ORM                         │  DBOSClient.enqueue
@@ -108,11 +108,11 @@ PostgreSQL 17  ◄──────────────────  worker
   app rows (ORM) + DBOS checkpoints        full scanner matrix, NET_RAW)
   (a `dbos` schema in the same DB)     ├── run_scan_workflow   (@DBOS.workflow; phases = checkpointed @DBOS.step)
                                        ├── ai_triage / agent_step workflows
-                                       └── @DBOS.scheduled crons (daily scan, sweeps, watchdog, JWT purge)
+                                       └── @DBOS.scheduled crons (daily scan, sweeps, watchdog, scan prune)
 ```
 
 Three tiers, each its own container/workload: **db** (`postgres:17-alpine`),
-**web** (UI/API + synchronous CSV/PDF reports; no tools, no `NET_RAW`), **worker**
+**web** (UI + synchronous CSV reports; no tools, no `NET_RAW`), **worker**
 (DBOS durable execution + the scanner binaries; `NET_RAW`). The web tier only
 *enqueues* scans; the worker *executes* them. Scans are **durable DBOS workflows**
 whose phase groups are checkpointed steps, so a crashed/restarted worker
@@ -132,7 +132,7 @@ import the same codebase and differ only by entrypoint.
 ### Axis 1 — logical layers (how the CODE is organized, by responsibility)
 
 ```
-┌─ CONSOLE   presentation: Ninja API + React SPA + reports/insights/notifications/ai
+┌─ CONSOLE   presentation: server-rendered `apps/mvp` UI (session auth) + reports(CSV)/insights/notifications/ai
 │               apps/core/{dashboard, api, insights, reports, notifications, ai}
 ├─ ENGINE    orchestration: durable scan execution + dynamic workflow runner
 │               apps/core/{scans, workflows, durable, scheduler}
@@ -166,7 +166,7 @@ Core Infrastructure and Tool Apps tables below.
 
 | Logical layer | Runs in | Note |
 |---|---|---|
-| **Console** | `web` | gunicorn serves the API + React bundle |
+| **Console** | `web` | gunicorn serves the server-rendered `apps/mvp` UI (session auth); there is no REST API |
 | **Engine** | `worker` | `dbos_worker` runs the durable scan workflows |
 | **Tools** | `worker` | the scanner binaries live only in the worker image |
 | **Data** | `db` | Postgres; accessed by **both** web & worker via the Django ORM |
@@ -199,20 +199,19 @@ the folder move is purely organisational; the table lists each app by name.
 | `assets/` | `assets` | Network assets: `Subdomain`, `IPAddress`, `Port` |
 | `web_assets/` | `web_assets` | Web assets: `URL` |
 | `service_detection/` | `service_detection` | Enriches `Port.service` + `Port.is_web` via nmap -sV |
-| `findings/` | `findings` | Unified **raw** `Finding` model (per-scan) — all finding-producing tools write here; `/api/findings/` |
-| `issues/` | `issues` | Persistent, cross-scan **`Issue`** register (deduped promotion of Findings; triage persists across scans); finalize rollup, mirrors `asset_inventory`; `/api/issues/`. Split out of `findings` (D-017; table kept as `findings_issue`) |
-| `asset_inventory/` | `asset_inventory` | Persistent, deduplicated `Asset` inventory (domain-scoped, first/last-seen + status); populated by a fail-graceful rollup at finalize; `Finding.asset` links findings to it; `/api/assets/` + the Assets UI |
+| `findings/` | `findings` | Unified **raw** `Finding` model (per-scan) — all finding-producing tools write here |
+| `issues/` | `issues` | Persistent, cross-scan **`Issue`** register (deduped promotion of Findings; triage persists across scans); finalize rollup, mirrors `asset_inventory`. Split out of `findings` (D-017; table kept as `findings_issue`) |
+| `asset_inventory/` | `asset_inventory` | Persistent, deduplicated `Asset` inventory (domain-scoped, first/last-seen + status); populated by a fail-graceful rollup at finalize; `Finding.asset` links findings to it |
 | `scans/` | `scans` | `ScanSession`, `ScanDelta`, `ScheduledScan`, pipeline orchestrator |
 | `workflows/` | `workflow` | Workflow CRUD, dynamic runner, tool registry |
-| `scheduler/` | `scheduler` | Scan callables (daily/monitoring/user sweeps, watchdog, JWT purge) invoked by the DBOS `@scheduled` workflows |
+| `scheduler/` | `scheduler` | Scan callables (daily/monitoring/user sweeps, watchdog, scan prune) invoked by the DBOS `@scheduled` workflows |
 | `durable/` | `durable` | DBOS app config + `@DBOS.workflow`/`@DBOS.step`/`@DBOS.scheduled` definitions; `dbos_worker` command |
 | `verification/` | — | Deterministic finding verification (`verify_session`) — re-probes medium+ findings at finalize via each tool's registered verifier, writing `Finding.verification_status`/`verified_at`; active re-probes gated by `DomainAuthorization`. Internal sub-package (no models, not in `INSTALLED_APPS`) invoked directly by `apps/core/engine/scans/pipeline.py` |
 | `notifications/` | `alerts` | `NotificationConfig` singleton, Slack/Teams dispatcher, alert history |
 | `insights/` | `insights` | `ScanSummary` (incl. Exposure Score + grade), `FindingTypeSummary`, trend charts |
-| `reports/` | `reports` | CSV + PDF export (synchronous Django views, on the web tier) |
+| `reports/` | `reports` | CSV export (synchronous Django views, on the web tier) |
 | `ai/` | `ai` | AI triage / adaptive orchestration / summaries (Cloudflare Workers AI, BYOK) — a core subsystem, **not** a registry tool |
-| `credentials/` | `credentials` | `ToolCredentials` encrypted singleton + `get_credential()` resolver (DB-wins-over-env) + write-only `/api/credentials/` — UI-managed BYOK keys |
-| `api/` | — | `NinjaAPI` instance, JWT routes, router registration, error handlers, rate-limit middleware |
+| `credentials/` | `credentials` | `ToolCredentials` encrypted singleton + `get_credential()` resolver (DB-wins-over-env) + UI-managed BYOK keys (Django admin) |
 
 ### By layer — console / engine / data
 
@@ -354,7 +353,7 @@ Phase 13  cve_intel + asn_cluster → enrich CVE findings (EPSS + CISA-KEV) + cl
 ### Scan flow (call chain)
 
 ```
-POST /api/scans/start/  (authorization gate: active tools need DomainAuthorization;
+scan start (`apps/mvp` view; authorization gate: active tools need DomainAuthorization;
   │                       a "now" scan of ONLY passive tools may bypass it)
   → create_scan_session(domain)        # ScanSession; auto-assigns the default Full Scan workflow
     → run_scan_task(session_id)        # DURABLY ENQUEUES onto the DBOS "scans" queue (DBOSClient)
@@ -384,7 +383,7 @@ gated by `FINDING_VERIFICATION_ENABLED`) → issue-register rollup
 | `completed` | All steps finished normally |
 | `partial` | Watchdog reaped it, or a tool failed; ≥1 step completed |
 | `failed` | No steps completed, or unrecoverable error |
-| `cancelled` | Stopped by user via `POST /api/scans/<uuid>/stop/` |
+| `cancelled` | Stopped by the user from the scan-detail page |
 
 ### Key design rules
 
@@ -489,47 +488,11 @@ Finding
 
 ---
 
-## REST API
+## REST API — removed
 
-Base path: `/api/`. Auth: JWT Bearer via `ninja-jwt` (simplejwt).
+There is no REST API (removed 2026-10-14). The UI is server-rendered with session auth and calls the service layer directly; see [05-api.md](05-api.md).
 
-### Auth flow
-
-```
-POST /api/token/pair      → {access, refresh}   # login (per-IP brute-force rate-limited)
-POST /api/token/refresh   → {access}             # renew
-POST /api/token/blacklist                         # logout (blacklists refresh token)
-```
-
-Access token sent as `Authorization: Bearer <token>` on every request; the React
-axios interceptor silently refreshes on 401. Tokens live in `localStorage`
-(`auth.js`). Login is rate-limited by `LoginRateLimitMiddleware` (per-IP,
-DB-backed `LoginThrottle`).
-
-### Response format
-
-```json
-{"id": 1, "domain": "example.com", ...}              // success — flat, no envelope
-{"error": {"code": "NOT_FOUND", "message": "..."}}   // error
-```
-
-### Key endpoints (abbreviated — full list in CLAUDE.md)
-
-```
-GET  /api/dashboard/                  KPIs, domain status (incl. exposure_score/grade), urgent findings
-POST /api/domains/<pk>/authorize/     grant DomainAuthorization (attestation)
-POST /api/scans/start/                start or schedule a scan
-GET  /api/scans/<uuid>/status/        lightweight status (React polls every 3s while running)
-POST /api/scans/<uuid>/subscan/       re-run a subset of tools against an existing scan
-GET  /api/scans/findings/             paginated findings (?severity= &domain= &status= &source=)
-GET  /api/insights/                   trends, top hosts, asset growth, Exposure Score
-GET  /api/assets/                     persistent asset inventory (?domain= &kind= &status= &q=)
-GET  /api/ai/triage/<uuid>/           AI triage status + ranked items + agent decisions
-GET  /api/version/  /health/          build provenance (unauthenticated)
-GET  /api/docs                        OpenAPI / Swagger UI
-```
-
-Full URL layout: [CLAUDE.md](../CLAUDE.md#url-layout). CSV/PDF reports are
+Full URL layout: [CLAUDE.md](../CLAUDE.md#url-layout). CSV reports are
 synchronous Django views under `/reports/<uuid>/` served by the web tier.
 
 ---
@@ -550,38 +513,25 @@ only (the model has no text field, so prompt/response bodies are unpersistable).
 
 ## Frontend Architecture
 
-```
-frontend/
-  src/
-    api/client.js          apiGet(path) / apiPost(path, body) over axiosInstance.js
-    api/axiosInstance.js    request interceptor adds Bearer; response interceptor refreshes on 401
-    auth.js                localStorage helpers (getToken, setTokens, clear, isLoggedIn)
-    router.jsx             react-router-dom createBrowserRouter tree; ProtectedRoute gate
-    main.jsx               <RouterProvider> + <QueryClientProvider> + <Toaster>
-    lib/queryClient.js     @tanstack/react-query client
-    pages/                 one file per route
-    components/
-      ui/                  shadcn primitives (Button, Card, Table, Badge, …)
-      Badge.jsx / Spinner.jsx / Pagination.jsx / ConfirmButton.jsx / Notification.jsx
-      BuildInfo.jsx        sidebar build/version footer + "update available" check
-      ai/                  ConsentDialog.jsx, TriagePanel.jsx
-```
+**Current UI:** `apps/mvp` — plain Django views + templates, vendored Bulma CSS and
+vendored HTMX, Django **session** auth, served at `/`. Views call the engine service
+layer directly (`create_scan_session` → `run_scan_task`); scan progress is an HTMX
+partial polled every 3s. Forced password change is enforced by
+`apps/mvp/middleware.py::MustChangePasswordMiddleware`. The SPA catch-all was removed
+from `openeasd/urls.py`; unknown paths redirect to the dashboard.
 
-**Tech:** React 19, Vite 8, react-router-dom, @tanstack/react-query, shadcn/ui,
-Tailwind CSS 3, Radix UI. Data fetching is `useQuery({queryKey:[path,…]})` +
-`apiGet`; live scan status polls at 3s. Tests: Vitest + Testing Library.
-
-**Theme:** dark — `bg #0d1117`, card `#161b22`, border `#30363d`, accent `#30c074`.
-
-**Dev:** Vite proxy forwards `/api/` → Django `:8001` (no CORS). **Prod:**
-`npm run build` → `frontend/dist/` → served by WhiteNoise; Django catch-all serves
-`index.html` for non-API paths.
+The React SPA (`frontend/`), REST API and JWT have been removed; there is no frontend build toolchain.
 
 ---
 
 ## Deployment Topologies
 
-The recommended topology is **3 tiers** — the web image carries no offensive
+**Single image (primary MVP deploy):** one container (`--target singleimage`) runs
+embedded PostgreSQL + gunicorn + the DBOS worker under `honcho` (entrypoint
+`docker/entrypoint-singleimage.sh`, mandatory `/data` volume). Simplest to run;
+no web/worker privilege separation.
+
+The **3-tier** topology below remains the privilege-separated / scalable alternative. It is **3 tiers** — the web image carries no offensive
 tooling or `NET_RAW`, tool OOMs isolate to the worker, and the worker scales
 independently. See CLAUDE.md for the full rationale + pros/cons.
 
@@ -589,7 +539,7 @@ independently. See CLAUDE.md for the full rationale + pros/cons.
 
 ```
 db      postgres:17-alpine          — app data + the DBOS `dbos` schema
-web     openeasd-web (slim)         — gunicorn; UI/API + PDF reports; enqueue-only; no tools
+web     openeasd-web (slim)         — gunicorn; UI + CSV reports; enqueue-only; no tools
 worker  openeasd-worker (ubuntu)    — dbos_worker + full scanner matrix; --cap-add NET_RAW
 ```
 
@@ -623,4 +573,3 @@ consent/`DomainAuthorization` gate applies to scheduled scans too.
 | Per-domain monitoring | 6h / 12h / 24h / 48h / weekly | Configurable per domain; a DBOS sweep computes due-ness |
 | User-schedule sweep | — | Fires `once`/`recurring` user-scheduled scans (`ScheduledScan` rows) |
 | Stuck-scan watchdog | Every 15 min | Reaps `running` scans past `SCAN_TIMEOUT_MINUTES` and orphaned `pending` scans past `SCAN_PENDING_TIMEOUT_MINUTES` as `partial`/`failed` |
-| JWT token purge | Daily | Clears expired simplejwt `OutstandingToken` rows |

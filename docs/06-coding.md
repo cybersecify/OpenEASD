@@ -152,24 +152,11 @@ fail the whole scan. Specifically:
 
 ---
 
-## 3. REST API (Django Ninja)
+## 3. REST API — removed
 
-- Each module exposes `router = Router(auth=JWTAuth())` in its `api.py`; the
-  central `apps/core/console/api/ninja.py` mounts it with
-  `api.add_router("/prefix", router)`. **New endpoint = one decorated function;
-  new module = one import + one `add_router` line.**
-- Authenticate via the project wrapper `apps/core/console/api/auth.py::JWTAuth`
-  (it also enforces the forced-password-change gate server-side) — never
-  ninja-jwt's `JWTAuth` directly. Opt out of auth **explicitly** with `auth=None`
-  (e.g. `/health/`, `/version/`). `request.auth` is the authenticated `User`.
-- **Response format is flat JSON** (no envelope). List endpoints return the
-  pagination shape `{results|findings, total, page, total_pages, has_next,
-  has_previous}`. `201` creates return `Status(201, {...})`.
-- **Errors**: `raise HttpError(code, "message")`; the central handler renders
-  `{"error": {"code": <SYMBOL>, "message": ...}}`. Prefer `HttpError(404, …)`
-  over `get_object_or_404` so the 404 body matches the envelope (see finding F6).
-- Request/response bodies are `ninja.Schema` subclasses defined next to the
-  endpoint.
+The Django-Ninja REST API + JWT were removed (2026-10-14). The UI is server-rendered
+(`apps/mvp`, session auth) and calls the service layer directly; CSV export is the only
+HTTP data export. Do not add `/api/` endpoints.
 
 ### 3.1 Secrets over the API are write-only
 
@@ -284,8 +271,7 @@ fail the whole scan. Specifically:
 - Every tunable goes through `config("NAME", default=..., cast=...)` with a safe
   default; `DATABASE_URL` wins over `DB_*` parts.
 - **Fail-fast**: `_validate_secret_key` raises `ImproperlyConfigured` when
-  `DEBUG=False` and the key still starts with `django-insecure` (the same key
-  signs JWTs).
+  `DEBUG=False` and the key still starts with `django-insecure` .
 - Settings helpers (`_security_settings`, `_resolve_profile`) are **pure and
   return values**, then `globals().update(...)` — don't mutate settings globals
   inline.
@@ -302,8 +288,7 @@ fail the whole scan. Specifically:
   shadows** (finding F9). Import models lazily inside fixtures.
 - **Mock externals at the module-local import site**, never globally: patch
   `apps.tldsquatting.collector.requests.get`, `apps.*.scanner.collect`,
-  `apps.core.console.reports.views._render_pdf`, etc. PDF tests mock `_render_pdf`
-  and assert on the captured HTML — no WeasyPrint native libs needed.
+  etc.
 - **Assert behavior, not rendered markup.** Exact HTML strings / CSS classes /
   verbatim copy are brittle (finding F11). Assert the fact, not the template.
 - **Guard / invariant tests are a required category** — they're what keep the
@@ -322,26 +307,22 @@ fail the whole scan. Specifically:
 
 ---
 
-## 9. Frontend (React SPA)
+## 9. UI — plain Django (`apps/mvp`)
 
-- **Data layer**: `@tanstack/react-query` `useQuery` keyed by the API path
-  (`queryKey: ['/scans/', domain, status, page]`). Single `QueryClient`
-  (`staleTime: 0`, `retry: false`).
-- **All HTTP goes through `api/client.js` `apiGet`/`apiPost`** over one axios
-  instance (`baseURL: '/api'`). **Same-origin, no CORS** ever (Vite proxy in dev,
-  WhiteNoise in prod). Don't reintroduce ad-hoc `fetch` (finding F12 flags the two
-  existing offenders).
-- Axios interceptors handle auth: request injects `Bearer` from
-  `auth.getToken()`; response does single-flight 401→refresh, else `auth.clear()`
-  + redirect to `/login`.
-- `auth.js` is the **sole owner of `localStorage`** token keys.
-- **Routing**: `createBrowserRouter` tree in `router.jsx`; everything private is
-  nested under `<ProtectedRoute>`. Navigate with `useNavigate`, not a hand-rolled
-  router.
-- **UI**: shadcn/ui primitives (`components/ui/*`), Tailwind, dark-theme tokens
-  (`bg-canvas`, `bg-card`, `border-rim`, `text-lit`, `text-dim`). Toasts via
-  `components/Notification.jsx`.
-- Tests: Vitest + Testing Library, co-located `*.test.{js,jsx}`.
+- **Views call the service layer directly** (`create_scan_session` → `run_scan_task`,
+  ORM reads) — no serializers, no API round-trip, no DRF/Ninja schemas for the UI.
+- **Session auth** (`login_required`-style); the forced change-password gate is
+  `apps/mvp/middleware.py::MustChangePasswordMiddleware`. Keep the same authorization
+  rules as the engine: passive-only `now` scans bypass `DomainAuthorization`, anything
+  active requires it.
+- **HTMX partials** for live regions (scan progress polled every 3s, filterable
+  findings table); vendored Bulma + HTMX, no CDN, no build step.
+- Tests live in `tests/unit/test_mvp_views.py` (Django test client).
+
+### 9.1 Removed surfaces
+
+The React SPA (`frontend/`), REST API and JWT were removed; there is no frontend
+toolchain. All UI work goes in `apps/mvp`.
 
 ---
 
@@ -381,7 +362,7 @@ blockers. Fixed items are struck through with the PR that closed them.
   channel and never the URL; `save_config` adopts the None=unchanged /
   ""=clear / value=set write semantics so the threshold can be saved without
   wiping a stored webhook the UI can no longer read back. Matches
-  `/api/credentials/` and `/api/ai/config/`.
+  the credentials and AI-config write semantics.
 - **F-sec1 — weak default DB credentials ship silently.** `DB_PASSWORD` defaults
   to `"openeasd"` with no fail-fast guard (unlike `SECRET_KEY`).
   (`openeasd/settings/base.py:210`)

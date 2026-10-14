@@ -5,9 +5,58 @@ All notable changes to OpenEASD are recorded here. Format loosely follows
 **Why** note on non-obvious changes so reviewers don't have to dig through
 commits to recover the reasoning.
 
-## [Unreleased]
+## [v3.0.0] — 2026-10-14
+
+### Changed
+- **Plain-Django UI replaces the React SPA as the served UI.** New `apps/mvp`
+  (vendored Bulma + vendored HTMX, Django session auth) at `/`: dashboard, domains,
+  scan start (2×2 modes + custom workflow, unchanged passive/active authorization
+  gate), scan detail (HTMX progress every 3s, findings filters, CSV link), history,
+  login/logout and a forced change-password middleware. Views call the engine service
+  layer directly. The SPA `spa` view + catch-all were removed from `openeasd/urls.py`
+  (unknown paths redirect to the dashboard). **Why:** a much simpler MVP surface —
+  no Node toolchain, no JWT/API round-trip, one process to serve it.
+- **Django-Ninja REST API + JWT REMOVED; the React SPA deleted.** `/api/`, the
+  `apps/core/console/api/` package and per-app `api.py` routers are gone. **Why:** the
+  server-rendered UI uses session auth and the service layer directly.
+- **`dbos` pinned `>=2.31.1,<3`.** 2.31.0 guarded module-level `Queue()` construction.
+
+### Removed
+- **API teardown completed.** JWT token-blacklist app (`ninja_jwt.token_blacklist`), the
+  `purge_expired_blacklisted_tokens` function + `scheduled_token_purge` DBOS cron, and the
+  `django-ninja`, `django-ninja-jwt`, `pyjwt` dependencies. New data migration
+  `scans/0018_remove_token_purge_job` deletes the seeded `token_purge` `ScheduledJob`
+  row. `pydantic` is now a direct dependency (the AI layer used it; it was transitive via
+  django-ninja). **Why:** no JWT tokens exist any more, so nothing to blacklist or purge.
+- **PDF reports** (WeasyPrint, the `/reports/<uuid>/pdf/` route, the PDF template and
+  its tests). **CSV export is kept** (`/reports/<uuid>/csv/`, now session-auth only).
+- **The React SPA source** (`frontend/` — React/Vite/Vitest), the CI `frontend` job, and the
+  Dockerfile node build stage, plus the dependabot npm entry + dead frontend/WeasyPrint install
+  steps. **Why:** the server-rendered `apps/mvp` UI replaces it; no Node toolchain remains.
+
+### Added
+- **Single Docker image deploy** (`--target singleimage`): embedded PostgreSQL +
+  gunicorn + DBOS worker via honcho in one container, data on the mandatory `/data`
+  volume (`docker/entrypoint-singleimage.sh`). The primary MVP deploy; the 3-tier
+  compose/k8s path remains as the privilege-separated / scalable alternative.
+  **Why:** one-container run for a small trusted single-user instance.
 
 ### Fixed
+- **cloud_enum timeout now degrades the scan to `partial` instead of wedging it.**
+  `apps/cloud_assets/collector.py` ran `cloud_enum` via `subprocess.run(capture_output=True,
+  timeout=1800)`. `cloud_enum` forks a worker process per cloud provider, and a
+  surviving grandchild holding the captured stdout pipe can make `subprocess.run`
+  block **past** its own timeout — `TimeoutExpired` fires internally but
+  `communicate()` never returns, so the scan step wedges and never surfaces the
+  timeout. The scan then sits `running` until the no-progress watchdog reaps it
+  (and, in the MSSP wrapper, the poller gave up first and recorded `failed`).
+  Fix: route `cloud_enum` through the existing `run_capped` helper (temp-file
+  redirect + process-group SIGKILL + `wait()` on the direct child — the same
+  anti-hang fix nuclei/nuclei_network already use), so the 30-min cap reliably
+  raises `ToolTimeout`. The runner records that as a failed step and the scan
+  finalizes **`partial` with a report** rather than hanging. **Why:** five
+  Passive·Deep scans had failed for days on `cloud_enum timed out after 1800s`;
+  a single passive tool timing out must not fail the whole scan.
 - **Postgres OOM + worker connection resilience (preprod outage).** A batch of
   Passive·Deep scans failed because `openeasd-postgres` was OOM-killed under
   concurrent scan load (1Gi limit, exit 137, killed 8×); each kill dropped every

@@ -1,0 +1,110 @@
+{% extends "mvp/base.html" %}
+{% block title %}{{ domain.name }} · OpenEASD{% endblock %}
+{% block content %}
+<p><a href="{% url 'mvp:domains' %}">&larr; domains</a></p>
+<h1>{{ domain.name }}</h1>
+<p>
+  {% if authorized %}
+    <span class="pill sev-low">authorized · {{ authorization.get_auth_type_display }}</span>
+    <span class="muted">by {{ authorization.authorized_by }} on {{ authorization.authorized_at }}</span>
+  {% else %}
+    <span class="pill sev-high">not authorized</span>
+  {% endif %}
+</p>
+
+{% if not authorized %}
+<div class="box">
+  <strong>Authorize this domain</strong>
+  <p class="muted">Active scanning is gated on this. Passive scans do not need it.</p>
+  <form action="{% url 'mvp:domain-authorize' domain.name %}" method="post">{% csrf_token %}
+    <div class="select"><select name="auth_type">
+      <option value="owner">Domain Owner</option>
+      <option value="written_consent">Written Consent</option>
+      <option value="bug_bounty">Bug Bounty Program</option>
+    </select></div>
+    <input class="input mt-2" type="text" name="auth_reference" placeholder="reference (optional)">
+    <label class="checkbox mt-2" style="display:block">
+      <input type="checkbox" name="attestation" value="1">
+      I attest I have authority to scan this domain.
+    </label>
+    <button class="button is-link mt-2" type="submit">Authorize</button>
+  </form>
+</div>
+{% endif %}
+
+<h2>Start a scan</h2>
+<div class="box">
+  <div class="columns is-multiline">
+  {% for m in scan_modes %}
+    <div class="column is-half">
+      <form action="{% url 'mvp:scan-start' %}" method="post">{% csrf_token %}
+        <input type="hidden" name="domain" value="{{ domain.name }}">
+        <input type="hidden" name="workflow_id" value="{{ m.workflow_id }}">
+        <button class="button is-fullwidth is-link is-light" type="submit" {% if m.needs_auth and not authorized %}disabled style="opacity:.5"{% endif %}>
+          <strong>{{ m.name }}</strong>&nbsp;<span class="muted">{{ m.blurb }}</span>
+        </button>
+        {% if m.needs_auth and not authorized %}<p class="muted">authorize first</p>{% endif %}
+      </form>
+    </div>
+  {% endfor %}
+  </div>
+  <form action="{% url 'mvp:scan-start' %}" method="post" class="row-actions mt-2">{% csrf_token %}
+    <input type="hidden" name="domain" value="{{ domain.name }}">
+    <div class="select"><select name="workflow_id">
+      {% for w in all_workflows %}<option value="{{ w.id }}">{{ w.name }}</option>{% endfor %}
+    </select></div>
+    <button class="button" type="submit">Run custom</button>
+  </form>
+</div>
+
+<h2>Monitoring</h2>
+<div class="box">
+  <form action="{% url 'mvp:domain-monitoring' domain.name %}" method="post" class="row-actions">{% csrf_token %}
+    <div class="select"><select name="interval_hours">
+      <option value="">Off</option>
+      {% for h in intervals %}<option value="{{ h }}" {% if h == domain.monitoring_interval_hours %}selected{% endif %}>Every {{ h }}h</option>{% endfor %}
+    </select></div>
+    <button class="button" type="submit">Save</button>
+  </form>
+</div>
+
+<h2>Open findings {% for sev,n in open_by_severity %}<span class="pill sev-{{ sev }}">{{ n }} {{ sev }}</span> {% endfor %}</h2>
+<div class="box">
+  <table class="table is-fullwidth is-hoverable">
+    <thead><tr><th>Severity</th><th>Title</th><th>Target</th><th>Source</th></tr></thead>
+    <tbody>
+    {% for f in findings %}
+    <tr><td><span class="pill sev-{{ f.severity }}">{{ f.severity }}</span></td><td>{{ f.title }}</td>
+      <td class="muted">{{ f.target }}</td><td class="muted">{{ f.source }}</td></tr>
+    {% empty %}<tr><td colspan="4" class="muted">No open findings.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2>Scans</h2>
+<div class="box">
+  <table class="table is-fullwidth is-hoverable">
+    <thead><tr><th>Scan</th><th>Status</th><th>Findings</th><th>Started</th><th>Ended</th></tr></thead>
+    <tbody>
+    {% for s in scans %}
+    <tr>
+      <td><a href="{% url 'mvp:scan-detail' s.uuid %}">{{ s.triggered_by }}</a></td>
+      <td><span class="scan-{{ s.status }}" style="font-weight:600">{{ s.get_status_display }}</span></td>
+      <td>{{ s.total_findings }}</td>
+      <td class="muted">{{ s.start_time|date:"Y-m-d H:i" }}</td>
+      <td class="muted">{{ s.end_time|date:"Y-m-d H:i"|default:"—" }}</td>
+    </tr>
+    {% empty %}<tr><td colspan="5" class="muted">No scans yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2>Danger zone</h2>
+<div class="box">
+  <p class="muted">Delete this domain and all its scan data. Cannot be undone.</p>
+  <form action="{% url 'mvp:domain-delete' domain.name %}" method="post" class="row-actions">{% csrf_token %}
+    <input class="input" type="text" name="confirm" placeholder="type {{ domain.name }} to confirm">
+    <button class="button is-danger" type="submit">Delete domain</button>
+  </form>
+</div>
+{% endblock %}

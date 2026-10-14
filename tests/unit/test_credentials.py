@@ -1,17 +1,8 @@
 """Tests for the credentials app (C1) — model, resolver, write-only API."""
 
 import pytest
-from django.contrib.auth.models import User
-from ninja_jwt.tokens import AccessToken
 
 pytestmark = pytest.mark.django_db
-
-
-@pytest.fixture
-def auth_client(client):
-    user = User.objects.create_user(username="credtest", password="pass123")
-    client.defaults["HTTP_AUTHORIZATION"] = f"Bearer {AccessToken.for_user(user)}"
-    return client
 
 
 # --- model ---------------------------------------------------------------
@@ -86,62 +77,6 @@ class TestResolver:
         )
         # falls back to env, no exception
         assert resolver.get_credential("SHODAN_API_KEY") == "env-fallback"
-
-
-# --- API (write-only) ----------------------------------------------------
-
-class TestApi:
-    def test_requires_auth(self, client):
-        assert client.get("/api/credentials/").status_code == 401
-
-    def test_get_presence_only_never_values(self, auth_client):
-        from apps.core.console.credentials.models import ToolCredentials
-        cfg = ToolCredentials.get()
-        cfg.shodan_api_key = "super-secret"
-        cfg.save()
-        body = auth_client.get("/api/credentials/").json()
-        assert body["configured"]["shodan_api_key"] is True
-        assert body["configured"]["hibp_api_key"] is False
-        # the actual value must never appear anywhere in the response
-        assert "super-secret" not in str(body)
-
-    def test_post_sets_key(self, auth_client):
-        from apps.core.console.credentials.models import ToolCredentials
-        resp = auth_client.post(
-            "/api/credentials/",
-            data={"shodan_api_key": "new-key"},
-            content_type="application/json",
-        )
-        assert resp.status_code == 200
-        assert resp.json()["configured"]["shodan_api_key"] is True
-        assert ToolCredentials.get().shodan_api_key == "new-key"
-
-    def test_post_none_leaves_unchanged(self, auth_client):
-        from apps.core.console.credentials.models import ToolCredentials
-        cfg = ToolCredentials.get()
-        cfg.shodan_api_key = "keep-me"
-        cfg.save()
-        # omit shodan → None → unchanged; set hibp
-        auth_client.post(
-            "/api/credentials/",
-            data={"hibp_api_key": "hibp-new"},
-            content_type="application/json",
-        )
-        cfg = ToolCredentials.get()
-        assert cfg.shodan_api_key == "keep-me"
-        assert cfg.hibp_api_key == "hibp-new"
-
-    def test_post_empty_string_clears(self, auth_client):
-        from apps.core.console.credentials.models import ToolCredentials
-        cfg = ToolCredentials.get()
-        cfg.shodan_api_key = "to-clear"
-        cfg.save()
-        auth_client.post(
-            "/api/credentials/",
-            data={"shodan_api_key": ""},
-            content_type="application/json",
-        )
-        assert ToolCredentials.get().shodan_api_key == ""
 
 
 # --- C3: a DB-stored key actually reaches a tool -------------------------

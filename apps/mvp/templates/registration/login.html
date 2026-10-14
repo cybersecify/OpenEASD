@@ -1,0 +1,16 @@
+{% extends "mvp/base.html" %}
+{% block title %}Sign in - OpenEASD{% endblock %}
+{% block content %}
+<div class="box" style="max-width:420px;margin:2rem auto;">
+  <h1>Sign in</h1>
+  <form method="post">{% csrf_token %}
+    {% if form.errors %}<p class="has-text-danger mb-3">Invalid username or password.</p>{% endif %}
+    <div class="field"><label class="label" for="id_username">Username</label>
+      <div class="control"><input class="input" type="text" name="username" id="id_username" autofocus required></div></div>
+    <div class="field"><label class="label" for="id_password">Password</label>
+      <div class="control"><input class="input" type="password" name="password" id="id_password" required></div></div>
+    <input type="hidden" name="next" value="{{ next }}">
+    <button class="button is-primary" type="submit">Sign in</button>
+  </form>
+</div>
+{% endblock %}

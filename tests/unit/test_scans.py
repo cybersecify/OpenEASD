@@ -116,44 +116,6 @@ class TestCreateScanSessionConcurrency:
 
 
 @pytest.mark.django_db
-class TestParseSchedule:
-    """_parse_schedule() maps a ScheduledScan row to the API dict."""
-
-    def _sched(self, job_id, domain, kind, frequency="—"):
-        s = MagicMock()
-        s.job_id = job_id
-        s.domain = domain
-        s.kind = kind
-        s.frequency = frequency
-        s.next_run = None
-        return s
-
-    def test_recurring_maps_fields(self):
-        from apps.core.engine.scans.api import _parse_schedule
-        r = _parse_schedule(self._sched("recurring_example.com", "example.com", "recurring", "Daily"))
-        assert r["job_id"] == "recurring_example.com"
-        assert r["domain"] == "example.com"
-        assert r["job_type"] == "recurring"
-        assert r["frequency"] == "Daily"
-
-    def test_recurring_underscored_domain(self):
-        from apps.core.engine.scans.api import _parse_schedule
-        r = _parse_schedule(self._sched("recurring_sub_domain.example.com", "sub_domain.example.com", "recurring"))
-        assert r["domain"] == "sub_domain.example.com"
-
-    def test_once_maps_to_one_time(self):
-        from apps.core.engine.scans.api import _parse_schedule
-        r = _parse_schedule(self._sched("once_example.com_" + "a" * 32, "example.com", "once"))
-        assert r["domain"] == "example.com"
-        assert r["job_type"] == "one-time"
-
-    def test_weekly_frequency_passthrough(self):
-        from apps.core.engine.scans.api import _parse_schedule
-        r = _parse_schedule(self._sched("recurring_example.com", "example.com", "recurring", "Weekly (Mondays)"))
-        assert r["frequency"] == "Weekly (Mondays)"
-
-
-@pytest.mark.django_db
 class TestDetectDeltas:
     def test_new_findings_create_new_deltas(self, db):
         from apps.core.engine.scans.models import ScanSession, ScanDelta

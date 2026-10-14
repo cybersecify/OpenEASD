@@ -1,7 +1,7 @@
 """
 Unit tests for apps/core/engine/scheduler/scheduler.py
 
-Tests reap_stuck_scans, purge_expired_blacklisted_tokens, and daily_scan.
+Tests reap_stuck_scans and daily_scan.
 """
 
 import uuid
@@ -13,7 +13,6 @@ from django.utils import timezone
 from apps.core.engine.scheduler.scheduler import (
     SCAN_PENDING_TIMEOUT_MINUTES,
     SCAN_TIMEOUT_MINUTES,
-    purge_expired_blacklisted_tokens,
     reap_stuck_scans,
 )
 
@@ -214,51 +213,6 @@ class TestReapStuckScans:
 
         ids = latest_session_ids(domains=["x.example.com"])
         assert partial.id in ids
-
-
-# ---------------------------------------------------------------------------
-# purge_expired_blacklisted_tokens
-# ---------------------------------------------------------------------------
-
-class TestPurgeExpiredBlacklistedTokens:
-    def _make_outstanding_token(self, expired=False):
-        import uuid as _uuid
-        from ninja_jwt.token_blacklist.models import OutstandingToken
-        delta = timedelta(seconds=1) if expired else timedelta(days=7)
-        sign = -1 if expired else 1
-        return OutstandingToken.objects.create(
-            jti=str(_uuid.uuid4()),
-            token="dummy.token.value",
-            expires_at=timezone.now() + sign * delta,
-        )
-
-    def test_deletes_expired_tokens(self, db):
-        from ninja_jwt.token_blacklist.models import OutstandingToken
-        expired = self._make_outstanding_token(expired=True)
-        jti = expired.jti
-        count = purge_expired_blacklisted_tokens()
-        assert count >= 1
-        assert not OutstandingToken.objects.filter(jti=jti).exists()
-
-    def test_keeps_valid_tokens(self, db):
-        from ninja_jwt.token_blacklist.models import OutstandingToken
-        valid = self._make_outstanding_token(expired=False)
-        count = purge_expired_blacklisted_tokens()
-        assert count == 0
-        assert OutstandingToken.objects.filter(jti=valid.jti).exists()
-
-    def test_mixed_expired_and_valid(self, db):
-        from ninja_jwt.token_blacklist.models import OutstandingToken
-        self._make_outstanding_token(expired=True)
-        self._make_outstanding_token(expired=True)
-        valid = self._make_outstanding_token(expired=False)
-        count = purge_expired_blacklisted_tokens()
-        assert count >= 2
-        assert OutstandingToken.objects.filter(jti=valid.jti).exists()
-        assert OutstandingToken.objects.count() == 1
-
-    def test_returns_zero_when_nothing_to_purge(self, db):
-        assert purge_expired_blacklisted_tokens() == 0
 
 
 # ---------------------------------------------------------------------------

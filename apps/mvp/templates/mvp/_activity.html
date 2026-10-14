@@ -1,0 +1,19 @@
+<p class="muted" style="margin:0 0 8px">
+  {% if running %}<span class="dot live"></span>{{ running }} running · auto-refreshing{% else %}<span class="dot"></span>no scans running{% endif %}
+</p>
+<div class="box">
+  <table class="table is-fullwidth is-hoverable">
+    <thead><tr><th>Domain</th><th>Trigger</th><th>Status</th><th>Findings</th><th>Started</th></tr></thead>
+    <tbody>
+    {% for s in recent_scans %}
+    <tr>
+      <td><a href="{% url 'mvp:scan-detail' s.uuid %}">{{ s.domain }}</a></td>
+      <td class="muted">{{ s.triggered_by }}</td>
+      <td><span class="scan-{{ s.status }}" style="font-weight:600">{{ s.get_status_display }}</span></td>
+      <td>{{ s.total_findings }}</td>
+      <td class="muted">{{ s.start_time|date:"Y-m-d H:i" }}</td>
+    </tr>
+    {% empty %}<tr><td colspan="5" class="muted">No scans yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>

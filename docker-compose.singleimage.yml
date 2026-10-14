@@ -1,0 +1,29 @@
+# Single-container path: one image runs embedded PostgreSQL + gunicorn + the
+# DBOS worker (via honcho). Data lives on the /data volume (mandatory).
+# The 3-tier docker-compose.yml (external Postgres + separate web/worker) is the
+# privilege-separated / scalable alternative.
+#
+#   create .env with SECRET_KEY, DB_PASSWORD, ALLOWED_HOSTS
+#   docker compose -f docker-compose.singleimage.yml up -d --build
+services:
+  openeasd:
+    build:
+      context: .
+      target: singleimage
+    image: openeasd:singleimage
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DEBUG: "False"
+    volumes:
+      - openeasd-data:/data        # Postgres cluster (/data/pgdata) — do not omit
+      - openeasd-logs:/app/logs
+    cap_add:
+      - NET_RAW                    # needed for active scans (nmap/naabu raw sockets)
+    restart: unless-stopped
+
+volumes:
+  openeasd-data:
+  openeasd-logs:
