@@ -108,7 +108,6 @@ COPY apps/ apps/
 COPY openeasd/ openeasd/
 RUN uv pip install -e ".[prod]" && uv pip install git+https://github.com/initstring/cloud_enum.git
 COPY manage.py ./
-COPY templates/ templates/
 COPY config/ config/
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
@@ -164,7 +163,6 @@ COPY apps/ apps/
 COPY openeasd/ openeasd/
 RUN uv pip install -e ".[prod]" && uv pip install git+https://github.com/initstring/cloud_enum.git
 COPY manage.py ./
-COPY templates/ templates/
 COPY config/ config/
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
@@ -180,3 +178,36 @@ ENV OPENEASD_VERSION=$OPENEASD_VERSION OPENEASD_GIT_SHA=$OPENEASD_GIT_SHA OPENEA
 VOLUME ["/app/logs"]
 ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["python", "manage.py", "dbos_worker"]
+
+# ===========================================================================
+# SINGLE-IMAGE runtime — one container: embedded PostgreSQL + web + worker.
+# Inherits the worker matrix (Ubuntu + full scanner tools + venv + app), adds a
+# local PostgreSQL and honcho, and supervises gunicorn (web) + dbos_worker
+# (worker) behind one embedded DB. The "one artifact, no external DB" deploy for
+# a single-admin, self-hosted box. The 3-tier web/worker + external Postgres path
+# (compose/k8s) still ships for privilege separation / horizontal scale.
+#
+#   docker buildx build --target singleimage -t openeasd .
+#   docker run -p 8000:8000 -v openeasd-data:/data \
+#     -e SECRET_KEY=... -e DB_PASSWORD=... -e ALLOWED_HOSTS=localhost openeasd
+#
+# pgdata lives on the /data volume — MANDATORY, or scan history is lost on
+# container replacement.
+# ===========================================================================
+FROM worker AS singleimage
+
+ENV OPENEASD_ROLE=web PGDATA=/data/pgdata
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+# honcho supervises the web + worker processes in one container.
+RUN uv pip install honcho
+
+COPY docker/ docker/
+RUN chmod +x docker/entrypoint-singleimage.sh
+
+VOLUME ["/data", "/app/logs"]
+EXPOSE 8000
+ENTRYPOINT ["docker/entrypoint-singleimage.sh"]
+CMD []
