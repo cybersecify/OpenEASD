@@ -7,12 +7,13 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import PasswordChangeForm
 from django.db import transaction
 from django.core.paginator import Paginator
-from django.db.models import Count
+from django.db.models import Case, Count, IntegerField, Value, When
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from apps.core.data.domains.models import Domain, DomainAuthorization
+from apps.core.data.findings.models import STATUS_CHOICES as FINDING_STATUS_CHOICES
 from apps.core.data.findings.models import Finding
 from apps.core.engine.scans.models import ScanSession
 from apps.core.engine.scans.pipeline import create_scan_session
@@ -370,6 +371,45 @@ def scans(request):
         "domain_filter": domain,
         "status_filter": status,
         "status_choices": ScanSession.STATUS_CHOICES,
+    })
+
+
+@login_required
+def findings(request):
+    """Read-only, filterable all-scans findings list (triage lives on the Issues register)."""
+    qs = Finding.objects.select_related("session")
+    severity = request.GET.get("severity") or ""
+    status = request.GET.get("status") or ""
+    source = (request.GET.get("source") or "").strip()
+    domain = (request.GET.get("domain") or "").strip()
+    if severity in SEVERITY_ORDER:
+        qs = qs.filter(severity=severity)
+    else:
+        severity = ""
+    if status in {c[0] for c in FINDING_STATUS_CHOICES}:
+        qs = qs.filter(status=status)
+    else:
+        status = ""
+    if source:
+        qs = qs.filter(source=source)
+    if domain:
+        qs = qs.filter(session__domain__icontains=domain)
+    rank = Case(
+        *[When(severity=s, then=Value(i)) for i, s in enumerate(SEVERITY_ORDER)],
+        default=Value(9), output_field=IntegerField(),
+    )
+    qs = qs.annotate(sev_rank=rank).order_by("sev_rank", "-discovered_at", "-id")
+    page = Paginator(qs, 50).get_page(request.GET.get("page"))
+    return render(request, "mvp/findings.html", {
+        "page": page,
+        "severity_filter": severity,
+        "status_filter": status,
+        "source_filter": source,
+        "domain_filter": domain,
+        "severity_order": SEVERITY_ORDER,
+        "status_choices": FINDING_STATUS_CHOICES,
+        "sources": sorted(Finding.objects.order_by().values_list("source", flat=True).distinct()),
+        "total": page.paginator.count,
     })
 
 

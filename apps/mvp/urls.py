@@ -11,6 +11,7 @@ urlpatterns = [
     path("domains/", views.domains, name="domains"),
     path("domains/add/", views.domain_create, name="domain-create"),
     path("scans/", views.scans, name="scans"),
+    path("findings/", views.findings, name="findings"),
     path("scan/start/", views.scan_start, name="scan-start"),
     path("scan/<uuid:session_uuid>/", views.scan_detail, name="scan-detail"),
     path("scan/<uuid:session_uuid>/progress/", views.scan_progress, name="scan-progress"),

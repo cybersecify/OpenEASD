@@ -297,3 +297,50 @@ class TestChangePassword:
     def test_unflagged_user_passes(self, client):
         self._flagged(client, flag=False)
         assert client.get("/").status_code == 200
+
+
+@pytest.mark.django_db
+class TestFindings:
+    @pytest.fixture(autouse=True)
+    def _seed(self, client):
+        from apps.core.data.findings.models import Finding
+        from apps.core.engine.scans.models import ScanSession
+
+        User.objects.create_user("admin", password="pw12345!")
+        client.login(username="admin", password="pw12345!")
+        s = ScanSession.objects.create(domain="example.com", status="completed")
+        Finding.objects.create(session=s, source="nuclei", severity="low", title="Low one", target="a")
+        Finding.objects.create(session=s, source="nuclei", severity="high", title="High one", target="b")
+        Finding.objects.create(session=s, source="web_checker", severity="critical", title="Crit one",
+                               target="c", status="resolved")
+        self.session = s
+
+    def test_requires_login(self, client):
+        client.logout()
+        resp = client.get("/findings/")
+        assert resp.status_code == 302 and "/login/" in resp["Location"]
+
+    def test_lists_all_sorted_by_severity(self, client):
+        resp = client.get("/findings/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "Low one" in body and "High one" in body and "Crit one" in body
+        assert body.index("Crit one") < body.index("High one") < body.index("Low one")
+        assert str(self.session.uuid) in body
+
+    def test_filter_severity(self, client):
+        body = client.get("/findings/?severity=high").content.decode()
+        assert "High one" in body and "Low one" not in body and "Crit one" not in body
+
+    def test_filter_status(self, client):
+        body = client.get("/findings/?status=resolved").content.decode()
+        assert "Crit one" in body and "High one" not in body
+
+    def test_filter_source(self, client):
+        body = client.get("/findings/?source=web_checker").content.decode()
+        assert "Crit one" in body and "High one" not in body
+
+    def test_filter_domain_and_invalid_values_ignored(self, client):
+        assert "High one" in client.get("/findings/?domain=EXAMPLE").content.decode()
+        assert "No findings match" in client.get("/findings/?domain=nope.org").content.decode()
+        assert "High one" in client.get("/findings/?severity=bogus&status=bogus").content.decode()
