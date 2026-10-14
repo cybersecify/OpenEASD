@@ -3,7 +3,7 @@
 External Attack Surface Detection platform. Scans domains for network and
 web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 
-## Status (v3.0.0 — 2026-10-14 — plain-Django UI + single image)
+## Status (v3.0.1 — 2026-10-14 — plain-Django UI + single image)
 
 - **v3.0.0 (UI + deploy change):** the served UI is now a **plain-Django,
   server-rendered app** (`apps/mvp` — vendored Bulma CSS + vendored HTMX, Django
@@ -15,9 +15,18 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
   The legacy SPA / JWT / PDF sections have been removed or corrected below; any
   remaining mention is historical.
 
-- **Released**: v2.16.0 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
-  `:v2.16.0` / `:v2.16` / `:latest` (web on python:3.12-slim, worker on Ubuntu 24.04/3.12 — both Python 3.12; Django 5.2 LTS). 3-tier deploy: `db` (postgres:17) + `web`
-  (gunicorn, no tools) + `worker` (`dbos_worker` + scanner matrix, `NET_RAW`).
+- **v3.0.1 (maintenance):** docs reconciled with the v3.0.0 code (full layer
+  chain + README/CONTRIBUTING/OPERATIONS; new ADR **D-018**); removed dead code
+  (orphaned `LoginThrottle` model + drop-migration), unused deps
+  (`pypdf`/`lxml`/`black`/`isort`/`mypy`), and broken/superseded deploy paths
+  (`docker-compose.dev.yml` + `just deploy-dev`, the bare-metal `install.sh`).
+  No behavior change; slightly slimmer image.
+
+- **Released**: v3.0.1 — single image `ghcr.io/cybersecify/openeasd` at
+  `:v3.0.1` / `:v3.0` / `:latest` (embedded PostgreSQL + gunicorn + DBOS worker
+  in one container; Python 3.12; Django 5.2 LTS). The 3-tier `web`/`worker`
+  images are no longer published to GHCR — build them locally from the Dockerfile
+  `web`/`worker` targets for the compose/k8s path.
 - **Scope**: 30 registered scan tools across 13 pipeline phases; single-user
   (one admin, no RBAC) by design.
 - **Engine**: DBOS durable workflows on PostgreSQL — one multi-step `run_scan`
