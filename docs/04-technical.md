@@ -28,19 +28,27 @@ spec that drifts from the shipped behaviour is corrected like a failing test.
   resolver.
 - [Finding-Centric UI, Grounded on Asset-Centric](specs/2026-09-12-finding-centric-ui-direction.md)
   — the direction for the finding/issue register views over the domain-centric
-  backend.
-- [Finding Verification](specs/2026-09-15-finding-verification.md) *(proposed)* —
+  backend *(written for the former SPA/API; the served UI is now `apps/mvp` — see
+  Plain-Django UI)*.
+- [Finding Verification](specs/2026-09-15-finding-verification.md) *(shipped)* —
   re-probe a finding's own check to label it verified / inconclusive / unverified
   (deterministic baseline + optional AI adjudication); the verdict persists on the
   `Issue`. Builds on the Issue Register.
 - [tldsquatting False-Positive Reduction](specs/2026-09-30-tldsquatting-fp-reduction.md)
   — classify lookalikes (owned/parked/unrelated/pre_existing/threat) and collapse
   benign classes into info rollups.
+- [Quick-Recon Passive Tier](specs/2026-10-01-quick-recon-passive-tier.md)
+  — the `quick_recon` tool flag and the "Passive Scan Light" no-auth first-look
+  workflow (light vs deep passive).
+- [Scan Modes 2×2](specs/2026-10-01-scan-modes-2x2.md) — light/deep ×
+  passive/active scan modes (Passive Light/Deep, Active Light, Full) and the
+  authorization boundary along the passive/active axis.
 - [tldsquatting Email-Capable Severity + Fetch Prioritization](specs/2026-10-07-tldsquatting-email-capable-severity.md)
   — a lookalike with a configured mail-auth stack (MX + SPF/DMARC) escapes the
   no-weaponization severity cap, and the capped content-fetch budget is spent on
   the most suspicious (mail-configured / recent) candidates first.
-- [Plain-Django UI](specs/2026-10-14-plain-django-ui.md) — replace the served
-  React SPA with a server-rendered `apps/mvp` UI (Bulma + HTMX, session auth); Ninja
-  API/JWT removed, SPA left dormant; PDF reports dropped; single-image deploy added.
+- [Plain-Django UI](specs/2026-10-14-plain-django-ui.md) — replaced the React
+  SPA with a server-rendered `apps/mvp` UI (vendored Bulma + HTMX, Django session
+  auth); the Ninja REST API + JWT and the React SPA (`frontend/`) are removed; PDF
+  reports dropped (CSV kept); single-image deploy added.
   Plan: [plain-django-ui-plan](specs/2026-10-14-plain-django-ui-plan.md).

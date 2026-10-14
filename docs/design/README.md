@@ -24,5 +24,6 @@ headless Chrome (no extra system libs needed):
   "file://$(pwd)/docs/design/OpenEASD_UX_Flow.html"
 ```
 
-(WeasyPrint — the app's own PDF engine — also works where its pango/cairo system
-libs are installed, e.g. CI/Linux.)
+(Headless Chrome is the only dependency — this is a design artifact, rendered
+outside the app. The app itself no longer ships a PDF engine: WeasyPrint and the
+in-app PDF report were removed in v3.0.0; the live export is CSV.)

@@ -33,7 +33,7 @@ standard offensive-security CLI tools who prefer a GUI over manual orchestration
 | Security learners | Strong fit — GUI makes the toolchain visible and approachable |
 | Bug bounty hunters / elite red-teamers | Weak fit — prefer raw CLI speed |
 | Enterprise SOCs | Out of scope — no RBAC, SAML, or HA |
-| Non-technical end users | Out of scope — Workflows page and tool labels assume security literacy |
+| Non-technical end users | Out of scope — scan modes and tool labels assume security literacy |
 
 See [D-001](DECISIONS.md#d-001--audience-security-literate-users-not-non-technical-end-users).
 
@@ -50,8 +50,8 @@ engineers spend time on findings, not on pipeline plumbing.
 
 ## Where / Distribution
 
-- **Delivery:** self-hosted, distributed as Docker images (Kubernetes manifests
-  also provided). Docker-only — there is no hosted service.
+- **Delivery:** self-hosted, distributed as a ready-to-run container package.
+  There is no hosted service.
   See [D-003](DECISIONS.md#d-003--distribution-docker-only).
 - **No hosted scan UI.** Domain-ownership verification for a public scanner
   is a hard prerequisite; it isn't built yet.
@@ -117,6 +117,6 @@ A successful install meets all of these:
 1. A fresh install starts cleanly and the UI loads
 2. First scan against a real domain returns subdomains, open ports, and at
    least one finding within the expected tool runtime
-3. PDF and CSV export buttons produce valid downloads
+3. The scan report can be exported as a CSV download
 4. Continuous monitoring rescans a domain on the configured interval
 5. Slack / Teams alerts fire when new findings exceed the severity threshold

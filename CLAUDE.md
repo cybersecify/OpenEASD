@@ -377,14 +377,16 @@ request-counting proxy C4 is deferred).
 
 ## Architecture
 
-### Core infrastructure — `apps/core/` (16 sub-apps)
+### Core infrastructure — `apps/core/` (17 sub-apps)
 
-The 16 core apps are grouped into layer subpackages: **`apps/core/console/`**
-(dashboard, insights, reports, notifications, ai, credentials, observability), **`apps/core/engine/`**
+The 17 core apps are grouped into layer subpackages: **`apps/core/console/`**
+(dashboard, insights, reports, notifications, ai, credentials — plus the
+`observability/` sub-package, the Prometheus exporter, not a registered app),
+**`apps/core/engine/`**
 (scans, workflows, durable, scheduler, service_detection, plus the internal
 `verification/` sub-package — not a registered app, no models — invoked
 directly by the scan pipeline's finalize step), and
-**`apps/core/data/`** (domains, assets, web_assets, findings, asset_inventory).
+**`apps/core/data/`** (domains, assets, web_assets, findings, issues, asset_inventory).
 Django labels are unchanged — the nesting is organisational only (import paths are
 `apps.core.<layer>.<app>`). See `docs/03-system.md` for the layer model.
 
@@ -396,11 +398,12 @@ Django labels are unchanged — the nesting is organisational only (import paths
 | `web_assets/` | `web_assets` | Web assets: URL |
 | `service_detection/` | `service_detection` | Enriches Port.service + Port.is_web via nmap -sV |
 | `findings/` | `findings` | Unified **raw** `Finding` model (per-scan) — all finding-producing tools write here (browsed in the `apps/mvp` scan-detail findings table) |
-| `issues/` | `issues` | Persistent, cross-scan **`Issue`** register (the deduped promotion of Findings) — populated by a finalize rollup, mirrors `asset_inventory`. `issue_key = (check_id, target)` — title-independent, so a reworded title keeps the same Issue (register item 2). **Triage persists here across scans** — `status` **+ `assigned_to` + `resolution_note`** (the full triage record, not on the disposable `Finding`; #517), written via the service layer / Django admin (the `apps/mvp` UI has no Issues page yet). Split out of `findings` (D-017); keeps table `findings_issue` |
+| `issues/` | `issues` | Persistent, cross-scan **`Issue`** register (the deduped promotion of Findings) — populated by a finalize rollup, mirrors `asset_inventory`. `issue_key = (check_id, target)` — title-independent, so a reworded title keeps the same Issue (register item 2). **Triage persists here across scans** — `status` **+ `assigned_to` + `resolution_note`** (the full triage record, not on the disposable `Finding`; #517), written via the service layer / Django admin **and the `apps/mvp` Issues page** (`/issues/`, inline triage via `/issues/<id>/update/`). Split out of `findings` (D-017); keeps table `findings_issue` |
 | `asset_inventory/` | `asset_inventory` | Persistent, deduplicated `Asset` inventory (domain-scoped, first/last-seen + status) — populated by a fail-graceful rollup at finalize; `Finding.asset` links findings to it. Spec: `docs/specs/2026-09-06-asset-centric-inventory.md` (PR1: model + rollup + backfill) |
 | `scans/` | `scans` | ScanSession, ScanDelta, pipeline orchestrator |
 | `workflows/` | `workflow` | Workflow CRUD, dynamic runner, tool registry |
-| `scheduler/` | `scheduler` | Scan callables (daily_scan, run_due_monitoring_scans, run_due_user_scans, reap_stuck_scans, token purge) invoked by the DBOS `@scheduled` workflows in `apps/core/engine/durable` |
+| `scheduler/` | `scheduler` | Scan callables (daily_scan, run_due_monitoring_scans, run_due_user_scans, reap_stuck_scans) invoked by the DBOS `@scheduled` workflows in `apps/core/engine/durable` |
+| `durable/` | `durable` | DBOS engine adapter — the one multi-step `run_scan` workflow, `@durable_task` one-step tasks (`ai_triage`, `agent_step`) and the `@scheduled` cron workflows; DBOS is isolated to this package |
 | `notifications/` | `alerts` | Slack/Teams alerts, NotificationConfig model, alert history |
 | `insights/` | `insights` | ScanSummary (incl. per-scan Exposure Score + grade, `scoring.py`), FindingTypeSummary, charts |
 | `reports/` | `reports` | CSV export (synchronous, served by the web tier; session auth). **PDF export was removed** (WeasyPrint + route + template dropped); the CSV is the live report artifact |
@@ -842,6 +845,8 @@ gate is consent + keys, never workflow membership.
 /domains/…              — list / detail / add / authorize / monitoring / delete
 /scans/…                — start (2×2 modes + custom workflow), history, detail
                           (HTMX progress partial polled every 3s, stop, findings filters)
+/findings/              — all findings across scans (severity / verification / source filters)
+/issues/                — persistent Issue register; inline triage (status / assignee / note) via /issues/<id>/update/
 /reports/<uuid>/csv/    — CSV export (session auth)
 /admin/                 — Django admin
 ```

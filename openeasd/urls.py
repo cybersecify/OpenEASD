@@ -31,7 +31,7 @@ def health(request):
         "build_date": settings.OPENEASD_BUILD_DATE,
     })
     # Never let a CDN/proxy cache provenance — a cached response makes the app
-    # report a stale build after a redeploy (Cloudflare cached /api/version/).
+    # report a stale build after a redeploy (Cloudflare cached this endpoint).
     resp["Cache-Control"] = "no-store"
     return resp
 
@@ -41,7 +41,7 @@ def favicon(request):
 
 
 def catch_all(request):
-    """Unmatched non-API paths land on the dashboard."""
+    """Unmatched paths land on the dashboard."""
     return redirect("mvp:dashboard")
 
 
