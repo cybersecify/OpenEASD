@@ -5,6 +5,36 @@ All notable changes to OpenEASD are recorded here. Format loosely follows
 **Why** note on non-obvious changes so reviewers don't have to dig through
 commits to recover the reasoning.
 
+## [v3.0.1] — 2026-10-14
+
+Maintenance release — documentation reconciled with the v3.0.0 code, plus
+dead-code / dependency / deploy-path cleanup. No user-facing behavior change
+(the published image is slightly slimmer after the dependency removals).
+
+### Changed
+- **Docs reconciled with code.** The full `docs/` layer chain (PRD → DDD →
+  System → Technical → API → Coding), `README.md`, `CONTRIBUTING.md`,
+  `OPERATIONS.md`, and `CLAUDE.md` were swept for v3.0.0 drift: no REST
+  API/JWT/React SPA/PDF, plain-Django `apps/mvp` UI, single-image-primary
+  deploy, correct tool/app counts (30 tools, 17 core apps), and the real HTTP
+  surface. New ADR **D-018** records the v3.0.0 UI + deploy decision.
+- `make/just format` now uses `ruff format` (ruff is already the linter).
+
+### Removed
+- **Orphaned `LoginThrottle` model** (0 references — the JWT rate-limit
+  middleware that used it is gone), via drop-migration
+  `core/0005_delete_loginthrottle`.
+- **Unused dependencies**: `pypdf` (PDF export removed), `lxml` (unused — nmap
+  parses XML via `defusedxml`), and dev-only `black`/`isort`/`mypy`. Kept `idna`
+  (CVE floor pin). Re-locked; `pip-audit` passes without the former PyJWT ignore.
+- **Broken/superseded deploy paths**: `docker-compose.dev.yml` + the
+  `just deploy-dev` recipe (pulled web/worker GHCR images that are no longer
+  published), and the bare-metal `install.sh` (broken for v3 and counter to
+  D-003 Docker-only) with its README section.
+- Leftover frontend/JWT/PDF references: `.nvmrc`, `/frontend/*` ignore/owner
+  entries, the dead `enqueue_triage` wrapper and unread `SCHEDULER_ENABLED`
+  setting, and stale JWT/PDF/React wording in comments.
+
 ## [v3.0.0] — 2026-10-14
 
 ### Changed
