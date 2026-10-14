@@ -195,6 +195,53 @@ version and re-apply. Because tags are immutable, this is deterministic — the
 >    a skipped drain self-heals within ~`SCAN_PENDING_TIMEOUT_MINUTES` + one
 >    watchdog interval — the manual command just makes it instant.
 
+## Single-image deployment (one container)
+
+One image (`target: singleimage`) runs embedded PostgreSQL + gunicorn + the DBOS
+worker under honcho and serves the UI at `/` on port 8000. The privilege-separated
+3-tier compose / k8s path (external Postgres, separate web + worker) remains the
+option for multi-host or scaled deployments.
+
+```bash
+docker buildx build --target singleimage -t openeasd:singleimage .
+
+docker run -d --name openeasd -p 8000:8000 -v openeasd-data:/data \
+  -e SECRET_KEY=<a long random secret> \
+  -e DB_PASSWORD=<a strong db password> \
+  -e DEBUG=False \
+  -e ALLOWED_HOSTS=<your host,localhost> \
+  openeasd:singleimage
+```
+
+Or: `docker compose -f docker-compose.singleimage.yml up -d --build` (reads `.env`).
+
+> **The `/data` volume is MANDATORY.** It holds the Postgres cluster
+> (`/data/pgdata`). Without it, all scan history is lost when the container is
+> replaced.
+
+| Env | Required | Notes |
+|---|---|---|
+| `SECRET_KEY` | yes | Boot guard refuses the insecure default |
+| `DB_PASSWORD` | yes | Boot guard refuses `openeasd` |
+| `ALLOWED_HOSTS` | yes | Comma-separated hosts |
+| `DEBUG` | yes | Must be `False` |
+| `DB_NAME` / `DB_USER` | no | Default `openeasd` |
+| `DB_PORT` | no | Default `5432` |
+| `SCHEDULED_SCANS_ENABLED` | no | Default `True`; `False` = manual-only |
+| `OPENEASD_PROFILE` | no | `auto`/`low`/`balanced`/`high` |
+
+- **First login:** `admin` / `admin`, forced through a password change.
+- **Startup** takes ~20-50s cold (initdb, migrate, collectstatic, admin, honcho).
+- **Active scans** (nmap/naabu raw sockets) need `--cap-add=NET_RAW` on `docker run`
+  (set in the compose file); passive scans do not.
+- **HTTPS:** put a TLS-terminating reverse proxy (Caddy/nginx/Cloudflare) in front
+  of :8000. Never expose bare HTTP with real credentials.
+- **Backup** (logical dump of the embedded database):
+
+```bash
+docker exec openeasd sh -lc 'PGBIN=$(ls -d /usr/lib/postgresql/*/bin); su postgres -c "$PGBIN/pg_dump -p 5432 openeasd"' > backup.sql
+```
+
 ## Where things live
 
 | Concern | File |
