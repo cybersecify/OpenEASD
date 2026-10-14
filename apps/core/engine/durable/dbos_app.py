@@ -30,14 +30,6 @@ def configure_dbos():
         "dbos_system_schema": _SYSTEM_SCHEMA,
     }
     dbos = DBOS(config=config)
-    # Register the scan queue now that a DBOS instance exists (dbos 2.x:
-    # DBOS.register_queue requires a live engine, so this can't be a module-level
-    # Queue() in workflows.py any more). The worker drains this queue; the web
-    # enqueues to it by name via the client.
-    from .constants import QUEUE_NAME
-    DBOS.register_queue(
-        QUEUE_NAME, concurrency=getattr(settings, "DBOS_SCAN_CONCURRENCY", 2)
-    )
-    # Registers the workflow/step/task decorators with the engine.
+    # Registers the scan queue + workflow/step/task decorators with the engine.
     from apps.core.engine.durable import workflows  # noqa: F401
     return dbos

@@ -9,7 +9,7 @@ DBOS checkpoints to its own `dbos` schema, the app data goes to the app tables.
 
 import logging
 
-from dbos import DBOS
+from dbos import DBOS, Queue
 from django.conf import settings
 
 from .constants import QUEUE_NAME
@@ -17,10 +17,12 @@ from .task import durable_task
 
 logger = logging.getLogger(__name__)
 
-# The "scans" queue is registered in dbos_app.configure_dbos() (worker side, after
-# the DBOS instance exists) — dbos 2.x's DBOS.register_queue needs a live DBOS and
-# cannot run at module import (the web enqueues to QUEUE_NAME by name via the
-# client, so it must be able to import this module without a DBOS engine).
+# Postgres handles concurrent writers, so more than one scan can run at once
+# (bounded for target politeness + host RAM, not by a SQLite single-writer lock).
+# dbos 2.31.1+ registers a module-level Queue() into its pending registry with no
+# live engine (the 2.31.0 "cannot be constructed directly" guard is gone), so the
+# web can import this module to enqueue by name and the worker drains it on launch.
+scan_queue = Queue(QUEUE_NAME, concurrency=getattr(settings, "DBOS_SCAN_CONCURRENCY", 2))
 
 
 @DBOS.step()
