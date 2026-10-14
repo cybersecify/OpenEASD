@@ -93,8 +93,7 @@ jobs:
         # -ll = LOW+ severity only (skip INFO noise); -x = exclude test dirs
 
       - name: Dependency vulnerability scan — pip-audit
-        run: uv run pip-audit --ignore-vuln PYSEC-2025-183
-        # PYSEC-2025-183 (pyjwt weak key length) is disputed by PyJWT maintainers — no fix available
+        run: uv run pip-audit
 
   docker:
     # PR-only build gate. On PRs this proves both images build and warms the

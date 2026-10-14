@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
 _ACTIVE_STATUSES = ("pending", "running")
 _VALID_HOSTNAME = re.compile(r"^(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$")
-_MONITORING_INTERVALS = (6, 12, 24, 48, 168)  # same set the /api/ endpoint allows
+_MONITORING_INTERVALS = (6, 12, 24, 48, 168)  # monitoring-interval choices offered in the UI
 # Common two-level public suffixes (heuristic; OpenEASD has no public-suffix lib).
 _SLD_SUFFIXES = {"co", "com", "net", "org", "gov", "edu", "ac"}
 
@@ -64,8 +64,9 @@ SCAN_MODE_DEFS = [
 
 
 def _workflow_is_passive(workflow):
-    """Same signal as scans/api.py::_is_passive_only_scan (immediate scan, workflow tools).
-    Workflow has no is_passive attribute; an empty tool set is treated as active (stricter)."""
+    """The passive-only-scan rule (immediate scan, over the workflow's tools) that formerly
+    gated the API: Workflow has no is_passive attribute; an empty tool set is treated as
+    active (the stricter reading)."""
     tools = workflow.enabled_tools()
     return bool(tools) and is_passive_tool_set(tools)
 
@@ -165,8 +166,8 @@ def domain_detail(request, name):
 @login_required
 @require_POST
 def domain_authorize(request, name):
-    """Self-authorize (single-admin tool): same record the /api/ authorize endpoint
-    creates, with an explicit attestation checkbox required."""
+    """Self-authorize (single-admin tool): the same DomainAuthorization record the former
+    authorize endpoint created, with an explicit attestation checkbox required."""
     domain = get_object_or_404(Domain, name=name)
     if DomainAuthorization.is_authorized(domain.name):
         messages.info(request, f"{name} is already authorized.")
@@ -231,7 +232,7 @@ def domain_delete(request, name):
         ScheduledScan.objects.filter(domain=name).delete()
         domain.delete()
 
-    # Match the old /api/ delete: rebuild the finding-type aggregates (so counts
+    # Match the former delete behavior: rebuild the finding-type aggregates (so counts
     # don't include the deleted domain) and re-sync monitoring jobs.
     from apps.core.console.insights.builder import rebuild_finding_type_summaries
     from apps.core.engine.scheduler.scheduler import sync_domain_monitoring_jobs
@@ -256,7 +257,7 @@ def scan_start(request):
     if not _is_apex(domain.name):
         messages.error(request, _apex_hint(domain.name))
         return back
-    # Authorization gate (mirrors scans/api.py): passive-only workflow bypasses it.
+    # Authorization gate (the passive-bypass / active-requires-auth rule): passive-only workflow bypasses it.
     if not _workflow_is_passive(workflow) and not DomainAuthorization.is_authorized(domain.name):
         messages.error(request, f"{domain.name} must be authorized before an active scan.")
         return back
@@ -333,7 +334,7 @@ def scan_progress(request, session_uuid):
 @login_required
 @require_POST
 def scan_cancel(request, session_uuid):
-    """Stop a scan: same status flip as POST /api/scans/<uuid>/stop/, plus a
+    """Stop a scan: the same status flip the former stop endpoint did, plus a
     best-effort DBOS workflow cancel."""
     session = get_object_or_404(ScanSession, uuid=str(session_uuid))
     if session.status not in _ACTIVE_STATUSES:

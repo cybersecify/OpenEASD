@@ -76,7 +76,7 @@ ci-backend:
     uv run pytest tests/ --ignore=tests/unit/test_domain_security.py -q \
         --cov --cov-report=term-missing --cov-fail-under=80
     uv run bandit -r apps/ openeasd/ -ll -x tests/
-    uv run pip-audit --ignore-vuln PYSEC-2025-183
+    uv run pip-audit
 
 # Full local CI = backend (what must be green before pushing)
 ci: ci-backend

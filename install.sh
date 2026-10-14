@@ -96,17 +96,7 @@ if [[ "$OS" == "debian" ]]; then
         build-essential gcc \
         python3 python3-pip \
         nmap \
-        libcairo2-dev \
         golang-go
-
-    # Node.js 20 LTS via NodeSource
-    if ! command -v node &>/dev/null || [[ "$(node -v | cut -d. -f1 | tr -d v)" -lt 18 ]]; then
-        info "Installing Node.js 20 LTS..."
-        curl -fsSL https://deb.nodesource.com/setup_20.x | bash - -qq
-        apt-get install -y -qq nodejs
-    else
-        ok "Node.js $(node -v) already installed"
-    fi
 
     ok "System packages installed"
 
@@ -115,7 +105,7 @@ else  # macOS
         die "Homebrew is required. Install from https://brew.sh"
     fi
     info "Installing system dependencies via Homebrew..."
-    brew install nmap go node python@3.12 cairo pkg-config 2>/dev/null || true
+    brew install nmap go python@3.12 pkg-config 2>/dev/null || true
     ok "System packages installed"
 fi
 
@@ -183,15 +173,8 @@ as_user "cd '$SCRIPT_DIR' && '$UV_CMD' sync"
 ok "Python dependencies installed"
 
 # ──────────────────────────────────────────────────────────────────────
-section "6 / 9  Frontend build"
-# ──────────────────────────────────────────────────────────────────────
-
-info "Installing Node.js packages..."
-as_user "cd '$SCRIPT_DIR/frontend' && npm ci --silent"
-info "Building frontend..."
-as_user "cd '$SCRIPT_DIR/frontend' && npm run build"
-ok "Frontend built → frontend/dist/"
-
+# (The UI is server-rendered plain Django — apps/mvp with vendored Bulma + HTMX.
+# No frontend build step: collectstatic gathers the app's static at deploy/run.)
 # ──────────────────────────────────────────────────────────────────────
 section "7 / 9  Environment configuration"
 # ──────────────────────────────────────────────────────────────────────

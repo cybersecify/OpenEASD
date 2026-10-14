@@ -452,7 +452,7 @@ sudo ./install.sh
 sudo ./install.sh --skip-amass
 ```
 
-The script installs: Python/uv, Node.js, nmap, ProjectDiscovery tools (subfinder, dnsx, naabu, httpx, nuclei), amass, builds the frontend, generates a `.env` with a random `SECRET_KEY`, runs migrations, creates the `admin` user, grants `NET_RAW` to nmap/naabu, and sets up `systemd` services on Linux.
+The script installs: Python/uv, nmap, ProjectDiscovery tools (subfinder, dnsx, naabu, httpx, nuclei), amass, generates a `.env` with a random `SECRET_KEY`, runs migrations, creates the `admin` user, grants `NET_RAW` to nmap/naabu, and sets up `systemd` services on Linux. (No frontend build — the UI is server-rendered plain Django.)
 
 After install, edit `.env` to add your domain to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`, then restart:
 

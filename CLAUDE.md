@@ -127,7 +127,6 @@ git describe --tags --abbrev=0
   - `publish` — matrix over `web` + `worker`; builds `linux/amd64` and pushes to `ghcr.io/cybersecify/openeasd-web` and `-worker`. `needs: [test]` only (NOT `docker`, which is PR-only and would cascade-skip publish); it's the sole image builder on release.
 - **Publish triggers:** every push to `main` (`:latest` tag) and `v*` git tags. A tag push emits both the full `:vX.Y.Z` (from `type=ref,event=tag`) and a floating `:vX.Y` major.minor tag (from `type=match,pattern=v\d+\.\d+`) so downstream can pin to a minor line and still get patch updates
 - Runner: `ubuntu-24.04`, Python 3.12, `uv sync --group dev` for deps, no Node or WeasyPrint system libs are installed (no frontend, no PDF)
-- `pip-audit --ignore-vuln PYSEC-2025-183` — legacy ignore for a disputed PyJWT CVE (PyJWT is no longer a dependency; the flag is a harmless leftover)
 - **Build provenance:** the `publish` job computes `OPENEASD_VERSION` (git tag for `v*`, else `pyproject.toml` version), `OPENEASD_GIT_SHA` (`github.sha`), and `OPENEASD_BUILD_DATE` (ISO UTC) and passes them as `build-args` to buildx. The Dockerfile bakes them into `ENV` (placed late so they never bust the cache of the heavy layers). Settings read them via `config()` with `dev`/`unknown` defaults for local runs. Surfaced at `GET /health/` (`{status, version, git_sha, build_date}`). The app never self-updates.
 
 ## Commands
