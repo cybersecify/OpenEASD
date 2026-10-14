@@ -344,3 +344,57 @@ class TestFindings:
         assert "High one" in client.get("/findings/?domain=EXAMPLE").content.decode()
         assert "No findings match" in client.get("/findings/?domain=nope.org").content.decode()
         assert "High one" in client.get("/findings/?severity=bogus&status=bogus").content.decode()
+
+
+@pytest.mark.django_db
+class TestIssues:
+    @pytest.fixture(autouse=True)
+    def _setup(self, client):
+        from django.utils import timezone
+
+        from apps.core.data.domains.models import Domain
+        from apps.core.data.issues.models import Issue
+
+        User.objects.create_user("admin", password="pw12345!")
+        client.login(username="admin", password="pw12345!")
+        d = Domain.objects.create(name="example.com")
+        now = timezone.now()
+
+        def mk(key, title, sev, status="open"):
+            return Issue.objects.create(
+                domain=d, key=key, check_id=key, source="nuclei", title=title,
+                target="example.com", severity=sev, status=status,
+                first_seen=now, last_seen=now,
+            )
+
+        self.hi = mk("a", "Alpha high issue", "high")
+        self.lo = mk("b", "Beta low issue", "low", status="resolved")
+
+    def test_list_and_filters(self, client):
+        body = client.get("/issues/").content.decode()
+        assert "Alpha high issue" in body and "Beta low issue" in body
+        body = client.get("/issues/?status=open").content.decode()
+        assert "Alpha high issue" in body and "Beta low issue" not in body
+        body = client.get("/issues/?severity=low").content.decode()
+        assert "Beta low issue" in body and "Alpha high issue" not in body
+
+    def test_requires_login(self, client):
+        client.logout()
+        assert client.get("/issues/").status_code == 302
+
+    def test_update_persists_and_resolved_at(self, client):
+        resp = client.post(f"/issues/{self.hi.id}/update/", {
+            "status": "resolved", "assigned_to": " bob ", "resolution_note": "patched",
+        })
+        assert resp.status_code == 302
+        self.hi.refresh_from_db()
+        assert (self.hi.status, self.hi.assigned_to, self.hi.resolution_note) == ("resolved", "bob", "patched")
+        assert self.hi.resolved_at is not None
+        client.post(f"/issues/{self.hi.id}/update/", {"status": "open"})
+        self.hi.refresh_from_db()
+        assert self.hi.status == "open" and self.hi.resolved_at is None
+
+    def test_invalid_status_rejected(self, client):
+        client.post(f"/issues/{self.hi.id}/update/", {"status": "bogus", "assigned_to": "x"})
+        self.hi.refresh_from_db()
+        assert self.hi.status == "open" and self.hi.assigned_to == ""

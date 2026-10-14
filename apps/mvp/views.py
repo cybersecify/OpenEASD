@@ -15,6 +15,7 @@ from django.views.decorators.http import require_POST
 from apps.core.data.domains.models import Domain, DomainAuthorization
 from apps.core.data.findings.models import STATUS_CHOICES as FINDING_STATUS_CHOICES
 from apps.core.data.findings.models import Finding
+from apps.core.data.issues.models import Issue
 from apps.core.engine.scans.models import ScanSession
 from apps.core.engine.scans.pipeline import create_scan_session
 from apps.core.engine.scans.tasks import run_scan_task
@@ -411,6 +412,76 @@ def findings(request):
         "sources": sorted(Finding.objects.order_by().values_list("source", flat=True).distinct()),
         "total": page.paginator.count,
     })
+
+
+@login_required
+def issues(request):
+    """Persistent cross-scan Issue register with inline triage."""
+    qs = Issue.objects.select_related("domain")
+    status = request.GET.get("status") or ""
+    severity = request.GET.get("severity") or ""
+    source = (request.GET.get("source") or "").strip()
+    domain = (request.GET.get("domain") or "").strip()
+    q = (request.GET.get("q") or "").strip()
+    if status in {c[0] for c in FINDING_STATUS_CHOICES}:
+        qs = qs.filter(status=status)
+    else:
+        status = ""
+    if severity in SEVERITY_ORDER:
+        qs = qs.filter(severity=severity)
+    else:
+        severity = ""
+    if source:
+        qs = qs.filter(source=source)
+    if domain:
+        qs = qs.filter(domain__name__icontains=domain)
+    if q:
+        qs = qs.filter(title__icontains=q)
+    rank = Case(
+        *[When(severity=s, then=Value(i)) for i, s in enumerate(SEVERITY_ORDER)],
+        default=Value(9), output_field=IntegerField(),
+    )
+    qs = qs.annotate(sev_rank=rank).order_by("sev_rank", "-last_seen", "-id")
+    page = Paginator(qs, 25).get_page(request.GET.get("page"))
+    return render(request, "mvp/issues.html", {
+        "page": page,
+        "status_filter": status,
+        "severity_filter": severity,
+        "source_filter": source,
+        "domain_filter": domain,
+        "q_filter": q,
+        "severity_order": SEVERITY_ORDER,
+        "status_choices": FINDING_STATUS_CHOICES,
+        "sources": sorted(Issue.objects.order_by().values_list("source", flat=True).distinct()),
+        "total": page.paginator.count,
+        "return_qs": request.GET.urlencode(),
+    })
+
+
+@login_required
+@require_POST
+def issue_update(request, issue_id):
+    """Canonical triage writer: status + assignee + note on the enduring Issue."""
+    back = redirect("mvp:issues")
+    qs = (request.POST.get("return_qs") or "").strip()
+    if qs and qs.replace("%", "").replace("&", "").replace("=", "").replace("+", "").replace("_", "").replace("-", "").replace(".", "").isalnum():
+        back["Location"] = back["Location"] + "?" + qs
+    status = request.POST.get("status")
+    if status not in {c[0] for c in FINDING_STATUS_CHOICES}:
+        messages.error(request, "Invalid status.")
+        return back
+    issue = get_object_or_404(Issue, id=issue_id)
+    issue.status = status
+    if status == "resolved":
+        if issue.resolved_at is None:
+            issue.resolved_at = timezone.now()
+    else:
+        issue.resolved_at = None
+    issue.assigned_to = (request.POST.get("assigned_to") or "").strip()[:150]
+    issue.resolution_note = (request.POST.get("resolution_note") or "").strip()
+    issue.save(update_fields=["status", "resolved_at", "assigned_to", "resolution_note"])
+    messages.success(request, "Issue updated.")
+    return back
 
 
 @login_required
