@@ -201,7 +201,7 @@ the folder move is purely organisational; the table lists each app by name.
 
 | App | Django label | Responsibility |
 |---|---|---|
-| `dashboard/` | `core` | Dashboard/health; `UserProfile` (`must_change_password`); `LoginThrottle` model (brute-force counter) |
+| `dashboard/` | `core` | Dashboard/health; `UserProfile` (`must_change_password`) |
 | `domains/` | `domains` | `Domain`, CRUD, activate/deactivate, monitoring config, `DomainAuthorization` |
 | `assets/` | `assets` | Network assets: `Subdomain`, `IPAddress`, `Port` |
 | `web_assets/` | `web_assets` | Web assets: `URL` |

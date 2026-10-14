@@ -181,7 +181,7 @@ docker run -d --name openeasd -p 8000:8000 -v openeasd-data:/data \
 
 For a privilege-separated / scalable setup, use the 3-tier path (PostgreSQL + web + worker via `docker compose up -d --build`); see [Deployment](#deployment).
 
-Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced to set a new password) → add a domain → run a scan. Full env-var reference, update path, Kubernetes manifests, and standalone (no-Docker) install are under [Deployment](#deployment).
+Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced to set a new password) → add a domain → run a scan. Full env-var reference, update path, and Kubernetes manifests are under [Deployment](#deployment).
 
 ## Features
 
@@ -431,39 +431,6 @@ Only the `openeasd-web` Deployment runs migrations (its initContainer); the `ope
 #### Health check
 
 `GET /health/` returns `{status, version, git_sha, build_date}`, used by K8s readiness and liveness probes (no auth required).
-
-### Standalone (no Docker)
-
-The fastest way to get running on a Linux server or macOS without Docker:
-
-```bash
-git clone https://github.com/cybersecify/OpenEASD.git
-cd OpenEASD
-
-# Linux (installs all deps + systemd services)
-sudo ./install.sh
-
-# macOS
-./install.sh
-
-# Skip amass if you don't need active subdomain enumeration (saves ~10 min)
-sudo ./install.sh --skip-amass
-```
-
-The script installs: Python/uv, nmap, ProjectDiscovery tools (subfinder, dnsx, naabu, httpx, nuclei), amass, generates a `.env` with a random `SECRET_KEY`, runs migrations, creates the `admin` user, grants `NET_RAW` to nmap/naabu, and sets up `systemd` services on Linux. (No frontend build — the UI is server-rendered plain Django.)
-
-After install, edit `.env` to add your domain to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`, then restart:
-
-```bash
-sudo systemctl restart openeasd-web openeasd-worker
-```
-
-On macOS, start manually:
-
-```bash
-uv run gunicorn openeasd.wsgi:application --bind 0.0.0.0:8000 --workers 2
-uv run manage.py dbos_worker   # second terminal (needs PostgreSQL running)
-```
 
 ### Development Mode
 

@@ -39,11 +39,8 @@ jobs:
           python - <<'PY'
           import json, os, subprocess
 
-          # Same ignore as ci.yml (disputed PyJWT CVE, no fix available).
-          IGNORE = ["PYSEC-2025-183"]
           audit = subprocess.run(
-              ["uv", "run", "pip-audit", *[a for v in IGNORE for a in ("--ignore-vuln", v)],
-               "--format", "json"],
+              ["uv", "run", "pip-audit", "--format", "json"],
               capture_output=True, text=True,
           )
           data = json.loads(audit.stdout or "{}")
@@ -69,7 +66,7 @@ jobs:
 
       - name: Verify audit is clean after bump
         if: steps.bump.outputs.changed == 'true'
-        run: uv run pip-audit --ignore-vuln PYSEC-2025-183
+        run: uv run pip-audit
 
       - name: Open pull request
         if: steps.bump.outputs.changed == 'true'
