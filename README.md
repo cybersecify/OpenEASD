@@ -192,11 +192,11 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 - **Asset inventory**: A persistent, deduplicated view of your attack surface across scans — every subdomain/IP/port/URL with first-seen / last-seen / active-or-gone status; pivot from any asset to its findings and scan history (Assets page + `/api/assets/`)
 - **Continuous monitoring**: Per-domain rescans on a configurable schedule (6h / 12h / 24h / 48h / weekly)
 - **Subscan**: Re-run specific tools on existing scan assets without full rediscovery
-- **Reports**: CSV and PDF export
+- **Reports**: CSV export
 - **Alerts**: Slack and Teams webhooks with configurable severity threshold; test button and alert history in the UI
 - **Scheduling**: One-time, recurring, and daily automated scans
-- **Domain authorization enforcement**: Each domain requires a recorded authorization (owner / written consent / bug bounty) before scans can start. Managed in Django admin; React blocks the Scan button and the API enforces it server-side
-- **JWT auth**: Stateless Bearer token authentication with refresh token rotation
+- **Domain authorization enforcement**: Each domain requires a recorded authorization (owner / written consent / bug bounty) before an active scan can start; passive-only scans are exempt. Enforced server-side in the scan-start view
+- **Session auth**: Django session login; default `admin/admin` must be changed on first login
 - **Forced password change**: Default `admin/admin` password must be changed on first login
 
 ## Scan Pipeline
@@ -499,13 +499,15 @@ GitHub Actions runs on every push to `main` and `v*` tags:
 - **Docker build**: amd64 smoke-build on every push
 - **Publish to GHCR**: `amd64` images published on every `main` push and version tags
 
-## API
+## HTTP surface
 
-The REST API is served at `/api/` via Django Ninja with JWT Bearer authentication.
+There is **no REST API** — the UI is a server-rendered plain-Django app (`apps/mvp`,
+session auth) served at `/`. The Django-Ninja REST API + JWT Bearer auth were removed
+(2026-10-14). The only machine-facing HTTP endpoints are:
 
-- **Docs:** http://localhost:8000/api/docs (OpenAPI/Swagger UI)
-- **Auth:** `POST /api/token/pair` → `{access, refresh}` tokens
-- **Token refresh:** `POST /api/token/refresh`
+- **Report export:** `GET /reports/<scan-uuid>/csv/` (session auth)
+- **Health:** `GET /health/` (unauth, for container/K8s probes)
+- **Metrics:** `GET /metrics/` (Prometheus, opt-in, off by default)
 
 ## Adding a New Tool
 
