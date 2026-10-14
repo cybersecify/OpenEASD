@@ -168,9 +168,10 @@ class TestAiFullFlow:
             assert row.total_tokens == 1050
             assert row.session_uuid == sess.uuid
 
-    def test_report_and_alert_carry_the_ai_output(self, settings):
+    def test_alert_carries_the_ai_output(self, settings):
+        # The PDF report (which also carried the AI summary via reports.views._ai_context)
+        # has been removed; the alert path still surfaces the AI summary.
         from apps.core.console.notifications.dispatcher import _build_slack_payload
-        from apps.core.console.reports.views import _ai_context
 
         _activate(settings)
         sess = _root_session()
@@ -180,10 +181,6 @@ class TestAiFullFlow:
              _run_ai_queue_inline(), \
              patch("apps.core.engine.scans.pipeline._dispatch_alerts"):
             _finalize_session(sess)
-
-        ctx = _ai_context(sess)
-        assert ctx["ai_summary"] == "Plain-language summary of the scan."
-        assert ctx["ai_triage_top"][0]["title"] == "Exposed admin panel"
 
         grouped = {"critical": [{"title": f.title, "check_type": f.check_type,
                                  "target": f.target}]}
