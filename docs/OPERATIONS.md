@@ -47,11 +47,10 @@ cp .env.example .env
 #    Set SECRET_KEY and the DB_* block. Generate a key with:
 #    uv run python -c "from django.core.management.utils import get_random_secret_key as k; print(k())"
 
-# 3. Install deps + apply migrations + build frontend deps
+# 3. Install deps + apply migrations (the UI is server-rendered — no frontend build)
 make setup        # or: just setup
 #    → uv sync --group dev      (Python env on 3.12)
 #    → manage.py migrate        (needs Postgres running)
-#    → cd frontend && npm install
 
 # 4. Create your admin login (native dev has no auto-admin; that's Docker-only)
 uv run manage.py createsuperuser   # or: just createsuperuser
@@ -241,6 +240,34 @@ Or: `docker compose -f docker-compose.singleimage.yml up -d --build` (reads `.en
 ```bash
 docker exec openeasd sh -lc 'PGBIN=$(ls -d /usr/lib/postgresql/*/bin); su postgres -c "$PGBIN/pg_dump -p 5432 openeasd"' > backup.sql
 ```
+
+## Sizing (RAM / CPU / disk)
+
+The binding constraint is **RAM during active scans** — `nuclei` parses ~13,500
+templates into memory (~500 MB fixed) and `amass` brute-forces; passive-only scans
+(DNS/RDAP/Shodan/API lookups) are light. `OPENEASD_PROFILE` auto-detects from host
+RAM (`low` <2 GB · `balanced` 2–8 GB · `high` ≥8 GB) and tunes nuclei `-bulk-size`,
+`GOMEMLIMIT`, tool concurrency, and amass-brute accordingly; force it with the env
+var if auto-detection is wrong. **Add swap on a 1 GB box.**
+
+| Workload | RAM | CPU | Disk |
+|---|---|---|---|
+| **Floor** (passive-only, or `low` profile + swap) | 1 GB + swap | 1 core | ~2 GB image + 10 GB `/data` volume |
+| **Recommended** (Full Scan / active — the single-image default) | **4 GB** | 2 cores | ~2 GB image + 10–20 GB `/data` |
+| **Heavy / concurrent scans** | 8 GB+ | 4 cores | 20 GB+ (consider the 3-tier deploy to scale the worker) |
+
+Notes specific to the **single image** (embedded Postgres + web + worker):
+- The embedded PostgreSQL adds roughly **150–300 MB RAM** on top of the engine floor;
+  the k8s Postgres is sized to a **4 Gi** limit after an OOM incident under concurrent
+  Passive·Deep load — mirror that if you cap the container (`docker run --memory=4g`).
+- The image is **~2 GB on disk** (full scanner matrix + baked nuclei templates).
+- The **`/data` volume is mandatory** and grows with scan history — start at **10 GB**.
+- **Outbound internet** is required (targets + third-party APIs: Shodan, RDAP, HIBP,
+  GitHub). **`--cap-add=NET_RAW`** is needed only for active scans (nmap/naabu raw
+  sockets); passive scans don't need it.
+- Under-provisioning doesn't error loudly — the kernel OOM-kills nuclei/amass mid-scan,
+  yielding silent **partial** results. If scans come back thin on a small box, raise RAM
+  or set `OPENEASD_PROFILE=low` (+ swap).
 
 ## Where things live
 
