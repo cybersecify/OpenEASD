@@ -1,0 +1,54 @@
+{% extends "mvp/base.html" %}
+{% block title %}Dashboard · OpenEASD{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<p class="muted">Overview of your domains, scans and open findings.</p>
+
+<div class="grid">
+  <div class="kv"><b>{{ active_domains }}</b><span class="muted">active domains</span></div>
+  <div class="kv"><b>{{ total_scans }}</b><span class="muted">scans</span></div>
+  <div class="kv">
+    <b>{{ findings_total }}</b><span class="muted">open findings</span>
+    {% if findings_by_severity %}<div class="chips">{% for sev, n in findings_by_severity %}<span class="pill sev-{{ sev }}">{{ n }} {{ sev }}</span> {% endfor %}</div>{% endif %}
+  </div>
+</div>
+
+<h2>Domains</h2>
+<div class="box">
+  <table class="table is-fullwidth is-hoverable">
+    <thead><tr><th>Domain</th><th>Active</th><th>Latest scan</th></tr></thead>
+    <tbody>
+    {% for d in domains %}
+    <tr>
+      {# TODO: link to scan/domain detail once those routes land (Tasks 3-5) #}
+      <td>{{ d.name }}</td>
+      <td>{% if d.is_active %}yes{% else %}<span class="muted">no</span>{% endif %}</td>
+      <td>{% if d.last_scan %}<span class="scan-{{ d.last_scan.status }}" style="font-weight:600">{{ d.last_scan.get_status_display }}</span> <span class="muted">· {{ d.last_scan.start_time|date:"m-d H:i" }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+    </tr>
+    {% empty %}<tr><td colspan="3" class="muted">No domains yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2>Urgent findings</h2>
+<div class="box">
+  <table class="table is-fullwidth is-hoverable">
+    <thead><tr><th>Severity</th><th>Finding</th><th>Target</th><th>Found</th></tr></thead>
+    <tbody>
+    {% for f in urgent_findings %}
+    <tr>
+      <td><span class="pill sev-{{ f.severity }}">{{ f.severity }}</span></td>
+      <td>{{ f.title }}</td>
+      <td class="muted">{{ f.target }}</td>
+      <td class="muted">{{ f.discovered_at|date:"Y-m-d H:i" }}</td>
+    </tr>
+    {% empty %}<tr><td colspan="4" class="muted">No critical or high findings.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2>Recent scans</h2>
+<div hx-get="{% url 'mvp:activity' %}" hx-trigger="load, every 5s" hx-swap="innerHTML">
+  {% include "mvp/_activity.html" %}
+</div>
+{% endblock %}
