@@ -11,7 +11,8 @@
        + the #30c074 green accent) forced onto Bulma's dark theme --- */
     :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#e6e8ec; --muted:#9aa3b2;
             --accent:#30c074;
-            --crit:#ff5370; --high:#ff8f40; --med:#ffcb6b; --low:#79b8ff; --info:#6b7280; --ok:#63d2a2; }
+            /* severity = React/Tailwind *-400 text colors */
+            --crit:#f87171; --high:#fb923c; --med:#facc15; --low:#60a5fa; --info:#9ca3af; --ok:#4ade80; }
     :root[data-theme="dark"] {
       --bulma-body-background-color:var(--bg);
       --bulma-body-color:var(--fg);
@@ -59,10 +60,11 @@
     .kv b { font-size:20px; display:block; } .kv .chips { margin-top:4px; }
 
     /* --- Severity / status chips --- */
-    .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; }
-    .sev-critical{background:rgba(255,83,112,.15);color:var(--crit)} .sev-high{background:rgba(255,143,64,.15);color:var(--high)}
-    .sev-medium{background:rgba(255,203,107,.15);color:var(--med)} .sev-low{background:rgba(121,184,255,.15);color:var(--low)}
-    .sev-info{background:rgba(107,114,128,.2);color:var(--muted)}
+    /* severity chips = React Badge: bg-{c}-900/40 text-{c}-400 border-{c}-800 */
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; border:1px solid transparent; }
+    .sev-critical{background:rgba(127,29,29,.4);color:var(--crit);border-color:#991b1b} .sev-high{background:rgba(124,45,18,.4);color:var(--high);border-color:#9a3412}
+    .sev-medium{background:rgba(113,63,18,.4);color:var(--med);border-color:#854d0e} .sev-low{background:rgba(30,58,138,.4);color:var(--low);border-color:#1e40af}
+    .sev-info{background:rgba(31,41,55,.6);color:var(--info);border-color:#374151}
     .st-open{color:var(--high)} .st-resolved{color:var(--ok)} .st-accepted,.st-false_positive{color:var(--muted)}
     .st-acknowledged,.st-in_progress{color:var(--low)}
     .scan-completed{color:var(--ok)} .scan-partial{color:var(--med)} .scan-failed{color:var(--crit)}
