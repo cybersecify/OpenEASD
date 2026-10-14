@@ -52,7 +52,7 @@ lint:
 	uv run ruff check apps/ openeasd/ tests/
 
 format:
-	uv run black apps/
+	uv run ruff format apps/ openeasd/ tests/
 	uv run ruff check apps/ openeasd/ tests/ --fix
 
 test:

@@ -57,7 +57,7 @@ lint:
 
 # Auto-format + fix
 format:
-    uv run black apps/
+    uv run ruff format apps/ openeasd/ tests/
     uv run ruff check apps/ openeasd/ tests/ --fix
 
 # Fast test suite (excludes the slow real-network domain_security tests)
@@ -84,18 +84,14 @@ ci: ci-backend
 
 # ── Dev deployment (3-container stack: db + web + worker) ─────────────────────
 # NOTE ON THE SPLIT:
-#   • DEV lifecycle lives here in `just` — setup, dev, up, deploy-dev.
+#   • DEV lifecycle lives here in `just` — setup, dev, up.
 #   • PRODUCTION is the GitHub pipeline (unchanged): `git tag vX.Y.Z` → CI builds
 #     & publishes pinned :vX.Y.Z images to GHCR; deploy them via the base
 #     docker-compose.yml. `just` is NOT used for production.
 
-# Dev deploy: build the stack locally from source (http://localhost:8000)
+# Dev deploy: build the 3-tier stack locally from source (http://localhost:8000)
 up:
     docker compose up -d --build
-
-# Dev deploy from the CI-published :latest images (no local build — pulls GHCR)
-deploy-dev:
-    docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --no-build --pull always
 
 # Stop the stack (keep the db volume)
 down:

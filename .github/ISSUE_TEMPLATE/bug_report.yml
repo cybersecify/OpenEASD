@@ -33,8 +33,8 @@ body:
       label: How are you running it?
       options:
         - Docker (single container)
+        - Docker Compose (3-tier: db + web + worker)
         - Kubernetes (manifests in k8s/)
-        - Standalone (no Docker, install.sh)
         - Local dev (uv run manage.py runserver)
     validations:
       required: true
