@@ -30,8 +30,8 @@ DEBUG = config("DEBUG", default=False, cast=bool)
 def _validate_secret_key(secret_key: str, debug: bool) -> None:
     """Fail fast in production on an unset/placeholder SECRET_KEY.
 
-    The key also signs JWTs (NINJA_JWT["SIGNING_KEY"] below), so the well-known
-    default would let anyone forge access/refresh tokens for any user. DEBUG
+    The key signs Django session cookies, CSRF tokens, and password-reset
+    tokens, so the well-known default would let anyone forge them. DEBUG
     builds keep the default for local dev.
     """
     if not debug and secret_key.startswith("django-insecure"):
@@ -90,10 +90,12 @@ def _security_settings(debug: bool) -> dict:
 
 globals().update(_security_settings(DEBUG))
 
-# Allow Vite dev server to make CSRF-protected POST requests in development
+# Trusted origins for CSRF-protected POST requests. The UI is same-origin
+# (Django serves it directly), so the local default is the runserver origin;
+# real deployed hosts (behind the TLS proxy) are set via the env var.
 CSRF_TRUSTED_ORIGINS = config(
     "CSRF_TRUSTED_ORIGINS",
-    default="http://localhost:5173,http://127.0.0.1:5173",
+    default="http://localhost:8001,http://127.0.0.1:8001",
 ).split(",")
 
 INSTALLED_APPS = [

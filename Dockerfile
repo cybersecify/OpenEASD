@@ -1,5 +1,5 @@
 # OpenEASD — split images: web (slim, no scanner tools) + worker (Ubuntu, all tools).
-#   web    = python:3.12-slim — UI/API + PDF reports (WeasyPrint). No scanners.
+#   web    = python:3.12-slim — server-rendered UI + CSV reports. No scanners.
 #   worker = ubuntu:24.04     — DBOS worker + the full, validated scanner matrix
 #                               (nmap NSE, naabu, amass, PD tools, nuclei templates).
 # Worker stays Ubuntu because that is the base the tool matrix was validated on
@@ -83,11 +83,11 @@ ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 
     VIRTUAL_ENV=/app/.venv PATH="/app/.venv/bin:/root/.local/bin:${PATH}" \
     OPENEASD_ROLE=web
 
-# Build deps (for any source-built wheels) + WeasyPrint runtime libs.
+# Build deps (for any source-built wheels) + lxml runtime libs. (WeasyPrint/PDF
+# was removed, so the cairo/pango/gdk-pixbuf font-rendering libs are gone.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libffi-dev libssl-dev git curl ca-certificates \
-    libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 \
-    libxml2 libxslt1.1 fonts-dejavu-core \
+    libxml2 libxslt1.1 \
     && rm -rf /var/lib/apt/lists/*
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
