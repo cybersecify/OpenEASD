@@ -11,19 +11,18 @@ default:
 
 # ── First-time setup ─────────────────────────────────────────────────────────
 
-# Sync the Python env, migrate, install frontend deps
+# Sync the Python env + migrate
 setup:
     uv sync --group dev
     uv run manage.py migrate
-    cd frontend && npm install
     @echo "Done. Start dev with: just dev"
 
 # ── Development ───────────────────────────────────────────────────────────────
 
-# Django ({{PORT}}) + DBOS worker + Vite dev server together (Ctrl-C stops all)
+# Django ({{PORT}}) + DBOS worker together (Ctrl-C stops all). The UI is the
+# server-rendered plain-Django app at http://localhost:{{PORT}}/.
 dev:
     #!/usr/bin/env bash
-    (cd frontend && npm run dev) & \
     (uv run manage.py runserver {{PORT}}) & \
     (uv run manage.py dbos_worker) & \
     wait || kill 0
@@ -35,10 +34,6 @@ worker:
 # Only the Django dev server
 backend:
     uv run manage.py runserver {{PORT}}
-
-# Build the frontend bundle once
-frontend:
-    cd frontend && npm run build
 
 # ── Database ──────────────────────────────────────────────────────────────────
 
@@ -83,14 +78,9 @@ ci-backend:
     uv run bandit -r apps/ openeasd/ -ll -x tests/
     uv run pip-audit --ignore-vuln PYSEC-2025-183
 
-# Frontend CI: vitest + production build (mirrors the ci.yml `frontend` job)
-ci-frontend:
-    cd frontend && npm run test:run
-    cd frontend && npm run build
-
-# Full local CI = backend + frontend (what must be green before pushing)
-ci: ci-backend ci-frontend
-    @echo "✅ local CI passed (ruff + pytest+coverage + bandit + pip-audit + vitest + build)"
+# Full local CI = backend (what must be green before pushing)
+ci: ci-backend
+    @echo "✅ local CI passed (ruff + pytest+coverage + bandit + pip-audit)"
 
 # ── Dev deployment (3-container stack: db + web + worker) ─────────────────────
 # NOTE ON THE SPLIT:
@@ -122,5 +112,5 @@ ps:
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 
 clean:
-    rm -rf .venv frontend/node_modules frontend/dist staticfiles
-    @echo "Removed .venv, node_modules, dist, staticfiles"
+    rm -rf .venv staticfiles
+    @echo "Removed .venv, staticfiles"

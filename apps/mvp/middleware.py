@@ -5,7 +5,7 @@ from django.urls import reverse
 
 logger = logging.getLogger(__name__)
 
-_EXEMPT_PREFIXES = ("/static/", "/admin/", "/api/", "/reports/", "/metrics/", "/login/", "/logout/")
+_EXEMPT_PREFIXES = ("/static/", "/admin/", "/reports/", "/metrics/", "/login/", "/logout/")
 
 
 def must_change_password(user):

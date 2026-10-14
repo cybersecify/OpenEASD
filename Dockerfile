@@ -12,17 +12,7 @@
 #   docker buildx build --target worker -t openeasd-worker .
 
 # ---------------------------------------------------------------------------
-# Stage 1: frontend build → static bundle (build-time only; no Node at runtime)
-# ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM node:20-slim AS frontend-builder
-WORKDIR /build/frontend
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --prefer-offline
-COPY frontend/ ./
-RUN npm run build
-
-# ---------------------------------------------------------------------------
-# Stage 2: download pre-built security tool binaries (static Go)
+# Stage: download pre-built security tool binaries (static Go)
 # ---------------------------------------------------------------------------
 FROM debian:13-slim AS tools-builder
 
@@ -111,7 +101,6 @@ COPY manage.py ./
 COPY config/ config/
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
-COPY --from=frontend-builder /build/frontend/dist/ frontend/dist/
 # Build-time placeholders for the production fail-fast guards (settings/base.py):
 # collectstatic imports settings but never touches the DB or signs tokens, so
 # these never leave this RUN layer. SECRET_KEY clears the SECRET_KEY guard;

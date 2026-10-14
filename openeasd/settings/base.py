@@ -171,7 +171,7 @@ ROOT_URLCONF = "openeasd.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates", BASE_DIR / "frontend" / "dist"],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -264,9 +264,9 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [
-    BASE_DIR / "frontend" / "dist",
-]
+# No project-level static dir — the mvp app's static (Bulma/HTMX) is collected
+# via AppDirectoriesFinder. (The React SPA's frontend/dist was removed.)
+STATICFILES_DIRS = []
 STORAGES = {
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
