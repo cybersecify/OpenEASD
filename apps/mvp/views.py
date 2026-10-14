@@ -1,3 +1,4 @@
+import logging
 import re
 
 from django.contrib import messages
@@ -15,6 +16,8 @@ from apps.core.engine.scans.pipeline import create_scan_session
 from apps.core.engine.scans.tasks import run_scan_task
 from apps.core.engine.workflows.models import Workflow
 from apps.core.engine.workflows.registry import is_passive_tool_set
+
+logger = logging.getLogger(__name__)
 
 SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
 _ACTIVE_STATUSES = ("pending", "running")
@@ -259,6 +262,88 @@ def scan_start(request):
         messages.warning(request, "A scan is already running for this domain.")
         return back
     run_scan_task(session.id)
-    # TODO(Task 5): redirect to mvp:scan-detail once that route exists
     messages.success(request, f"{workflow.name} scan started for {domain.name}.")
-    return back
+    return redirect("mvp:scan-detail", session_uuid=session.uuid)
+
+
+def _scan_steps(session):
+    """Ordered per-tool step results for this scan's workflow run."""
+    from apps.core.engine.workflows.models import WorkflowRun
+
+    run = WorkflowRun.objects.filter(session=session).order_by("-id").first()
+    if run is None:
+        return []
+    return list(run.step_results.order_by("order", "id"))
+
+
+def _scan_progress_ctx(session):
+    steps = _scan_steps(session)
+    done = sum(1 for s in steps if s.status in ("completed", "failed", "skipped"))
+    all_findings = Finding.objects.filter(session=session)
+    return {
+        "session": session,
+        "active": session.status in _ACTIVE_STATUSES,
+        "steps": steps,
+        "steps_done": done,
+        "steps_total": len(steps),
+        "failed_tools": [s.tool for s in steps if s.status == "failed"],
+        "skipped_tools": [s.tool for s in steps if s.status == "skipped"],
+        "finding_count": all_findings.count(),
+        "by_severity": _severity_counts(all_findings),
+    }
+
+
+@login_required
+def scan_detail(request, session_uuid):
+    session = get_object_or_404(ScanSession, uuid=str(session_uuid))
+    ctx = _scan_progress_ctx(session)
+    findings = Finding.objects.filter(session=session)
+    sev = request.GET.get("sev")
+    if sev in SEVERITY_ORDER:
+        findings = findings.filter(severity=sev)
+    rank = {s: i for i, s in enumerate(SEVERITY_ORDER)}
+    findings = sorted(findings, key=lambda f: (rank.get(f.severity, 9), f.source, f.title))
+    ctx.update({
+        "findings": findings[:500],
+        "findings_shown": min(len(findings), 500),
+        "findings_total_filtered": len(findings),
+        "sev_filter": sev if sev in SEVERITY_ORDER else "",
+        "severity_order": SEVERITY_ORDER,
+    })
+    return render(request, "mvp/scan_detail.html", ctx)
+
+
+@login_required
+def scan_progress(request, session_uuid):
+    """HTMX partial polled while the scan runs; on a terminal scan, ask htmx to
+    do one full reload (HX-Refresh), which ends polling."""
+    from django.http import HttpResponse
+
+    session = get_object_or_404(ScanSession, uuid=str(session_uuid))
+    if session.status not in _ACTIVE_STATUSES:
+        resp = HttpResponse(status=204)
+        resp["HX-Refresh"] = "true"
+        return resp
+    return render(request, "mvp/_scan_progress.html", _scan_progress_ctx(session))
+
+
+@login_required
+@require_POST
+def scan_cancel(request, session_uuid):
+    """Stop a scan: same status flip as POST /api/scans/<uuid>/stop/, plus a
+    best-effort DBOS workflow cancel."""
+    session = get_object_or_404(ScanSession, uuid=str(session_uuid))
+    if session.status not in _ACTIVE_STATUSES:
+        messages.info(request, "That scan is not running.")
+        return redirect("mvp:scan-detail", session_uuid=session_uuid)
+    session.status = "cancelled"
+    session.end_time = timezone.now()
+    session.save(update_fields=["status", "end_time"])
+    try:
+        from apps.core.engine.scheduler.scheduler import _cancel_workflows_for_sessions
+
+        _cancel_workflows_for_sessions([session.id])
+    except Exception:  # noqa: BLE001 - best effort; the status flip stops the pipeline
+        logger.warning("[mvp] could not cancel DBOS workflow for scan %s", session.id, exc_info=True)
+    messages.success(request, f"Scan cancelled for {session.domain}.")
+    return redirect("mvp:scan-detail", session_uuid=session_uuid)

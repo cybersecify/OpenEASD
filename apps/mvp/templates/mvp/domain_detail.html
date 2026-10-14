@@ -88,8 +88,7 @@
     <tbody>
     {% for s in scans %}
     <tr>
-      {# TODO: link to scan detail (Task 5) #}
-      <td>{{ s.triggered_by }}</td>
+      <td><a href="{% url 'mvp:scan-detail' s.uuid %}">{{ s.triggered_by }}</a></td>
       <td><span class="scan-{{ s.status }}" style="font-weight:600">{{ s.get_status_display }}</span></td>
       <td>{{ s.total_findings }}</td>
       <td class="muted">{{ s.start_time|date:"Y-m-d H:i" }}</td>

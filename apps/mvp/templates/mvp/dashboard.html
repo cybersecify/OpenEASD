@@ -20,8 +20,7 @@
     <tbody>
     {% for d in domains %}
     <tr>
-      {# TODO: link to scan/domain detail once those routes land (Tasks 3-5) #}
-      <td>{{ d.name }}</td>
+      <td><a href="{% url 'mvp:domain-detail' d.name %}">{{ d.name }}</a></td>
       <td>{% if d.is_active %}yes{% else %}<span class="muted">no</span>{% endif %}</td>
       <td>{% if d.last_scan %}<span class="scan-{{ d.last_scan.status }}" style="font-weight:600">{{ d.last_scan.get_status_display }}</span> <span class="muted">· {{ d.last_scan.start_time|date:"m-d H:i" }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
     </tr>

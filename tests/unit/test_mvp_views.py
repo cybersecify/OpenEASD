@@ -165,3 +165,59 @@ class TestScanStart:
     def test_detail_renders_modes(self, client):
         resp = client.get("/app/domains/example.com/")
         assert b"Passive Scan Deep" in resp.content and b"authorize first" in resp.content
+
+
+@pytest.mark.django_db
+class TestScanDetail:
+    @pytest.fixture(autouse=True)
+    def _seed(self, client):
+        from apps.core.data.findings.models import Finding
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.engine.workflows.models import WorkflowRun, WorkflowStepResult
+
+        User.objects.create_user("admin", password="pw12345!")
+        client.login(username="admin", password="pw12345!")
+        self.s = ScanSession.objects.create(domain="example.com", status="running")
+        run = WorkflowRun.objects.create(session=self.s, status="running")
+        WorkflowStepResult.objects.create(run=run, tool="subfinder", status="completed", order=1)
+        WorkflowStepResult.objects.create(run=run, tool="nuclei", status="failed", order=2, error="boom")
+        Finding.objects.create(session=self.s, source="nuclei", severity="high", title="High thing", target="a.example.com")
+        Finding.objects.create(session=self.s, source="nuclei", severity="low", title="Low thing", target="a.example.com")
+
+    def test_detail_shows_finding_and_step(self, client):
+        resp = client.get(f"/app/scan/{self.s.uuid}/")
+        body = resp.content.decode()
+        assert resp.status_code == 200
+        assert "High thing" in body and "subfinder" in body
+        assert "every 3s" in body
+
+    def test_terminal_detail_has_no_poll_trigger(self, client):
+        self.s.status = "completed"
+        self.s.save()
+        assert "every 3s" not in client.get(f"/app/scan/{self.s.uuid}/").content.decode()
+
+    def test_progress_partial(self, client):
+        resp = client.get(f"/app/scan/{self.s.uuid}/progress/")
+        body = resp.content.decode()
+        assert resp.status_code == 200
+        assert "nuclei" in body and "Failed:" in body and "1 high" in body
+
+    def test_progress_terminal_refreshes(self, client):
+        self.s.status = "completed"
+        self.s.save()
+        resp = client.get(f"/app/scan/{self.s.uuid}/progress/")
+        assert resp.status_code == 204 and resp["HX-Refresh"] == "true"
+
+    def test_cancel_flips_status(self, client):
+        from unittest.mock import patch
+
+        with patch("apps.core.engine.scheduler.scheduler._cancel_workflows_for_sessions") as c:
+            resp = client.post(f"/app/scan/{self.s.uuid}/cancel/")
+        assert resp.status_code == 302
+        self.s.refresh_from_db()
+        assert self.s.status == "cancelled" and self.s.end_time
+        c.assert_called_once_with([self.s.id])
+
+    def test_sev_filter(self, client):
+        body = client.get(f"/app/scan/{self.s.uuid}/?sev=high").content.decode()
+        assert "High thing" in body and "Low thing" not in body

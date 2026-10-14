@@ -7,8 +7,7 @@
     <tbody>
     {% for s in recent_scans %}
     <tr>
-      {# TODO: link to scan/domain detail once those routes land (Tasks 3-5) #}
-      <td>{{ s.domain }}</td>
+      <td><a href="{% url 'mvp:scan-detail' s.uuid %}">{{ s.domain }}</a></td>
       <td class="muted">{{ s.triggered_by }}</td>
       <td><span class="scan-{{ s.status }}" style="font-weight:600">{{ s.get_status_display }}</span></td>
       <td>{{ s.total_findings }}</td>

@@ -1,0 +1,44 @@
+{% extends "mvp/base.html" %}
+{% block title %}Scan {{ session.uuid }} · OpenEASD{% endblock %}
+{% block content %}
+<p><a href="{% url 'mvp:domain-detail' session.domain %}">&larr; {{ session.domain }}</a></p>
+<h1>Scan · {{ session.domain }}</h1>
+<p class="muted">UUID {{ session.uuid }} · {{ session.triggered_by }} · started {{ session.start_time|date:"Y-m-d H:i" }}
+  {% if session.end_time %}· ended {{ session.end_time|date:"Y-m-d H:i" }}{% endif %}
+  {% if session.waf_vendor %}· WAF: {{ session.waf_vendor }}{% endif %}</p>
+
+<h2>Progress {% if active %}<span class="muted" style="font-weight:400;text-transform:none">· live, auto-refreshing</span>{% endif %}</h2>
+{% if active %}
+<div hx-get="{% url 'mvp:scan-progress' session.uuid %}" hx-trigger="load, every 3s" hx-swap="innerHTML">
+  {% include "mvp/_scan_progress.html" %}
+</div>
+{% else %}
+{% include "mvp/_scan_progress.html" %}
+{% endif %}
+
+<h2>Findings</h2>
+<div class="row-actions" style="margin-bottom:10px">
+  <a class="button is-small {% if not sev_filter %}is-link{% endif %}" href="?">All</a>
+  {% for sev in severity_order %}
+  <a class="button is-small {% if sev_filter == sev %}is-link{% endif %}" href="?sev={{ sev }}">{{ sev }}</a>
+  {% endfor %}
+  <a class="button is-small" href="/reports/{{ session.uuid }}/csv/">Download CSV</a>
+</div>
+<div class="box">
+  <table class="table is-fullwidth is-hoverable">
+    <thead><tr><th>Severity</th><th>Verdict</th><th>Source</th><th>Title</th><th>Target</th></tr></thead>
+    <tbody>
+    {% for f in findings %}
+    <tr>
+      <td><span class="pill sev-{{ f.severity }}">{{ f.severity }}</span></td>
+      <td class="vd-{{ f.verification_status }}">{{ f.verification_status|default:"—" }}</td>
+      <td class="muted">{{ f.source }}</td>
+      <td>{{ f.title }}</td>
+      <td class="muted">{{ f.target }}</td>
+    </tr>
+    {% empty %}<tr><td colspan="5" class="muted">{% if sev_filter %}No {{ sev_filter }} findings.{% else %}No findings yet (scan may still be running).{% endif %}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if findings_total_filtered > findings_shown %}<p class="muted">Showing {{ findings_shown }} of {{ findings_total_filtered }} — download the CSV for the full set.</p>{% endif %}
+</div>
+{% endblock %}
