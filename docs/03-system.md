@@ -29,7 +29,7 @@ facts are presented.**
   **persistent, domain-centric fact** layer (`asset_inventory.Asset`, `Issue`) =
   the canonical cross-scan truth + the relationship graph. Raw rows feed the
   persistent layer at finalize.
-- **Execution structured separately:** `API ↕ DBOS workflow → pipeline → tools →
+- **Execution structured separately:** `UI/service layer ↕ DBOS workflow → pipeline → tools →
   normalized data`.
 - **UI perspectives** (scan-/asset-/finding-/issue-centric) are views over the
   same backend and free to change. One backend already serves three of them.
@@ -46,10 +46,10 @@ presentation run in their own lanes and meet only through stored facts.
  ① WRITE / TRIGGER                          ② EXECUTE (durable, resumable)
  ┌─────────────────────────┐                ┌───────────────────────────────────────┐
  │ producer:               │  create        │ DBOS run_scan workflow (worker tier)    │
- │  • API POST /scans/start│  ScanSession   │   └─ Pipeline — 13 phases, fixed order  │
+ │  • mvp scan_start view  │  ScanSession   │   └─ Pipeline — 13 phases, fixed order  │
  │  • scheduler cron       │ ─── + ────────►│        └─ Tools (per phase)             │
  │  • AI agent             │  enqueue       │             normalize → write rows      │
- └─────────────────────────┘  (returns 201) │             (never call each other)     │
+ └─────────────────────────┘  (redirects)   │             (never call each other)     │
         ▲                                    └───────────────────┬─────────────────────┘
         │                                                        │ writes
         │                                                        ▼
@@ -75,7 +75,7 @@ presentation run in their own lanes and meet only through stored facts.
         │                                                        │ ④ READ (traverse the graph)
         │         the SAME backend, queried per perspective      ▼
    ┌────┴───────────────── service layer (read per perspective) ───────────────────────────┐
-   │  /scans → scan-centric   /assets → asset-centric   /issues → finding/issue-centric   …    │
+   │  scan reads → scan-centric   asset reads → asset-centric   issue reads → finding/issue-centric   …    │
    └────────────────────────────────────────────────┬──────────────────────────────────────────┘
                                                      ▼
                             UI decides PRESENTATION only (the server-rendered `apps/mvp` UI, or any future client)
@@ -92,6 +92,8 @@ writes normalized rows and the graph + every perspective pick it up for free.
 ---
 
 ## System Overview
+
+3-tier view (the single image collapses all three into one container):
 
 ```
 Browser (server-rendered pages, vendored Bulma + HTMX)
@@ -111,7 +113,10 @@ PostgreSQL 17  ◄──────────────────  worker
                                        └── @DBOS.scheduled crons (daily scan, sweeps, watchdog, scan prune)
 ```
 
-Three tiers, each its own container/workload: **db** (`postgres:17-alpine`),
+The engine runs in one of two topologies. **Single image (primary MVP deploy):**
+one container runs embedded PostgreSQL + gunicorn + the DBOS worker under
+`honcho`. **3-tier (privilege-separated / scalable alternative, shown above):**
+three containers/workloads: **db** (`postgres:17-alpine`),
 **web** (UI + synchronous CSV reports; no tools, no `NET_RAW`), **worker**
 (DBOS durable execution + the scanner binaries; `NET_RAW`). The web tier only
 *enqueues* scans; the worker *executes* them. Scans are **durable DBOS workflows**
@@ -123,8 +128,8 @@ data + DBOS checkpoints); there is no SQLite and no Django-Q/APScheduler.
 
 ## Layers vs. Tiers — two orthogonal axes
 
-OpenEASD is best understood as **4 logical layers** deployed as a **3-tier
-topology**. These are *different axes* — code is organized by layer, runtime is
+OpenEASD is best understood as **4 logical layers** deployable as a **3-tier
+topology** (or collapsed into the single image). These are *different axes* — code is organized by layer, runtime is
 organized by process — and they deliberately do **not** map 1:1. Keep them
 separate: a folder can't "live in the web container," because both containers
 import the same codebase and differ only by entrypoint.
@@ -133,13 +138,13 @@ import the same codebase and differ only by entrypoint.
 
 ```
 ┌─ CONSOLE   presentation: server-rendered `apps/mvp` UI (session auth) + reports(CSV)/insights/notifications/ai
-│               apps/core/{dashboard, api, insights, reports, notifications, ai}
+│               apps/mvp (UI) + apps/core/console/{dashboard, insights, reports, notifications, ai, credentials, observability}
 ├─ ENGINE    orchestration: durable scan execution + dynamic workflow runner
-│               apps/core/{scans, workflows, durable, scheduler}
-├─ TOOLS     plugins: the 27 self-registering scanner tools
+│               apps/core/engine/{scans, workflows, durable, scheduler, service_detection, verification}
+├─ TOOLS     plugins: the 29 self-registering scanner tools (30 registered incl. core service_detection)
 │               apps/<tool>/  (subfinder, nmap, nuclei, …)
 └─ DATA      models: the dataflow substrate every layer reads/writes
-                apps/core/{domains, assets, web_assets, findings, issues, asset_inventory}
+                apps/core/data/{domains, assets, web_assets, findings, issues, asset_inventory}
 
 Dependency direction — everything points DOWN to DATA (which depends on nothing):
       console ─┐
@@ -147,9 +152,9 @@ Dependency direction — everything points DOWN to DATA (which depends on nothin
       tools   ─┘
 ```
 
-The current folders don't *nest* these layers (it's `apps/core/*` + flat
-`apps/<tool>/*`), but every app maps cleanly to exactly one layer — see the
-Core Infrastructure and Tool Apps tables below.
+The core apps are physically nested by layer (`apps/core/console|engine|data/`);
+tools stay flat as `apps/<tool>/`, and the UI is `apps/mvp`. Every app maps
+cleanly to exactly one layer — see the Core Infrastructure and Tool Apps tables below.
 
 ### Axis 2 — deployment tiers (how the RUNTIME is organized, by process)
 
@@ -161,6 +166,10 @@ Core Infrastructure and Tool Apps tables below.
                               └──────────────► db (postgres:17-alpine) ◄──────────────┘
                                                app data + DBOS checkpoints
 ```
+
+In the **single image** (`singleimage` target, `FROM worker`) all three boxes
+collapse into one container (embedded Postgres + gunicorn + dbos_worker under
+honcho, `/data` volume); the layer model is unchanged.
 
 ### The map between them (layer → container)
 
@@ -177,11 +186,9 @@ process they start (`gunicorn` vs `dbos_worker`). So folders are grouped by
 *layer* (responsibility), never by *container* (process). This keeps deployment
 flexible — a layer can be re-mapped to a different container without moving any
 code — and keeps the internet-facing `web` image tool-free regardless of how the
-code is organized. **Decision:** the 4-layer model lives here as documentation;
-the folders stay a standard `apps/core/*` + flat `apps/<tool>/*` Django layout and
-are **not** reorganized to mirror the layers — a reorg would be pure churn (every
-import path, the 27 `tool_meta` runner strings, tests) with no functional gain.
-Reorganize only if the flat layout starts causing real friction.
+code is organized. **Decision:** core apps are grouped into layer subpackages
+(django labels unchanged); tools stay flat `apps/<tool>/` to avoid churn in the 30
+`tool_meta` runner strings.
 
 ---
 
@@ -194,7 +201,7 @@ the folder move is purely organisational; the table lists each app by name.
 
 | App | Django label | Responsibility |
 |---|---|---|
-| `dashboard/` | `core` | Dashboard KPIs; `UserProfile` (`must_change_password`); `LoginThrottle` (brute-force limiter) |
+| `dashboard/` | `core` | Dashboard/health; `UserProfile` (`must_change_password`); `LoginThrottle` model (brute-force counter) |
 | `domains/` | `domains` | `Domain`, CRUD, activate/deactivate, monitoring config, `DomainAuthorization` |
 | `assets/` | `assets` | Network assets: `Subdomain`, `IPAddress`, `Port` |
 | `web_assets/` | `web_assets` | Web assets: `URL` |
@@ -215,24 +222,22 @@ the folder move is purely organisational; the table lists each app by name.
 
 ### By layer — console / engine / data
 
-The 16 core apps map cleanly to three of the four logical layers (see
+The 17 registered core apps map cleanly to three of the four logical layers (see
 [Layers vs. Tiers](#layers-vs-tiers--two-orthogonal-axes)):
 
 | Layer | Apps | Count |
 |---|---|---|
 | **Console** (presentation) | `dashboard`, `insights`, `reports`, `notifications`, `ai`, `credentials` | **6** |
-| **Engine** (orchestration) | `scans`, `workflows`, `durable`, `scheduler` (+ `verification` sub-package, not a registered app) | **4** |
-| **Data** (dataflow models) | `domains`, `assets`, `web_assets`, `findings`, `asset_inventory` | **5** |
-| *(core + registry tool)* | `service_detection` — a core app that is *also* a phase-6 scan tool | **1** |
+| **Engine** (orchestration) | `scans`, `workflows`, `durable`, `scheduler` | **4** |
+| **Data** (dataflow models) | `domains`, `assets`, `web_assets`, `findings`, `issues`, `asset_inventory` | **6** |
+| *(core + registry tool)* | `service_detection` — a core app that is *also* a phase-7 scan tool | **1** |
 
-**Total: 16 core apps.** The `api/` module is part of the console tier but is
-**not** a registered app (no models — it only mounts routers), so it's not in the
-16. The fourth logical layer, **Tools**, is the 29 `apps/<tool>/` plugins (next
-section) — bringing the first-party total to 45 apps / 30 registered tools
-(`service_detection` is the one app counted in both core and the tool registry).
-Likewise, `apps/core/engine/verification/` is a plain internal sub-package (no
-models, not in `INSTALLED_APPS`) invoked directly by the scan pipeline — not
-counted in the 16 either.
+**Total: 17 core apps.** `observability/` (metrics exporter) and
+`apps/core/engine/verification/` are plain internal sub-packages (no models, not
+in `INSTALLED_APPS`), not counted. The fourth logical layer, **Tools**, is the 29
+`apps/<tool>/` plugins (next section) — bringing the first-party total to 46 apps
+(plus the `apps/mvp` UI) / 30 registered tools (`service_detection` is the one app
+counted in both core and the tool registry).
 
 Notes on the mapping's soft edges:
 - **`scheduler`** sits in *engine* as its **automated-operations** sub-part (cron
@@ -241,7 +246,7 @@ Notes on the mapping's soft edges:
 - **`service_detection`** is the only app that is both core infrastructure and a
   registry tool (nmap -sV, phase 7).
 - **`verification`** (`apps/core/engine/verification/`) is an internal engine
-  sub-package, not a registered app — same treatment as `api/` — so it isn't
+  sub-package, not a registered app (no models, not in `INSTALLED_APPS`), so it isn't
   counted in the Engine total; the scan pipeline's finalize step calls it directly.
 
 Secrets at rest (`apps/core/crypto.py` + `fields.py`): BYOK API keys and webhook
@@ -286,7 +291,7 @@ full per-tool table is in [CLAUDE.md](../CLAUDE.md); by phase group:
 The passive set is further split along a cost/scope axis: **light** passive
 tools (`quick_recon` flag — apex-scoped, fast, no discovery fan-out:
 `domain_security`, `dns_history`, `hudson_rock`, `breach_check`) feed the
-predefined "Quick Recon" workflow, an instant no-auth first look; **deep**
+predefined "Passive Scan Light" workflow, an instant no-auth first look; **deep**
 passive is the derived complement (everything else passive, e.g.
 `tldsquatting`, `subfinder`, `shodan`). This is distinct from the
 `runner._LOW_MEM_PARALLEL_SAFE` memory/IO axis, which groups tools by whether
@@ -295,11 +300,11 @@ active tools and includes the heavier `tldsquatting`.
 
 Crossing that light/deep split with the passive/active axis gives four named
 scan modes (plus Custom, for an arbitrary tool subset), presented as a 2×2
-matrix on the Start-Scan page: Quick Recon (passive, light), Passive Scan
-(passive, deep), Active Light (active, light), Full Scan (active, deep). The
+matrix on the Start-Scan page: Passive Scan Light (passive, light), Passive Scan
+Deep (passive, deep), Active Light (active, light), Full Scan (active, deep). The
 authorization boundary still runs along the passive/active axis only — both
 passive-row modes need no `DomainAuthorization`, both active-row modes do.
-Active Light is the active counterpart of Quick Recon: the same discovery
+Active Light is the active counterpart of Passive Scan Light: the same discovery
 backbone (subfinder → dnsx → naabu → httpx) feeding a handful of cheap
 config/exposure checks (domain_probe, web_checker, tls_checker, ssh_checker),
 excluding the heavy engines (nmap, nuclei/nuclei_network, katana, amass, and
@@ -418,7 +423,7 @@ the pipeline's phase *order*.
 | Controls | *which* tools run | *what order* + *how data flows* |
 | The unit | `Workflow` + `WorkflowStep` (DB rows) | fixed 13 phases + dataflow models |
 | Mutable? | ✅ dynamic — user-configurable | ❌ fixed — hardcoded `tool_meta["phase"]` |
-| Lives in | `apps/core/engine/workflows/` (models, api, runner, registry) | `tool_meta` phases + `apps/core/engine/scans/pipeline.py` |
+| Lives in | `apps/core/engine/workflows/` (models, runner, registry) | `tool_meta` phases + `apps/core/engine/scans/pipeline.py` |
 | Example control | enable/disable tools; Full / Passive / custom workflows | `dnsx`(3)→`naabu`(5)→`httpx`(8): IPs before ports before web probing |
 
 A workflow can enable/disable tools and set their *intra-phase* `order`, but can
@@ -471,6 +476,7 @@ Finding
   session      FK → ScanSession
   source       str   # tool label from tool_meta (e.g. "nmap", "tls_checker")
   check_type   str   # tool-specific slug (e.g. "cve", "weak_cipher", "no_spf")
+  check_id     str   # stable per-rule identity (Issue key)
   severity     enum  # critical | high | medium | low | info
   title        str
   description  text
@@ -479,6 +485,8 @@ Finding
   port         FK → Port (nullable)
   url          FK → URL (nullable)
   extra        JSON  # tool-specific: cvss_score, epss_score, cisa_kev, cipher_name, …
+  verification_status str  # unverified|verified|inconclusive
+  verified_at  datetime (nullable)
 ```
 
 > **Portability note:** the codebase groups JSON-extracted fields
@@ -492,7 +500,8 @@ Finding
 
 There is no REST API (removed 2026-10-14). The UI is server-rendered with session auth and calls the service layer directly; see [05-api.md](05-api.md).
 
-Full URL layout: [CLAUDE.md](../CLAUDE.md#url-layout). CSV reports are
+Full URL layout: [CLAUDE.md](../CLAUDE.md#url-layout). Routes: `/login`, `/logout`,
+`/change-password`, `/health/`, and `/metrics/` (opt-in). CSV reports are
 synchronous Django views under `/reports/<uuid>/` served by the web tier.
 
 ---
@@ -528,20 +537,23 @@ The React SPA (`frontend/`), REST API and JWT have been removed; there is no fro
 
 **Single image (primary MVP deploy):** one container (`--target singleimage`) runs
 embedded PostgreSQL + gunicorn + the DBOS worker under `honcho` (entrypoint
-`docker/entrypoint-singleimage.sh`, mandatory `/data` volume). Simplest to run;
-no web/worker privilege separation.
+`docker/entrypoint-singleimage.sh`, mandatory `/data` volume; published as `ghcr.io/cybersecify/openeasd`, or run via
+`docker-compose.singleimage.yml`). Simplest to run; no web/worker privilege separation.
 
-The **3-tier** topology below remains the privilege-separated / scalable alternative. It is **3 tiers** — the web image carries no offensive
+The **3-tier** topology below remains the privilege-separated / scalable alternative: **3 tiers** — the web image carries no offensive
 tooling or `NET_RAW`, tool OOMs isolate to the worker, and the worker scales
 independently. See CLAUDE.md for the full rationale + pros/cons.
 
-### Docker Compose (recommended)
+### Docker Compose (3-tier alternative)
 
 ```
-db      postgres:17-alpine          — app data + the DBOS `dbos` schema
-web     openeasd-web (slim)         — gunicorn; UI + CSV reports; enqueue-only; no tools
-worker  openeasd-worker (ubuntu)    — dbos_worker + full scanner matrix; --cap-add NET_RAW
+db      postgres:17-alpine                          — app data + the DBOS `dbos` schema
+web     (Dockerfile target: web, slim)              — gunicorn; UI + CSV reports; enqueue-only; no tools
+worker  (Dockerfile target: worker, ubuntu)         — dbos_worker + full scanner matrix; --cap-add NET_RAW
 ```
+
+The 3-tier images are built locally from the Dockerfile `web`/`worker` targets;
+only the single image `ghcr.io/cybersecify/openeasd` is published to GHCR.
 
 The entrypoint is role-aware (`OPENEASD_ROLE`): both roles wait for Postgres; the
 web/init role migrates + collectstatic + admin-setup, the worker role waits for
@@ -553,7 +565,8 @@ Separate Deployments per tier (`kubectl apply -k k8s/`): **`openeasd-web`**
 (init migrates → gunicorn; `tier: web`; no `NET_RAW`; the Service targets
 `tier: web`), **`openeasd-worker`** (`dbos_worker`; `tier: worker`; `NET_RAW`; no
 Service; scale with `kubectl scale deploy/openeasd-worker --replicas=N` on the
-same DBOS queue), and a **PostgreSQL StatefulSet**. A default deploy is 3 pods.
+same DBOS queue), and a **PostgreSQL StatefulSet**. A default deploy is 3 pods. `k8s/` expects `openeasd-web`/`openeasd-worker`
+images built locally (or pushed by you) from the Dockerfile `web`/`worker` targets.
 Logs go to stdout (no PVC). Readiness/liveness: `GET /health/` (unauthenticated) —
 the probe `Host` header must be an entry in `openeasd-secret`'s `ALLOWED_HOSTS`.
 

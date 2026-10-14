@@ -432,6 +432,35 @@ than nesting it under an existing owner.
 
 ---
 
+## D-018 — v3.0.0: plain-Django UI + single-image deploy; REST API / JWT / SPA / PDF removed
+**Status:** locked · **Decided:** 2026-10-14 · amends [D-017](#d-017--architecture-north-star-domain-centric-api-driven-ui-agnostic), [D-015](#d-015--v20-shipped-scope-triage--adaptive-orchestration--summaries)
+
+**Decision.** The served UI is a **plain-Django, server-rendered app** (`apps/mvp` —
+vendored Bulma + HTMX, Django **session** auth) that calls the engine **service layer
+directly**, in-process. The **Django-Ninja REST API + JWT** (and the token-blacklist /
+purge cron), the **React SPA** (`frontend/`), and **PDF reports** (WeasyPrint) are
+**removed**; **CSV export is kept**. The **primary deploy artifact is a single Docker
+image** (embedded PostgreSQL + gunicorn + DBOS worker in one container, `/data`
+volume); the **3-tier** (db + web + worker) compose/k8s topology **remains** as the
+privilege-separated / scalable alternative.
+
+**Why.** The product is single-admin, single-org, self-hosted ([D-001](#d-001--audience-security-literate-users-not-non-technical-end-users), [D-003](#d-003--distribution-docker-only)). The REST API + SPA were a
+second consumer plus a JWT / Node toolchain the product never needed; a
+server-rendered UI on session auth is a far smaller, simpler surface, and one image is
+the simplest trusted single-user run.
+
+**What this amends.** [D-017](#d-017--architecture-north-star-domain-centric-api-driven-ui-agnostic) called the backend "API-driven" with Django Ninja. v3.0.0
+keeps the domain-centric, UI-agnostic data model and the DBOS orchestration but
+**drops the REST API layer** — the UI consumes the service layer in-process rather
+than over HTTP. The north-star rule ("backend stores facts, the UI decides
+presentation") is unchanged; only the transport between them is. [D-015](#d-015--v20-shipped-scope-triage--adaptive-orchestration--summaries)'s AI "PDF
+report" summary surface is now the CSV export + on-screen report + Slack/Teams alerts.
+
+**Engine unchanged.** DBOS durable workflows on PostgreSQL ([D-016](#d-016--v2x-execution-re-platform-postgresql--dbos)), the 13-phase
+pipeline, and the 30-tool registry are untouched.
+
+---
+
 ## Index
 
 | ID | Decision | Status | Decided |
@@ -452,7 +481,8 @@ than nesting it under an existing owner.
 | D-014 | v2.0 AI backend: Cloudflare Workers AI only (BYOK) | locked | 2026-09-05 |
 | D-015 | v2.0 shipped scope: triage + orchestration + summaries | locked | 2026-09-05 |
 | D-016 | v2.x execution re-platform: PostgreSQL + DBOS | locked | 2026-09-05 |
-| D-017 | Architecture north star: domain-centric, API-driven, UI-agnostic | locked | 2026-09-13 |
+| D-017 | Architecture north star: domain-centric, API-driven, UI-agnostic | locked (amended by D-018) | 2026-09-13 |
+| D-018 | v3.0.0: plain-Django UI + single image; REST/JWT/SPA/PDF removed | locked | 2026-10-14 |
 
 ---
 

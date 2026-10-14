@@ -6,22 +6,21 @@ How to run OpenEASD on your machine for development — the native `just dev` /
 
 ## The mental model
 
-Local dev runs **three processes side by side**, all talking to one PostgreSQL DB:
+Local dev runs **two processes side by side**, both talking to one PostgreSQL DB:
 
 ```
-  Vite dev server  :5173   ← open this in the browser (React SPA)
-      │  proxies /api/* ─┐
-  Django runserver :8001 ←┘   REST API (Django Ninja); enqueues scans
-  DBOS worker              executes scan / AI workflows off the DB queue
+  Django runserver :8001   ← open this in the browser (server-rendered plain-Django UI)
+                    │         serves the UI AND enqueues scans (no REST API, no SPA)
+  DBOS worker               executes scan / AI workflows off the DB queue
                     │
-   all three ───────┴────►  PostgreSQL :5432  (app data + DBOS durable schema)
+   both ────────────┴────►  PostgreSQL :5432  (app data + DBOS durable schema)
 ```
 
-You browse **http://localhost:5173**; Vite forwards `/api/*` to Django on `:8001`
-(so there's no CORS config). Scans only actually *execute* when the worker is up.
+You browse **http://localhost:8001** directly — the UI is server-rendered Django
+(`apps/mvp`, session auth); there is no separate frontend server and no `/api/`.
+Scans only actually *execute* when the worker is up.
 
-> The Docker stack (`just up`) is different — it serves everything on **:8000**.
-> The `:5173` / `:8001` split is native-dev only.
+> The Docker stack (`just up`) serves everything on **:8000**; native dev is on **:8001**.
 
 ## Prerequisites
 
@@ -29,11 +28,10 @@ You browse **http://localhost:5173**; Vite forwards `/api/*` to Django on `:8001
 |---|---|---|
 | PostgreSQL | 17 | The app is Postgres-only (no SQLite). `brew services start postgresql@17` |
 | Python (via [uv](https://docs.astral.sh/uv/)) | **3.12** | pinned in `.python-version`; `uv` installs it for you |
-| Node | **20** | pinned in `.nvmrc` (`nvm use`); newer majors work too (`engines: >=20.19`) |
-| Scanner binaries | — | subfinder, nmap, nuclei, … — only needed to run *active scans*, not for UI/API dev |
+| Scanner binaries | — | subfinder, nmap, nuclei, … — only needed to run *active scans*, not for UI dev |
 
-**macOS also needs** `brew install pango` (for WeasyPrint PDF reports) — see
-[Troubleshooting](#troubleshooting).
+(No Node / frontend toolchain — the UI is server-rendered Django with vendored
+Bulma + HTMX, no build step.)
 
 ## First-time setup
 
@@ -62,26 +60,24 @@ uv run manage.py createsuperuser   # or: just createsuperuser
 make dev          # or: just dev
 ```
 
-Launches all three processes together (Ctrl-C stops all):
+Launches both processes together (Ctrl-C stops all):
 
-- `npm run dev` → Vite on **:5173**
-- `manage.py runserver 8001` → Django on **:8001**
+- `manage.py runserver 8001` → Django on **:8001** (serves the UI)
 - `manage.py dbos_worker` → the scan/AI worker
 
-Then open **http://localhost:5173**, log in, add a domain, run a scan.
+Then open **http://localhost:8001**, log in, add a domain, run a scan.
 
 ### Run pieces individually
 
 ```bash
 just backend      # only Django  :8001
 just worker       # only the DBOS worker (required for scans to execute)
-just frontend     # one-off production bundle build
 ```
 
 ## Before you push — verify like CI
 
 ```bash
-just ci           # ruff + pytest (80% coverage gate) + bandit + pip-audit + vitest + build
+just ci           # ruff + pytest (80% coverage gate) + bandit + pip-audit
                   # mirrors .github/workflows/ci.yml exactly
 ```
 
@@ -91,7 +87,6 @@ Pieces, if you want them separately:
 just lint         # ruff check apps/ openeasd/ tests/
 just test         # fast pytest (excludes the slow real-network domain_security tests)
 just test-all     # everything, including the slow DNS/RDAP tests
-just ci-frontend  # vitest + production build
 ```
 
 Fast backend suite directly (needs Postgres + `DB_*` in the environment):
@@ -105,14 +100,18 @@ uv run pytest tests/ --ignore=tests/unit/test_domain_security.py
 The three-container stack (db + web + worker), for testing the deployed shape:
 
 ```bash
-just up           # build locally from source → http://localhost:8000
-just deploy-dev   # pull the CI-published :latest GHCR images instead of building
+just up           # build the 3-tier stack locally from source → http://localhost:8000
 just down         # stop (keeps the db volume)
 just logs / just ps
 ```
 
-> On Apple Silicon, `just up` builds native arm64 images. `just deploy-dev` pulls
-> the published GHCR images, which are **amd64-only** — they'll run under emulation.
+> The **single image** is the only image published to GHCR
+> (`ghcr.io/cybersecify/openeasd`). The 3-tier `web`/`worker` images are **not**
+> published — `just up` builds them locally from the Dockerfile `web`/`worker`
+> targets. To test the single-image shape instead:
+> `docker compose -f docker-compose.singleimage.yml up -d --build` (also `:8000`).
+> On Apple Silicon these build native arm64; the published single image is amd64-only
+> and runs under emulation.
 
 ## Ship it — verify in dev, then promote to prod
 
@@ -120,7 +119,7 @@ The rule: **verify everything in dev; never debug on the live instance.** Prod
 only ever receives an already-verified, tagged image.
 
 **1 — Verify the code (native).** Build on a `feat/`/`fix/` branch with `just dev`,
-click through the feature at http://localhost:5173, run a scan on an *authorized*
+click through the feature at http://localhost:8001, run a scan on an *authorized*
 test domain, and confirm any new migrations apply (`uv run manage.py migrate`).
 Then the go/no-go gate:
 
@@ -276,30 +275,17 @@ Notes specific to the **single image** (embedded Postgres + web + worker):
 | Task runner | `justfile` (primary) · `Makefile` (same core recipes) |
 | Env config | `.env` (gitignored) ← template `.env.example` |
 | Python / version | `pyproject.toml`, `.python-version` (3.12), `uv.lock` |
-| Node / version | `frontend/package.json` (`engines`), `.nvmrc` (20) |
 | DB / app settings | `openeasd/settings/base.py` (`DB_*` / `DATABASE_URL`) |
 | Architecture | [`docs/03-system.md`](03-system.md) · decisions in [`docs/DECISIONS.md`](DECISIONS.md) |
 
 ## Troubleshooting
-
-**PDF report export returns HTTP 500 (macOS).** WeasyPrint can't find the
-Homebrew-installed pango/cairo/glib libs — macOS's loader doesn't search
-`/opt/homebrew/lib`, and its SIP-protected shell strips `DYLD_*` at startup.
-Install the libs (`brew install pango`) and set the fallback path **inside** the
-process that serves reports:
-
-```bash
-DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib uv run manage.py runserver 8001
-```
-
-(Docker/Linux are unaffected — the libs are on the default path there.)
 
 **Login fails with a 500 / `remaining connection slots are reserved`.** Postgres
 ran out of connections, usually from orphaned `runserver` / `dbos_worker`
 processes left behind across restarts. Kill the stragglers and relaunch:
 
 ```bash
-pkill -f "manage.py runserver"; pkill -f "dbos_worker"; pkill -f "npm run dev"
+pkill -f "manage.py runserver"; pkill -f "dbos_worker"
 just dev
 ```
 
