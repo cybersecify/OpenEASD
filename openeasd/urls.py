@@ -3,6 +3,7 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.contrib.auth import views as auth_views
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.urls import path, include, re_path
@@ -57,6 +58,9 @@ urlpatterns = [
     path("metrics/", metrics),
     path("admin/", admin.site.urls),
     path("api/", api.urls),
+    path("login/", auth_views.LoginView.as_view(), name="login"),
+    path("logout/", auth_views.LogoutView.as_view(next_page="login"), name="logout"),
+    path("app/", include("apps.mvp.urls")),
     path("reports/", include("apps.core.console.reports.urls")),
-    re_path(r'^(?!api/|admin|static/|media/|metrics/).*$', spa, name='spa'),
+    re_path(r'^(?!api/|admin|static/|media/|metrics/|app/|login/|logout/).*$', spa, name='spa'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

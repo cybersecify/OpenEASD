@@ -1,0 +1,107 @@
+{% load static %}
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}OpenEASD{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'mvp/bulma.min.css' %}">
+  <style>
+    /* --- Project dark palette, forced onto Bulma's dark theme --- */
+    :root { --bg:#0f1115; --panel:#171a21; --line:#272c36; --fg:#e6e8ec; --muted:#9aa3b2;
+            --crit:#ff5370; --high:#ff8f40; --med:#ffcb6b; --low:#79b8ff; --info:#6b7280; --ok:#63d2a2; }
+    :root[data-theme="dark"] {
+      --bulma-body-background-color:var(--bg);
+      --bulma-body-color:var(--fg);
+      --bulma-scheme-main:var(--bg);
+      --bulma-scheme-main-bis:var(--panel);
+      --bulma-scheme-main-ter:var(--panel);
+      --bulma-background:var(--panel);
+      --bulma-border:var(--line);
+      --bulma-border-weak:var(--line);
+      --bulma-text:var(--fg);
+      --bulma-text-strong:#ffffff;
+      --bulma-text-weak:var(--muted);
+      /* link / primary ≈ #79b8ff */
+      --bulma-link-h:211deg; --bulma-link-s:100%; --bulma-link-l:74%;
+      --bulma-primary-h:211deg; --bulma-primary-s:100%; --bulma-primary-l:74%;
+    }
+    /* Element-level enforcement — guarantees the palette regardless of Bulma internals. */
+    body { background-color:var(--bg); color:var(--fg); }
+    .box { background-color:var(--panel); border:1px solid var(--line); box-shadow:none; }
+    .table { background-color:transparent; color:var(--fg); }
+    .table th { color:var(--muted); }
+    .table td, .table th { border-color:var(--line); }
+    .table.is-hoverable tbody tr:hover { background-color:rgba(255,255,255,.03); }
+    .input, .textarea, .select select { background-color:var(--bg); border-color:var(--line); color:var(--fg); }
+    .input::placeholder, .textarea::placeholder { color:var(--info); }
+    .navbar, .navbar-menu, .navbar-item { background-color:var(--bg); color:var(--fg); }
+    .navbar { border-bottom:1px solid var(--line); }
+    a { color:var(--low); }
+
+    /* --- Layout --- */
+    main.container { max-width:1100px; padding:1.4rem 16px 3rem; }
+    main h1 { font-size:1.6rem; font-weight:700; margin-bottom:.3rem; }
+    main h2 { font-size:.95rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:1.7rem 0 .6rem; }
+    .muted { color:var(--muted); }
+    .row-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .row-actions .select, .row-actions .input { margin-bottom:0; }
+    /* Bulma inputs are width:100%; keep them compact inside inline action rows. */
+    .row-actions .input { width:auto; max-width:min(100%,340px); }
+    form.inline { display:inline; margin:0; }
+    .mt-2 { margin-top:.6rem; }
+
+    /* --- KPI tiles --- */
+    .grid { display:flex; gap:10px; flex-wrap:wrap; align-items:stretch; margin-bottom:.4rem; }
+    .kv { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 14px; min-width:96px; }
+    .kv b { font-size:20px; display:block; } .kv .chips { margin-top:4px; }
+
+    /* --- Severity / status chips --- */
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; }
+    .sev-critical{background:rgba(255,83,112,.15);color:var(--crit)} .sev-high{background:rgba(255,143,64,.15);color:var(--high)}
+    .sev-medium{background:rgba(255,203,107,.15);color:var(--med)} .sev-low{background:rgba(121,184,255,.15);color:var(--low)}
+    .sev-info{background:rgba(107,114,128,.2);color:var(--muted)}
+    .st-open{color:var(--high)} .st-resolved{color:var(--ok)} .st-accepted,.st-false_positive{color:var(--muted)}
+    .st-acknowledged,.st-in_progress{color:var(--low)}
+    .scan-completed{color:var(--ok)} .scan-partial{color:var(--med)} .scan-failed{color:var(--crit)}
+    .scan-running,.scan-pending{color:var(--low)} .scan-cancelled,.scan-skipped{color:var(--muted)}
+    /* verification verdicts */
+    .vd-verified{color:var(--ok)} .vd-inconclusive{color:var(--med)} .vd-unverified,.vd-{color:var(--muted)}
+
+    /* --- Live-poll dot --- */
+    .dot { display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:7px;vertical-align:middle; }
+    .dot.live { background:var(--med);animation:pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+
+    /* --- Flash messages --- */
+    .msgs { margin-bottom:16px; } .msg { padding:9px 12px; border-radius:8px; margin-bottom:6px; border:1px solid var(--line); }
+    .msg.success{background:rgba(99,210,162,.1)} .msg.error{background:rgba(255,83,112,.12)} .msg.warning{background:rgba(255,203,107,.12)}
+  </style>
+  <script src="{% static 'mvp/htmx.min.js' %}" defer></script>
+</head>
+<body>
+  <nav class="navbar" role="navigation" aria-label="main navigation">
+    <div class="navbar-brand">
+      <a class="navbar-item has-text-weight-semibold" href="{% url 'mvp:dashboard' %}">OpenEASD</a>
+      <span class="navbar-item muted">external attack surface</span>
+    </div>
+    {% if user.is_authenticated %}
+    <div class="navbar-menu is-active">
+      <div class="navbar-end">
+        <span class="navbar-item muted">{{ user.get_username }}</span>
+        <a class="navbar-item" href="/admin/">Django&nbsp;admin</a>
+        <div class="navbar-item">
+          <form class="inline" action="{% url 'logout' %}" method="post">{% csrf_token %}
+            <button class="button is-small" type="submit">log out</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </nav>
+  <main class="container">
+    {% if messages %}<div class="msgs">{% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

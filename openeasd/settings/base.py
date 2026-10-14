@@ -148,6 +148,7 @@ INSTALLED_APPS = [
     "apps.nuclei",
     "apps.nuclei_network",
     "apps.web_checker",
+    "apps.mvp",
     "apps.js_secrets",
     "apps.shodan",
     "apps.tldsquatting",
