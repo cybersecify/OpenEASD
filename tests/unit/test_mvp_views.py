@@ -221,3 +221,33 @@ class TestScanDetail:
     def test_sev_filter(self, client):
         body = client.get(f"/app/scan/{self.s.uuid}/?sev=high").content.decode()
         assert "High thing" in body and "Low thing" not in body
+
+
+@pytest.mark.django_db
+class TestScans:
+    @pytest.fixture(autouse=True)
+    def _seed(self, client):
+        from apps.core.engine.scans.models import ScanSession
+
+        User.objects.create_user("admin", password="pw12345!")
+        client.login(username="admin", password="pw12345!")
+        self.a = ScanSession.objects.create(domain="example.com", status="completed")
+        self.b = ScanSession.objects.create(domain="example.com", status="failed")
+        self.c = ScanSession.objects.create(domain="other.org", status="completed")
+
+    def test_lists_all(self, client):
+        resp = client.get("/app/scans/")
+        body = resp.content.decode()
+        assert resp.status_code == 200
+        for s in (self.a, self.b, self.c):
+            assert str(s.uuid) in body
+
+    def test_status_filter(self, client):
+        body = client.get("/app/scans/?status=completed").content.decode()
+        assert str(self.a.uuid) in body and str(self.c.uuid) in body
+        assert str(self.b.uuid) not in body
+
+    def test_domain_filter(self, client):
+        body = client.get("/app/scans/?domain=other.org").content.decode()
+        assert str(self.c.uuid) in body
+        assert str(self.a.uuid) not in body and str(self.b.uuid) not in body

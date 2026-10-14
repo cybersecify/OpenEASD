@@ -1,0 +1,38 @@
+{% extends "mvp/base.html" %}
+{% block title %}Scans · OpenEASD{% endblock %}
+{% block content %}
+<h1>Scans</h1>
+<div class="box">
+  <form method="get" class="row-actions">
+    <input class="input" type="text" name="domain" value="{{ domain_filter }}" placeholder="domain (exact)">
+    <div class="select"><select name="status">
+      <option value="">any status</option>
+      {% for val, label in status_choices %}<option value="{{ val }}"{% if val == status_filter %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></div>
+    <button class="button is-link" type="submit">Filter</button>
+  </form>
+</div>
+<div class="box">
+  <table class="table is-fullwidth is-hoverable">
+    <thead><tr><th>Domain</th><th>Status</th><th>Triggered by</th><th>Started</th><th>Findings</th></tr></thead>
+    <tbody>
+    {% for s in page %}
+    <tr>
+      <td><a href="{% url 'mvp:scan-detail' s.uuid %}">{{ s.domain }}</a></td>
+      <td><span class="scan-{{ s.status }}">{{ s.get_status_display }}</span></td>
+      <td class="muted">{{ s.triggered_by }}</td>
+      <td class="muted">{{ s.start_time|date:"Y-m-d H:i" }}</td>
+      <td>{{ s.total_findings }}</td>
+    </tr>
+    {% empty %}<tr><td colspan="5" class="muted">No scans match.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if page.has_other_pages %}
+  <div class="row-actions">
+    {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&domain={{ domain_filter|urlencode }}&status={{ status_filter }}">&laquo; prev</a>{% endif %}
+    <span class="muted">page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}<a href="?page={{ page.next_page_number }}&domain={{ domain_filter|urlencode }}&status={{ status_filter }}">next &raquo;</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
