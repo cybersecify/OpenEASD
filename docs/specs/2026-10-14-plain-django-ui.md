@@ -2,7 +2,7 @@
 
 **Status:** Draft (spec) — 2026-10-14
 **Supersedes:** the React SPA + Django-Ninja REST API + JWT auth as OpenEASD's UI/edge.
-**Reference implementation:** `AmazonSP` (sibling repo on the same scan engine) already
+**Reference implementation:** the reference app (sibling repo on the same scan engine) already
 made the UI move — `apps/mvp` (plain Django + vendored Bulma + vendored HTMX, Ninja/JWT/SPA
 removed). This spec ports that pattern back into OpenEASD at a **basic** scope **and** packages
 the app as a **single Docker image** that bundles PostgreSQL internally.
@@ -44,7 +44,7 @@ lives on a mounted volume so scan history survives container replacement.
   (`project_single_user_app`, `project_keep_django_monolith`). The SPA+API split earns its
   keep when multiple/independent clients consume the backend; here there is exactly one UI,
   served from the same box. The architecture's main justification does not apply.
-- **Proven, not speculative:** `AmazonSP` already runs the same scanner engine behind plain
+- **Proven, not speculative:** the reference app already runs the same scanner engine behind plain
   Django + HTMX, including the hard part — live scan-progress polling, stop-scan, findings
   tables, CSV export.
 - **Simplification:** removes Node/npm/Vite, React, react-query, axios, the `frontend/`
@@ -129,7 +129,7 @@ alert channels in v1 (env + admin only); (2) CSV stays, PDF is removed entirely.
 
 ## 4. Architecture
 
-### 4.1 View → service pattern (the AmazonSP model)
+### 4.1 View → service pattern (the reference app model)
 
 Plain function views, `@login_required`, that import and call the engine **service layer**
 directly — never a serializer, never the (now-removed) API:
@@ -173,12 +173,12 @@ Bearer anymore.
 ### 4.4 Templates & static
 
 - `templates/mvp/base.html` — Bulma + the project dark palette (ported verbatim from
-  AmazonSP's base), vendored `htmx.min.js`, nav, flash messages (`django.contrib.messages`).
+  the reference app's base), vendored `htmx.min.js`, nav, flash messages (`django.contrib.messages`).
 - `static/mvp/bulma.min.css`, `static/mvp/htmx.min.js` — **vendored** (no CDN).
 - Partials: `_scan_progress.html`, `_activity.html`, and small reusable chip snippets.
 - Severity/status/verification chips as CSS classes (`.sev-*`, `.scan-*`, `.vd-*`).
 
-### 4.5 URL layout (end state, mirrors AmazonSP)
+### 4.5 URL layout (end state, mirrors the reference app)
 
 ```python
 urlpatterns = [

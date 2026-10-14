@@ -18,9 +18,9 @@ image), vendored Bulma CSS + HTMX JS, Django `contrib.auth` session login, White
 
 **Spec:** `docs/specs/2026-10-14-plain-django-ui.md`
 
-**Reference implementation:** the sibling repo `/Users/rathnakara/project/AmazonSP`, app
+**Reference implementation:** an internal sibling project on the same engine, app
 `apps/mvp`, already implements this exact pattern on the same engine. Where a task says "port
-from AmazonSP", copy that file and adapt the named differences — do not invent a new shape.
+from the reference app", copy that file and adapt the named differences — do not invent a new shape.
 
 ## Global Constraints
 
@@ -64,8 +64,8 @@ apps/mvp/templates/mvp/scans.html
 apps/mvp/templates/mvp/change_password.html
 apps/mvp/templates/mvp/_scan_progress.html   — HTMX partial (polled)
 apps/mvp/templates/registration/login.html   — Django LoginView template
-apps/mvp/static/mvp/bulma.min.css     — vendored (copied from AmazonSP)
-apps/mvp/static/mvp/htmx.min.js       — vendored (copied from AmazonSP)
+apps/mvp/static/mvp/bulma.min.css     — vendored (copied from the reference app)
+apps/mvp/static/mvp/htmx.min.js       — vendored (copied from the reference app)
 tests/unit/test_mvp_views.py          — view tests (replace API/Vitest coverage)
 docker/entrypoint-singleimage.sh      — embedded-Postgres supervised entrypoint
 docker/Procfile                       — honcho process list (postgres already up): web + worker
@@ -112,9 +112,9 @@ PDF report template(s) under apps/core/console/reports/templates/
 - Produces: `apps.mvp.urls` with `app_name="mvp"` and a `dashboard` route named
   `mvp:dashboard`; a `base.html` other templates `{% extends "mvp/base.html" %}`.
 
-- [ ] **Step 1: Copy vendored assets + base template from AmazonSP.** Copy
-  `AmazonSP/apps/mvp/static/mvp/{bulma.min.css,htmx.min.js}` and
-  `AmazonSP/apps/mvp/templates/mvp/base.html` verbatim (base.html already carries the dark
+- [ ] **Step 1: Copy vendored assets + base template from the reference app.** Copy
+  `the reference app/apps/mvp/static/mvp/{bulma.min.css,htmx.min.js}` and
+  `the reference app/apps/mvp/templates/mvp/base.html` verbatim (base.html already carries the dark
   palette + HTMX script tag). Change the `<title>` block default to "OpenEASD".
 
 - [ ] **Step 2: Write `apps.py` + `urls.py` + a stub `dashboard` view** returning
@@ -160,16 +160,16 @@ class TestAuthShell:
 
 **Interfaces:**
 - Consumes: `Domain`, `ScanSession`, `Finding` models; `_severity_counts` helper (port from
-  AmazonSP `apps/mvp/views.py`).
+  the reference app `apps/mvp/views.py`).
 - Produces: `mvp:dashboard` rendering KPIs + domain list + recent scans + urgent findings.
 
-- [ ] **Step 1: Port `dashboard` + `_severity_counts` + `dashboard_activity` from AmazonSP**
+- [ ] **Step 1: Port `dashboard` + `_severity_counts` + `dashboard_activity` from the reference app**
   `apps/mvp/views.py`. Adapt model imports to OpenEASD paths (identical: `apps.core.data.
   domains.models.Domain`, `apps.core.engine.scans.models.ScanSession`,
   `apps.core.data.findings.models.Finding`). Add an `/activity/` route + `_activity.html`
   partial for the HTMX recent-scans refresh.
 
-- [ ] **Step 2: Port `dashboard.html`** from AmazonSP; adapt copy ("SP-API DPP" → "OpenEASD",
+- [ ] **Step 2: Port `dashboard.html`** from the reference app; adapt copy ("the reference app" → "OpenEASD",
   remove the pentest-specific "test/retest" framing). KPI tiles: active domains, scans,
   findings-by-severity; a domain table with per-domain latest-scan status; an urgent-findings
   (critical/high) list.
@@ -196,7 +196,7 @@ class TestAuthShell:
 - Produces: routes `mvp:domains`, `mvp:domain-detail` (`<str:name>`), and the POST routes
   `mvp:domain-create`, `mvp:domain-authorize`, `mvp:domain-monitoring`, `mvp:domain-delete`.
 
-- [ ] **Step 1: Port the domain views** from AmazonSP (`domain_create`, `domain_detail`,
+- [ ] **Step 1: Port the domain views** from the reference app (`domain_create`, `domain_detail`,
   `domain_authorize`, `domain_delete`) + add `domain_monitoring` (POST sets/clears
   `Domain.monitoring_interval_hours` — mirror the SPA's `/api/domains/<pk>/monitoring/`
   behavior). All POST views `@require_POST` + CSRF. Reuse `_clean_domain`, `_is_apex`,
@@ -283,7 +283,7 @@ def _scan_modes():
   `mvp:scan-cancel` (`<uuid>`, POST).
 
 - [ ] **Step 1: Port `_scan_steps`, `_scan_progress_ctx`, `scan_detail`, `scan_progress`,
-  `scan_cancel`** from AmazonSP verbatim (they already use OpenEASD model paths). `scan_detail`
+  `scan_cancel`** from the reference app verbatim (they already use OpenEASD model paths). `scan_detail`
   renders the findings table filterable by `?sev=` with a verification-verdict column; the CSV
   link points at `/reports/<uuid>/csv/`.
 
