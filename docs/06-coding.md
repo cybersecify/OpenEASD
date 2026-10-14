@@ -26,9 +26,10 @@ locally with `just ci` before opening a PR.
 ## 1. Layout & layering
 
 - Code lives under `apps/`, split into **`apps/core/`** (infrastructure) and
-  **`apps/<tool>/`** (the 28 registered scanner tools). Core is further grouped
-  into `console/` (UI/API), `engine/` (scans/workflows/durable/scheduler), and
-  `data/` (models). Django labels are unchanged — the nesting is organisational.
+  **`apps/<tool>/`** (the 30 registered scanner tools). Core is further grouped
+  into `console/` (dashboard/insights/reports/notifications/ai/credentials),
+  `engine/` (scans/workflows/durable/scheduler), and `data/` (models). The served
+  UI is the top-level `apps/mvp` app. Django labels are unchanged — the nesting is organisational.
 - **Tools never import from each other.** Shared data flows only through the DB
   models in `apps/core/data/` (`assets`, `web_assets`, `findings`,
   `asset_inventory`). If a tool needs a helper another tool also has (a DNS
@@ -105,10 +106,6 @@ All tools write to the single unified `apps.core.data.findings.Finding`:
   Never add a tool-specific column to `Finding`.
 - `source` / `check_type` are free `CharField`s with **no `choices`** — the tool
   registry is the single source of truth; `SOURCE_CHOICES` is derived from it.
-- **Every `check_type` you emit must have a CWE mapping** in
-  `apps/core/console/reports/views.py::_CWE_BY_CHECK`. A guard test
-  (`test_reports.py::test_every_emitted_check_type_has_cwe_mapping`) greps all of
-  `apps/` for `check_type="..."` literals and fails CI on an unmapped one.
 
 ### 2.4 Fail-graceful contract (non-negotiable)
 
@@ -152,18 +149,16 @@ fail the whole scan. Specifically:
 
 ---
 
-## 3. REST API — removed
+## 3. Secrets & the (removed) REST API
 
 The Django-Ninja REST API + JWT were removed (2026-10-14). The UI is server-rendered
 (`apps/mvp`, session auth) and calls the service layer directly; CSV export is the only
 HTTP data export. Do not add `/api/` endpoints.
 
-### 3.1 Secrets over the API are write-only
+### 3.1 Secrets: write-only handling and the resolver
 
-- Credential / AI-config / notification endpoints return **presence booleans + a
-  `db|env|none` source**, never the stored value.
-- Write semantics are uniform: `None` = unchanged, `""` = clear (fall back to
-  env), non-empty = set.
+- Secrets (BYOK keys, AI token, webhook URLs) are managed in Django admin and are
+  never rendered back into UI pages, logs or CSV.
 - DB-wins-over-env resolution is centralized in
   `apps/core/console/credentials/resolver.py::get_credential` — **tools read keys
   through the resolver, never `settings` directly.** The resolver never raises; a
@@ -244,7 +239,8 @@ HTTP data export. Do not add `/api/` endpoints.
   only → needs none.
 - `is_passive_tool_set` is **conservative**: an empty set is *not* passive, an
   unknown tool defaults to active, and one active tool makes the whole set active.
-- The gate lives in `apps/core/engine/scans/api.py`: only an immediate
+- The gate lives in `apps/mvp/views.py::scan_start` (`_workflow_is_passive` +
+  `DomainAuthorization.is_authorized`): only an immediate
   (`schedule_type="now"`) **all-passive** scan bypasses authorization. Every
   scheduled scan and any active tool keeps the gate. The scheduler and the AI
   agent (`guard.gate_subscan_tools`) **re-check authorization at execution time**
@@ -283,8 +279,9 @@ HTTP data export. Do not add `/api/` endpoints.
 - **pytest + pytest-django.** One module per app/area; tests grouped in `TestXxx`
   classes mirroring the unit under test. `@pytest.mark.django_db` on the class
   (`transactional_db` for concurrency/threading tests).
-- Shared fixtures live in `tests/conftest.py` (`user`, `auth_client`, `domain`,
-  `scan_session`, `completed_session`, …). **Use them — don't redefine local
+- Shared fixtures live in `tests/conftest.py` (`user`, `domain`,
+  `scan_session`, `completed_session`, `domain_finding`, `scan_summary`, …). UI
+  tests log in with `client.login(username="admin", password="pw12345!")`. **Use them — don't redefine local
   shadows** (finding F9). Import models lazily inside fixtures.
 - **Mock externals at the module-local import site**, never globally: patch
   `apps.tldsquatting.collector.requests.get`, `apps.*.scanner.collect`,
@@ -295,10 +292,10 @@ HTTP data export. Do not add `/api/` endpoints.
   registry, the scan, the report, and the docs from drifting:
   - every registered non-core tool is in Full Scan
     (`test_default_workflow.py`);
-  - every tool has an `active` flag; the Passive Scan workflow has zero active
-    tools (`test_passive_scan.py`);
-  - every emitted `check_type` has a CWE mapping (`test_reports.py`);
-  - every protected endpoint returns 401 unauthenticated (`test_api_endpoints.py`).
+  - every tool has an `active` flag; the Passive Scan Deep / Light workflows have
+    zero active tools (`test_passive_scan.py`, `test_quick_recon.py`);
+  - every `apps/mvp` page redirects an unauthenticated user to login, and a
+    `must_change_password` user to `/change-password` (`test_mvp_views.py`).
   **When you add a drift risk, add a guard test for it.**
 - **Fast-vs-slow split**: `test_domain_security.py` makes real network calls and
   is excluded from fast CI via `--ignore=`. (This is currently a hardcoded path,
@@ -338,7 +335,8 @@ milestones with semver. Run `just ci` before every PR.
 
 ## Appendix: open review findings
 
-Grounded in a full-tree review (2026-09-11). Ordered by priority. These are the
+Grounded in a full-tree review (2026-09-11). Items referring to the REST API /
+SPA are historical (removed 2026-10-14). Ordered by priority. These are the
 deltas between this document and the current code — fix-forward candidates, not
 blockers. Fixed items are struck through with the PR that closed them.
 
@@ -362,10 +360,10 @@ blockers. Fixed items are struck through with the PR that closed them.
   channel and never the URL; `save_config` adopts the None=unchanged /
   ""=clear / value=set write semantics so the threshold can be saved without
   wiping a stored webhook the UI can no longer read back. Matches
-  the credentials and AI-config write semantics.
-- **F-sec1 — weak default DB credentials ship silently.** `DB_PASSWORD` defaults
-  to `"openeasd"` with no fail-fast guard (unlike `SECRET_KEY`).
-  (`openeasd/settings/base.py:210`)
+  the credentials and AI-config write semantics. *(historical — endpoint removed in v3.0.0)*
+- **F-sec1 — ~~weak default DB credentials ship silently~~ — FIXED.**
+  `_validate_db_password` (`openeasd/settings/base.py`) raises
+  `ImproperlyConfigured` when `DEBUG=False` and `DB_PASSWORD` is still the default.
 - **F-sec2 — ~~SECRET_KEY guard skipped whenever `"pytest" in sys.modules`~~ —
   FIXED (#452).** Both the SECRET_KEY and DB-password guards now skip only under
   the pytest *runner* — a new `_under_pytest()` checks the process entrypoint
@@ -375,9 +373,8 @@ blockers. Fixed items are struck through with the PR that closed them.
   settings with an insecure key + `DEBUG=False` and asserts it still aborts.
 - **F-sec3 — ~~`?token=<JWT>` query-param auth on report endpoints~~ — FIXED
   (#451).** Removed the query-param fallback in `_report_auth_required`; report
-  endpoints now authenticate only via Django session or the `Authorization:
-  Bearer` header (both SPA report pages already send the header via fetch+Blob,
-  so nothing depended on it). A token in the query string is now ignored.
+  endpoints now authenticate only via Django session (JWT removed in v3.0.0).
+  A token in the query string is ignored.
 
 ### Medium — consistency / robustness
 
@@ -386,7 +383,7 @@ blockers. Fixed items are struck through with the PR that closed them.
   return-existing, so a re-run silently no-op'd while the UI sat at "running").
   Each manual run now enqueues a fresh workflow — matching `agent_step`, which
   carries no dedupe — and the concurrency the dedupe incidentally provided moved
-  into the API as an atomic `select_for_update` in-flight guard (`run_triage_now`).
+  into an atomic `select_for_update` in-flight guard (`run_triage_now`) *(historical — API removed)*.
 - **F3 — ~~the passive/active auth rule is implemented three times~~ — FIXED
   (#453).** The triplicated authorization check (`DomainAuthorization.objects
   .filter(domain__name=X).exists()` in the scan-start gate, subscan gate, and AI
@@ -404,11 +401,6 @@ blockers. Fixed items are struck through with the PR that closed them.
   instead of catching `RelatedObjectDoesNotExist`, so a real DB error surfaces);
   the scheduled-list and apex-seed broad catches — which already log / carry a
   reason — got the `# noqa: BLE001` tag to match the convention.
-- **F6 — ~~two 404 body shapes~~ — FIXED (#456).** Added a Ninja `Http404`
-  exception handler so a `get_object_or_404` miss renders the standard
-  `{"error":{"code":"NOT_FOUND",…}}` envelope instead of Ninja's default
-  `{"detail":"Not Found"}`. One handler covers every current and future
-  `get_object_or_404` call site — no per-endpoint rewrites.
 - **F-tool1 — ~~`domain_security`/`domain_probe` orchestrators have no top-level
   try/except~~ — FIXED (#448).** Both now wrap collect+analyze in
   `try/except → return []`, matching their passive Domain-Posture siblings
@@ -438,24 +430,17 @@ blockers. Fixed items are struck through with the PR that closed them.
   non-resolving garbage like `example.co.com`, i.e. no ccTLD detection). Curated
   set, not the full PSL — dependency-free/offline; extend via
   `TLDSQUATTING_MULTI_LABEL_SUFFIXES`.
-- **F9 — local fixtures shadow `conftest.py`** in `test_api_endpoints.py` and
-  `test_reports.py`; the two `auth_client`s differ subtly and can drift.
-- **F11 — brittle report tests** assert exact HTML/CSS/copy strings rather than
-  behavior (`test_reports.py`).
-- **F12 — two frontend pages use ad-hoc `fetch()`** (`ReportsPage.jsx:26`,
-  `ScanDetailPage.jsx:29`) bypassing the axios 401-refresh interceptor, with a
-  near-duplicated `downloadReport` helper. Route through the client.
+- **F11 — brittle view tests** assert exact HTML/CSS/copy strings rather than
+  behavior (`test_mvp_views.py`, `test_reports.py`).
 
 ### Low — hygiene / drift
 
 - **F-sec4 — no HTTPS-by-default**: `SECURE_SSL_REDIRECT`/`SECURE_HSTS_SECONDS`
   default off even when `DEBUG=False` (documented trade-off; enable via env behind
   TLS).
-- **F-sec5 — `LOGIN_RATELIMIT_TRUST_FORWARDED_FOR=True` default** is a foot-gun if
-  ever deployed without a header-stripping proxy (documented).
 - **F-bug1 — dead `github_secret` credential mapping**: `FIELD_BY_SETTING` points
   at a non-existent `GITHUB_SECRET` setting, so its env fallback is dead.
-  (`credentials/models.py:24`)
+  (`apps/core/console/credentials/models.py:24`)
 - **F8 — Python-side full-table aggregation** in `_detect_deltas` /
   `_compute_coverage` is fine now but should move DB-side as finding volume grows.
 - **F-dup — severity orderings** — mostly already consolidated in
@@ -467,9 +452,6 @@ blockers. Fixed items are struck through with the PR that closed them.
 - **F-misc — stale comments / config drift**: ~~`nuclei` timeout comments say
   "30m→2h" but the value is 6h~~ (FIXED #457); ~~`asn_cluster` comment says
   "Prioritization" but `phase_group="Brand Threat"`~~ (FIXED #457); ~~several
-  tool `apps.py` omit `default_auto_field`~~ (FIXED #448); ~~`Badge.jsx` lists
-  status keys twice~~ (FIXED #457 — `KNOWN` is derived from the variant map);
-  `axiosInstance.js` imports `router.jsx` (near-circular — prefer a navigation
-  callback; its own PR). *Separately surfaced:* the nuclei wall-clock cap is 6h
+  tool `apps.py` omit `default_auto_field`~~ (FIXED #448); *Separately surfaced:* the nuclei wall-clock cap is 6h
   while the worker/watchdog budget is ~4h — a real value question, not a comment
   tidy; left for a dedicated look.

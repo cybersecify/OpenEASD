@@ -7,7 +7,7 @@ value objects, and domain events.
 It is written in **pure domain terms** — it deliberately names no technology, no
 framework, no storage mechanism, and no source files. It describes *what the model
 is*, not *how it is built*. For the implementation mapping (layers, storage, the
-execution engine, the API), see [`03-system.md`](03-system.md); for the decisions and
+execution engine, the interface), see [`03-system.md`](03-system.md); for the decisions and
 trade-offs behind the model, see [`DECISIONS.md`](DECISIONS.md).
 
 The one governing decision this rests on is
@@ -39,7 +39,7 @@ that holds up *over time*.
 - **Supporting subdomains**: running an observation (the scan pipeline), scheduling
   observations, reporting, and notifying.
 - **Generic subdomains**: identity/authentication, the individual third-party
-  scanning techniques, document rendering — necessary, but not distinctive.
+  scanning techniques, report export — necessary, but not distinctive.
 
 The strategic bet (D-017): invest modeling effort in the **core domain** and keep the
 supporting and generic subdomains at arm's length behind clean boundaries, so they can
@@ -68,7 +68,7 @@ definitions:
 | **Promote** | Turning raw observations into enduring facts at the close of a scan (Findings → Issues, raw surface → Assets). |
 | **Delta / Change** | A difference between one observation and the previous one (appeared / resolved / changed). |
 | **Exposure score / grade** | A summary of a domain's risk derived from its findings. |
-| **Triage** | The human lifecycle applied to an Issue (open / resolved / false-positive / accepted). It lives on the enduring layer so it survives re-observation. |
+| **Triage** | The human lifecycle applied to an Issue (open / acknowledged / in progress / resolved / false-positive / accepted-risk). It lives on the enduring layer so it survives re-observation. |
 
 If a word isn't here, it isn't part of the domain language yet — add it here before
 using it.
@@ -281,7 +281,7 @@ Read in flow order (see [`CLAUDE.md`](../CLAUDE.md) for the full reading path):
   (layers, the fact-flow, the observation pipeline, and where each context lives).
 - **Decisions & trade-offs** — [`DECISIONS.md`](DECISIONS.md), esp. **D-017** and the
   raw-vs-enduring split.
-- **The published interface** — [`05-api.md`](05-api.md).
+- **The published interface (HTTP surface and export)** — [`05-api.md`](05-api.md).
 - **Conventions** — [`06-coding.md`](06-coding.md).
 
 This document stays in **domain terms**; anything about *how* the model is realized

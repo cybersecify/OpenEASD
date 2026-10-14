@@ -7,8 +7,8 @@ and we genuinely want help. This doc covers how to get in.
 
 This is the easiest way to make a meaningful PR. The workflow runner is
 plugin-based — tools self-register via their Django `AppConfig.tool_meta`
-and the registry auto-discovers them. **No core files change** when you
-add one.
+and the registry auto-discovers them. **No core *code* changes** when you
+add one (settings + a workflow migration are still needed — see below).
 
 ```python
 # apps/my_tool/apps.py
@@ -25,24 +25,28 @@ class MyToolConfig(AppConfig):
         "phase_group": "Network Exposure",
         "requires": ["naabu"],          # tools that must run before yours
         "produces_findings": True,      # False = produces assets, not findings
+        "active": True,                 # False only if it never contacts the target (passive)
     }
 ```
 
 Then drop in `models.py` (empty), `collector.py` (run the binary / make
 the probe), `analyzer.py` (parse results → build Finding or asset rows),
-and `scanner.py` (thin orchestrator: `collect → analyze → save`). Add
-`"apps.my_tool"` to `INSTALLED_APPS` in `openeasd/settings.py`. That's
-it — the tool shows up in the workflow editor and runs in pipeline order.
+and `scanner.py` (thin orchestrator: `collect → analyze → save`). Add `"apps.my_tool"` to `INSTALLED_APPS` in `openeasd/settings/base.py`; the
+tool then appears in the workflow editor. To make it run in the default Full
+Scan, add a data migration under `apps/core/engine/workflows/migrations/`
+(`tests/unit/test_default_workflow.py` fails CI otherwise). Also update
+README.md and CHANGELOG.md. Set `"active"` correctly: passive tools use only
+public/third-party data and need no `DomainAuthorization`.
 
 Look at `apps/web_checker/` or `apps/ssh_checker/` for working examples
 of the five-file pattern (`apps.py`, `models.py`, `collector.py`,
 `analyzer.py`, `scanner.py` — plus the standard `__init__.py` Python
-package marker). `apps/subfinder/` is a good asset-producing example
+package marker; `apps/web_checker/` also shows the optional `verify.py`). `apps/subfinder/` is a good asset-producing example
 (`produces_findings: False`).
 
 ### Phase numbers
 
-Phases are sequential integers 1–12 matching the pipeline order in `CLAUDE.md`. Pick the phase that correctly places your tool relative to its dependencies. Tools with the same phase number run in parallel. Do **not** use fractional phases (e.g. `3.5`) — use the next integer and renumber if needed.
+Phases are sequential integers 1–13 matching the pipeline order in `CLAUDE.md`. Pick the phase that correctly places your tool relative to its dependencies. Tools with the same phase number run in parallel. Do **not** use fractional phases (e.g. `3.5`) — use the next integer and renumber if needed.
 
 The `requires` list is advisory — it documents which earlier-phase tools
 your tool depends on (e.g. `["subfinder"]` if you read `Subdomain`
@@ -113,9 +117,10 @@ will be asked to add them before merge. Cover at minimum:
 
 **Collector**
 - Empty input returns `[]`
-- Binary not found (`shutil.which` returns `None`) returns `[]`
-- Non-zero exit code returns `[]`
-- Timeout returns `[]`
+- Binary tools: missing binary raises `ToolBinaryMissing`, timeout raises `ToolTimeout`
+  (the runner records a failed step and the scan completes as `partial`)
+- Passive / HTTP / DNS tools: network errors, timeouts and bad JSON return `[]` and never raise
+- Non-zero exit code is logged and output is still parsed
 - Happy path: valid output returns parsed records
 
 **Analyzer**
@@ -129,7 +134,7 @@ will be asked to add them before merge. Cover at minimum:
 - Happy path: findings are persisted to DB and returned
 
 Use `@pytest.mark.django_db` for tests that touch the database.
-See `tests/unit/test_ssh_checker.py` (33 tests) or
+See `tests/unit/test_ssh_checker.py` (34 tests) or
 `tests/unit/test_takeover_check.py` (35 tests) as reference.
 
 ## Other ways to help
@@ -141,11 +146,11 @@ See `tests/unit/test_ssh_checker.py` (33 tests) or
 - **Docs.** README/CHANGELOG/CLAUDE.md fixes are welcome PRs. Typo fixes
   go straight in; structural rewrites — open an issue first so we can
   agree on direction before you write.
-- **Frontend tweaks.** React 19 + Vite 8 + Tailwind + shadcn/ui in
-  `frontend/`. Run `npm run dev` against a Django backend on `:8000`, and
-  `npm run test:run` (Vitest) for the unit tests.
-- **Tests.** We're at ~1,600 tests excluding slow DNS; raising that
-  number always helps. `tests/unit/test_<thing>.py` matches the app it
+- **UI tweaks.** The UI is server-rendered Django in `apps/mvp` (plain views +
+  templates + HTMX partials, vendored Bulma/HTMX, session auth). There is no
+  Node/npm toolchain or build step. Add a view test in `tests/unit/test_mvp_views.py`.
+- **Tests.** See `uv run pytest tests/ --ignore=tests/unit/test_domain_security.py`
+  for the current count; raising it always helps. `tests/unit/test_<thing>.py` matches the app it
   tests.
 
 ## What to grep first (avoid re-discovery)
@@ -153,9 +158,10 @@ See `tests/unit/test_ssh_checker.py` (33 tests) or
 - `CLAUDE.md` — project conventions, architecture rules, gotchas. Read
   this before opening a non-trivial PR.
 - `CHANGELOG.md` — explains *why* recent changes were made, not just what.
-- `apps/core/workflows/registry.py` — the auto-registration plumbing.
-- `apps/core/findings/models.py` — the unified Finding model every
+- `apps/core/engine/workflows/registry.py` — the auto-registration plumbing.
+- `apps/core/data/findings/models.py` — the unified Finding model every
   tool writes to.
+- `docs/06-coding.md` — coding conventions; `apps/mvp/views.py` — the UI.
 
 ## Fork and contribute
 
@@ -185,7 +191,7 @@ git push origin feat/my-feature
 ```
 
 Maintainers with write access can branch directly on the main repo — same
-branch naming rules apply.
+branch naming rules apply. Branch from `main` per CLAUDE.md; never commit to `main`.
 
 ## Development setup
 
@@ -205,48 +211,45 @@ export DB_HOST=localhost DB_PORT=5432 DB_NAME=openeasd DB_USER=openeasd DB_PASSW
 # Install Python deps (uv handles the lockfile)
 uv sync --group dev
 
-# Install frontend deps
-cd frontend && npm install && cd ..
-
 # Run migrations
 uv run manage.py migrate
 
-# Quickest: starts Django (:8001) + Vite dev server + DBOS worker together
+# Quickest: Django (:8001) + DBOS worker together (`just dev` is identical)
 make dev
 
-# Or manually in three terminals:
-# Terminal 1 — Django
+# Or manually in two terminals:
+# Terminal 1 — Django (serves the UI)
 uv run manage.py runserver 8001
 
-# Terminal 2 — Vite dev server (proxies /api/ to Django at :8001)
-cd frontend && npm run dev
-
-# Terminal 3 — DBOS worker (required for scans to execute; needs PostgreSQL running)
+# Terminal 2 — DBOS worker (required for scans to execute; needs PostgreSQL running)
 uv run manage.py dbos_worker
 ```
 
-App runs at `http://localhost:5173` in dev. Default login on a fresh DB
-is `admin` / `admin`, force-change-password kicks in.
+The app runs at `http://localhost:8001`. There is no frontend build step or
+Node dependency. Default login on a fresh DB is `admin` / `admin`; you are
+forced to change the password on first login.
 
 External tools (`subfinder`, `dnsx`, `naabu`, `httpx`, `katana`, `nuclei`,
 `amass`, `nmap`) need to be on `PATH`. Easiest install is the
 ProjectDiscovery `pdtm` (`pdtm -i subfinder,dnsx,naabu,httpx,katana,nuclei`)
 plus `brew install nmap` and `go install github.com/owasp-amass/amass/v4/...@master`.
+See CLAUDE.md "External binary tools" for the full list; `uv run manage.py verify_tools`
+checks what is installed.
 
 ## Tests before you push
 
 ```bash
-# Backend — fast suite (excludes slow real-network DNS tests)
+# Fast suite (excludes slow real-network DNS tests)
 uv run pytest tests/ --ignore=tests/unit/test_domain_security.py
 
-# Frontend — Vitest (jsdom-like env via happy-dom)
-cd frontend && npm run test:run
+# Or the whole CI gate locally: ruff + pytest (80% coverage) + bandit + pip-audit
+just ci
 ```
 
-CI runs the same (plus `ruff check`). PR will block if anything fails. If
-your change touches a tool collector, add or update a unit test in
-`tests/unit/test_<tool>.py`. If it touches frontend logic (auth, API
-client, a component), add a `*.test.js`/`*.test.jsx` next to it.
+CI runs the same checks (ruff, pytest with an 80% coverage gate against a
+Postgres service, bandit, pip-audit); a PR blocks if any fail. If your change
+touches a tool collector, add or update `tests/unit/test_<tool>.py`. If it
+touches a UI view, add a case to `tests/unit/test_mvp_views.py`.
 
 ## Commit messages
 
@@ -268,7 +271,7 @@ feat: add nuclei_network tool for non-web protocol vuln scanning
 fix: findings_count no longer counts asset rows as findings
 docs: update CONTRIBUTING with fork workflow
 ci: pin actions/setup-python to v6
-chore: bump pypdf 4.x → 6.x
+chore: bump django 5.2.16 → 5.2.17
 test: add missing collector timeout case to test_ssh_checker
 ```
 
@@ -298,12 +301,13 @@ Maintainers will ask you to add sign-offs before merging if they're missing.
 
 ## Code style
 
-- Python: follow what's there. We use Django 5+ idioms. **`ruff check` runs
+- Python: follow what's there. We use Django 5.2 LTS idioms. **`ruff check` runs
   in CI** (config in `pyproject.toml [tool.ruff]`, rules E/F/W with line-length
   deferred) — run `uv run ruff check apps/ openeasd/ tests/` before pushing, or
   `uv run ruff check --fix` to auto-fix. No line-reflow formatter is enforced
   yet, so please don't reformat unrelated lines in your PR.
-- JS: ES modules + JSX. Tailwind utility classes for styling.
+- Templates: Django templates + HTMX partials, vendored Bulma; no Node/JS
+  build, so keep JS to the vendored HTMX plus minimal inline.
 - Comments: only when the *why* is non-obvious. Don't restate the code.
 - Don't introduce new dependencies in a small PR — flag it in the
   description and we'll talk through it.
