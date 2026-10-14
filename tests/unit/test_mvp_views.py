@@ -49,3 +49,60 @@ class TestDashboard:
     def test_activity_partial_ok(self, client):
         self._login(client)
         assert client.get("/app/activity/").status_code == 200
+
+
+@pytest.mark.django_db
+class TestDomains:
+    @pytest.fixture(autouse=True)
+    def _login(self, client):
+        User.objects.create_user("admin", password="pw12345!")
+        client.login(username="admin", password="pw12345!")
+
+    def test_list_renders(self, client):
+        from apps.core.data.domains.models import Domain
+
+        Domain.objects.create(name="example.com")
+        resp = client.get("/app/domains/")
+        assert resp.status_code == 200 and b"example.com" in resp.content
+
+    def test_add_domain(self, client):
+        from apps.core.data.domains.models import Domain
+
+        resp = client.post("/app/domains/add/", {"name": "Example.com"})
+        assert resp.status_code == 302
+        assert Domain.objects.filter(name="example.com").exists()
+        assert client.get("/app/domains/example.com/").status_code == 200
+
+    def test_non_apex_rejected(self, client):
+        from apps.core.data.domains.models import Domain
+
+        resp = client.post("/app/domains/add/", {"name": "sub.example.com"}, follow=True)
+        assert not Domain.objects.exists()
+        assert "subdomain" in resp.content.decode()
+
+    def test_authorize_requires_attestation(self, client):
+        from apps.core.data.domains.models import Domain, DomainAuthorization
+
+        Domain.objects.create(name="example.com")
+        client.post("/app/domains/example.com/authorize/", {})
+        assert not DomainAuthorization.is_authorized("example.com")
+        client.post("/app/domains/example.com/authorize/", {"attestation": "1"})
+        assert DomainAuthorization.is_authorized("example.com")
+
+    def test_monitoring_sets_and_clears(self, client):
+        from apps.core.data.domains.models import Domain
+
+        Domain.objects.create(name="example.com")
+        client.post("/app/domains/example.com/monitoring/", {"interval_hours": "24"})
+        assert Domain.objects.get(name="example.com").monitoring_interval_hours == 24
+        client.post("/app/domains/example.com/monitoring/", {"interval_hours": ""})
+        assert Domain.objects.get(name="example.com").monitoring_interval_hours is None
+
+    def test_delete_requires_confirm(self, client):
+        from apps.core.data.domains.models import Domain
+
+        Domain.objects.create(name="example.com")
+        client.post("/app/domains/example.com/delete/", {"confirm": "nope"})
+        assert Domain.objects.filter(name="example.com").exists()
+        client.post("/app/domains/example.com/delete/", {"confirm": "example.com"})
+        assert not Domain.objects.exists()

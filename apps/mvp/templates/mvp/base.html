@@ -87,6 +87,9 @@
     </div>
     {% if user.is_authenticated %}
     <div class="navbar-menu is-active">
+      <div class="navbar-start">
+        <a class="navbar-item" href="{% url 'mvp:domains' %}">Domains</a>
+      </div>
       <div class="navbar-end">
         <span class="navbar-item muted">{{ user.get_username }}</span>
         <a class="navbar-item" href="/admin/">Django&nbsp;admin</a>
