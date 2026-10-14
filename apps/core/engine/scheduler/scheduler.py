@@ -2,8 +2,7 @@
 
 On the `local` branch the cron layer is DBOS @scheduled workflows
 (apps/core/durable/workflows.py); the functions here are the plain callables
-those workflows invoke (daily_scan, run_due_monitoring_scans, reap_stuck_scans,
-purge_expired_blacklisted_tokens). setup_core_schedules / sync_domain_monitoring_jobs
+those workflows invoke (daily_scan, run_due_monitoring_scans, reap_stuck_scans). setup_core_schedules / sync_domain_monitoring_jobs
 are retained as no-ops for legacy callers.
 """
 
@@ -48,8 +47,7 @@ SCAN_NO_PROGRESS_MINUTES = _config("SCAN_NO_PROGRESS_MINUTES", default=60, cast=
 def setup_core_schedules():
     """No-op on the DBOS branch.
 
-    The unattended-scanning backbone (daily scan, monitoring sweep, watchdog,
-    token purge) is now a set of DBOS @scheduled workflows in
+    The unattended-scanning backbone (daily scan, monitoring sweep, watchdog) is now a set of DBOS @scheduled workflows in
     apps/core/durable/workflows.py, registered when the dbos_worker imports
     that module — there is no Django-Q Schedule setup to perform. Kept as a
     callable so any legacy caller (and the scheduler AppConfig) stays valid.
@@ -444,21 +442,6 @@ def reap_orphaned_scan_workflows(apply: bool = True):
             verb, len(reaped), ", ".join(f"{d}({s})" for _, d, s in reaped),
         )
     return reaped
-
-
-# ---------------------------------------------------------------------------
-# JWT token cleanup
-# ---------------------------------------------------------------------------
-
-def purge_expired_blacklisted_tokens():
-    """Delete expired OutstandingToken rows to keep the table small."""
-    from ninja_jwt.token_blacklist.models import OutstandingToken
-
-    cutoff = django_tz.now()
-    deleted, _ = OutstandingToken.objects.filter(expires_at__lt=cutoff).delete()
-    if deleted:
-        logger.info(f"[token_purge] Deleted {deleted} expired outstanding token(s)")
-    return deleted
 
 
 # ---------------------------------------------------------------------------

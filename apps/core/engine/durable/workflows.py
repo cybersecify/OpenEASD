@@ -128,7 +128,6 @@ _DAILY_CRON = "{m} {h} * * *".format(
 )
 _MONITORING_SWEEP_CRON = getattr(settings, "MONITORING_SWEEP_CRON", "*/15 * * * *")
 _WATCHDOG_CRON = getattr(settings, "WATCHDOG_CRON", "*/15 * * * *")
-_TOKEN_PURGE_CRON = getattr(settings, "TOKEN_PURGE_CRON", "0 3 * * *")
 
 
 def _scheduled_scans_enabled() -> bool:
@@ -215,24 +214,13 @@ def scheduled_watchdog(scheduled_time, actual_time) -> None:
     dispatch_scheduled("watchdog", _watchdog)
 
 
-@DBOS.scheduled(_TOKEN_PURGE_CRON)
-@DBOS.workflow(name="scheduled_token_purge")
-def scheduled_token_purge(scheduled_time, actual_time) -> None:
-    from apps.core.engine.scheduler.scheduler import (
-        dispatch_scheduled,
-        purge_expired_blacklisted_tokens,
-    )
-
-    dispatch_scheduled("token_purge", purge_expired_blacklisted_tokens)
-
-
 _SCAN_PRUNE_CRON = getattr(settings, "SCAN_PRUNE_CRON", "30 3 * * *")
 
 
 @DBOS.scheduled(_SCAN_PRUNE_CRON)
 @DBOS.workflow(name="scheduled_scan_prune")
 def scheduled_scan_prune(scheduled_time, actual_time) -> None:
-    """Prune old scan history (H3). A hygiene cron like token-purge — always
+    """Prune old scan history (H3). A hygiene cron — always
     registered, but a no-op unless SCAN_RETENTION_ENABLED (the function self-gates),
     so it is NOT tied to SCHEDULED_SCANS_ENABLED."""
     from apps.core.engine.scheduler.scheduler import dispatch_scheduled, prune_old_scans

@@ -74,7 +74,7 @@ presentation run in their own lanes and meet only through stored facts.
         │                                   ╚════════════════════╤════════════════════╝
         │                                                        │ ④ READ (traverse the graph)
         │         the SAME backend, queried per perspective      ▼
-   ┌────┴───────────────── API (Django Ninja, flat JSON — the one contract) ──────────────────┐
+   ┌────┴───────────────── service layer (read per perspective) ───────────────────────────┐
    │  /scans → scan-centric   /assets → asset-centric   /issues → finding/issue-centric   …    │
    └────────────────────────────────────────────────┬──────────────────────────────────────────┘
                                                      ▼
@@ -99,7 +99,6 @@ Browser (server-rendered pages, vendored Bulma + HTMX)
        ▼
 web tier — gunicorn (python:3.12-slim image, no scanner tools)
   ├── apps/mvp plain-Django UI (/)     + must-change-password middleware
-  ├── Django Ninja REST API  (/api/)   — LEGACY/DORMANT, still routed, unused by the UI
   ├── WhiteNoise             (static/)
   ├── Django Admin           (/admin/)
   └── enqueue-only: durably enqueues scans onto the DBOS queue
@@ -109,7 +108,7 @@ PostgreSQL 17  ◄──────────────────  worker
   app rows (ORM) + DBOS checkpoints        full scanner matrix, NET_RAW)
   (a `dbos` schema in the same DB)     ├── run_scan_workflow   (@DBOS.workflow; phases = checkpointed @DBOS.step)
                                        ├── ai_triage / agent_step workflows
-                                       └── @DBOS.scheduled crons (daily scan, sweeps, watchdog, JWT purge)
+                                       └── @DBOS.scheduled crons (daily scan, sweeps, watchdog, scan prune)
 ```
 
 Three tiers, each its own container/workload: **db** (`postgres:17-alpine`),
@@ -133,7 +132,7 @@ import the same codebase and differ only by entrypoint.
 ### Axis 1 — logical layers (how the CODE is organized, by responsibility)
 
 ```
-┌─ CONSOLE   presentation: server-rendered `apps/mvp` UI (session auth) + reports(CSV)/insights/notifications/ai; Ninja API + React SPA are legacy/dormant
+┌─ CONSOLE   presentation: server-rendered `apps/mvp` UI (session auth) + reports(CSV)/insights/notifications/ai; the React SPA is dormant on disk
 │               apps/core/{dashboard, api, insights, reports, notifications, ai}
 ├─ ENGINE    orchestration: durable scan execution + dynamic workflow runner
 │               apps/core/{scans, workflows, durable, scheduler}
@@ -167,7 +166,7 @@ Core Infrastructure and Tool Apps tables below.
 
 | Logical layer | Runs in | Note |
 |---|---|---|
-| **Console** | `web` | gunicorn serves the server-rendered `apps/mvp` UI (session auth); the Ninja API is dormant |
+| **Console** | `web` | gunicorn serves the server-rendered `apps/mvp` UI (session auth); there is no REST API |
 | **Engine** | `worker` | `dbos_worker` runs the durable scan workflows |
 | **Tools** | `worker` | the scanner binaries live only in the worker image |
 | **Data** | `db` | Postgres; accessed by **both** web & worker via the Django ORM |
@@ -205,7 +204,7 @@ the folder move is purely organisational; the table lists each app by name.
 | `asset_inventory/` | `asset_inventory` | Persistent, deduplicated `Asset` inventory (domain-scoped, first/last-seen + status); populated by a fail-graceful rollup at finalize; `Finding.asset` links findings to it; `/api/assets/` + the Assets UI |
 | `scans/` | `scans` | `ScanSession`, `ScanDelta`, `ScheduledScan`, pipeline orchestrator |
 | `workflows/` | `workflow` | Workflow CRUD, dynamic runner, tool registry |
-| `scheduler/` | `scheduler` | Scan callables (daily/monitoring/user sweeps, watchdog, JWT purge) invoked by the DBOS `@scheduled` workflows |
+| `scheduler/` | `scheduler` | Scan callables (daily/monitoring/user sweeps, watchdog, scan prune) invoked by the DBOS `@scheduled` workflows |
 | `durable/` | `durable` | DBOS app config + `@DBOS.workflow`/`@DBOS.step`/`@DBOS.scheduled` definitions; `dbos_worker` command |
 | `verification/` | — | Deterministic finding verification (`verify_session`) — re-probes medium+ findings at finalize via each tool's registered verifier, writing `Finding.verification_status`/`verified_at`; active re-probes gated by `DomainAuthorization`. Internal sub-package (no models, not in `INSTALLED_APPS`) invoked directly by `apps/core/engine/scans/pipeline.py` |
 | `notifications/` | `alerts` | `NotificationConfig` singleton, Slack/Teams dispatcher, alert history |
@@ -213,7 +212,6 @@ the folder move is purely organisational; the table lists each app by name.
 | `reports/` | `reports` | CSV + PDF export (synchronous Django views, on the web tier) |
 | `ai/` | `ai` | AI triage / adaptive orchestration / summaries (Cloudflare Workers AI, BYOK) — a core subsystem, **not** a registry tool |
 | `credentials/` | `credentials` | `ToolCredentials` encrypted singleton + `get_credential()` resolver (DB-wins-over-env) + write-only `/api/credentials/` — UI-managed BYOK keys |
-| `api/` | — | `NinjaAPI` instance, JWT routes, router registration, error handlers, rate-limit middleware |
 
 ### By layer — console / engine / data
 
@@ -490,49 +488,11 @@ Finding
 
 ---
 
-## REST API (legacy / dormant)
+## REST API — removed
 
-> Retained but not used by the server-rendered UI (which calls the service layer directly with session auth). Teardown is a deferred follow-up.
+There is no REST API (removed 2026-10-14). The UI is server-rendered with session auth and calls the service layer directly; see [05-api.md](05-api.md).
 
-Base path: `/api/`. Auth: JWT Bearer via `ninja-jwt` (simplejwt).
-
-### Auth flow
-
-```
-POST /api/token/pair      → {access, refresh}   # login (per-IP brute-force rate-limited)
-POST /api/token/refresh   → {access}             # renew
-POST /api/token/blacklist                         # logout (blacklists refresh token)
-```
-
-Access token sent as `Authorization: Bearer <token>` on every request; the React
-axios interceptor silently refreshes on 401. Tokens live in `localStorage`
-(`auth.js`). Login is rate-limited by `LoginRateLimitMiddleware` (per-IP,
-DB-backed `LoginThrottle`).
-
-### Response format
-
-```json
-{"id": 1, "domain": "example.com", ...}              // success — flat, no envelope
-{"error": {"code": "NOT_FOUND", "message": "..."}}   // error
-```
-
-### Key endpoints (abbreviated — full list in CLAUDE.md)
-
-```
-GET  /api/dashboard/                  KPIs, domain status (incl. exposure_score/grade), urgent findings
-POST /api/domains/<pk>/authorize/     grant DomainAuthorization (attestation)
-POST /api/scans/start/                start or schedule a scan
-GET  /api/scans/<uuid>/status/        lightweight status (React polls every 3s while running)
-POST /api/scans/<uuid>/subscan/       re-run a subset of tools against an existing scan
-GET  /api/scans/findings/             paginated findings (?severity= &domain= &status= &source=)
-GET  /api/insights/                   trends, top hosts, asset growth, Exposure Score
-GET  /api/assets/                     persistent asset inventory (?domain= &kind= &status= &q=)
-GET  /api/ai/triage/<uuid>/           AI triage status + ranked items + agent decisions
-GET  /api/version/  /health/          build provenance (unauthenticated)
-GET  /api/docs                        OpenAPI / Swagger UI
-```
-
-Full URL layout: [CLAUDE.md](../CLAUDE.md#url-layout). CSV/PDF reports are
+Full URL layout: [CLAUDE.md](../CLAUDE.md#url-layout). CSV reports are
 synchronous Django views under `/reports/<uuid>/` served by the web tier.
 
 ---
@@ -642,4 +602,3 @@ consent/`DomainAuthorization` gate applies to scheduled scans too.
 | Per-domain monitoring | 6h / 12h / 24h / 48h / weekly | Configurable per domain; a DBOS sweep computes due-ness |
 | User-schedule sweep | — | Fires `once`/`recurring` user-scheduled scans (`ScheduledScan` rows) |
 | Stuck-scan watchdog | Every 15 min | Reaps `running` scans past `SCAN_TIMEOUT_MINUTES` and orphaned `pending` scans past `SCAN_PENDING_TIMEOUT_MINUTES` as `partial`/`failed` |
-| JWT token purge | Daily | Clears expired simplejwt `OutstandingToken` rows |

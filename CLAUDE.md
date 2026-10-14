@@ -7,9 +7,8 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 
 - **Unreleased (UI + deploy change):** the served UI is now a **plain-Django,
   server-rendered app** (`apps/mvp` — vendored Bulma CSS + vendored HTMX, Django
-  **session** auth) at `/`. The React SPA and the Django-Ninja REST API + JWT are
-  **legacy/DORMANT — still present in the tree, just not the UI path** (full teardown
-  is a deliberately deferred follow-up). **PDF reports are removed; CSV is kept.** A
+  **session** auth) at `/`. The Django-Ninja REST API + JWT (incl. the token-blacklist + purge cron and the
+  django-ninja* deps) are **REMOVED** (2026-10-14); the React SPA in `frontend/` is dormant, on disk only. **PDF reports are removed; CSV is kept.** A
   **single Docker image** (embedded PostgreSQL + gunicorn + DBOS worker in one
   container) is the primary MVP deploy; the 3-tier compose/k8s path remains as the
   privilege-separated / scalable alternative. The engine (DBOS + Postgres) is unchanged.
@@ -144,9 +143,8 @@ git describe --tags --abbrev=0
 ### Backend
 - Django 5.2 LTS with plain Django views (no DRF, no Celery, no Redis) — pinned to
   the LTS line (`django>=5.2.17,<6.0`), not floated to non-LTS 6.x
-- **Django Ninja** REST API under `/api/` — Schema-based, auto-docs at `/api/docs`
-- **JWT Bearer auth** — access + refresh tokens via `djangorestframework-simplejwt` (ninja-jwt wrapper); token blacklist handled by simplejwt's built-in `OutstandingToken`/`BlacklistedToken` models
-- **DBOS** — durable-execution engine for scan execution AND all scheduling, backed by PostgreSQL (its checkpoint tables live in a `dbos` schema in the same DB). Scans are durable workflows whose phases are checkpointed steps, so a crashed/restarted worker RESUMES a scan instead of losing it. Scheduling is DBOS `@scheduled` cron workflows (daily scan, monitoring sweep, user-schedule sweep, stuck-scan watchdog, JWT token purge) registered by the `dbos_worker` process. Django-Q2 and APScheduler have been fully removed.
+- **No REST API** — removed 2026-10-14. The UI is server-rendered plain Django with **session auth**; CSV export (`/reports/<uuid>/csv/`) is the only HTTP data export (plus `/health/`, `/metrics/`). No JWT, so no token-purge cron.
+- **DBOS** — durable-execution engine for scan execution AND all scheduling, backed by PostgreSQL (its checkpoint tables live in a `dbos` schema in the same DB). Scans are durable workflows whose phases are checkpointed steps, so a crashed/restarted worker RESUMES a scan instead of losing it. Scheduling is DBOS `@scheduled` cron workflows (daily scan, monitoring sweep, user-schedule sweep, stuck-scan watchdog, scan prune) registered by the `dbos_worker` process. Django-Q2 and APScheduler have been fully removed.
 - **WhiteNoise** — serves collected static files (frontend bundle) when `DEBUG=False` (Docker/prod); uses `CompressedManifestStaticFilesStorage` for gzip + content-hash fingerprinting
 - **PostgreSQL** database — configured via `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`/`DB_PASSWORD` (or `DATABASE_URL`). Postgres has no single-writer lock, so scans run concurrently (`DBOS_SCAN_CONCURRENCY`, default 2).
 
@@ -167,10 +165,7 @@ filterable by severity + verification, CSV link); scans history. Tests:
 **Legacy / DORMANT (present, not the UI path):** the React SPA (`frontend/`) is no
 longer served or built into the UI path — the `spa` view + SPA catch-all were removed
 from `openeasd/urls.py` (unknown paths now redirect to the dashboard). The Django-Ninja
-REST API + JWT (`apps/core/console/api/` + per-app `api.py` routers) is still routed
-under `/api/` and its tests still run, but the UI does not use it. Deleting `frontend/`
-and tearing down the API are deferred follow-ups (Option B) — do not describe them as
-removed. The React/Vite notes below document that legacy SPA.
+REST API + JWT has been removed. Deleting `frontend/` is a deferred follow-up. The React/Vite notes below document that legacy SPA.
 
 #### Legacy React SPA (dormant)
 - **React 19 + Vite 8** — `frontend/` directory, builds to `frontend/dist/`
@@ -218,7 +213,6 @@ uv run manage.py dbos_worker
 - **Current UI work → `apps/mvp`** (plain Django views + templates + HTMX partials; call the service layer directly; session auth). The rules below apply only to the dormant legacy SPA.
 - New interactive features → React pages in `frontend/src/pages/`, wired into the route tree in `src/router.jsx`
 - Fetch data with react-query `useQuery` + `apiGet`/`apiPost` (keyed by the API path); don't reintroduce ad-hoc `fetch`/`useFetch`. Navigate with react-router-dom's `useNavigate`, not a hand-rolled router.
-- New API data → add endpoint to the relevant `apps/core/<module>/api.py` router + wire in `apps/core/console/api/ninja.py`
 - Shared UI primitives → `frontend/src/components/`
 - Don't add CORS headers — always use same-origin (Vite proxy in dev, Django serves in prod)
 - (Superseded) The SPA catch-all in `openeasd/urls.py` was removed; the HTMX/Django-template approach is back, now as `apps/mvp` with vendored Bulma + HTMX.
@@ -447,46 +441,10 @@ Django labels are unchanged — the nesting is organisational only (import paths
 | `reports/` | `reports` | CSV export (synchronous, served by the web tier; session auth). **PDF export was removed** (WeasyPrint + route + template dropped); the CSV is the live report artifact |
 | `ai/` | `ai` | AI analysis (Cloudflare Workers AI, BYOK): finding triage, bounded adaptive orchestration, report/alert summaries, consent + per-call audit log |
 | `credentials/` | `credentials` | UI-managed BYOK API keys — `ToolCredentials` encrypted singleton + `get_credential()` resolver (DB-wins-over-env) + write-only `/api/credentials/` + the `/credentials` **CredentialsPage**. Tools read via the resolver (shodan/breach_check/github_recon/github_secrets/dns_history) — a DB key overrides env with no redeploy |
-| `api/` | — | Django Ninja API — routers, JWT auth, error handlers |
 
-### REST API module — `apps/core/console/api/` (LEGACY / DORMANT)
+### No REST API
 
-> Still routed at `/api/` and still tested, but **not used by the server-rendered UI** (which uses session auth and the service layer). Retained deliberately; teardown is a deferred follow-up. The reference below remains accurate for the dormant API.
-
-```
-apps/core/console/api/
-    __init__.py
-    ninja.py          — NinjaAPI instance, ninja-jwt auth routes (/token/pair|refresh|verify|blacklist),
-                        /user/ endpoint, error handlers, router registration
-
-Per-module routers (each file exports a `router = Router(auth=JWTAuth())`):
-    apps/core/console/dashboard/api.py   — /api/dashboard/
-    apps/core/data/domains/api.py     — /api/domains/ CRUD
-    apps/core/engine/scans/api.py       — /api/scans/ + findings
-    apps/core/engine/workflows/api.py   — /api/workflows/ CRUD + /tools/
-    apps/core/console/insights/api.py    — /api/insights/
-    apps/core/console/notifications/api.py — /api/notifications/ config + test + alerts
-    apps/core/console/credentials/api.py — /api/credentials/ (write-only BYOK key store)
-    apps/core/data/asset_inventory/api.py — /api/assets/ list + summary + detail
-    (scheduled router in scans/api.py) — /api/scheduled/
-```
-
-**Response format:** Flat JSON — no envelope wrapper.
-```json
-{"id": 1, "domain": "example.com", ...}           // success
-{"error": {"code": "NOT_FOUND", "message": "..."}} // error
-```
-
-**Auth:** JWT Bearer tokens via ninja-jwt (simplejwt). React stores tokens in `localStorage` via `auth.js`.
-- Access token: short-lived, sent as `Authorization: Bearer <token>`
-- Refresh token: long-lived, sent in POST body to `/api/token/refresh`
-- Logout: blacklists refresh token via `/api/token/blacklist` (simplejwt OutstandingToken/BlacklistedToken)
-- **Brute-force rate limiting:** `LoginRateLimitMiddleware` (`apps/core/console/api/ratelimit.py`) locks out an IP after `LOGIN_RATELIMIT_MAX_FAILURES` (default 5) failed `POST /api/token/pair` attempts within the window, returning 429 + `Retry-After`. State is the DB-backed `LoginThrottle` model (shared across gunicorn workers, unlike the per-process LocMemCache). Only `/token/pair` is limited (not `/refresh`); a successful login clears the IP's counter. Per-IP via `X-Forwarded-For` when `LOGIN_RATELIMIT_TRUST_FORWARDED_FOR` is on (default, for the mandated proxy) — keyed on the **rightmost** XFF entry (the hop the trusted proxy appended; the leftmost is client-forgeable, so keying on it would let an attacker rotate a spoofed header to evade the lockout — assumes a single trusted proxy); off → falls back to the unspoofable `REMOTE_ADDR`. Tunable/`LOGIN_RATELIMIT_ENABLED`-toggle via settings. Tests: `tests/unit/test_login_ratelimit.py`.
-
-**Adding a new API endpoint:**
-1. Add endpoint function to the relevant `apps/core/<module>/api.py` router
-2. Register the router in `apps/core/console/api/ninja.py` if it's a new module
-3. Consume in `frontend/src/api/client.js` or a page component
+The Django-Ninja REST API + JWT (incl. the `LoginRateLimitMiddleware`, token blacklist and the token-purge cron) was **removed**. The UI is server-rendered (`apps/mvp`) and calls the service layer directly; there is no JSON API contract. Add UI features as `apps/mvp` views.
 
 ### Tool auto-registration
 
@@ -925,69 +883,14 @@ gate is consent + keys, never workflow membership.
 Unknown paths redirect to the dashboard (the SPA catch-all was removed). Exact route
 names live in `apps/mvp/urls.py`.
 
-### REST API (`/api/`) — LEGACY / DORMANT
-Still routed and tested, but not used by the UI. Reference retained below.
-```
-POST /api/token/pair                      — JWT login → {access, refresh}
-POST /api/token/blacklist                 — blacklist refresh token (logout)
-POST /api/token/refresh                   — exchange refresh → new access token
-POST /api/token/verify                    — verify token validity
-GET  /api/version/                        — build provenance {version, git_sha, git_sha_short, build_date, support_email} (unauthenticated; no-store)
-GET  /api/version/latest/                 — update check {current_version, latest_version, update_available, release_url} (authenticated; cached 6h, fail-graceful)
-GET  /api/user/                           — current user info + must_change_password flag
-POST /api/user/change-password/           — change password; clears must_change_password flag
-GET  /api/dashboard/                      — KPIs, domain status (incl. per-domain exposure_score/grade), urgent findings
-GET  /api/domains/                        — list domains (enriched)
-POST /api/domains/                        — add domain
-POST /api/domains/<pk>/toggle/            — activate/deactivate
-POST /api/domains/<pk>/delete/            — delete domain + all scan data
-POST /api/domains/<pk>/monitoring/        — set/clear per-domain monitoring interval
-POST /api/domains/<pk>/authorize/         — grant DomainAuthorization (attestation required)
-GET  /api/scans/                          — paginated scan list (?domain=&status=&page=)
-POST /api/scans/start/                    — start/schedule scan
-GET  /api/scans/<uuid>/                   — full scan detail (assets + findings)
-GET  /api/scans/<uuid>/status/            — lightweight status (legacy SPA polled every 3s)
-POST /api/scans/<uuid>/stop/              — cancel running scan
-POST /api/scans/<uuid>/delete/            — delete scan session
-POST /api/scans/<uuid>/subscan/           — re-run a single tool / subset against an existing scan
-GET  /api/scheduled/                      — scheduled jobs list
-POST /api/scheduled/<job_id>/cancel/      — cancel scheduled job
-GET  /api/workflows/                      — list workflows
-POST /api/workflows/create/               — create workflow
-GET  /api/workflows/tools/                — all registered tool choices (for create form)
-GET  /api/workflows/<pk>/                 — workflow detail + tool_steps + recent runs
-POST /api/workflows/<pk>/update/          — update workflow name/tools
-POST /api/workflows/<pk>/rename/          — rename workflow
-POST /api/workflows/<pk>/delete/          — delete workflow
-POST /api/workflows/<pk>/steps/<tool>/toggle/ — toggle single tool step
-GET  /api/assets/                         — persistent asset inventory (paginated; ?domain=&kind=&status=&q=), each row with per-severity open-finding counts
-GET  /api/assets/summary/                 — inventory totals by kind + active/gone
-GET  /api/assets/<id>/                     — asset detail: metadata + extra, findings, scan timeline (seen_in_scans)
-GET  /api/assets/urls/                     — paginated web-asset URLs (relocated from /api/scans/urls/ — D-017; ?domain=&session_uuid=&scheme=&status_code=&page=)
-GET  /api/findings/                        — paginated raw findings (relocated from /api/scans/findings/ — D-017; ?severity=&domain=&status=&source=&session_uuid=&page=)
-POST /api/findings/<id>/status/            — update finding lifecycle status (relocated from /api/scans/findings/<id>/status/ — D-017)
-GET  /api/changes/                         — scan-to-scan delta feed (relocated from /api/scans/deltas/ — D-017; ?domain=&change_type=&page=)
-GET  /api/insights/                       — trends, top hosts, asset growth, KPIs, Exposure Score + trend (per-scan exposure_score/grade + top-level exposure block)
-GET  /api/notifications/config/           — get Slack/Teams notification config
-POST /api/notifications/config/           — update notification config
-POST /api/notifications/test/             — send a test alert
-GET  /api/notifications/alerts/           — alert history
-GET  /api/credentials/                    — BYOK key presence booleans + db|env|none source per key (values never returned)
-POST /api/credentials/                    — set/clear BYOK keys (write-only; None=unchanged, ""=clear→env fallback)
-GET  /api/ai/config/                      — AI settings (credential presence booleans only — values are never returned)
-POST /api/ai/config/                      — enable/disable + save credentials (write-only; None=unchanged, ""=clear→env fallback); enabling requires current-version consent (consent_accepted stamps it)
-POST /api/ai/test/                        — Workers AI connectivity probe (fixed prompt, no scan data; allowed pre-consent)
-GET  /api/ai/triage/<uuid>/               — triage status + ranked items + agent decisions (disabled|absent|running|complete|failed)
-POST /api/ai/triage/<uuid>/run/           — manual (re-)run via DBOS (409 while scan/triage in flight)
-GET  /api/ai/audit/                       — paginated AI call log (metadata only, never bodies)
-```
+### REST API — REMOVED
+No `/api/` routes exist. The only HTTP data export is `GET /reports/<uuid>/csv/` (session auth); plus `GET /health/` and (opt-in) `GET /metrics/`.
 
 ### Other routes
 - `/reports/<uuid>/csv/` → CSV export (**synchronous** Django view on the web tier, `_report_auth_required` — now session auth only; the old `?token=` query-param was removed in F-sec3, and the gate now also honors `must_change_password`)
 - `/reports/<uuid>/pdf/` → **REMOVED** (PDF reports dropped along with WeasyPrint; CSV is the supported export)
 - **Reports UI:** CSV download is a link on the `apps/mvp` scan-detail page. (The legacy SPA's Reports page is dormant.)
 - `/admin/` → Django admin
-- `/api/docs` → Django Ninja auto-generated OpenAPI docs
 - `/*` (unknown) → redirect to the dashboard (the former React SPA catch-all was removed)
 
 ## Tests

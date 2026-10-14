@@ -121,7 +121,6 @@ INSTALLED_APPS = [
     "apps.core.console.reports",
     "apps.core.console.ai",
     "apps.core.engine.durable",
-    "ninja_jwt.token_blacklist",
     "apps.domain_security",
     "apps.domain_probe",
     "apps.asn_cluster",

@@ -65,7 +65,7 @@ class TestSeededJobs:
         names = set(ScheduledJob.objects.values_list("name", flat=True))
         assert {
             "daily_scan", "monitoring_sweep", "user_scans_sweep",
-            "watchdog", "token_purge", "scan_prune",
+            "watchdog", "scan_prune",
         } <= names
 
     def test_seeded_jobs_enabled_by_default(self):

@@ -42,5 +42,5 @@ spec that drifts from the shipped behaviour is corrected like a failing test.
   the most suspicious (mail-configured / recent) candidates first.
 - [Plain-Django UI](specs/2026-10-14-plain-django-ui.md) — replace the served
   React SPA with a server-rendered `apps/mvp` UI (Bulma + HTMX, session auth); Ninja
-  API/JWT + SPA left dormant; PDF reports dropped; single-image deploy added.
+  API/JWT removed, SPA left dormant; PDF reports dropped; single-image deploy added.
   Plan: [plain-django-ui-plan](specs/2026-10-14-plain-django-ui-plan.md).

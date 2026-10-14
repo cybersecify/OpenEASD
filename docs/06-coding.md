@@ -152,26 +152,11 @@ fail the whole scan. Specifically:
 
 ---
 
-## 3. REST API (Django Ninja) — legacy / dormant
+## 3. REST API — removed
 
-> Still present and tested, but not used by the server-rendered UI. Don't add UI features here; teardown is a deferred follow-up.
-
-- Each module exposes `router = Router(auth=JWTAuth())` in its `api.py`; the
-  central `apps/core/console/api/ninja.py` mounts it with
-  `api.add_router("/prefix", router)`. **New endpoint = one decorated function;
-  new module = one import + one `add_router` line.**
-- Authenticate via the project wrapper `apps/core/console/api/auth.py::JWTAuth`
-  (it also enforces the forced-password-change gate server-side) — never
-  ninja-jwt's `JWTAuth` directly. Opt out of auth **explicitly** with `auth=None`
-  (e.g. `/health/`, `/version/`). `request.auth` is the authenticated `User`.
-- **Response format is flat JSON** (no envelope). List endpoints return the
-  pagination shape `{results|findings, total, page, total_pages, has_next,
-  has_previous}`. `201` creates return `Status(201, {...})`.
-- **Errors**: `raise HttpError(code, "message")`; the central handler renders
-  `{"error": {"code": <SYMBOL>, "message": ...}}`. Prefer `HttpError(404, …)`
-  over `get_object_or_404` so the 404 body matches the envelope (see finding F6).
-- Request/response bodies are `ninja.Schema` subclasses defined next to the
-  endpoint.
+The Django-Ninja REST API + JWT were removed (2026-10-14). The UI is server-rendered
+(`apps/mvp`, session auth) and calls the service layer directly; CSV export is the only
+HTTP data export. Do not add `/api/` endpoints.
 
 ### 3.1 Secrets over the API are write-only
 
@@ -286,8 +271,7 @@ fail the whole scan. Specifically:
 - Every tunable goes through `config("NAME", default=..., cast=...)` with a safe
   default; `DATABASE_URL` wins over `DB_*` parts.
 - **Fail-fast**: `_validate_secret_key` raises `ImproperlyConfigured` when
-  `DEBUG=False` and the key still starts with `django-insecure` (the same key
-  signs JWTs).
+  `DEBUG=False` and the key still starts with `django-insecure` .
 - Settings helpers (`_security_settings`, `_resolve_profile`) are **pure and
   return values**, then `globals().update(...)` — don't mutate settings globals
   inline.
