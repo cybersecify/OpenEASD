@@ -11,7 +11,6 @@
 /apps/                           @rathnakaragn
 /openeasd/                       @rathnakaragn
 /tests/                          @rathnakaragn
-/frontend/src/                   @rathnakaragn
 
 # CI and tool configuration
 /.github/workflows/              @rathnakaragn
@@ -19,8 +18,6 @@
 /docker-entrypoint.sh            @rathnakaragn
 /pyproject.toml                  @rathnakaragn
 /uv.lock                         @rathnakaragn
-/frontend/package.json           @rathnakaragn
-/frontend/package-lock.json      @rathnakaragn
 
 # ---------------------------------------------------------------------------
 # Strategy + community surfaces (shared — Rathnakar + Ashok)

@@ -115,7 +115,7 @@ class TestSecretKeyGuard:
 class TestSecretKeyGuardWiring:
     """The helper is unit-tested above, but nothing proved the guard is actually
     WIRED into settings import. Deleting the call would boot production with the
-    insecure default key (which also signs JWTs). Prove boot aborts, in a real
+    insecure default key (which also signs session cookies). Prove boot aborts, in a real
     subprocess (the in-process guard is skipped under pytest by design)."""
 
     def test_settings_import_aborts_on_insecure_key_in_production(self):

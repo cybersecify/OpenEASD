@@ -4,8 +4,6 @@ __pycache__/
 *.egg-info/
 .venv/
 
-# Node
-
 # Git
 .git/
 .gitignore
