@@ -8,6 +8,21 @@ commits to recover the reasoning.
 ## [Unreleased]
 
 ### Fixed
+- **cloud_enum timeout now degrades the scan to `partial` instead of wedging it.**
+  `apps/cloud_assets/collector.py` ran `cloud_enum` via `subprocess.run(capture_output=True,
+  timeout=1800)`. `cloud_enum` forks a worker process per cloud provider, and a
+  surviving grandchild holding the captured stdout pipe can make `subprocess.run`
+  block **past** its own timeout — `TimeoutExpired` fires internally but
+  `communicate()` never returns, so the scan step wedges and never surfaces the
+  timeout. The scan then sits `running` until the no-progress watchdog reaps it
+  (and, in the MSSP wrapper, the poller gave up first and recorded `failed`).
+  Fix: route `cloud_enum` through the existing `run_capped` helper (temp-file
+  redirect + process-group SIGKILL + `wait()` on the direct child — the same
+  anti-hang fix nuclei/nuclei_network already use), so the 30-min cap reliably
+  raises `ToolTimeout`. The runner records that as a failed step and the scan
+  finalizes **`partial` with a report** rather than hanging. **Why:** five
+  Passive·Deep scans had failed for days on `cloud_enum timed out after 1800s`;
+  a single passive tool timing out must not fail the whole scan.
 - **Postgres OOM + worker connection resilience (preprod outage).** A batch of
   Passive·Deep scans failed because `openeasd-postgres` was OOM-killed under
   concurrent scan load (1Gi limit, exit 137, killed 8×); each kill dropped every

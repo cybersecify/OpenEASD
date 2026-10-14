@@ -12,7 +12,7 @@ class TestCollect:
     def test_empty_keywords_returns_empty(self):
         assert collect([]) == []
 
-    @patch("apps.cloud_assets.collector.subprocess.run", side_effect=FileNotFoundError())
+    @patch("apps.cloud_assets.collector.run_capped", side_effect=FileNotFoundError())
     def test_missing_binary_raises(self, _run):
         # cloud_enum absent -> ToolBinaryMissing propagates (runner marks the scan
         # "partial"), instead of silently skipping and reading as a clean result.
@@ -20,19 +20,23 @@ class TestCollect:
         with pytest.raises(ToolBinaryMissing):
             collect(["example"])
 
-    @patch("apps.cloud_assets.collector.subprocess.run")
+    @patch("apps.cloud_assets.collector.run_capped")
     def test_nonzero_exit_returns_empty(self, mock_run):
         mock_run.return_value = MagicMock(returncode=1, stderr="error")
         assert collect(["example"]) == []
 
-    @patch("apps.cloud_assets.collector.subprocess.run")
+    @patch("apps.cloud_assets.collector.run_capped")
     def test_timeout_raises(self, mock_run):
+        # run_capped re-raises TimeoutExpired after killing the process group (so a
+        # forked cloud_enum worker can't wedge the call past the cap); the collector
+        # maps it to ToolTimeout, which the runner records as a failed step → the
+        # scan degrades to "partial" instead of hanging.
         from apps.core.engine.workflows.exceptions import ToolTimeout
         mock_run.side_effect = subprocess.TimeoutExpired("cloud_enum", 1800)
         with pytest.raises(ToolTimeout):
             collect(["example"])
 
-    @patch("apps.cloud_assets.collector.subprocess.run", return_value=MagicMock(returncode=0, stderr=""))
+    @patch("apps.cloud_assets.collector.run_capped", return_value=MagicMock(returncode=0, stderr=""))
     @patch("apps.cloud_assets.collector.os.path.exists", return_value=False)
     def test_missing_output_file_returns_empty(self, _exists, _run):
         assert collect(["example"]) == []
@@ -48,7 +52,7 @@ class TestCollect:
         mock_ntf.name = str(keywords_file)
 
         with patch("apps.cloud_assets.collector.tempfile.NamedTemporaryFile", return_value=mock_ntf), \
-             patch("apps.cloud_assets.collector.subprocess.run", return_value=MagicMock(returncode=0, stderr="")):
+             patch("apps.cloud_assets.collector.run_capped", return_value=MagicMock(returncode=0, stderr="")):
             result = collect(["example"])
 
         assert result == ["https://s3.amazonaws.com/example-backup"]
@@ -68,7 +72,7 @@ class TestCollect:
         mock_ntf.name = str(keywords_file)
 
         with patch("apps.cloud_assets.collector.tempfile.NamedTemporaryFile", return_value=mock_ntf), \
-             patch("apps.cloud_assets.collector.subprocess.run", return_value=MagicMock(returncode=0, stderr="")):
+             patch("apps.cloud_assets.collector.run_capped", return_value=MagicMock(returncode=0, stderr="")):
             result = collect(["example"])
 
         assert len(result) == 3
@@ -241,4 +245,22 @@ class TestScanner:
         with patch("apps.cloud_assets.scanner.collect",
                    side_effect=ToolBinaryMissing("cloud_enum binary not found")):
             with pytest.raises(ToolBinaryMissing):
+                run_cloud_assets(sess)
+
+    def test_timeout_propagates_not_swallowed(self):
+        # The cloud_enum 30-min cap: a ToolTimeout must propagate out of the
+        # scanner so the runner records a failed step → the scan finalizes
+        # "partial" (with a report), rather than being swallowed into a
+        # fake-clean 0 or left to wedge the worker.
+        from apps.core.data.assets.models import Subdomain
+        from apps.core.engine.workflows.exceptions import ToolTimeout
+
+        sess = self._session()
+        Subdomain.objects.create(
+            session=sess, domain="example.com",
+            subdomain="dev.example.com", source="subfinder",
+        )
+        with patch("apps.cloud_assets.scanner.collect",
+                   side_effect=ToolTimeout("cloud_enum timed out after 1800s")):
+            with pytest.raises(ToolTimeout):
                 run_cloud_assets(sess)
