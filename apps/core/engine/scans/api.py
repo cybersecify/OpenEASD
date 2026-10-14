@@ -10,7 +10,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 
-from ninja import Router, Schema, Status
+from ninja import Field, Router, Schema, Status
 from ninja.errors import HttpError
 
 from apps.core.console.api.auth import JWTAuth
@@ -74,7 +74,7 @@ def _schedule_recurring(domain, recurrence, recurrence_time):
     logger.info(f"Recurring scan scheduled: domain={domain} recurrence={recurrence} time={recurrence_time}")
 
 
-router = Router(auth=JWTAuth())
+router = Router(auth=JWTAuth(), tags=["Scans"])
 scheduled_router = Router(auth=JWTAuth())
 # Change-centric perspective (D-017): the scan-to-scan delta feed, mounted at
 # /api/changes/. Code lives here because ScanDelta is a scans-app model, but the
@@ -255,7 +255,7 @@ def _is_passive_only_scan(schedule_type: str, workflow, tools=None) -> bool:
 # Scans endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("/")
+@router.get("/",description="List scan sessions with optional domain and status filters.")
 def list_scans(request, domain: str = "", status: str = "", page: int = 1):
     qs = ScanSession.objects.all().order_by("-start_time")
     if domain:
@@ -279,19 +279,27 @@ def list_scans(request, domain: str = "", status: str = "", page: int = 1):
 
 
 class ScanStartRequest(Schema):
-    domain: str
-    schedule_type: str = "now"
-    workflow_id: int | None = None
+    domain: str = Field(..., example="example.com")
+    schedule_type: str = Field("now", example="now")
+    workflow_id: int | None = Field(None, example=1)
     # Optional tool subset (immediate scans only) — e.g. the tools of the
-    # categories a user ticked on the start form. Restricts the run to these
-    # tools over the resolved workflow; the auth gate is applied to this set.
+  # categories a user ticked on the start form. Restricts the run to these
+   # tools over the resolved workflow; the auth gate is applied to this set.
+    scheduled_at: str | None = Field(
+        None, example="2026-10-15T14:30:00+00:00"
+    )
     tools: list[str] | None = None
-    scheduled_at: str | None = None
-    recurrence: str = "daily"
-    recurrence_time: str = "00:00"
+    recurrence: str = Field("daily", example="daily")
+    recurrence_time: str = Field("00:00", example="02:30")
 
 
-@router.post("/start/", response={201: dict})
+
+@router.post(
+    "/start/",
+    response={201: dict},
+    description="Start a scan immediately or schedule it for a future time.",
+)
+
 def start_scan(request, data: ScanStartRequest):
     domain = data.domain.strip().lower()
     if not domain:
@@ -424,7 +432,12 @@ def list_deltas(request, domain: str = "", change_type: str = "", page: int = 1)
     }
 
 
-@router.get("/{session_uuid}/")
+
+@router.get(
+    "/{session_uuid}/",
+    description="Retrieve scan details and associated assets.",
+)
+
 def scan_detail(request, session_uuid: uuid.UUID):
     from apps.core.data.assets.models import IPAddress, Port, Subdomain
     from apps.core.data.findings.models import Finding
@@ -477,7 +490,12 @@ def scan_detail(request, session_uuid: uuid.UUID):
     }
 
 
-@router.get("/{session_uuid}/status/")
+
+@router.get(
+    "/{session_uuid}/status/",
+    description="Retrieve the current scan status and progress.",
+)
+
 def scan_status(request, session_uuid: uuid.UUID):
     from apps.core.data.assets.models import IPAddress, Port, Subdomain
     from apps.core.data.web_assets.models import URL
@@ -516,7 +534,12 @@ def scan_status(request, session_uuid: uuid.UUID):
     }
 
 
-@router.post("/{session_uuid}/stop/")
+
+@router.post(
+    "/{session_uuid}/stop/",
+    description="Stop a running scan session.",
+)
+
 def stop_scan(request, session_uuid: uuid.UUID):
     session = get_object_or_404(ScanSession, uuid=str(session_uuid))
     if session.status in ("pending", "running"):
@@ -527,7 +550,12 @@ def stop_scan(request, session_uuid: uuid.UUID):
     return {"status": session.status}
 
 
-@router.post("/{session_uuid}/delete/")
+
+@router.post(
+    "/{session_uuid}/delete/",
+    description="Delete a scan session.",
+)
+
 def delete_scan(request, session_uuid: uuid.UUID):
     session = get_object_or_404(ScanSession, uuid=str(session_uuid))
     if session.status in ("pending", "running"):
@@ -538,7 +566,12 @@ def delete_scan(request, session_uuid: uuid.UUID):
     return {"deleted": session_uuid}
 
 
-@router.post("/{session_uuid}/verify/")
+
+@router.post(
+    "/{session_uuid}/verify/",
+    description="Verify the results of a scan session.",
+)
+
 def verify_scan(request, session_uuid: uuid.UUID):
     """Re-run deterministic verification over this scan's findings on demand.
 
@@ -570,7 +603,11 @@ class SubScanRequest(Schema):
     tools: list[str]
 
 
-@router.post("/{session_uuid}/subscan/")
+
+@router.post(
+    "/{session_uuid}/subscan/",
+    description="Start a targeted scan using selected tools.",
+)
 def start_subscan(request, session_uuid: uuid.UUID, data: SubScanRequest):
     from apps.core.engine.scans.pipeline import create_subscan_session
     from apps.core.engine.scans.tasks import run_scan_task
