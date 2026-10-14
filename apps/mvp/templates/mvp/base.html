@@ -7,8 +7,10 @@
   <title>{% block title %}OpenEASD{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'mvp/bulma.min.css' %}">
   <style>
-    /* --- Project dark palette, forced onto Bulma's dark theme --- */
-    :root { --bg:#0f1115; --panel:#171a21; --line:#272c36; --fg:#e6e8ec; --muted:#9aa3b2;
+    /* --- Project dark palette (matches the former React app: GitHub-dark chrome
+       + the #30c074 green accent) forced onto Bulma's dark theme --- */
+    :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#e6e8ec; --muted:#9aa3b2;
+            --accent:#30c074;
             --crit:#ff5370; --high:#ff8f40; --med:#ffcb6b; --low:#79b8ff; --info:#6b7280; --ok:#63d2a2; }
     :root[data-theme="dark"] {
       --bulma-body-background-color:var(--bg);
@@ -22,9 +24,9 @@
       --bulma-text:var(--fg);
       --bulma-text-strong:#ffffff;
       --bulma-text-weak:var(--muted);
-      /* link / primary ≈ #79b8ff */
-      --bulma-link-h:211deg; --bulma-link-s:100%; --bulma-link-l:74%;
-      --bulma-primary-h:211deg; --bulma-primary-s:100%; --bulma-primary-l:74%;
+      /* link / primary = the React app's green accent #30c074 (hsl 148,60%,47%) */
+      --bulma-link-h:148deg; --bulma-link-s:60%; --bulma-link-l:47%;
+      --bulma-primary-h:148deg; --bulma-primary-s:60%; --bulma-primary-l:47%;
     }
     /* Element-level enforcement — guarantees the palette regardless of Bulma internals. */
     body { background-color:var(--bg); color:var(--fg); }
@@ -37,7 +39,7 @@
     .input::placeholder, .textarea::placeholder { color:var(--info); }
     .navbar, .navbar-menu, .navbar-item { background-color:var(--bg); color:var(--fg); }
     .navbar { border-bottom:1px solid var(--line); }
-    a { color:var(--low); }
+    a { color:var(--accent); }
 
     /* --- Layout --- */
     main.container { max-width:1100px; padding:1.4rem 16px 3rem; }
