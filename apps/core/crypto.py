@@ -8,8 +8,8 @@ with no new required configuration.
 
 Trade-off (documented): rotating `SECRET_KEY` without setting an explicit
 `FIELD_ENCRYPTION_KEY` makes previously-encrypted secrets unreadable — the
-operator must re-enter them. Rotating `SECRET_KEY` already invalidates sessions
-and JWTs, so this is consistent with the existing key-rotation story. Set
+operator must re-enter them. Rotating `SECRET_KEY` already invalidates sessions,
+so this is consistent with the existing key-rotation story. Set
 `FIELD_ENCRYPTION_KEY` to decouple the two.
 
 Fernet uses a random IV per call, so ciphertext is non-deterministic — these

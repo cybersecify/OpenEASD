@@ -38,8 +38,8 @@ def _validate_secret_key(secret_key: str, debug: bool) -> None:
         raise ImproperlyConfigured(
             "SECRET_KEY is unset or still the insecure default while DEBUG=False. "
             "Generate one with `openssl rand -hex 32` and set it via the SECRET_KEY "
-            "environment variable. This key also signs JWT access/refresh tokens, so "
-            "the default value allows anyone to forge authentication tokens."
+            "environment variable. This key also signs session cookies and CSRF "
+            "tokens, so the default value allows anyone to forge an authenticated session."
         )
 
 
@@ -283,9 +283,6 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Scan schedule (24h clock, uses TIME_ZONE above)
 SCAN_DAILY_HOUR = config("SCAN_DAILY_HOUR", default=2, cast=int)
 SCAN_DAILY_MINUTE = config("SCAN_DAILY_MINUTE", default=0, cast=int)
-
-# Set to False on extra gunicorn workers so only one process runs the scheduler
-SCHEDULER_ENABLED = config("SCHEDULER_ENABLED", default=True, cast=bool)
 
 # Master switch for unattended scanning (daily scan + per-domain monitoring).
 # Default True preserves self-hosted behaviour. Set False for a manual-only
