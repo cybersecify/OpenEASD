@@ -20,6 +20,13 @@ commits to recover the reasoning.
   `apps/core/console/api/` package and per-app `api.py` routers are gone. **Why:** the
   server-rendered UI uses session auth and the service layer directly.
 - **`dbos` pinned `>=2.31.1,<3`.** 2.31.0 guarded module-level `Queue()` construction.
+- **CI publishes a single image to GHCR: `ghcr.io/cybersecify/openeasd`** (built
+  from the Dockerfile `singleimage` target), replacing the former two-image
+  `openeasd-web` + `openeasd-worker` publish matrix. Tags on a `v*` release:
+  `:vX.Y.Z`, the floating `:vX.Y`, and `:latest` on `main`. **Why:** the single
+  image is the primary MVP deploy; the 3-tier `web`/`worker` images are no longer
+  pushed to GHCR — build them locally from the Dockerfile `web`/`worker` targets if
+  you run the 3-tier compose/k8s path.
 
 ### Removed
 - **API teardown completed.** JWT token-blacklist app (`ninja_jwt.token_blacklist`), the
