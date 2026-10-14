@@ -1,15 +1,22 @@
-# Plain-Django UI + single-image deployment (drop SPA, Ninja/JWT, DBOS & Postgres)
+# Plain-Django UI + single-image deployment (drop SPA + Ninja/JWT; keep DBOS + Postgres)
 
 **Status:** Draft (spec) — 2026-10-14
-**Supersedes:** (1) the React SPA + Django-Ninja REST API + JWT auth as OpenEASD's UI/edge;
-(2) **DBOS durable workflows on PostgreSQL** as the execution/scheduling engine.
+**Supersedes:** the React SPA + Django-Ninja REST API + JWT auth as OpenEASD's UI/edge.
 **Reference implementation:** `AmazonSP` (sibling repo on the same scan engine) already
 made the UI move — `apps/mvp` (plain Django + vendored Bulma + vendored HTMX, Ninja/JWT/SPA
-removed). This spec ports that pattern back into OpenEASD at a **basic** scope **and** adds a
-single-container, no-Postgres deployment: **SQLite + Django-Q2** replace Postgres + DBOS.
+removed). This spec ports that pattern back into OpenEASD at a **basic** scope **and** packages
+the app as a **single Docker image** that bundles PostgreSQL internally.
 
-> **Note:** AmazonSP kept Postgres + DBOS. The DB/engine change below is OpenEASD-specific —
-> chosen so the MVP ships as **one Docker image with no external database**.
+> **DB/engine decision (Option A):** DBOS durable workflows on PostgreSQL are **retained
+> unchanged**. The "single image, no external DB" goal is met by **embedding Postgres inside
+> the one container** (like GitLab-Omnibus / Supabase all-in-one), not by swapping to SQLite.
+> A SQLite + Django-Q2 rewrite was considered and rejected: the runner writes
+> `WorkflowStepResult`/`Finding` rows from *concurrent tool threads* (its phase-parallelism
+> relies on Postgres handling concurrent writers), which SQLite's single-writer lock would
+> turn into `database is locked` in the scan hot path — and it would mean ripping out and
+> rewriting the hardened, tested DBOS execution + scheduling layer. Embedding Postgres keeps
+> every engine guarantee (durable resume, concurrency, the H-series watchdogs) for ~a day of
+> packaging work and zero app-code risk.
 
 ---
 
@@ -25,12 +32,11 @@ Scope is deliberately **basic**: the daily-driver pages only. Advanced surfaces 
 Changes, Workflows CRUD, Insights, Notifications, Credentials/BYOK, AI) are deferred and
 remain fully functional via environment variables + Django admin. **No PDF generation.**
 
-The deployment target is a **single Docker image with no external database**: the app data +
-task queue live in **SQLite** (WAL), and **Django-Q2** (ORM broker) replaces DBOS for task
-execution + scheduling. One container runs `gunicorn` + one `qcluster` worker. This trades
-away DBOS's durable mid-scan resume and real write-concurrency (SQLite is single-writer, so
-scans serialize) — both acceptable for a single-admin, single-box tool, and the stuck-scan
-watchdog still reaps a crashed scan.
+The deployment target is a **single Docker image with no external database container**:
+PostgreSQL is **bundled inside** the image and started by the entrypoint alongside `gunicorn`
+and `dbos_worker`. DBOS + Postgres (durable resume, concurrency, the H-series watchdogs) are
+retained exactly as today; only the *packaging* collapses from 3 containers to 1. `pgdata`
+lives on a mounted volume so scan history survives container replacement.
 
 ## 2. Motivation
 
@@ -100,11 +106,9 @@ reimplemented server-side): Passive Scan Light, Passive Scan Deep, Active Light,
   remove `frontend` from any `needs:`. The `publish` job already does **not** need it.
 - **Docker** (`Dockerfile`): remove the `frontend-builder` node stage and the
   `COPY --from=frontend-builder .../dist/` line.
-- **DBOS + Postgres:** remove the `apps/core/engine/durable/` DBOS module (the `run_scan`
-  workflow, `@DBOS.step` phase wrappers, `@durable_task`, the `@DBOS.scheduled` crons, the
-  DBOS queue/client), the `dbos` dependency, all `DBOS_*` settings + the `dbos` LOGGING
-  entry, and the Postgres `DATABASES` branch. Replace with SQLite + Django-Q2 (§4.6). The
-  3-tier docker-compose / k8s manifests collapse to the single-image model (§4.7).
+
+**Not removed:** DBOS, PostgreSQL, the scan engine, the scheduler/watchdogs — all retained
+unchanged (see the DB/engine decision in the header and §4.6).
 
 ### 3.3 Out of scope — deferred to a later pass (v2)
 
@@ -194,80 +198,59 @@ urlpatterns = [
 `/api/version/latest/` update-check and the SPA `BuildInfo` footer are dropped; build
 provenance can surface as a muted footer in `base.html` reading `settings.OPENEASD_*`.
 
-### 4.6 Execution & scheduling — DBOS/Postgres → Django-Q2/SQLite
+### 4.6 Single-image deployment — embedded Postgres, DBOS retained
 
-**Why Django-Q2 (not Huey/Celery):** the repo already ran on Django-Q2 before the DBOS
-migration (`test_qcluster_config.py` and the `reap_stuck_scans`/scheduler callables survive),
-its **ORM broker** uses the Django DB itself as the queue (no Redis, no Postgres — works on
-SQLite), and its **DB-backed `Schedule` model is visible/editable in Django admin**, which
-maps the system crons cleanly.
+The scan engine, DBOS durable workflows, the `@DBOS.scheduled` crons, and the Postgres schema
+are **unchanged**. Only the *packaging* changes: 3 containers → 1.
 
-**The execution path already exists un-DBOS'd.** `run_scan(session_id)` →
-`_run_via_workflow` → `run_workflow(run_id)` already runs every phase **in-process,
-synchronously** (the runner catches a failing tool → `partial`); the DBOS layer is only a
-checkpointing *wrapper* (`apps/core/engine/durable/workflows.py` calls the same
-`run_one_phase_group`/`finalize` internals via `@DBOS.step`s). So the swap is mostly
-**re-pointing the enqueue adapter**, not rewriting the engine:
+- **One image, one container, three processes.** The entrypoint starts **PostgreSQL**
+  (init the cluster on first run, then `pg_ctl start` against the mounted `pgdata`), waits
+  for it to accept connections, runs `migrate` + `collectstatic` + first-run admin, then
+  launches **`gunicorn openeasd.wsgi`** and **`python manage.py dbos_worker`**. A small
+  process supervisor (`supervisord`/`honcho`, or a shell entrypoint with proper ordering and
+  signal forwarding) keeps all three up and shuts them down cleanly. Postgres must be ready
+  **before** the worker/web start (the role-aware entrypoint's existing DB-wait logic is
+  reused, just pointed at `127.0.0.1`).
+- **Postgres inside the image.** Install `postgresql` in the (Ubuntu-based) worker image —
+  the single image already carries the scanner matrix + `NET_RAW`, so it is the natural base.
+  `DB_HOST=127.0.0.1`, `DB_PORT=5432`, local socket. The DBOS `dbos` schema lives in the same
+  local DB as today. `DATABASE_URL`/`DB_*` still override, so pointing at an **external**
+  Postgres (the classic 3-tier deploy) remains possible — single-image is a packaging option,
+  not a lock-in.
+- **`pgdata` on a mounted volume.** `/var/lib/postgresql/data` (or `/data/pgdata`) must be a
+  Docker volume / k8s PVC, or scan history is lost on container replacement. The entrypoint
+  detects an empty volume and runs `initdb` + creates the role/db from `DB_*` on first boot.
+- **Privilege-separation tradeoff (named).** Collapsing web+worker puts `NET_RAW` + offensive
+  tooling on the same process group as the internet-facing web listener — the 3-tier model
+  kept them apart. Acceptable for a single-admin internal tool; documented in OPERATIONS as
+  the explicit cost of the single-image convenience. Teams that want the separation keep the
+  existing multi-container compose/k8s path (both ship).
+- **Concurrency unchanged:** real Postgres keeps `DBOS_SCAN_CONCURRENCY` and the runner's
+  phase-parallel concurrent writers working — no serialization, no `database is locked`.
+- **RAM:** Postgres adds ~150–300 MB on top of the engine's floor; keep the 2 GB-min / 4 GB-
+  recommended guidance (Postgres memory is already sized by `k8s/postgres.yaml`'s rationale).
 
-- **Task adapter (H6 seam):** `apps/core/engine/scans/tasks.py::run_scan_task(session_id)`
-  changes from "enqueue the DBOS `run_scan` workflow" to `async_task("apps.core.engine.
-  scans.pipeline.run_scan", session_id)` (Django-Q2). `run_scan` runs the full pipeline
-  synchronously in the `qcluster` worker — one task per scan, **no per-phase checkpoint/
-  resume**. The `@durable_task` decorator (ai_triage, agent_step) is reimplemented as a thin
-  `async_task` wrapper so callers are unchanged (AI stays dormant in v1 anyway).
-- **Schedules:** the four/five `@DBOS.scheduled` crons (daily scan, monitoring sweep,
-  user-schedule sweep, **stuck-scan watchdog**, token purge, scan-prune) become Django-Q2
-  `Schedule` rows seeded by a data migration (type `CRON`), dispatching the **existing**
-  scheduler callables (`daily_scan`, `run_due_monitoring_scans`, `run_due_user_scans`,
-  `reap_stuck_scans`, `purge_expired_blacklisted_tokens`, `prune_old_scans`). The
-  `SCHEDULED_SCANS_ENABLED` master switch is preserved by gating at the callable (as today).
-- **`Q_CLUSTER` config** (settings): `{"name": "openeasd", "orm": "default",
-  "workers": <1–2>, "timeout": <SCAN_TASK_TIMEOUT-ish>, "retry": <timeout+buffer>,
-  "catch_up": False, "poll": 2, "save_limit": …, "sync": False}`. `orm: "default"` = SQLite
-  broker. `catch_up False` so a downtime doesn't stampede missed crons.
-- **Concurrency:** one scan at a time in practice (SQLite single-writer + modest workers).
-  `DBOS_SCAN_CONCURRENCY` is retired; a per-domain active-scan guard still prevents double
-  runs. **No durable resume** — a worker crash fails the in-flight task; `reap_stuck_scans`
-  (now a Django-Q schedule) flips it to `failed`/`partial` and frees it.
-- **Idempotency note:** the runner's resume-dedup logic (delete-stale-findings-before-rerun,
-  F1b/H5) becomes mostly moot without checkpointed resume, but is harmless to keep — a
-  Django-Q `retry` of a failed whole-scan task re-enters `run_workflow`, which still
-  delete-then-inserts per tool, so a retry converges rather than duplicating.
+### 4.7 Compose / k8s shape
 
-### 4.7 Single-image, no-Postgres deployment
-
-- **One image, one container.** The role split (web/worker) collapses: the entrypoint runs
-  `migrate` then launches **both** `gunicorn openeasd.wsgi` and `python manage.py qcluster`
-  in the same container (via `honcho`/a small supervisor, or `qcluster` backgrounded). The
-  worker still needs `NET_RAW` for nmap/naabu, so the single image carries the scanner matrix
-  (the privilege-separation of the 3-tier model is traded for simplicity — a conscious MVP
-  choice, documented).
-- **SQLite file on a volume.** `DATABASES["default"]` = `django.db.backends.sqlite3`, `NAME`
-  pointing at a path under a mounted volume (e.g. `/data/openeasd.sqlite3`) so scan history
-  survives container replacement. **WAL mode + busy timeout** set via a `connection_created`
-  signal (`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=20000; PRAGMA synchronous=NORMAL;`).
-- **docker-compose / k8s:** the Postgres service + the separate worker Deployment/StatefulSet
-  are removed; a single Deployment (or `docker run`) with a PVC for `/data`. `test_k8s_
-  manifests.py` is rewritten for the single-workload shape (or dropped if k8s is out of MVP
-  scope — decide in the plan).
-- **RAM profile unchanged:** `OPENEASD_PROFILE` still tunes nuclei/amass; a 1–2 GB box with
-  swap is still the floor.
+- **Docker:** a single-image **`docker run`** with a `pgdata` volume + a `logs` volume is the
+  MVP's primary path. The existing 3-service `docker-compose.yml` is **kept** as the "external
+  Postgres / privilege-separated" alternative.
+- **k8s:** the single-image path is one Deployment with a PVC for `pgdata` (plus the probe
+  Host header handling already documented). The existing 3-tier manifests stay as the
+  scalable alternative. `test_k8s_manifests.py` is extended (not replaced) if a single-image
+  manifest is added; whether k8s is in MVP scope at all is a plan-time call.
 
 ## 5. Settings changes (`openeasd/settings/base.py`)
 
-- `INSTALLED_APPS`: add `"apps.mvp"` and `"django_q"`; remove `ninja`/`ninja_jwt`/
-  `rest_framework_simplejwt` and `"apps.core.engine.durable"`.
+- `INSTALLED_APPS`: add `"apps.mvp"`; remove `ninja`/`ninja_jwt`/`rest_framework_simplejwt`
+  (and the api app if it is listed). **DBOS / Postgres / scheduler settings are unchanged.**
 - Add `LOGIN_URL = "/login/"`, `LOGIN_REDIRECT_URL = "/"`.
-- Remove the ninja-jwt / simplejwt token configuration block and every `DBOS_*` setting + the
-  `dbos` LOGGING handler.
-- `DATABASES`: replace the Postgres branch with SQLite (`ENGINE: sqlite3`, `NAME` on the
-  `/data` volume). Keep the `DATABASE_URL` escape hatch for anyone who *does* want Postgres.
-- Add the `Q_CLUSTER` dict (§4.6) with `orm: "default"`.
-- Add a `connection_created` signal that issues the WAL/busy_timeout PRAGMAs for SQLite.
+- Remove the ninja-jwt / simplejwt token configuration block.
+- `DATABASES` unchanged (Postgres, with the `DATABASE_URL`/`DB_*` config). The single-image
+  deploy just sets `DB_HOST=127.0.0.1` against the bundled instance.
 - `ROOT_URLCONF` unchanged (`openeasd.urls`), but the file is rewritten per §4.5.
 - WhiteNoise/static still serve `static/mvp/*` (collectstatic picks up the app's static dir);
   `frontend/dist` is no longer collected.
-- **Dependencies:** add `django-q2`; remove `dbos` (and the Postgres-only extras if any).
 
 ## 6. Testing strategy
 
@@ -286,42 +269,29 @@ suite with **Django test-client view tests** under `tests/unit/test_mvp_views.py
 - CSV export returns `text/csv` under session auth; the PDF route is **gone** (404/absent).
 - Manifest/CI drift: a test asserting `frontend/` is not referenced by CI/Docker is optional.
 
-**Engine/DB swap tests:**
-- Scans run end-to-end on **SQLite** via Django-Q2 in **sync mode** (`Q_CLUSTER["sync"]=True`
-  under pytest, as the old Django-Q tests did) — a scan reaches a terminal status and writes
-  findings with no Postgres/DBOS present.
-- A failing tool still yields `partial` (the runner path is unchanged — the cloud_enum fix
-  and `test_workflow_runner` partial tests stay green).
-- The seeded Django-Q `Schedule` rows exist for the system crons and dispatch the right
-  callables; `SCHEDULED_SCANS_ENABLED=False` makes the scan crons no-op.
-- `reap_stuck_scans` still flips a stale running/pending scan to terminal (ported from
-  `test_scheduler.py`).
-- The CI `postgres:17-alpine` **service container is removed**; tests run against SQLite.
-
-Keep every existing **engine/tool/pipeline** test green (they do not touch the UI). The DBOS-
-specific tests (`test_durable_task.py`, `test_watchdog_reconcile.py`'s DBOS-cancel assertions,
-`test_orphan_reaper.py`, `test_qcluster_config.py`'s DBOS invariants) are removed or rewritten
-for Django-Q2. The coverage gate (`--cov-fail-under=80`) is re-evaluated after the API + DBOS
-code is removed.
+Keep every existing **engine/tool/pipeline/DBOS/scheduler** test green — the engine and its
+Postgres/DBOS layer are untouched, so `test_workflow_runner`, `test_durable_task`,
+`test_scheduler`, the watchdog/reaper suites, and the CI `postgres:17-alpine` service all
+stay. Only the UI edge changes. The coverage gate (`--cov-fail-under=80`) is re-evaluated
+after the API code is removed (removing well-tested API code can move the percentage).
 
 ## 7. Cutover / sequencing
 
-The two subsystems (UI and DB/engine) are **largely independent** — do the engine swap first
-so the UI is built against the final stack:
+The UI port and the single-image packaging are independent; the engine is untouched, so there
+is no engine-swap step.
 
-1. **DB/engine swap:** SQLite (WAL) + Django-Q2 (ORM broker). Re-point `run_scan_task` to
-   `async_task`; reimplement `@durable_task` as an `async_task` wrapper; seed the system-cron
-   `Schedule` rows (data migration); remove `apps/core/engine/durable/` + DBOS deps/settings.
-   Get a scan running green on SQLite (sync mode under tests).
-2. Scaffold `apps/mvp` (app + base template + vendored Bulma/HTMX + auth wiring); `/login/`
-   + `/` (dashboard) render against the live engine.
-3. Port the scan flow (start → detail → HTMX progress → cancel → CSV) — the core value.
-4. Port domains (list/add/authorize/monitor/delete) + scans history.
-5. Rewrite `openeasd/urls.py`; remove the SPA catch-all. Remove the Ninja API + JWT + PDF;
-   drop deps; `uv lock`; trim CI (frontend job + postgres service) + Dockerfile.
-6. Single-image entrypoint (gunicorn + qcluster) + SQLite volume; collapse compose/k8s.
-7. Swap tests (view + SQLite/Q2 tests in; API/Vitest/DBOS out); re-check the coverage gate.
-8. Update docs (`CLAUDE.md` Stack/URL-layout/Status/Deployment, the `03-system`/`05-api`/
+1. Scaffold `apps/mvp` (app + base template + vendored Bulma/HTMX + auth wiring); `/login/`
+   + `/` (dashboard) render against the live engine (Postgres + DBOS as-is).
+2. Port the scan flow (start → detail → HTMX progress → cancel → CSV) — the core value.
+3. Port domains (list/add/authorize/monitor/delete) + scans history.
+4. Rewrite `openeasd/urls.py`; remove the SPA catch-all. Remove the Ninja API + JWT + PDF;
+   drop deps (`django-ninja`, `django-ninja-jwt`, `weasyprint`, maybe `pyjwt`); `uv lock`;
+   trim CI (frontend job) + Dockerfile (frontend-builder stage). Keep the CI Postgres service.
+5. Swap tests (view tests in; API + Vitest out); re-check the coverage gate.
+6. **Single-image packaging:** embed Postgres in the image + a supervised entrypoint
+   (Postgres → migrate → gunicorn + dbos_worker) + `pgdata` volume. Keep the 3-service
+   compose as the external-Postgres alternative.
+7. Update docs (`CLAUDE.md` Stack/URL-layout/Status/Deployment, the `03-system`/`05-api`/
    `06-coding` layers, `CHANGELOG.md`) + the `feedback_backend_first_frontend_last` memory.
 
 Each numbered step is independently testable and lands as its own commit on `dev`.
@@ -338,22 +308,24 @@ Each numbered step is independently testable and lands as its own commit on `dev
   cover it with a test so the first-run security flow can't silently regress.
 - **CSV auth change:** report CSV becomes session-only (no Bearer). Acceptable — the only
   consumer was the SPA.
-- **SQLite `database is locked`:** `qcluster` polling + web writes contend on SQLite's single
-  writer. Mitigation: WAL + `busy_timeout=20000` + `synchronous=NORMAL`, 1–2 workers, `poll:2`.
-  For single-user throughput this is sufficient; if it bites, the `DATABASE_URL` escape hatch
-  restores Postgres without code changes.
-- **No durable mid-scan resume:** a crash loses the in-flight scan (vs. DBOS checkpoint/
-  resume). `reap_stuck_scans` flips it terminal and frees the domain; the user re-runs. Named
-  as an accepted MVP tradeoff, not a regression to fix.
-- **Scans serialize:** SQLite has no write concurrency, so concurrent scans effectively
-  queue. Fine for a single admin; documented so it isn't mistaken for a bug.
+- **Single-image privilege loss:** web + worker (NET_RAW + offensive tooling) share one
+  container. Named and accepted for the single-admin MVP; the 3-service compose/k8s path
+  stays for anyone who wants the separation.
+- **`pgdata` volume required:** an un-mounted single-image container loses scan history on
+  replacement. The entrypoint must fail loudly (or clearly warn) if `pgdata` is ephemeral,
+  and OPERATIONS must call out the volume as mandatory.
+- **Two stateful processes in one container:** Postgres + app complicate restart/health
+  semantics vs. a single process. Mitigation: a real supervisor with ordered startup, health
+  gating (don't start web/worker until `pg_isready`), and signal forwarding for clean shutdown.
 
 ## 9. Not changing
 
-The scan engine itself — the **30 tools / 13 phases**, the `run_workflow` runner and its
-`partial`/coverage semantics (incl. the cloud_enum `run_capped` fix), the Finding/Issue/Asset
-models + rollups, verification, the AI backend (dormant without consent), CSV export,
-`/health/` + `/metrics/`, the `docker-entrypoint.sh` first-run admin flow, and the
-`OPENEASD_PROFILE` RAM tuning. **What changes is the layer around the engine:** DBOS→Django-Q2
-(execution + scheduling), Postgres→SQLite (storage + broker), 3-tier→single-image
-(deployment), and SPA+Ninja/JWT→plain-Django+session (UI/edge).
+The entire scan + execution + storage core is **retained unchanged**: the **30 tools / 13
+phases**, the `run_workflow` runner and its `partial`/coverage semantics (incl. the cloud_enum
+`run_capped` fix), **DBOS durable workflows + the `@scheduled` crons + the H-series
+watchdogs**, **PostgreSQL** (+ the `dbos` schema), `DBOS_SCAN_CONCURRENCY` and the runner's
+phase-parallel concurrent writers, the Finding/Issue/Asset models + rollups, verification, the
+AI backend (dormant without consent), CSV export, `/health/` + `/metrics/`, the
+`docker-entrypoint.sh` first-run admin flow, and the `OPENEASD_PROFILE` RAM tuning. **What
+changes is only the edge:** SPA + Ninja/JWT → plain-Django + session (UI), PDF removed, and
+3-tier → single-image *packaging* (Postgres embedded, not replaced).
