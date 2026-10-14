@@ -251,3 +251,49 @@ class TestScans:
         body = client.get("/app/scans/?domain=other.org").content.decode()
         assert str(self.c.uuid) in body
         assert str(self.a.uuid) not in body and str(self.b.uuid) not in body
+
+
+@pytest.mark.django_db
+class TestChangePassword:
+    def _flagged(self, client, flag=True):
+        from apps.core.console.dashboard.models import UserProfile
+
+        u = User.objects.create_user("admin", password="pw12345!")
+        UserProfile.objects.update_or_create(user=u, defaults={"must_change_password": flag})
+        client.login(username="admin", password="pw12345!")
+        return u
+
+    def test_flagged_user_redirected(self, client):
+        self._flagged(client)
+        resp = client.get("/app/")
+        assert resp.status_code == 302 and resp["Location"] == "/app/change-password/"
+
+    def test_page_reachable_while_flagged(self, client):
+        self._flagged(client)
+        assert client.get("/app/change-password/").status_code == 200
+
+    def test_valid_change_clears_flag(self, client):
+        u = self._flagged(client)
+        resp = client.post(
+            "/app/change-password/",
+            {"old_password": "pw12345!", "new_password1": "Xk9#mQ2vLp77", "new_password2": "Xk9#mQ2vLp77"},
+        )
+        assert resp.status_code == 302
+        u.profile.refresh_from_db()
+        assert u.profile.must_change_password is False
+        assert client.get("/app/").status_code == 200
+
+    def test_overlong_password_rejected(self, client):
+        u = self._flagged(client)
+        long_pw = "aB3$" * 40
+        resp = client.post(
+            "/app/change-password/",
+            {"old_password": "pw12345!", "new_password1": long_pw, "new_password2": long_pw},
+        )
+        assert resp.status_code == 200
+        u.profile.refresh_from_db()
+        assert u.profile.must_change_password is True
+
+    def test_unflagged_user_passes(self, client):
+        self._flagged(client, flag=False)
+        assert client.get("/app/").status_code == 200

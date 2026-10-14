@@ -2,7 +2,9 @@ import logging
 import re
 
 from django.contrib import messages
+from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import PasswordChangeForm
 from django.db import transaction
 from django.core.paginator import Paginator
 from django.db.models import Count
@@ -368,3 +370,27 @@ def scans(request):
         "status_filter": status,
         "status_choices": ScanSession.STATUS_CHOICES,
     })
+
+
+@login_required
+def change_password(request):
+    if request.method == "POST":
+        form = PasswordChangeForm(request.user, request.POST)
+        if len(request.POST.get("new_password1", "")) > 128:
+            form.is_bound = True
+            form.full_clean()
+            form.add_error("new_password1", "Password must be at most 128 characters.")
+        elif form.is_valid():
+            user = form.save()
+            try:
+                profile = user.profile
+                profile.must_change_password = False
+                profile.save(update_fields=["must_change_password"])
+            except Exception:
+                logger.debug("no profile to clear must_change_password", exc_info=True)
+            update_session_auth_hash(request, user)
+            messages.success(request, "Password changed.")
+            return redirect("mvp:dashboard")
+    else:
+        form = PasswordChangeForm(request.user)
+    return render(request, "mvp/change_password.html", {"form": form})

@@ -6,6 +6,7 @@ app_name = "mvp"
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("change-password/", views.change_password, name="change-password"),
     path("activity/", views.dashboard_activity, name="activity"),
     path("domains/", views.domains, name="domains"),
     path("domains/add/", views.domain_create, name="domain-create"),
