@@ -10,8 +10,6 @@ Covers:
 """
 
 import pytest
-from django.contrib.auth.models import User
-from django.test import Client
 from django.utils import timezone
 
 from apps.core.console.insights.scoring import (
@@ -182,78 +180,3 @@ class TestBuilderPopulatesExposure:
         assert summary.exposure_score == 100
         assert summary.exposure_grade == "F"
 
-
-# ---------------------------------------------------------------------------
-# API — insights + dashboard expose the fields
-# ---------------------------------------------------------------------------
-
-@pytest.fixture
-def api_client(db):
-    from ninja_jwt.tokens import RefreshToken
-    user = User.objects.create_user("expuser", password="x")
-    token = str(RefreshToken.for_user(user).access_token)
-    c = Client()
-    c.defaults["HTTP_AUTHORIZATION"] = f"Bearer {token}"
-    return c
-
-
-def _domain_and_summary(domain, score, when, critical=0, high=0):
-    from apps.core.data.domains.models import Domain
-    from apps.core.engine.scans.models import ScanSession
-    from apps.core.console.insights.models import ScanSummary
-    from apps.core.console.insights.scoring import grade_for_score
-
-    Domain.objects.get_or_create(name=domain, defaults={"is_active": True})
-    session = ScanSession.objects.create(
-        domain=domain, scan_type="full", status="completed", end_time=when,
-    )
-    return ScanSummary.objects.create(
-        session=session, domain=domain, scan_date=when,
-        critical_count=critical, high_count=high, total_findings=critical + high,
-        exposure_score=score, exposure_grade=grade_for_score(score),
-    )
-
-
-@pytest.mark.django_db
-class TestInsightsAPIExposure:
-    def test_scan_trend_entries_carry_exposure(self, api_client):
-        now = timezone.now()
-        _domain_and_summary("a.example.com", 41, now, critical=1, high=2)
-        resp = api_client.get("/api/insights/")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["scan_trend"]
-        entry = data["scan_trend"][-1]
-        assert entry["exposure_score"] == 41
-        assert entry["exposure_grade"] == "C"
-
-    def test_top_level_exposure_trend_up(self, api_client):
-        import datetime
-        base = timezone.now()
-        # older scan of same domain, then newer with a higher (worse) score
-        _domain_and_summary("b.example.com", 20, base - datetime.timedelta(days=1))
-        _domain_and_summary("b.example.com", 55, base)
-        resp = api_client.get("/api/insights/")
-        exposure = resp.json()["exposure"]
-        assert exposure["domain"] == "b.example.com"
-        assert exposure["score"] == 55
-        assert exposure["previous_score"] == 20
-        assert exposure["direction"] == "up"
-        assert exposure["change"] == 35
-
-    def test_exposure_none_when_no_summaries(self, api_client):
-        from apps.core.data.domains.models import Domain
-        Domain.objects.create(name="empty.example.com", is_active=True)
-        resp = api_client.get("/api/insights/")
-        assert resp.json()["exposure"] is None
-
-
-@pytest.mark.django_db
-class TestDashboardAPIExposure:
-    def test_domain_status_carries_exposure(self, api_client):
-        now = timezone.now()
-        _domain_and_summary("d.example.com", 41, now, critical=1, high=2)
-        resp = api_client.get("/api/dashboard/")
-        assert resp.status_code == 200
-        statuses = {s["domain"]: s for s in resp.json()["domain_status"]}
-        assert statuses["d.example.com"]["exposure_score"] == 41

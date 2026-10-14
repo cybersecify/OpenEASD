@@ -8,8 +8,6 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect
 from django.urls import path, include, re_path
 
-from apps.core.console.api.ninja import api
-
 
 def metrics(request):
     """Prometheus metrics (H2). Unauthenticated (counts only, no finding detail) and
@@ -52,10 +50,9 @@ urlpatterns = [
     path("favicon.ico", favicon),
     path("metrics/", metrics),
     path("admin/", admin.site.urls),
-    path("api/", api.urls),  # dormant: kept routed, unused by the UI (Option B deferral)
     path("reports/", include("apps.core.console.reports.urls")),
     path("login/", auth_views.LoginView.as_view(), name="login"),
     path("logout/", auth_views.LogoutView.as_view(next_page="login"), name="logout"),
     path("", include("apps.mvp.urls")),
-    re_path(r"^(?!api/|admin|static/|media/|metrics/|reports/|login/|logout/).*$", catch_all),
+    re_path(r"^(?!admin|static/|media/|metrics/|reports/|login/|logout/).*$", catch_all),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

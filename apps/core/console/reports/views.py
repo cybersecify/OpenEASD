@@ -5,7 +5,6 @@ import functools
 import logging
 
 from django.conf import settings
-from django.contrib.auth.models import User
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 
@@ -104,23 +103,13 @@ def _parse_min_severity(request):
 
 
 def _report_auth_required(view_func):
-    """Accept auth in this order:
+    """Require a Django session (the server-rendered mvp UI is session-authed).
 
-    1. Django session (request.user already authenticated)
-    2. ``Authorization: Bearer <token>`` header — the React SPA uses this via
-       fetch + Blob for downloads
-
-    A ``?token=<token>`` query-param fallback was removed (F-sec3): it leaked
-    JWTs into browser history, ``Referer`` headers, server access logs, and
-    proxy caches. The frontend never generated such URLs (both report pages send
-    the Bearer header), so nothing depends on it — a token in the query string is
-    now ignored.
+    A user still on the forced-change flag (e.g. default admin/admin) must not
+    reach report data — reports is a direct view, so enforce that explicitly
+    here rather than relying only on the mvp middleware.
     """
     def _password_change_pending(user) -> bool:
-        # Mirror JWTAuth: a user still on the forced-change flag (e.g. default
-        # admin/admin) must not reach data endpoints. The Ninja API blocks them
-        # everywhere but /user/*; without this check the report views are a hole
-        # in that server-side enforcement.
         profile = getattr(user, "profile", None)
         return bool(profile is not None and profile.must_change_password)
 
@@ -130,22 +119,6 @@ def _report_auth_required(view_func):
             if _password_change_pending(request.user):
                 return HttpResponseRedirect('/change-password')
             return view_func(request, *args, **kwargs)
-
-        auth_header = request.headers.get('Authorization', '')
-        token = auth_header[7:] if auth_header.startswith('Bearer ') else ''
-
-        if token:
-            try:
-                from ninja_jwt.tokens import AccessToken
-                token_obj = AccessToken(token)
-                user_id = token_obj["user_id"]
-                user = User.objects.get(id=user_id, is_active=True)
-                if _password_change_pending(user):
-                    return HttpResponseRedirect('/change-password')
-                request.user = user
-                return view_func(request, *args, **kwargs)
-            except Exception as exc:
-                logger.debug(f"Report token auth failed: {exc}")
         return HttpResponseRedirect('/login')
     return wrapper
 

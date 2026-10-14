@@ -7,7 +7,6 @@ Company: Cybersecify | Authors: Rathnakara GN, Ashok Kamat
 
 import os
 import sys
-from datetime import timedelta
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -122,7 +121,6 @@ INSTALLED_APPS = [
     "apps.core.console.reports",
     "apps.core.console.ai",
     "apps.core.engine.durable",
-    "ninja_jwt",
     "ninja_jwt.token_blacklist",
     "apps.domain_security",
     "apps.domain_probe",
@@ -167,23 +165,7 @@ MIDDLEWARE = [
     "apps.mvp.middleware.MustChangePasswordMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "apps.core.console.api.ratelimit.LoginRateLimitMiddleware",
 ]
-
-# Brute-force rate limiting for POST /api/token/pair (see apps/core/api/ratelimit.py).
-LOGIN_RATELIMIT_ENABLED = config("LOGIN_RATELIMIT_ENABLED", default=True, cast=bool)
-# Whether to key the limiter on the leftmost X-Forwarded-For entry (the client,
-# behind the mandated TLS reverse proxy) vs the raw REMOTE_ADDR. Keep True for the
-# standard proxied deployment. Set False ONLY if OpenEASD is somehow exposed
-# without a trusted proxy — then XFF is attacker-controllable and would let a
-# brute-forcer rotate the header to evade the per-IP limit; REMOTE_ADDR (the TCP
-# peer) is unspoofable but, behind a proxy, is the proxy itself (one shared IP).
-LOGIN_RATELIMIT_TRUST_FORWARDED_FOR = config(
-    "LOGIN_RATELIMIT_TRUST_FORWARDED_FOR", default=True, cast=bool
-)
-LOGIN_RATELIMIT_MAX_FAILURES = config("LOGIN_RATELIMIT_MAX_FAILURES", default=5, cast=int)
-LOGIN_RATELIMIT_WINDOW_SECONDS = config("LOGIN_RATELIMIT_WINDOW_SECONDS", default=900, cast=int)
-LOGIN_RATELIMIT_LOCKOUT_SECONDS = config("LOGIN_RATELIMIT_LOCKOUT_SECONDS", default=900, cast=int)
 
 ROOT_URLCONF = "openeasd.urls"
 
@@ -673,14 +655,3 @@ LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/login/"
 
-# ninja-jwt token configuration
-NINJA_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-    "ALGORITHM": "HS256",
-    "SIGNING_KEY": SECRET_KEY,
-    "AUTH_HEADER_TYPES": ("Bearer",),
-    "ROTATE_REFRESH_TOKENS": False,
-    "BLACKLIST_AFTER_ROTATION": False,
-    "UPDATE_LAST_LOGIN": False,
-}
