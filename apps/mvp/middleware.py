@@ -5,7 +5,7 @@ from django.urls import reverse
 
 logger = logging.getLogger(__name__)
 
-_APP_PREFIX = "/app/"
+_EXEMPT_PREFIXES = ("/static/", "/admin/", "/api/", "/reports/", "/metrics/", "/login/", "/logout/")
 
 
 def must_change_password(user):
@@ -17,7 +17,7 @@ def must_change_password(user):
 
 
 class MustChangePasswordMiddleware:
-    """Force flagged users through the change-password page (UI paths under /app/ only)."""
+    """Force flagged users through the change-password page (everywhere except exempt paths)."""
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -27,7 +27,7 @@ class MustChangePasswordMiddleware:
             path = request.path
             user = getattr(request, "user", None)
             if (
-                path.startswith(_APP_PREFIX)
+                not path.startswith(_EXEMPT_PREFIXES)
                 and user is not None
                 and user.is_authenticated
                 and must_change_password(user)

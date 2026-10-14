@@ -14,13 +14,13 @@ def _plain_staticfiles(settings):
 @pytest.mark.django_db
 class TestAuthShell:
     def test_dashboard_requires_login(self, client):
-        resp = client.get("/app/")
+        resp = client.get("/")
         assert resp.status_code == 302 and "/login/" in resp["Location"]
 
     def test_dashboard_renders_when_logged_in(self, client):
         User.objects.create_user("admin", password="pw12345!")
         client.login(username="admin", password="pw12345!")
-        assert client.get("/app/").status_code == 200
+        assert client.get("/").status_code == 200
 
 
 @pytest.mark.django_db
@@ -39,7 +39,7 @@ class TestDashboard:
         Finding.objects.create(session=s, source="nuclei", severity="high", title="Bad thing", target="example.com")
         Finding.objects.create(session=s, source="nuclei", severity="medium", title="Meh", target="example.com")
         self._login(client)
-        resp = client.get("/app/")
+        resp = client.get("/")
         assert resp.status_code == 200
         body = resp.content.decode()
         assert "example.com" in body
@@ -48,7 +48,7 @@ class TestDashboard:
 
     def test_activity_partial_ok(self, client):
         self._login(client)
-        assert client.get("/app/activity/").status_code == 200
+        assert client.get("/activity/").status_code == 200
 
 
 @pytest.mark.django_db
@@ -62,21 +62,21 @@ class TestDomains:
         from apps.core.data.domains.models import Domain
 
         Domain.objects.create(name="example.com")
-        resp = client.get("/app/domains/")
+        resp = client.get("/domains/")
         assert resp.status_code == 200 and b"example.com" in resp.content
 
     def test_add_domain(self, client):
         from apps.core.data.domains.models import Domain
 
-        resp = client.post("/app/domains/add/", {"name": "Example.com"})
+        resp = client.post("/domains/add/", {"name": "Example.com"})
         assert resp.status_code == 302
         assert Domain.objects.filter(name="example.com").exists()
-        assert client.get("/app/domains/example.com/").status_code == 200
+        assert client.get("/domains/example.com/").status_code == 200
 
     def test_non_apex_rejected(self, client):
         from apps.core.data.domains.models import Domain
 
-        resp = client.post("/app/domains/add/", {"name": "sub.example.com"}, follow=True)
+        resp = client.post("/domains/add/", {"name": "sub.example.com"}, follow=True)
         assert not Domain.objects.exists()
         assert "subdomain" in resp.content.decode()
 
@@ -84,27 +84,27 @@ class TestDomains:
         from apps.core.data.domains.models import Domain, DomainAuthorization
 
         Domain.objects.create(name="example.com")
-        client.post("/app/domains/example.com/authorize/", {})
+        client.post("/domains/example.com/authorize/", {})
         assert not DomainAuthorization.is_authorized("example.com")
-        client.post("/app/domains/example.com/authorize/", {"attestation": "1"})
+        client.post("/domains/example.com/authorize/", {"attestation": "1"})
         assert DomainAuthorization.is_authorized("example.com")
 
     def test_monitoring_sets_and_clears(self, client):
         from apps.core.data.domains.models import Domain
 
         Domain.objects.create(name="example.com")
-        client.post("/app/domains/example.com/monitoring/", {"interval_hours": "24"})
+        client.post("/domains/example.com/monitoring/", {"interval_hours": "24"})
         assert Domain.objects.get(name="example.com").monitoring_interval_hours == 24
-        client.post("/app/domains/example.com/monitoring/", {"interval_hours": ""})
+        client.post("/domains/example.com/monitoring/", {"interval_hours": ""})
         assert Domain.objects.get(name="example.com").monitoring_interval_hours is None
 
     def test_delete_requires_confirm(self, client):
         from apps.core.data.domains.models import Domain
 
         Domain.objects.create(name="example.com")
-        client.post("/app/domains/example.com/delete/", {"confirm": "nope"})
+        client.post("/domains/example.com/delete/", {"confirm": "nope"})
         assert Domain.objects.filter(name="example.com").exists()
-        client.post("/app/domains/example.com/delete/", {"confirm": "example.com"})
+        client.post("/domains/example.com/delete/", {"confirm": "example.com"})
         assert not Domain.objects.exists()
 
 
@@ -130,7 +130,7 @@ class TestScanStart:
 
         wf = self._wf("Passive Scan Deep")
         with patch("apps.mvp.views.run_scan_task") as task:
-            resp = client.post("/app/scan/start/", {"domain": "example.com", "workflow_id": wf.id})
+            resp = client.post("/scan/start/", {"domain": "example.com", "workflow_id": wf.id})
         assert resp.status_code == 302
         assert ScanSession.objects.filter(domain="example.com").count() == 1
         task.assert_called_once()
@@ -143,14 +143,14 @@ class TestScanStart:
 
         wf = self._wf("Full Scan")
         with patch("apps.mvp.views.run_scan_task") as task:
-            resp = client.post("/app/scan/start/", {"domain": "example.com", "workflow_id": wf.id}, follow=True)
+            resp = client.post("/scan/start/", {"domain": "example.com", "workflow_id": wf.id}, follow=True)
             assert not ScanSession.objects.exists()
             task.assert_not_called()
             assert b"must be authorized" in resp.content
             DomainAuthorization.objects.create(
                 domain=Domain.objects.get(name="example.com"), auth_type="owner",
                 authorized_at="2026-01-01", authorized_by="admin")
-            client.post("/app/scan/start/", {"domain": "example.com", "workflow_id": wf.id})
+            client.post("/scan/start/", {"domain": "example.com", "workflow_id": wf.id})
         assert ScanSession.objects.count() == 1
         task.assert_called_once()
 
@@ -158,12 +158,12 @@ class TestScanStart:
         from unittest.mock import patch
 
         with patch("apps.mvp.views.run_scan_task") as task:
-            resp = client.post("/app/scan/start/", {"domain": "example.com", "workflow_id": "999999"})
+            resp = client.post("/scan/start/", {"domain": "example.com", "workflow_id": "999999"})
         assert resp.status_code == 302
         task.assert_not_called()
 
     def test_detail_renders_modes(self, client):
-        resp = client.get("/app/domains/example.com/")
+        resp = client.get("/domains/example.com/")
         assert b"Passive Scan Deep" in resp.content and b"authorize first" in resp.content
 
 
@@ -185,7 +185,7 @@ class TestScanDetail:
         Finding.objects.create(session=self.s, source="nuclei", severity="low", title="Low thing", target="a.example.com")
 
     def test_detail_shows_finding_and_step(self, client):
-        resp = client.get(f"/app/scan/{self.s.uuid}/")
+        resp = client.get(f"/scan/{self.s.uuid}/")
         body = resp.content.decode()
         assert resp.status_code == 200
         assert "High thing" in body and "subfinder" in body
@@ -194,10 +194,10 @@ class TestScanDetail:
     def test_terminal_detail_has_no_poll_trigger(self, client):
         self.s.status = "completed"
         self.s.save()
-        assert "every 3s" not in client.get(f"/app/scan/{self.s.uuid}/").content.decode()
+        assert "every 3s" not in client.get(f"/scan/{self.s.uuid}/").content.decode()
 
     def test_progress_partial(self, client):
-        resp = client.get(f"/app/scan/{self.s.uuid}/progress/")
+        resp = client.get(f"/scan/{self.s.uuid}/progress/")
         body = resp.content.decode()
         assert resp.status_code == 200
         assert "nuclei" in body and "Failed:" in body and "1 high" in body
@@ -205,21 +205,21 @@ class TestScanDetail:
     def test_progress_terminal_refreshes(self, client):
         self.s.status = "completed"
         self.s.save()
-        resp = client.get(f"/app/scan/{self.s.uuid}/progress/")
+        resp = client.get(f"/scan/{self.s.uuid}/progress/")
         assert resp.status_code == 204 and resp["HX-Refresh"] == "true"
 
     def test_cancel_flips_status(self, client):
         from unittest.mock import patch
 
         with patch("apps.core.engine.scheduler.scheduler._cancel_workflows_for_sessions") as c:
-            resp = client.post(f"/app/scan/{self.s.uuid}/cancel/")
+            resp = client.post(f"/scan/{self.s.uuid}/cancel/")
         assert resp.status_code == 302
         self.s.refresh_from_db()
         assert self.s.status == "cancelled" and self.s.end_time
         c.assert_called_once_with([self.s.id])
 
     def test_sev_filter(self, client):
-        body = client.get(f"/app/scan/{self.s.uuid}/?sev=high").content.decode()
+        body = client.get(f"/scan/{self.s.uuid}/?sev=high").content.decode()
         assert "High thing" in body and "Low thing" not in body
 
 
@@ -236,19 +236,19 @@ class TestScans:
         self.c = ScanSession.objects.create(domain="other.org", status="completed")
 
     def test_lists_all(self, client):
-        resp = client.get("/app/scans/")
+        resp = client.get("/scans/")
         body = resp.content.decode()
         assert resp.status_code == 200
         for s in (self.a, self.b, self.c):
             assert str(s.uuid) in body
 
     def test_status_filter(self, client):
-        body = client.get("/app/scans/?status=completed").content.decode()
+        body = client.get("/scans/?status=completed").content.decode()
         assert str(self.a.uuid) in body and str(self.c.uuid) in body
         assert str(self.b.uuid) not in body
 
     def test_domain_filter(self, client):
-        body = client.get("/app/scans/?domain=other.org").content.decode()
+        body = client.get("/scans/?domain=other.org").content.decode()
         assert str(self.c.uuid) in body
         assert str(self.a.uuid) not in body and str(self.b.uuid) not in body
 
@@ -265,29 +265,29 @@ class TestChangePassword:
 
     def test_flagged_user_redirected(self, client):
         self._flagged(client)
-        resp = client.get("/app/")
-        assert resp.status_code == 302 and resp["Location"] == "/app/change-password/"
+        resp = client.get("/")
+        assert resp.status_code == 302 and resp["Location"] == "/change-password/"
 
     def test_page_reachable_while_flagged(self, client):
         self._flagged(client)
-        assert client.get("/app/change-password/").status_code == 200
+        assert client.get("/change-password/").status_code == 200
 
     def test_valid_change_clears_flag(self, client):
         u = self._flagged(client)
         resp = client.post(
-            "/app/change-password/",
+            "/change-password/",
             {"old_password": "pw12345!", "new_password1": "Xk9#mQ2vLp77", "new_password2": "Xk9#mQ2vLp77"},
         )
         assert resp.status_code == 302
         u.profile.refresh_from_db()
         assert u.profile.must_change_password is False
-        assert client.get("/app/").status_code == 200
+        assert client.get("/").status_code == 200
 
     def test_overlong_password_rejected(self, client):
         u = self._flagged(client)
         long_pw = "aB3$" * 40
         resp = client.post(
-            "/app/change-password/",
+            "/change-password/",
             {"old_password": "pw12345!", "new_password1": long_pw, "new_password2": long_pw},
         )
         assert resp.status_code == 200
@@ -296,4 +296,4 @@ class TestChangePassword:
 
     def test_unflagged_user_passes(self, client):
         self._flagged(client, flag=False)
-        assert client.get("/app/").status_code == 200
+        assert client.get("/").status_code == 200
