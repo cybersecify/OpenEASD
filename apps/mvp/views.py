@@ -11,6 +11,10 @@ from django.views.decorators.http import require_POST
 from apps.core.data.domains.models import Domain, DomainAuthorization
 from apps.core.data.findings.models import Finding
 from apps.core.engine.scans.models import ScanSession
+from apps.core.engine.scans.pipeline import create_scan_session
+from apps.core.engine.scans.tasks import run_scan_task
+from apps.core.engine.workflows.models import Workflow
+from apps.core.engine.workflows.registry import is_passive_tool_set
 
 SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
 _ACTIVE_STATUSES = ("pending", "running")
@@ -43,6 +47,31 @@ def _apex_hint(name):
         return (f"{name} is a subdomain; add one apex domain per scan. Add the apex "
                 f"'{apex}' instead.")
     return f"{name} is not a registrable apex domain; use an apex like example.com."
+
+
+SCAN_MODE_DEFS = [
+    ("Passive Scan Light", "Apex-only passive first look"),
+    ("Passive Scan Deep", "Full passive recon (no authorization needed)"),
+    ("Active Light", "Fast authorized scan"),
+    ("Full Scan", "Complete active scan"),
+]
+
+
+def _workflow_is_passive(workflow):
+    """Same signal as scans/api.py::_is_passive_only_scan (immediate scan, workflow tools).
+    Workflow has no is_passive attribute; an empty tool set is treated as active (stricter)."""
+    tools = workflow.enabled_tools()
+    return bool(tools) and is_passive_tool_set(tools)
+
+
+def _scan_modes():
+    out = []
+    for name, blurb in SCAN_MODE_DEFS:
+        wf = Workflow.objects.filter(name=name).first()
+        if wf:
+            out.append({"name": name, "blurb": blurb, "workflow_id": wf.id,
+                        "needs_auth": not _workflow_is_passive(wf)})
+    return out
 
 
 def _severity_counts(qs):
@@ -121,6 +150,8 @@ def domain_detail(request, name):
         "open_by_severity": _severity_counts(findings),
         "findings": findings.select_related("session").order_by("-discovered_at")[:100],
         "intervals": _MONITORING_INTERVALS,
+        "scan_modes": _scan_modes(),
+        "all_workflows": Workflow.objects.order_by("name"),
     }
     return render(request, "mvp/domain_detail.html", ctx)
 
@@ -203,3 +234,31 @@ def domain_delete(request, name):
     sync_domain_monitoring_jobs()
     messages.success(request, f"Deleted {name} and all its data.")
     return redirect("mvp:domains")
+
+
+@login_required
+@require_POST
+def scan_start(request):
+    name = _clean_domain(request.POST.get("domain"))
+    domain = get_object_or_404(Domain, name=name)
+    back = redirect("mvp:domain-detail", name=domain.name)
+    try:
+        workflow = Workflow.objects.get(pk=int(request.POST.get("workflow_id", "")))
+    except (ValueError, Workflow.DoesNotExist):
+        messages.error(request, "Choose a valid scan mode.")
+        return back
+    if not _is_apex(domain.name):
+        messages.error(request, _apex_hint(domain.name))
+        return back
+    # Authorization gate (mirrors scans/api.py): passive-only workflow bypasses it.
+    if not _workflow_is_passive(workflow) and not DomainAuthorization.is_authorized(domain.name):
+        messages.error(request, f"{domain.name} must be authorized before an active scan.")
+        return back
+    session = create_scan_session(domain.name, triggered_by="manual", workflow=workflow)
+    if session is None:
+        messages.warning(request, "A scan is already running for this domain.")
+        return back
+    run_scan_task(session.id)
+    # TODO(Task 5): redirect to mvp:scan-detail once that route exists
+    messages.success(request, f"{workflow.name} scan started for {domain.name}.")
+    return back

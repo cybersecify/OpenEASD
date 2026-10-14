@@ -30,9 +30,32 @@
     <button class="button is-link mt-2" type="submit">Authorize</button>
   </form>
 </div>
-{% else %}
-{# Task 4 will add the scan-start form here (mvp:scan-start). #}
 {% endif %}
+
+<h2>Start a scan</h2>
+<div class="box">
+  <div class="columns is-multiline">
+  {% for m in scan_modes %}
+    <div class="column is-half">
+      <form action="{% url 'mvp:scan-start' %}" method="post">{% csrf_token %}
+        <input type="hidden" name="domain" value="{{ domain.name }}">
+        <input type="hidden" name="workflow_id" value="{{ m.workflow_id }}">
+        <button class="button is-fullwidth is-link is-light" type="submit" {% if m.needs_auth and not authorized %}disabled style="opacity:.5"{% endif %}>
+          <strong>{{ m.name }}</strong>&nbsp;<span class="muted">{{ m.blurb }}</span>
+        </button>
+        {% if m.needs_auth and not authorized %}<p class="muted">authorize first</p>{% endif %}
+      </form>
+    </div>
+  {% endfor %}
+  </div>
+  <form action="{% url 'mvp:scan-start' %}" method="post" class="row-actions mt-2">{% csrf_token %}
+    <input type="hidden" name="domain" value="{{ domain.name }}">
+    <div class="select"><select name="workflow_id">
+      {% for w in all_workflows %}<option value="{{ w.id }}">{{ w.name }}</option>{% endfor %}
+    </select></div>
+    <button class="button" type="submit">Run custom</button>
+  </form>
+</div>
 
 <h2>Monitoring</h2>
 <div class="box">

@@ -106,3 +106,62 @@ class TestDomains:
         assert Domain.objects.filter(name="example.com").exists()
         client.post("/app/domains/example.com/delete/", {"confirm": "example.com"})
         assert not Domain.objects.exists()
+
+
+@pytest.mark.django_db
+class TestScanStart:
+    @pytest.fixture(autouse=True)
+    def _login(self, client):
+        from apps.core.data.domains.models import Domain
+
+        User.objects.create_user("admin", password="pw12345!")
+        client.login(username="admin", password="pw12345!")
+        Domain.objects.create(name="example.com")
+
+    def _wf(self, name):
+        from apps.core.engine.workflows.models import Workflow
+
+        return Workflow.objects.get(name=name)
+
+    def test_passive_mode_bypasses_authorization(self, client):
+        from unittest.mock import patch
+
+        from apps.core.engine.scans.models import ScanSession
+
+        wf = self._wf("Passive Scan Deep")
+        with patch("apps.mvp.views.run_scan_task") as task:
+            resp = client.post("/app/scan/start/", {"domain": "example.com", "workflow_id": wf.id})
+        assert resp.status_code == 302
+        assert ScanSession.objects.filter(domain="example.com").count() == 1
+        task.assert_called_once()
+
+    def test_active_mode_requires_authorization(self, client):
+        from unittest.mock import patch
+
+        from apps.core.data.domains.models import Domain, DomainAuthorization
+        from apps.core.engine.scans.models import ScanSession
+
+        wf = self._wf("Full Scan")
+        with patch("apps.mvp.views.run_scan_task") as task:
+            resp = client.post("/app/scan/start/", {"domain": "example.com", "workflow_id": wf.id}, follow=True)
+            assert not ScanSession.objects.exists()
+            task.assert_not_called()
+            assert b"must be authorized" in resp.content
+            DomainAuthorization.objects.create(
+                domain=Domain.objects.get(name="example.com"), auth_type="owner",
+                authorized_at="2026-01-01", authorized_by="admin")
+            client.post("/app/scan/start/", {"domain": "example.com", "workflow_id": wf.id})
+        assert ScanSession.objects.count() == 1
+        task.assert_called_once()
+
+    def test_unknown_workflow_rejected(self, client):
+        from unittest.mock import patch
+
+        with patch("apps.mvp.views.run_scan_task") as task:
+            resp = client.post("/app/scan/start/", {"domain": "example.com", "workflow_id": "999999"})
+        assert resp.status_code == 302
+        task.assert_not_called()
+
+    def test_detail_renders_modes(self, client):
+        resp = client.get("/app/domains/example.com/")
+        assert b"Passive Scan Deep" in resp.content and b"authorize first" in resp.content
