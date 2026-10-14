@@ -152,7 +152,9 @@ fail the whole scan. Specifically:
 
 ---
 
-## 3. REST API (Django Ninja)
+## 3. REST API (Django Ninja) — legacy / dormant
+
+> Still present and tested, but not used by the server-rendered UI. Don't add UI features here; teardown is a deferred follow-up.
 
 - Each module exposes `router = Router(auth=JWTAuth())` in its `api.py`; the
   central `apps/core/console/api/ninja.py` mounts it with
@@ -322,7 +324,23 @@ fail the whole scan. Specifically:
 
 ---
 
-## 9. Frontend (React SPA)
+## 9. UI — plain Django (`apps/mvp`)
+
+- **Views call the service layer directly** (`create_scan_session` → `run_scan_task`,
+  ORM reads) — no serializers, no API round-trip, no DRF/Ninja schemas for the UI.
+- **Session auth** (`login_required`-style); the forced change-password gate is
+  `apps/mvp/middleware.py::MustChangePasswordMiddleware`. Keep the same authorization
+  rules as the engine: passive-only `now` scans bypass `DomainAuthorization`, anything
+  active requires it.
+- **HTMX partials** for live regions (scan progress polled every 3s, filterable
+  findings table); vendored Bulma + HTMX, no CDN, no build step.
+- Tests live in `tests/unit/test_mvp_views.py` (Django test client).
+
+### 9.1 Legacy React SPA (dormant)
+
+The conventions below describe the dormant `frontend/` SPA (not served; deletion
+deferred). Don't extend it for new UI work.
+
 
 - **Data layer**: `@tanstack/react-query` `useQuery` keyed by the API path
   (`queryKey: ['/scans/', domain, status, page]`). Single `QueryClient`

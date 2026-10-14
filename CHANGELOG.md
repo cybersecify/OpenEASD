@@ -7,6 +7,32 @@ commits to recover the reasoning.
 
 ## [Unreleased]
 
+### Changed
+- **Plain-Django UI replaces the React SPA as the served UI.** New `apps/mvp`
+  (vendored Bulma + vendored HTMX, Django session auth) at `/`: dashboard, domains,
+  scan start (2×2 modes + custom workflow, unchanged passive/active authorization
+  gate), scan detail (HTMX progress every 3s, findings filters, CSV link), history,
+  login/logout and a forced change-password middleware. Views call the engine service
+  layer directly. The SPA `spa` view + catch-all were removed from `openeasd/urls.py`
+  (unknown paths redirect to the dashboard). **Why:** a much simpler MVP surface —
+  no Node toolchain, no JWT/API round-trip, one process to serve it.
+- **Django-Ninja REST API + JWT and the React SPA left DORMANT, not removed.** `/api/`
+  is still routed, the `apps/core/console/api/` package and per-app `api.py` routers
+  remain, their tests still run, and `frontend/` is still on disk — just not the UI
+  path. **Why:** a deliberate staged approach (Option B); full teardown is a follow-up.
+- **`dbos` pinned `>=2.31.1,<3`.** 2.31.0 guarded module-level `Queue()` construction.
+
+### Removed
+- **PDF reports** (WeasyPrint, the `/reports/<uuid>/pdf/` route, the PDF template and
+  its tests). **CSV export is kept** (`/reports/<uuid>/csv/`, now session-auth only).
+
+### Added
+- **Single Docker image deploy** (`--target singleimage`): embedded PostgreSQL +
+  gunicorn + DBOS worker via honcho in one container, data on the mandatory `/data`
+  volume (`docker/entrypoint-singleimage.sh`). The primary MVP deploy; the 3-tier
+  compose/k8s path remains as the privilege-separated / scalable alternative.
+  **Why:** one-container run for a small trusted single-user instance.
+
 ### Fixed
 - **cloud_enum timeout now degrades the scan to `partial` instead of wedging it.**
   `apps/cloud_assets/collector.py` ran `cloud_enum` via `subprocess.run(capture_output=True,

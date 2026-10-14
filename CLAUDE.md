@@ -3,7 +3,18 @@
 External Attack Surface Detection platform. Scans domains for network and
 web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 
-## Status (v2.25.10 — 2026-10-07)
+## Status (v2.25.10 — 2026-10-07; Unreleased: plain-Django UI + single image)
+
+- **Unreleased (UI + deploy change):** the served UI is now a **plain-Django,
+  server-rendered app** (`apps/mvp` — vendored Bulma CSS + vendored HTMX, Django
+  **session** auth) at `/`. The React SPA and the Django-Ninja REST API + JWT are
+  **legacy/DORMANT — still present in the tree, just not the UI path** (full teardown
+  is a deliberately deferred follow-up). **PDF reports are removed; CSV is kept.** A
+  **single Docker image** (embedded PostgreSQL + gunicorn + DBOS worker in one
+  container) is the primary MVP deploy; the 3-tier compose/k8s path remains as the
+  privilege-separated / scalable alternative. The engine (DBOS + Postgres) is unchanged.
+  Where the older sections below say "React SPA is the UI" / "JWT" / "PDF", read them
+  through this lens (they describe the dormant legacy surface).
 
 - **Released**: v2.16.0 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
   `:v2.16.0` / `:v2.16` / `:latest` (web on python:3.12-slim, worker on Ubuntu 24.04/3.12 — both Python 3.12; Django 5.2 LTS). 3-tier deploy: `db` (postgres:17) + `web`
@@ -117,7 +128,7 @@ git describe --tags --abbrev=0
   - `docker` — **PR-only** build gate (`if: github.event_name == 'pull_request'`): one job building both `web` + `worker` targets for `linux/amd64` (no push), warming the `type=gha` cache. **Skipped on main/tag pushes** — `publish` rebuilds+pushes from that warm cache there, so building here too would be a redundant full worker build on the release path.
   - `publish` — matrix over `web` + `worker`; builds `linux/amd64` and pushes to `ghcr.io/cybersecify/openeasd-web` and `-worker`. `needs: [test, frontend]` only (NOT `docker`, which is PR-only and would cascade-skip publish); it's the sole image builder on release.
 - **Publish triggers:** every push to `main` (`:latest` tag) and `v*` git tags. A tag push emits both the full `:vX.Y.Z` (from `type=ref,event=tag`) and a floating `:vX.Y` major.minor tag (from `type=match,pattern=v\d+\.\d+`) so downstream can pin to a minor line and still get patch updates
-- Runner: `ubuntu-24.04`, Python 3.12, `uv sync --group dev` for deps, `libcairo2-dev gcc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0` system deps required (WeasyPrint PDF rendering)
+- Runner: `ubuntu-24.04`, Python 3.12, `uv sync --group dev` for deps, `libcairo2-dev gcc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0` system deps (formerly for WeasyPrint PDF rendering — PDF reports have since been removed; the deps may be prunable from CI as a follow-up)
 - `pip-audit --ignore-vuln PYSEC-2025-183` — disputed PyJWT weak-key-length CVE, no fix available
 - **Build provenance:** the `publish` job computes `OPENEASD_VERSION` (git tag for `v*`, else `pyproject.toml` version), `OPENEASD_GIT_SHA` (`github.sha`), and `OPENEASD_BUILD_DATE` (ISO UTC) and passes them as `build-args` to buildx. The Dockerfile bakes them into `ENV` (placed late so they never bust the cache of the heavy layers). Settings read them via `config()` with `dev`/`unknown` defaults for local runs. Surfaced at `GET /health/` + `GET /api/version/`, and shown as a muted footer on the login + change-password pages AND in the authenticated app sidebar (`frontend/src/components/BuildInfo.jsx`). The sidebar footer also does an "update available" check via `GET /api/version/latest/` (authenticated; compares the running build to the latest GitHub release, cached 6h, fail-graceful — logic in `apps/core/console/api/update_check.py`). The app never self-updates; it only surfaces a heads-up + release link.
 
@@ -139,7 +150,29 @@ git describe --tags --abbrev=0
 - **WhiteNoise** — serves collected static files (frontend bundle) when `DEBUG=False` (Docker/prod); uses `CompressedManifestStaticFilesStorage` for gzip + content-hash fingerprinting
 - **PostgreSQL** database — configured via `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`/`DB_PASSWORD` (or `DATABASE_URL`). Postgres has no single-writer lock, so scans run concurrently (`DBOS_SCAN_CONCURRENCY`, default 2).
 
-### Frontend (React SPA — new primary UI)
+### Frontend (plain-Django UI — `apps/mvp`)
+
+The served UI is a **server-rendered Django app**, `apps/mvp`, mounted at `/`:
+vendored **Bulma** CSS + vendored **HTMX** (no CDN, no build step, no Node), Django
+**session** auth (login/logout; forced change-password via
+`apps/mvp/middleware.py::MustChangePasswordMiddleware`). Views call the engine
+service layer directly (`create_scan_session` → `run_scan_task`) — no serializers,
+no API round-trip. Pages: dashboard; domains (list/detail/add/authorize/monitoring/
+delete); scan start (2×2 modes Passive Light/Deep, Active Light, Full + custom
+workflow pick, same passive-bypass / active-needs-`DomainAuthorization` gate as
+before); scan detail (HTMX live progress polled every 3s, stop, findings table
+filterable by severity + verification, CSV link); scans history. Tests:
+`tests/unit/test_mvp_views.py`.
+
+**Legacy / DORMANT (present, not the UI path):** the React SPA (`frontend/`) is no
+longer served or built into the UI path — the `spa` view + SPA catch-all were removed
+from `openeasd/urls.py` (unknown paths now redirect to the dashboard). The Django-Ninja
+REST API + JWT (`apps/core/console/api/` + per-app `api.py` routers) is still routed
+under `/api/` and its tests still run, but the UI does not use it. Deleting `frontend/`
+and tearing down the API are deferred follow-ups (Option B) — do not describe them as
+removed. The React/Vite notes below document that legacy SPA.
+
+#### Legacy React SPA (dormant)
 - **React 19 + Vite 8** — `frontend/` directory, builds to `frontend/dist/`
 - **shadcn/ui** — component library on top of Tailwind CSS 3 + Radix UI; CSS variables in `src/index.css`; components in `src/components/ui/`
 - **react-router-dom** — `createBrowserRouter` route tree in `src/router.jsx`; auth-gated routes via a `ProtectedRoute` (`Outlet` + `<Navigate to="/login">`) that checks `auth.isLoggedIn()`. There is no `App.jsx`; `main.jsx` renders `<RouterProvider>`.
@@ -154,7 +187,9 @@ git describe --tags --abbrev=0
 - **Prod:** `npm run build` → `frontend/dist/` → served by Django via WhiteNoise
 - **`/change-password` route** — forced redirect after login if `must_change_password=true`; clears flag on success
 
-### Frontend dev setup
+### Frontend dev setup (legacy SPA — dormant)
+
+The plain-Django UI needs no frontend toolchain: `uv run manage.py runserver 8001` serves it. The Vite flow below is only for the dormant SPA.
 
 **Task runners:** both a `Makefile` and a `justfile` are provided with the same
 recipes (`dev`, `worker`, `test`, `lint`, `migrate`, …) — use `make <target>` or
@@ -180,18 +215,37 @@ uv run manage.py dbos_worker
 ```
 
 ### Frontend rules
+- **Current UI work → `apps/mvp`** (plain Django views + templates + HTMX partials; call the service layer directly; session auth). The rules below apply only to the dormant legacy SPA.
 - New interactive features → React pages in `frontend/src/pages/`, wired into the route tree in `src/router.jsx`
 - Fetch data with react-query `useQuery` + `apiGet`/`apiPost` (keyed by the API path); don't reintroduce ad-hoc `fetch`/`useFetch`. Navigate with react-router-dom's `useNavigate`, not a hand-rolled router.
 - New API data → add endpoint to the relevant `apps/core/<module>/api.py` router + wire in `apps/core/console/api/ninja.py`
 - Shared UI primitives → `frontend/src/components/`
 - Don't add CORS headers — always use same-origin (Vite proxy in dev, Django serves in prod)
-- Legacy HTMX/Alpine/Django-template stack is **retired**. All UI is the React SPA.
-- SPA catch-all in `openeasd/urls.py` serves `frontend/dist/index.html` for all non-API paths.
+- (Superseded) The SPA catch-all in `openeasd/urls.py` was removed; the HTMX/Django-template approach is back, now as `apps/mvp` with vendored Bulma + HTMX.
 - Run `cd frontend && npm run build` to update the production bundle before deployment.
 
 ## Deployment
 
-### Docker (production) — 3 services
+### Single Docker image (primary MVP deploy)
+
+One container runs **embedded PostgreSQL + gunicorn + the DBOS worker** under
+`honcho`. Build the `singleimage` target and run it with the mandatory `/data` volume
+(Postgres data + logs live there; entrypoint `docker/entrypoint-singleimage.sh`):
+
+```bash
+docker buildx build --target singleimage -t openeasd:singleimage .
+docker run -d --name openeasd -p 8000:8000 -v openeasd-data:/data \
+  -e SECRET_KEY=<long random> -e DB_PASSWORD=<strong> -e DEBUG=False \
+  -e ALLOWED_HOSTS=<host,localhost> openeasd:singleimage
+# or: docker compose -f docker-compose.singleimage.yml up -d --build
+```
+- Smoke-verified end-to-end; the simplest way to run a trusted single-user instance.
+- Trade-off: scanner tools + `NET_RAW` share a container with the web process (no
+  privilege separation) and web/worker cannot scale independently — use the 3-tier
+  path below when that matters. See `docs/OPERATIONS.md` for the run recipe.
+- Same HTTPS-in-front rule applies (see below).
+
+### Docker (3-tier alternative) — 3 services
 
 The stack is **PostgreSQL + web + worker** (Option B) — the **recommended
 architecture**: it keeps offensive tooling + `NET_RAW` off the internet-facing
@@ -315,7 +369,7 @@ Runs on every container start (init container in K8s, or `CMD` override in Docke
 4. `exec "$@"` — hands off to the actual process
 
 ### First login
-`docker-entrypoint.sh` is role-aware (`OPENEASD_ROLE`): both roles wait for PostgreSQL; the web/init role runs migrate + collectstatic + admin setup (creating `admin/admin` with `must_change_password=True` on first run, re-flagging if the default password is still in use), while the worker role waits for `migrate --check` to pass then launches (no DDL race). The React app redirects to `/change-password` before allowing access.
+`docker-entrypoint.sh` is role-aware (`OPENEASD_ROLE`): both roles wait for PostgreSQL; the web/init role runs migrate + collectstatic + admin setup (creating `admin/admin` with `must_change_password=True` on first run, re-flagging if the default password is still in use), while the worker role waits for `migrate --check` to pass then launches (no DDL race). The plain-Django UI redirects to `/change-password` (via `MustChangePasswordMiddleware`) before allowing access. The single-image entrypoint does the equivalent bootstrap in one container.
 
 ### microk8s deployment (host IP changed)
 If the host IP changes, microk8s certs and kubeconfigs reference the old IP and the cluster goes "not running":
@@ -390,12 +444,14 @@ Django labels are unchanged — the nesting is organisational only (import paths
 | `scheduler/` | `scheduler` | Scan callables (daily_scan, run_due_monitoring_scans, run_due_user_scans, reap_stuck_scans, token purge) invoked by the DBOS `@scheduled` workflows in `apps/core/engine/durable` |
 | `notifications/` | `alerts` | Slack/Teams alerts, NotificationConfig model, alert history |
 | `insights/` | `insights` | ScanSummary (incl. per-scan Exposure Score + grade, `scoring.py`), FindingTypeSummary, charts |
-| `reports/` | `reports` | CSV + PDF export (synchronous, served by the web tier). The PDF has an **Issue Register** section from the persistent register — new-this-month / still-open-with-age / resolved-this-month, **excluding triaged** (`false_positive`/`accepted`; register items 6/7) |
+| `reports/` | `reports` | CSV export (synchronous, served by the web tier; session auth). **PDF export was removed** (WeasyPrint + route + template dropped); the CSV is the live report artifact |
 | `ai/` | `ai` | AI analysis (Cloudflare Workers AI, BYOK): finding triage, bounded adaptive orchestration, report/alert summaries, consent + per-call audit log |
 | `credentials/` | `credentials` | UI-managed BYOK API keys — `ToolCredentials` encrypted singleton + `get_credential()` resolver (DB-wins-over-env) + write-only `/api/credentials/` + the `/credentials` **CredentialsPage**. Tools read via the resolver (shodan/breach_check/github_recon/github_secrets/dns_history) — a DB key overrides env with no redeploy |
 | `api/` | — | Django Ninja API — routers, JWT auth, error handlers |
 
-### REST API module — `apps/core/console/api/`
+### REST API module — `apps/core/console/api/` (LEGACY / DORMANT)
+
+> Still routed at `/api/` and still tested, but **not used by the server-rendered UI** (which uses session auth and the service layer). Retained deliberately; teardown is a deferred follow-up. The reference below remains accurate for the dormant API.
 
 ```
 apps/core/console/api/
@@ -855,7 +911,22 @@ gate is consent + keys, never workflow membership.
 
 ## URL layout
 
-### REST API (`/api/`)
+### UI (`apps/mvp`, served at `/`, Django session auth)
+```
+/                       — dashboard
+/login  /logout         — session login / logout
+/change-password        — forced when must_change_password (MustChangePasswordMiddleware)
+/domains/…              — list / detail / add / authorize / monitoring / delete
+/scans/…                — start (2×2 modes + custom workflow), history, detail
+                          (HTMX progress partial polled every 3s, stop, findings filters)
+/reports/<uuid>/csv/    — CSV export (session auth)
+/admin/                 — Django admin
+```
+Unknown paths redirect to the dashboard (the SPA catch-all was removed). Exact route
+names live in `apps/mvp/urls.py`.
+
+### REST API (`/api/`) — LEGACY / DORMANT
+Still routed and tested, but not used by the UI. Reference retained below.
 ```
 POST /api/token/pair                      — JWT login → {access, refresh}
 POST /api/token/blacklist                 — blacklist refresh token (logout)
@@ -875,7 +946,7 @@ POST /api/domains/<pk>/authorize/         — grant DomainAuthorization (attesta
 GET  /api/scans/                          — paginated scan list (?domain=&status=&page=)
 POST /api/scans/start/                    — start/schedule scan
 GET  /api/scans/<uuid>/                   — full scan detail (assets + findings)
-GET  /api/scans/<uuid>/status/            — lightweight status (React polls every 3s)
+GET  /api/scans/<uuid>/status/            — lightweight status (legacy SPA polled every 3s)
 POST /api/scans/<uuid>/stop/              — cancel running scan
 POST /api/scans/<uuid>/delete/            — delete scan session
 POST /api/scans/<uuid>/subscan/           — re-run a single tool / subset against an existing scan
@@ -912,17 +983,18 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 ```
 
 ### Other routes
-- `/reports/<uuid>/csv/` → CSV export (**synchronous** Django view on the web tier, `_report_auth_required` — accepts session auth or an `Authorization: Bearer` header; the old `?token=` query-param was removed in F-sec3, and the gate now also honors `must_change_password`)
-- `/reports/<uuid>/pdf/` → PDF export (**synchronous** Django view on the web tier, rendered with WeasyPrint, `_report_auth_required` — same auth as CSV: session or Bearer header, no `?token=`, `must_change_password` enforced)
-- **Reports UI:** the React SPA has a dedicated **Reports page** (`/reports`, nav item + `ReportsPage.jsx`) listing completed scans with per-scan CSV/PDF export + a `min_severity` filter (auth'd fetch+Blob, JWT in header); also still available as CSV/PDF buttons on the Scan Detail page. The SPA `/reports` route and the Django `/reports/<uuid>/{csv,pdf}/` endpoints coexist — Django's SPA catch-all serves bare `/reports`, and the Vite dev proxy uses a `^/reports/.+` regex so only the endpoints proxy to Django.
+- `/reports/<uuid>/csv/` → CSV export (**synchronous** Django view on the web tier, `_report_auth_required` — now session auth only; the old `?token=` query-param was removed in F-sec3, and the gate now also honors `must_change_password`)
+- `/reports/<uuid>/pdf/` → **REMOVED** (PDF reports dropped along with WeasyPrint; CSV is the supported export)
+- **Reports UI:** CSV download is a link on the `apps/mvp` scan-detail page. (The legacy SPA's Reports page is dormant.)
 - `/admin/` → Django admin
 - `/api/docs` → Django Ninja auto-generated OpenAPI docs
-- `/*` → React SPA catch-all (`frontend/dist/index.html`)
+- `/*` (unknown) → redirect to the dashboard (the former React SPA catch-all was removed)
 
 ## Tests
 
 | File | Tests | Notes |
 |---|---|---|
+| `tests/unit/test_mvp_views.py` | ~28 | Plain-Django UI (`apps/mvp`) — login/logout + forced change-password middleware, dashboard, domains CRUD/authorize/monitoring, scan start (mode grid, passive bypass vs active-auth gate), scan detail + HTMX progress partial, findings filters, history, CSV link |
 | `tests/unit/test_alerts.py` | 7 | Slack/Teams dispatcher |
 | `tests/unit/test_alterx.py` | 17 | collector (binary missing, timeout, happy path, stdin), analyzer, scanner |
 | `tests/unit/test_amass.py` | 21 | Active subdomain enum collector, analyzer, scanner |
@@ -960,7 +1032,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_qcluster_config.py` | 3 | Scan-timeout invariants (Q_CLUSTER removed; SCAN_TASK_TIMEOUT + watchdog bound) |
 | `tests/unit/test_durable_task.py` | 7 | `@durable_task` engine adapter (H6) — in-process call, `.delay()` enqueue, dedupe template + override, registry, real tasks are DurableTasks, enqueue_* wrappers delegate |
 | `tests/unit/test_credentials.py` | 13 | UI-managed BYOK credentials (C1+C3) — singleton, ciphertext-at-rest/plaintext-via-ORM, resolver DB-wins-over-env + env fallback + source + never-raises, write-only API (presence-only never values, set/none-unchanged/clear), and a DB key reaching `shodan.collect` (paid tier, no env key) |
-| `tests/unit/test_reports.py` | 89 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block, technology stack block, AI Analyst Summary block (absent without AI rows), "Since Your Last Scan" delta block (new/resolved/still-open, baseline + subscan + min_severity rules, CSV new-flag column), per-finding "Recommended Next Steps" checklist (hosted-only gating, effective-key mapping incl. email control, empty for unmapped), tldsquatting rollup findings render the `extra["domains"]` member list under the title (a finding with no `domains` key renders unaffected) |
+| `tests/unit/test_reports.py` | 89 | CSV export content/structure (the PDF export tests were removed with PDF reports), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block, technology stack block, AI Analyst Summary block (absent without AI rows), "Since Your Last Scan" delta block (new/resolved/still-open, baseline + subscan + min_severity rules, CSV new-flag column), per-finding "Recommended Next Steps" checklist (hosted-only gating, effective-key mapping incl. email control, empty for unmapped), tldsquatting rollup findings render the `extra["domains"]` member list under the title (a finding with no `domains` key renders unaffected) |
 | `tests/unit/test_waf_detection.py` | 16 | WAF/block/challenge classifier (spec C1) — vendor fingerprint, false-positive guards, analyzer wiring |
 | `tests/unit/test_coverage.py` | 6 | Scan coverage (spec C2) — endpoint counts, dominant vendor, report note wording |
 | `tests/unit/test_scans.py` | 30 | ScanSession, scheduling, scan_start views |
@@ -984,7 +1056,7 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_user_profile.py` | 7 | UserProfile `must_change_password` flag |
 | `tests/unit/test_settings_security.py` | 16 | SECRET_KEY strength guard (DEBUG=False + insecure default) |
 | `tests/unit/test_insights_builder.py` | 4 | FindingTypeSummary prune only when aggregation_complete |
-| `tests/unit/test_exposure_score.py` | 38 | Exposure Score — formula (clean=0, weights, saturation cap), grade bands, trend delta (up/down/flat/no-baseline), builder populates ScanSummary, insights + dashboard API fields, PDF report exposure block |
+| `tests/unit/test_exposure_score.py` | 38 | Exposure Score — formula (clean=0, weights, saturation cap), grade bands, trend delta (up/down/flat/no-baseline), builder populates ScanSummary, insights + dashboard API fields, (PDF report exposure-block test removed with PDF reports) |
 | `tests/unit/test_web_checker.py` | 58 | Headers, cookies, CORS, disclosure, collector; security.txt (RFC 9116) — expires parsing, SPA-catch-all guard, missing=info/expired=low findings, reachable-vs-absent (unreachable ⇒ no false "missing"), apex-only collection + fail-graceful |
 | `tests/unit/test_passive_scan.py` | 27 | registry `active` classification (domain_security passive / domain_probe active), `is_passive_tool_set`, Credential Exposure grouping, Passive Scan Deep workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
 | `tests/unit/test_workflow_runner.py` | 38 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism (concurrent same-phase; LOW_MEMORY serialises heavy phases but light phase-1 tools still parallel); **H5 resume idempotency** (crash-resume re-run deletes the tool's stale Findings first → no duplicates; completed tool not re-run; first run normal) |
@@ -1028,6 +1100,6 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_issue_register.py` | 17 | Issue-register rollup — `issue_key`/`check_id` identity, triage persists across scans (status + assignee + resolution note), title-reword keeps same Issue, auto-resolve unseen (comprehensive-scan-only), regression reopen, idempotent replay, subscan no-op, asset grounding |
 | `tests/unit/test_issues_api.py` | 10 | `/api/issues/` — auth, ranked list + filters, summary, canonical triage writer (status + assigned_to + resolution_note persist, omitted-unchanged, resolved_at stamp/clear), bad-status 400 |
 
-**Total: 2151 tests** (2105 fast + 46 slow domain_security)
+**Total:** the per-file counts above predate the plain-Django UI change and are approximate — PDF tests were removed from `test_reports.py` / `test_exposure_score.py` and `test_mvp_views.py` was added. Run `uv run pytest tests/ --ignore=tests/unit/test_domain_security.py` for the current figure. Slow `test_domain_security.py` is unchanged.
 
-Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.
+Frontend (dormant legacy SPA): **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.

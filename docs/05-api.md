@@ -1,5 +1,13 @@
 # OpenEASD — API Contract
 
+> **LEGACY / DORMANT.** The REST API + JWT described here is **retained but not used
+> by the UI**: the served UI is now the server-rendered plain-Django `apps/mvp`
+> (session auth, calls the service layer directly). `/api/` is still routed and its
+> tests still run, so everything below still works, but it is no longer the product's
+> primary contract. Full teardown is a deliberately deferred follow-up. The live
+> report export is the **CSV** endpoint `/reports/<uuid>/csv/` (session auth); PDF
+> export was removed.
+
 OpenEASD is **API-driven and UI-agnostic**: the REST API under `/api/` is the one
 published contract. The React SPA is just one client — anything that speaks HTTP + JWT
 (curl, Python, Postman, a CLI, another service) drives the whole platform identically.

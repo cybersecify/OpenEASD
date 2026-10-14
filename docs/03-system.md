@@ -94,12 +94,13 @@ writes normalized rows and the graph + every perspective pick it up for free.
 ## System Overview
 
 ```
-Browser (React 19 SPA)
-       │  JWT Bearer (Authorization: Bearer …)
+Browser (server-rendered pages, vendored Bulma + HTMX)
+       │  Django session cookie
        ▼
 web tier — gunicorn (python:3.12-slim image, no scanner tools)
-  ├── Django Ninja REST API  (/api/)   + login rate-limit middleware
-  ├── WhiteNoise             (frontend/dist/, static/)
+  ├── apps/mvp plain-Django UI (/)     + must-change-password middleware
+  ├── Django Ninja REST API  (/api/)   — LEGACY/DORMANT, still routed, unused by the UI
+  ├── WhiteNoise             (static/)
   ├── Django Admin           (/admin/)
   └── enqueue-only: durably enqueues scans onto the DBOS queue
        │  Django ORM                         │  DBOSClient.enqueue
@@ -112,7 +113,7 @@ PostgreSQL 17  ◄──────────────────  worker
 ```
 
 Three tiers, each its own container/workload: **db** (`postgres:17-alpine`),
-**web** (UI/API + synchronous CSV/PDF reports; no tools, no `NET_RAW`), **worker**
+**web** (UI + synchronous CSV reports; no tools, no `NET_RAW`), **worker**
 (DBOS durable execution + the scanner binaries; `NET_RAW`). The web tier only
 *enqueues* scans; the worker *executes* them. Scans are **durable DBOS workflows**
 whose phase groups are checkpointed steps, so a crashed/restarted worker
@@ -132,7 +133,7 @@ import the same codebase and differ only by entrypoint.
 ### Axis 1 — logical layers (how the CODE is organized, by responsibility)
 
 ```
-┌─ CONSOLE   presentation: Ninja API + React SPA + reports/insights/notifications/ai
+┌─ CONSOLE   presentation: server-rendered `apps/mvp` UI (session auth) + reports(CSV)/insights/notifications/ai; Ninja API + React SPA are legacy/dormant
 │               apps/core/{dashboard, api, insights, reports, notifications, ai}
 ├─ ENGINE    orchestration: durable scan execution + dynamic workflow runner
 │               apps/core/{scans, workflows, durable, scheduler}
@@ -166,7 +167,7 @@ Core Infrastructure and Tool Apps tables below.
 
 | Logical layer | Runs in | Note |
 |---|---|---|
-| **Console** | `web` | gunicorn serves the API + React bundle |
+| **Console** | `web` | gunicorn serves the server-rendered `apps/mvp` UI (session auth); the Ninja API is dormant |
 | **Engine** | `worker` | `dbos_worker` runs the durable scan workflows |
 | **Tools** | `worker` | the scanner binaries live only in the worker image |
 | **Data** | `db` | Postgres; accessed by **both** web & worker via the Django ORM |
@@ -489,7 +490,9 @@ Finding
 
 ---
 
-## REST API
+## REST API (legacy / dormant)
+
+> Retained but not used by the server-rendered UI (which calls the service layer directly with session auth). Teardown is a deferred follow-up.
 
 Base path: `/api/`. Auth: JWT Bearer via `ninja-jwt` (simplejwt).
 
@@ -550,6 +553,17 @@ only (the model has no text field, so prompt/response bodies are unpersistable).
 
 ## Frontend Architecture
 
+**Current UI:** `apps/mvp` — plain Django views + templates, vendored Bulma CSS and
+vendored HTMX, Django **session** auth, served at `/`. Views call the engine service
+layer directly (`create_scan_session` → `run_scan_task`); scan progress is an HTMX
+partial polled every 3s. Forced password change is enforced by
+`apps/mvp/middleware.py::MustChangePasswordMiddleware`. The SPA catch-all was removed
+from `openeasd/urls.py`; unknown paths redirect to the dashboard.
+
+**Legacy / dormant — React SPA (`frontend/`)**: still in the tree, no longer served
+or built into the UI path; deletion is a deferred follow-up. Its layout, kept for
+reference:
+
 ```
 frontend/
   src/
@@ -581,7 +595,12 @@ Tailwind CSS 3, Radix UI. Data fetching is `useQuery({queryKey:[path,…]})` +
 
 ## Deployment Topologies
 
-The recommended topology is **3 tiers** — the web image carries no offensive
+**Single image (primary MVP deploy):** one container (`--target singleimage`) runs
+embedded PostgreSQL + gunicorn + the DBOS worker under `honcho` (entrypoint
+`docker/entrypoint-singleimage.sh`, mandatory `/data` volume). Simplest to run;
+no web/worker privilege separation.
+
+The **3-tier** topology below remains the privilege-separated / scalable alternative. It is **3 tiers** — the web image carries no offensive
 tooling or `NET_RAW`, tool OOMs isolate to the worker, and the worker scales
 independently. See CLAUDE.md for the full rationale + pros/cons.
 
@@ -589,7 +608,7 @@ independently. See CLAUDE.md for the full rationale + pros/cons.
 
 ```
 db      postgres:17-alpine          — app data + the DBOS `dbos` schema
-web     openeasd-web (slim)         — gunicorn; UI/API + PDF reports; enqueue-only; no tools
+web     openeasd-web (slim)         — gunicorn; UI + CSV reports; enqueue-only; no tools
 worker  openeasd-worker (ubuntu)    — dbos_worker + full scanner matrix; --cap-add NET_RAW
 ```
 
