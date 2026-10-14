@@ -5,7 +5,7 @@ All notable changes to OpenEASD are recorded here. Format loosely follows
 **Why** note on non-obvious changes so reviewers don't have to dig through
 commits to recover the reasoning.
 
-## [Unreleased]
+## [v3.0.0] — 2026-10-14
 
 ### Changed
 - **Plain-Django UI replaces the React SPA as the served UI.** New `apps/mvp`
@@ -16,7 +16,7 @@ commits to recover the reasoning.
   layer directly. The SPA `spa` view + catch-all were removed from `openeasd/urls.py`
   (unknown paths redirect to the dashboard). **Why:** a much simpler MVP surface —
   no Node toolchain, no JWT/API round-trip, one process to serve it.
-- **Django-Ninja REST API + JWT REMOVED; the React SPA left dormant on disk.** `/api/`, the
+- **Django-Ninja REST API + JWT REMOVED; the React SPA deleted.** `/api/`, the
   `apps/core/console/api/` package and per-app `api.py` routers are gone. **Why:** the
   server-rendered UI uses session auth and the service layer directly.
 - **`dbos` pinned `>=2.31.1,<3`.** 2.31.0 guarded module-level `Queue()` construction.
@@ -30,6 +30,9 @@ commits to recover the reasoning.
   django-ninja). **Why:** no JWT tokens exist any more, so nothing to blacklist or purge.
 - **PDF reports** (WeasyPrint, the `/reports/<uuid>/pdf/` route, the PDF template and
   its tests). **CSV export is kept** (`/reports/<uuid>/csv/`, now session-auth only).
+- **The React SPA source** (`frontend/` — React/Vite/Vitest), the CI `frontend` job, and the
+  Dockerfile node build stage, plus the dependabot npm entry + dead frontend/WeasyPrint install
+  steps. **Why:** the server-rendered `apps/mvp` UI replaces it; no Node toolchain remains.
 
 ### Added
 - **Single Docker image deploy** (`--target singleimage`): embedded PostgreSQL +

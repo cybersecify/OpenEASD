@@ -3,9 +3,9 @@
 External Attack Surface Detection platform. Scans domains for network and
 web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 
-## Status (v2.25.10 — 2026-10-07; Unreleased: plain-Django UI + single image)
+## Status (v3.0.0 — 2026-10-14 — plain-Django UI + single image)
 
-- **Unreleased (UI + deploy change):** the served UI is now a **plain-Django,
+- **v3.0.0 (UI + deploy change):** the served UI is now a **plain-Django,
   server-rendered app** (`apps/mvp` — vendored Bulma CSS + vendored HTMX, Django
   **session** auth) at `/`. The Django-Ninja REST API + JWT (incl. the token-blacklist + purge cron and the
   django-ninja* deps) are **REMOVED** (2026-10-14); the React SPA (`frontend/`) is **deleted**. **PDF reports are removed; CSV is kept.** A
