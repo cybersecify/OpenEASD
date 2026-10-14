@@ -115,11 +115,13 @@ def _report_auth_required(view_func):
 
     @functools.wraps(view_func)
     def wrapper(request, *args, **kwargs):
+        from django.conf import settings
+        from django.urls import reverse
         if request.user.is_authenticated:
             if _password_change_pending(request.user):
-                return HttpResponseRedirect('/change-password')
+                return HttpResponseRedirect(reverse("mvp:change-password"))
             return view_func(request, *args, **kwargs)
-        return HttpResponseRedirect('/login')
+        return HttpResponseRedirect(settings.LOGIN_URL)
     return wrapper
 
 

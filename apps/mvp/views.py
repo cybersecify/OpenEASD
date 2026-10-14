@@ -20,7 +20,7 @@ from apps.core.engine.scans.models import ScanSession
 from apps.core.engine.scans.pipeline import create_scan_session
 from apps.core.engine.scans.tasks import run_scan_task
 from apps.core.engine.workflows.models import Workflow
-from apps.core.engine.workflows.registry import is_passive_tool_set
+from apps.core.engine.workflows.registry import get_source_choices, is_passive_tool_set
 
 logger = logging.getLogger(__name__)
 
@@ -89,11 +89,36 @@ def _severity_counts(qs):
     return [(sev, raw.get(sev, 0)) for sev in SEVERITY_ORDER if raw.get(sev, 0)]
 
 
+def _sev_rank_case():
+    """DB severity-rank annotation (critical=0 … info=4, unknown=9) for ORDER BY —
+    shared by findings()/issues()/scan_detail so ranking is one implementation."""
+    return Case(
+        *[When(severity=s, then=Value(i)) for i, s in enumerate(SEVERITY_ORDER)],
+        default=Value(9), output_field=IntegerField(),
+    )
+
+
+def _latest_scans_by_domain():
+    """{domain_name: most-recent ScanSession} in ONE query (Postgres DISTINCT ON) —
+    avoids an N+1 per-domain 'latest scan' query on the dashboard / domains list."""
+    return {
+        s.domain: s
+        for s in ScanSession.objects.order_by("domain", "-start_time").distinct("domain")
+    }
+
+
+def _source_names():
+    """Finding-source values for the filter dropdowns — from the tool registry, not a
+    full-table DISTINCT scan per request."""
+    return sorted(name for name, _ in get_source_choices())
+
+
 @login_required
 def dashboard(request):
     domains = list(Domain.objects.all())
+    latest = _latest_scans_by_domain()
     for d in domains:
-        d.last_scan = ScanSession.objects.filter(domain=d.name).order_by("-start_time").first()
+        d.last_scan = latest.get(d.name)
     open_findings = Finding.objects.filter(status="open")
     ctx = {
         "domains": domains,
@@ -123,8 +148,9 @@ def dashboard_activity(request):
 @login_required
 def domains(request):
     rows = list(Domain.objects.select_related("authorization").all())
+    latest = _latest_scans_by_domain()
     for d in rows:
-        d.last_scan = ScanSession.objects.filter(domain=d.name).order_by("-start_time").first()
+        d.last_scan = latest.get(d.name)
         d.authorized = hasattr(d, "authorization")
     return render(request, "mvp/domains.html", {"domains": rows})
 
@@ -307,12 +333,12 @@ def scan_detail(request, session_uuid):
     sev = request.GET.get("sev")
     if sev in SEVERITY_ORDER:
         findings = findings.filter(severity=sev)
-    rank = {s: i for i, s in enumerate(SEVERITY_ORDER)}
-    findings = sorted(findings, key=lambda f: (rank.get(f.severity, 9), f.source, f.title))
+    findings = findings.annotate(sev_rank=_sev_rank_case()).order_by("sev_rank", "source", "title")
+    total = findings.count()
     ctx.update({
-        "findings": findings[:500],
-        "findings_shown": min(len(findings), 500),
-        "findings_total_filtered": len(findings),
+        "findings": findings[:500],  # DB LIMIT — no full in-memory materialize
+        "findings_shown": min(total, 500),
+        "findings_total_filtered": total,
         "sev_filter": sev if sev in SEVERITY_ORDER else "",
         "severity_order": SEVERITY_ORDER,
     })
@@ -395,11 +421,7 @@ def findings(request):
         qs = qs.filter(source=source)
     if domain:
         qs = qs.filter(session__domain__icontains=domain)
-    rank = Case(
-        *[When(severity=s, then=Value(i)) for i, s in enumerate(SEVERITY_ORDER)],
-        default=Value(9), output_field=IntegerField(),
-    )
-    qs = qs.annotate(sev_rank=rank).order_by("sev_rank", "-discovered_at", "-id")
+    qs = qs.annotate(sev_rank=_sev_rank_case()).order_by("sev_rank", "-discovered_at", "-id")
     page = Paginator(qs, 50).get_page(request.GET.get("page"))
     return render(request, "mvp/findings.html", {
         "page": page,
@@ -409,7 +431,7 @@ def findings(request):
         "domain_filter": domain,
         "severity_order": SEVERITY_ORDER,
         "status_choices": FINDING_STATUS_CHOICES,
-        "sources": sorted(Finding.objects.order_by().values_list("source", flat=True).distinct()),
+        "sources": _source_names(),
         "total": page.paginator.count,
     })
 
@@ -437,12 +459,12 @@ def issues(request):
         qs = qs.filter(domain__name__icontains=domain)
     if q:
         qs = qs.filter(title__icontains=q)
-    rank = Case(
-        *[When(severity=s, then=Value(i)) for i, s in enumerate(SEVERITY_ORDER)],
-        default=Value(9), output_field=IntegerField(),
-    )
-    qs = qs.annotate(sev_rank=rank).order_by("sev_rank", "-last_seen", "-id")
+    qs = qs.annotate(sev_rank=_sev_rank_case()).order_by("sev_rank", "-last_seen", "-id")
     page = Paginator(qs, 25).get_page(request.GET.get("page"))
+    # return_qs carries the active filters across the triage redirect + pagination
+    # links; drop `page` so a pagination link doesn't emit a duplicate page= param.
+    filter_params = request.GET.copy()
+    filter_params.pop("page", None)
     return render(request, "mvp/issues.html", {
         "page": page,
         "status_filter": status,
@@ -452,9 +474,9 @@ def issues(request):
         "q_filter": q,
         "severity_order": SEVERITY_ORDER,
         "status_choices": FINDING_STATUS_CHOICES,
-        "sources": sorted(Issue.objects.order_by().values_list("source", flat=True).distinct()),
+        "sources": _source_names(),
         "total": page.paginator.count,
-        "return_qs": request.GET.urlencode(),
+        "return_qs": filter_params.urlencode(),
     })
 
 
@@ -488,11 +510,11 @@ def issue_update(request, issue_id):
 def change_password(request):
     if request.method == "POST":
         form = PasswordChangeForm(request.user, request.POST)
+        valid = form.is_valid()
         if len(request.POST.get("new_password1", "")) > 128:
-            form.is_bound = True
-            form.full_clean()
             form.add_error("new_password1", "Password must be at most 128 characters.")
-        elif form.is_valid():
+            valid = False
+        if valid:
             user = form.save()
             try:
                 profile = user.profile
