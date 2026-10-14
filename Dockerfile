@@ -75,7 +75,7 @@ RUN go install github.com/lc/gau/v2/cmd/gau@${GAU_VERSION} \
     && (mv /go/bin/${TARGETOS}_${TARGETARCH}/gau /history-tools/ 2>/dev/null || mv /go/bin/gau /history-tools/)
 
 # ===========================================================================
-# WEB runtime — python:3.12-slim. UI/API + PDF reports. NO scanner tools.
+# WEB runtime — python:3.12-slim. Server-rendered UI (gunicorn). NO scanner tools.
 # ===========================================================================
 FROM python:3.12-slim AS web
 
