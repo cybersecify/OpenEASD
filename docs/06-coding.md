@@ -288,8 +288,7 @@ HTTP data export. Do not add `/api/` endpoints.
   shadows** (finding F9). Import models lazily inside fixtures.
 - **Mock externals at the module-local import site**, never globally: patch
   `apps.tldsquatting.collector.requests.get`, `apps.*.scanner.collect`,
-  `apps.core.console.reports.views._render_pdf`, etc. PDF tests mock `_render_pdf`
-  and assert on the captured HTML — no WeasyPrint native libs needed.
+  etc.
 - **Assert behavior, not rendered markup.** Exact HTML strings / CSS classes /
   verbatim copy are brittle (finding F11). Assert the fact, not the template.
 - **Guard / invariant tests are a required category** — they're what keep the
@@ -320,30 +319,10 @@ HTTP data export. Do not add `/api/` endpoints.
   findings table); vendored Bulma + HTMX, no CDN, no build step.
 - Tests live in `tests/unit/test_mvp_views.py` (Django test client).
 
-### 9.1 Legacy React SPA (dormant)
+### 9.1 Removed surfaces
 
-The conventions below describe the dormant `frontend/` SPA (not served; deletion
-deferred). Don't extend it for new UI work.
-
-
-- **Data layer**: `@tanstack/react-query` `useQuery` keyed by the API path
-  (`queryKey: ['/scans/', domain, status, page]`). Single `QueryClient`
-  (`staleTime: 0`, `retry: false`).
-- **All HTTP goes through `api/client.js` `apiGet`/`apiPost`** over one axios
-  instance (`baseURL: '/api'`). **Same-origin, no CORS** ever (Vite proxy in dev,
-  WhiteNoise in prod). Don't reintroduce ad-hoc `fetch` (finding F12 flags the two
-  existing offenders).
-- Axios interceptors handle auth: request injects `Bearer` from
-  `auth.getToken()`; response does single-flight 401→refresh, else `auth.clear()`
-  + redirect to `/login`.
-- `auth.js` is the **sole owner of `localStorage`** token keys.
-- **Routing**: `createBrowserRouter` tree in `router.jsx`; everything private is
-  nested under `<ProtectedRoute>`. Navigate with `useNavigate`, not a hand-rolled
-  router.
-- **UI**: shadcn/ui primitives (`components/ui/*`), Tailwind, dark-theme tokens
-  (`bg-canvas`, `bg-card`, `border-rim`, `text-lit`, `text-dim`). Toasts via
-  `components/Notification.jsx`.
-- Tests: Vitest + Testing Library, co-located `*.test.{js,jsx}`.
+The React SPA (`frontend/`), REST API and JWT were removed; there is no frontend
+toolchain. All UI work goes in `apps/mvp`.
 
 ---
 
@@ -383,7 +362,7 @@ blockers. Fixed items are struck through with the PR that closed them.
   channel and never the URL; `save_config` adopts the None=unchanged /
   ""=clear / value=set write semantics so the threshold can be saved without
   wiping a stored webhook the UI can no longer read back. Matches
-  `/api/credentials/` and `/api/ai/config/`.
+  the credentials and AI-config write semantics.
 - **F-sec1 — weak default DB credentials ship silently.** `DB_PASSWORD` defaults
   to `"openeasd"` with no fail-fast guard (unlike `SECRET_KEY`).
   (`openeasd/settings/base.py:210`)

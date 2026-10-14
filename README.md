@@ -39,10 +39,10 @@ OpenEASD is not a compliance product and does not make anyone certified. What it
 | What an auditor asks for | Where it comes from |
 | --- | --- |
 | Scanning happens on a defined cadence | Per domain monitoring (6h / 12h / 24h / 48h / weekly) plus one time and recurring schedules, with every run recorded |
-| An inventory of internet facing assets | Assets page and `/api/assets/`: subdomains, IPs, ports and URLs deduplicated across scans, each with first seen, last seen, and active or gone status |
+| An inventory of internet facing assets | Persistent asset inventory (Django admin): subdomains, IPs, ports and URLs deduplicated across scans, each with first seen, last seen, and active or gone status |
 | Findings ranked by real world risk | Severity enriched with EPSS exploit probability and CISA KEV flags, plus an exposure score and grade with movement against the previous scan |
 | Evidence that findings get triaged and closed | Issue status (open, acknowledged, in progress, resolved, false positive, accepted risk) with owner, resolution note, first seen, last seen and resolved date |
-| Something you can hand over | Per scan PDF and CSV export, including the Issue Register |
+| Something you can hand over | Per scan CSV export, including the Issue Register |
 | Authority to scan the target | Each domain carries a recorded authorization (owner, written consent or bug bounty) with who gave it and when, enforced server side before any active scan |
 
 Control references that usually apply: ISO/IEC 27001:2022 Annex A 8.8 (technical vulnerability management) and A 5.9 (inventory of information and other associated assets); SOC 2 Trust Services Criteria CC7.1 (detection and monitoring) and CC6.6 (boundary protection). Auditors word their requests differently, so treat this as a starting point, not a mapping to cite.
@@ -189,7 +189,7 @@ Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced t
 - **Live scan progress**: Real-time pipeline status with per-tool step tracking
 - **Scan stop/cancel**: Graceful cancellation between tool steps
 - **Unified findings**: All tools write to a single Finding model with lifecycle tracking
-- **Asset inventory**: A persistent, deduplicated view of your attack surface across scans — every subdomain/IP/port/URL with first-seen / last-seen / active-or-gone status; pivot from any asset to its findings and scan history (Assets page + `/api/assets/`)
+- **Asset inventory**: A persistent, deduplicated view of your attack surface across scans — every subdomain/IP/port/URL with first-seen / last-seen / active-or-gone status; pivot from any asset to its findings and scan history (persistent inventory, browsable in Django admin)
 - **Continuous monitoring**: Per-domain rescans on a configurable schedule (6h / 12h / 24h / 48h / weekly)
 - **Subscan**: Re-run specific tools on existing scan assets without full rediscovery
 - **Reports**: CSV export
@@ -283,8 +283,7 @@ finding IDs); prompt and response contents are never stored.
 
 ```
 apps/core/              - Infrastructure (never changes)
-  api/                  - Django Ninja API, JWT auth, error handlers
-  api/tokens/           - BlacklistedToken model (JWT JTI blacklist)
+  mvp/ (apps/mvp)       - Server-rendered UI: Django views + templates, vendored Bulma + HTMX, session auth
   assets/               - Network assets: Subdomain, IPAddress, Port
   web_assets/           - Web assets: URL
   service_detection/    - Classifies ports as web/non-web (core, always runs)
@@ -295,7 +294,7 @@ apps/core/              - Infrastructure (never changes)
   durable/              - DBOS engine, scan/AI workflows, dbos_worker command
   notifications/        - Slack/Teams alerts
   insights/             - Scan summaries, charts
-  reports/              - CSV/PDF export
+  reports/              - CSV export
   ai/                   - AI analysis (Cloudflare Workers AI, BYOK): triage, orchestration, summaries, consent + audit
   domains/              - Domain management
   dashboard/            - UI home
@@ -321,14 +320,6 @@ apps/                   - Tool apps (add/remove freely)
   katana/               - Deep URL crawl
   nuclei/               - Web vulnerability scanning
   web_checker/          - Security headers, cookies, CORS
-
-frontend/               - React 19 + Vite 8 SPA
-  src/pages/            - Page components
-  src/components/       - Shared UI primitives (Badge, Spinner, Pagination, ConfirmButton)
-  src/components/ui/    - shadcn/ui primitives (Button, Card, Table, AlertDialog, …)
-  src/lib/              - queryClient, utils
-  src/api/client.js     - JWT apiFetch wrapper
-  src/auth.js           - localStorage token helpers
 ```
 
 ## Deployment
@@ -344,7 +335,7 @@ docker compose up -d --build
 ```
 
 - `db` — PostgreSQL 17 (app data + the DBOS durable-execution schema)
-- `web` — the slim `openeasd-web` image (UI/API + synchronous CSV/PDF reports; no scanner tools)
+- `web` — the slim `openeasd-web` image (server-rendered UI + synchronous CSV reports; no scanner tools)
 - `worker` — the `openeasd-worker` image (DBOS worker + the full scanner matrix, `NET_RAW`)
 
 > **Run all three tiers — this is the recommended architecture.** Keeping
@@ -394,8 +385,8 @@ docker compose up -d       # recreates changed containers; the db volume persist
 | `ALERT_SEVERITY_THRESHOLD` | `high` | Minimum severity to trigger alerts; overridden by the Notifications UI setting |
 | `SCAN_DAILY_HOUR` | `2` | Hour for daily scheduled scans (24h, UTC) |
 | `SCAN_DAILY_MINUTE` | `0` | Minute for daily scheduled scans |
-| `REPORT_CTA_URL` | *(none)* | Optional URL appended to PDF and CSV reports. Renders only when both `REPORT_CTA_URL` and `REPORT_CTA_TEXT` are set |
-| `REPORT_CTA_TEXT` | *(none)* | Optional call-to-action line shown alongside `REPORT_CTA_URL` in PDF/CSV reports |
+| `REPORT_CTA_URL` | *(none)* | Optional URL appended to CSV reports. Renders only when both `REPORT_CTA_URL` and `REPORT_CTA_TEXT` are set |
+| `REPORT_CTA_TEXT` | *(none)* | Optional call-to-action line shown alongside `REPORT_CTA_URL` in CSV reports |
 
 ### Kubernetes
 
@@ -479,11 +470,11 @@ uv run manage.py dbos_worker   # second terminal (needs PostgreSQL running)
 ### Development Mode
 
 ```bash
-# Starts Django (:8001) + the Vite dev server + the DBOS worker together
+# Starts Django (:8001, serves the UI) + the DBOS worker together
 # (needs PostgreSQL running). See the Makefile for the individual commands.
 make dev
 
-# React app at http://localhost:5173
+# UI at http://localhost:8001
 ```
 
 Full local-dev guide (prerequisites, first-time setup, CI parity,
@@ -495,7 +486,6 @@ GitHub Actions runs on every push to `main` and `v*` tags:
 - **pytest**: fast test suite (~1,730 tests, excludes the 52 slow DNS/RDAP tests in `test_domain_security.py`)
 - **bandit**: Python SAST scan
 - **pip-audit**: dependency CVE scan
-- **Frontend build**: `npm ci && npm run build`
 - **Docker build**: amd64 smoke-build on every push
 - **Publish to GHCR**: `amd64` images published on every `main` push and version tags
 
@@ -558,21 +548,16 @@ uv run pytest tests/
 
 **Backend:**
 - **Django 5.2 LTS**: Web framework
-- **Django Ninja**: REST API with OpenAPI docs
 - **DBOS**: Durable-execution engine — task queue + scheduler, Postgres-backed (crash-resumable scans)
 - **croniter**: Cron parsing for the DBOS user-schedule sweep
 - **WhiteNoise**: Serves static files in production (Docker) with gzip compression
 - **PostgreSQL** (+ **psycopg 3**): Database — app data and the DBOS checkpoint schema
 - **paramiko**: SSH protocol inspection
 - **cryptography**: X.509 certificate analysis
-- **xhtml2pdf**: PDF report generation
-- **django-ninja-jwt**: JWT auth for the Ninja API (built on PyJWT); access + refresh tokens, blacklist on logout
+- **Django sessions**: login/auth for the server-rendered UI (no JWT, no REST API)
 
 **Frontend:**
-- **React 19 + Vite 8**: SPA with hot module replacement
-- **Tailwind CSS 3 + shadcn/ui**: Utility-first styling with Radix UI component primitives
-- **sonner**: Toast notifications
-- Vanilla popstate router (no react-router)
+- **Bulma + HTMX** (vendored): server-rendered Django templates, no build step, no Node
 
 ## License
 

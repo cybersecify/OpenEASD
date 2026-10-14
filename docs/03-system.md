@@ -78,7 +78,7 @@ presentation run in their own lanes and meet only through stored facts.
    │  /scans → scan-centric   /assets → asset-centric   /issues → finding/issue-centric   …    │
    └────────────────────────────────────────────────┬──────────────────────────────────────────┘
                                                      ▼
-                            UI decides PRESENTATION only (React SPA, or any client)
+                            UI decides PRESENTATION only (the server-rendered `apps/mvp` UI, or any future client)
                             new perspective = new read + view, NO schema change
 ```
 
@@ -132,7 +132,7 @@ import the same codebase and differ only by entrypoint.
 ### Axis 1 — logical layers (how the CODE is organized, by responsibility)
 
 ```
-┌─ CONSOLE   presentation: server-rendered `apps/mvp` UI (session auth) + reports(CSV)/insights/notifications/ai; the React SPA is dormant on disk
+┌─ CONSOLE   presentation: server-rendered `apps/mvp` UI (session auth) + reports(CSV)/insights/notifications/ai
 │               apps/core/{dashboard, api, insights, reports, notifications, ai}
 ├─ ENGINE    orchestration: durable scan execution + dynamic workflow runner
 │               apps/core/{scans, workflows, durable, scheduler}
@@ -199,9 +199,9 @@ the folder move is purely organisational; the table lists each app by name.
 | `assets/` | `assets` | Network assets: `Subdomain`, `IPAddress`, `Port` |
 | `web_assets/` | `web_assets` | Web assets: `URL` |
 | `service_detection/` | `service_detection` | Enriches `Port.service` + `Port.is_web` via nmap -sV |
-| `findings/` | `findings` | Unified **raw** `Finding` model (per-scan) — all finding-producing tools write here; `/api/findings/` |
-| `issues/` | `issues` | Persistent, cross-scan **`Issue`** register (deduped promotion of Findings; triage persists across scans); finalize rollup, mirrors `asset_inventory`; `/api/issues/`. Split out of `findings` (D-017; table kept as `findings_issue`) |
-| `asset_inventory/` | `asset_inventory` | Persistent, deduplicated `Asset` inventory (domain-scoped, first/last-seen + status); populated by a fail-graceful rollup at finalize; `Finding.asset` links findings to it; `/api/assets/` + the Assets UI |
+| `findings/` | `findings` | Unified **raw** `Finding` model (per-scan) — all finding-producing tools write here |
+| `issues/` | `issues` | Persistent, cross-scan **`Issue`** register (deduped promotion of Findings; triage persists across scans); finalize rollup, mirrors `asset_inventory`. Split out of `findings` (D-017; table kept as `findings_issue`) |
+| `asset_inventory/` | `asset_inventory` | Persistent, deduplicated `Asset` inventory (domain-scoped, first/last-seen + status); populated by a fail-graceful rollup at finalize; `Finding.asset` links findings to it |
 | `scans/` | `scans` | `ScanSession`, `ScanDelta`, `ScheduledScan`, pipeline orchestrator |
 | `workflows/` | `workflow` | Workflow CRUD, dynamic runner, tool registry |
 | `scheduler/` | `scheduler` | Scan callables (daily/monitoring/user sweeps, watchdog, scan prune) invoked by the DBOS `@scheduled` workflows |
@@ -209,9 +209,9 @@ the folder move is purely organisational; the table lists each app by name.
 | `verification/` | — | Deterministic finding verification (`verify_session`) — re-probes medium+ findings at finalize via each tool's registered verifier, writing `Finding.verification_status`/`verified_at`; active re-probes gated by `DomainAuthorization`. Internal sub-package (no models, not in `INSTALLED_APPS`) invoked directly by `apps/core/engine/scans/pipeline.py` |
 | `notifications/` | `alerts` | `NotificationConfig` singleton, Slack/Teams dispatcher, alert history |
 | `insights/` | `insights` | `ScanSummary` (incl. Exposure Score + grade), `FindingTypeSummary`, trend charts |
-| `reports/` | `reports` | CSV + PDF export (synchronous Django views, on the web tier) |
+| `reports/` | `reports` | CSV export (synchronous Django views, on the web tier) |
 | `ai/` | `ai` | AI triage / adaptive orchestration / summaries (Cloudflare Workers AI, BYOK) — a core subsystem, **not** a registry tool |
-| `credentials/` | `credentials` | `ToolCredentials` encrypted singleton + `get_credential()` resolver (DB-wins-over-env) + write-only `/api/credentials/` — UI-managed BYOK keys |
+| `credentials/` | `credentials` | `ToolCredentials` encrypted singleton + `get_credential()` resolver (DB-wins-over-env) + UI-managed BYOK keys (Django admin) |
 
 ### By layer — console / engine / data
 
@@ -353,7 +353,7 @@ Phase 13  cve_intel + asn_cluster → enrich CVE findings (EPSS + CISA-KEV) + cl
 ### Scan flow (call chain)
 
 ```
-POST /api/scans/start/  (authorization gate: active tools need DomainAuthorization;
+scan start (`apps/mvp` view; authorization gate: active tools need DomainAuthorization;
   │                       a "now" scan of ONLY passive tools may bypass it)
   → create_scan_session(domain)        # ScanSession; auto-assigns the default Full Scan workflow
     → run_scan_task(session_id)        # DURABLY ENQUEUES onto the DBOS "scans" queue (DBOSClient)
@@ -383,7 +383,7 @@ gated by `FINDING_VERIFICATION_ENABLED`) → issue-register rollup
 | `completed` | All steps finished normally |
 | `partial` | Watchdog reaped it, or a tool failed; ≥1 step completed |
 | `failed` | No steps completed, or unrecoverable error |
-| `cancelled` | Stopped by user via `POST /api/scans/<uuid>/stop/` |
+| `cancelled` | Stopped by the user from the scan-detail page |
 
 ### Key design rules
 
@@ -520,36 +520,7 @@ partial polled every 3s. Forced password change is enforced by
 `apps/mvp/middleware.py::MustChangePasswordMiddleware`. The SPA catch-all was removed
 from `openeasd/urls.py`; unknown paths redirect to the dashboard.
 
-**Legacy / dormant — React SPA (`frontend/`)**: still in the tree, no longer served
-or built into the UI path; deletion is a deferred follow-up. Its layout, kept for
-reference:
-
-```
-frontend/
-  src/
-    api/client.js          apiGet(path) / apiPost(path, body) over axiosInstance.js
-    api/axiosInstance.js    request interceptor adds Bearer; response interceptor refreshes on 401
-    auth.js                localStorage helpers (getToken, setTokens, clear, isLoggedIn)
-    router.jsx             react-router-dom createBrowserRouter tree; ProtectedRoute gate
-    main.jsx               <RouterProvider> + <QueryClientProvider> + <Toaster>
-    lib/queryClient.js     @tanstack/react-query client
-    pages/                 one file per route
-    components/
-      ui/                  shadcn primitives (Button, Card, Table, Badge, …)
-      Badge.jsx / Spinner.jsx / Pagination.jsx / ConfirmButton.jsx / Notification.jsx
-      BuildInfo.jsx        sidebar build/version footer + "update available" check
-      ai/                  ConsentDialog.jsx, TriagePanel.jsx
-```
-
-**Tech:** React 19, Vite 8, react-router-dom, @tanstack/react-query, shadcn/ui,
-Tailwind CSS 3, Radix UI. Data fetching is `useQuery({queryKey:[path,…]})` +
-`apiGet`; live scan status polls at 3s. Tests: Vitest + Testing Library.
-
-**Theme:** dark — `bg #0d1117`, card `#161b22`, border `#30363d`, accent `#30c074`.
-
-**Dev:** Vite proxy forwards `/api/` → Django `:8001` (no CORS). **Prod:**
-`npm run build` → `frontend/dist/` → served by WhiteNoise; Django catch-all serves
-`index.html` for non-API paths.
+The React SPA (`frontend/`), REST API and JWT have been removed; there is no frontend build toolchain.
 
 ---
 
