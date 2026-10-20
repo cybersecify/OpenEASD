@@ -163,6 +163,25 @@ See `tests/unit/test_ssh_checker.py` (34 tests) or
   tool writes to.
 - `docs/06-coding.md` — coding conventions; `apps/mvp/views.py` — the UI.
 
+## What to expect from us
+
+OpenEASD is free, MIT licensed, and maintained on a best effort basis around
+client work. That means triage and review run in bursts, not continuously. A
+few days of silence on an issue or a PR is normal and is not a signal that
+nobody wants your work.
+
+Two practical consequences worth knowing before you invest time:
+
+- **Ask before starting on anything large.** Comment on the issue and say what
+  you plan to do. We will tell you if it is still wanted. Issues can go stale
+  when the code underneath them changes, and we would rather catch that in a
+  comment than after you have written the patch.
+- **There are no deadlines here, in either direction.** Take the time you need.
+  Equally, do not expect a same day review.
+
+If an issue has been quiet for a while and you want to know whether it is still
+live, just ask in the thread. That is always a welcome question.
+
 ## Fork and contribute
 
 OpenEASD uses a fork-based workflow for external contributors — you won't
