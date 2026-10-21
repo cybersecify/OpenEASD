@@ -8,6 +8,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from sources.ubuntu_usn import fetch_ubuntu_backports
 from sources.debian_security_tracker import fetch_debian_backports
 from sources.alpine_secdb import fetch_alpine_backports
+from sources.suse_security import fetch_suse_backports
 
 try:
     from django.core.management.base import BaseCommand
@@ -28,15 +29,20 @@ def do_refresh():
     alpine_backports = fetch_alpine_backports()
     print(f"Got {len(alpine_backports)} CVEs from Alpine.")
 
+    print("Fetching backports from SUSE...")
+    suse_backports = fetch_suse_backports()
+    print(f"Got {len(suse_backports)} CVEs from SUSE.")
+
     # Guard: abort if any feed returned empty to avoid clobbering valid data
-    if not ubuntu_backports or not debian_backports or not alpine_backports:
+    if not ubuntu_backports or not debian_backports or not alpine_backports or not suse_backports:
         print("ERROR: one or more feeds returned empty — aborting write to protect existing data.")
         sys.exit(1)
 
     combined = {
         "ubuntu": ubuntu_backports,
         "debian": debian_backports,
-        "alpine": alpine_backports
+        "alpine": alpine_backports,
+        "suse": suse_backports
     }
 
     output_path = Path(__file__).resolve().parent.parent.parent / "backports.json"
