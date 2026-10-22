@@ -16,7 +16,7 @@ import logging
 import re
 import tarfile
 import urllib.request
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from collections import defaultdict
 from typing import Dict
 
