@@ -14,6 +14,8 @@ _EXPECTED_FULL_SCAN = {
     "domain_probe",
     # added in 0032 — lookalike ASN clustering
     "asn_cluster",
+    # Added by 0040: read-only LDAP RootDSE metadata for authorized Full Scan.
+    "ldap_enum",
 }
 
 
@@ -80,6 +82,6 @@ def test_forward_is_idempotent_and_fills_gaps():
     tools = set(wf.steps.values_list("tool", flat=True))
     # 0021 restores its own canonical 18; asn_discovery/js_secrets are added by
     # 0023, domain_probe by 0031, asn_cluster by 0032 — exclude those here.
-    assert (_EXPECTED_FULL_SCAN - {"asn_discovery", "js_secrets", "domain_probe", "asn_cluster"}) <= tools
+    assert (_EXPECTED_FULL_SCAN - {"asn_discovery", "js_secrets", "domain_probe", "asn_cluster", "ldap_enum"}) <= tools
     # no duplicates introduced
     assert wf.steps.count() == len(set(wf.steps.values_list("tool", flat=True)))
