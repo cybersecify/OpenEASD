@@ -142,6 +142,7 @@ INSTALLED_APPS = [
     "apps.historical_urls",
     "apps.katana",
     "apps.nmap",
+    "apps.ldap_enum",
     "apps.tls_checker",
     "apps.ssh_checker",
     "apps.nuclei",
