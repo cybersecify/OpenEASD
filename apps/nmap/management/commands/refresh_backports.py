@@ -8,6 +8,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from sources.ubuntu_usn import fetch_ubuntu_backports
 from sources.debian_security_tracker import fetch_debian_backports
 from sources.alpine_secdb import fetch_alpine_backports
+from sources.redhat_security import fetch_redhat_backports
 
 try:
     from django.core.management.base import BaseCommand
@@ -28,7 +29,13 @@ def do_refresh():
     alpine_backports = fetch_alpine_backports()
     print(f"Got {len(alpine_backports)} CVEs from Alpine.")
 
-    # Guard: abort if any feed returned empty to avoid clobbering valid data
+    print("Fetching backports from Red Hat...")
+    redhat_backports = fetch_redhat_backports()
+    print(f"Got {len(redhat_backports)} CVEs from Red Hat.")
+
+    # Guard: abort if any feed returned empty to avoid clobbering valid data.
+    # Red Hat is deliberately left out of this guard — it is a much larger feed,
+    # and an empty response there must not throw away the other three.
     if not ubuntu_backports or not debian_backports or not alpine_backports:
         print("ERROR: one or more feeds returned empty — aborting write to protect existing data.")
         sys.exit(1)
@@ -36,7 +43,8 @@ def do_refresh():
     combined = {
         "ubuntu": ubuntu_backports,
         "debian": debian_backports,
-        "alpine": alpine_backports
+        "alpine": alpine_backports,
+        "redhat": redhat_backports
     }
 
     output_path = Path(__file__).resolve().parent.parent.parent / "backports.json"
@@ -60,4 +68,3 @@ class Command(BaseCommand):
 
 if __name__ == "__main__":
     do_refresh()
-
