@@ -16,8 +16,12 @@ def _ai_sources() -> dict[str, str]:
 
 
 def test_ai_subsystem_never_writes_findings():
-    """Invariant 9: the AI layer reads Finding rows but never creates,
-    updates, or deletes them — lifecycle changes stay human-only."""
+    """Invariant 9: the AI layer never creates or deletes Finding rows via
+    Finding.objects, and never mutates lifecycle fields (status/
+    verification_status) — lifecycle changes stay human-only. (It may still
+    annotate `extra["verification"]["ai"]` on an existing instance via
+    `f.save(update_fields=["extra"])` per the finding-verification spec §8;
+    that path doesn't go through `Finding.objects` so this grep doesn't see it.)"""
     allowed = re.compile(r"Finding\.objects\.filter\b")
     any_use = re.compile(r"Finding\.objects\.\w+")
     for name, src in _ai_sources().items():

@@ -10,7 +10,7 @@ class GithubReconConfig(AppConfig):
         "label": "GitHub Org Recon",
         "runner": "apps.github_recon.scanner.run_github_recon",
         "phase": 3,
-        "phase_group": "Surface Enumeration",
+        "phase_group": "Asset Discovery",
         "requires": [],
         "produces_findings": True,
         # Passive: queries GitHub's PUBLIC REST API for the org's public repos and

@@ -1,7 +1,7 @@
 """
 Unit tests for apps/core/engine/scheduler/scheduler.py
 
-Tests reap_stuck_scans, purge_expired_blacklisted_tokens, and daily_scan.
+Tests reap_stuck_scans and daily_scan.
 """
 
 import uuid
@@ -13,7 +13,6 @@ from django.utils import timezone
 from apps.core.engine.scheduler.scheduler import (
     SCAN_PENDING_TIMEOUT_MINUTES,
     SCAN_TIMEOUT_MINUTES,
-    purge_expired_blacklisted_tokens,
     reap_stuck_scans,
 )
 
@@ -23,21 +22,37 @@ from apps.core.engine.scheduler.scheduler import (
 # ---------------------------------------------------------------------------
 
 class TestReapStuckScans:
-    def _make_session(self, status, age_minutes, domain="example.com"):
+    def _make_session(self, status, age_minutes, domain="example.com", progress_minutes_ago=None):
         from apps.core.engine.scans.models import ScanSession
         session = ScanSession.objects.create(
             domain=domain, scan_type="full", status=status,
         )
-        # Backdate start_time
-        ScanSession.objects.filter(pk=session.pk).update(
-            start_time=timezone.now() - timedelta(minutes=age_minutes)
-        )
+        # Backdate start_time; optionally set a liveness heartbeat (H10). Without
+        # a heartbeat a running scan is eligible for the no-progress reap.
+        fields = {"start_time": timezone.now() - timedelta(minutes=age_minutes)}
+        if progress_minutes_ago is not None:
+            fields["last_progress_at"] = timezone.now() - timedelta(minutes=progress_minutes_ago)
+        ScanSession.objects.filter(pk=session.pk).update(**fields)
         session.refresh_from_db()
         return session
 
     def test_reaps_running_scan_past_timeout(self, db):
         session = self._make_session("running", SCAN_TIMEOUT_MINUTES + 1)
         count = reap_stuck_scans()
+        assert count == 1
+        session.refresh_from_db()
+        assert session.status == "failed"
+        assert session.end_time is not None
+
+    def test_survives_count_error(self, db):
+        # F4: _count_all_findings now raises on a DB error (instead of returning a
+        # fake 0). The watchdog sweep must still complete — mark the scan and
+        # leave total_findings unchanged — rather than crash on one bad count.
+        from unittest.mock import patch
+        session = self._make_session("running", SCAN_TIMEOUT_MINUTES + 1)
+        with patch("apps.core.engine.scans.pipeline._count_all_findings",
+                   side_effect=Exception("db down")):
+            count = reap_stuck_scans()
         assert count == 1
         session.refresh_from_db()
         assert session.status == "failed"
@@ -72,16 +87,22 @@ class TestReapStuckScans:
         assert session.status == "pending"
 
     def test_running_scan_keeps_longer_timeout(self, db):
-        """A running scan older than the pending cutoff but under the running
-        timeout is NOT reaped — running scans keep the full SCAN_TIMEOUT budget."""
-        session = self._make_session("running", SCAN_PENDING_TIMEOUT_MINUTES + 5)
+        """A LIVE running scan (fresh heartbeat) older than the pending cutoff but
+        under the running timeout is NOT reaped — running scans keep the full
+        SCAN_TIMEOUT budget as long as they keep making progress (H10)."""
+        session = self._make_session(
+            "running", SCAN_PENDING_TIMEOUT_MINUTES + 5, progress_minutes_ago=1
+        )
         count = reap_stuck_scans()
         assert count == 0
         session.refresh_from_db()
         assert session.status == "running"
 
     def test_does_not_reap_recent_running_scan(self, db):
-        session = self._make_session("running", SCAN_TIMEOUT_MINUTES - 1)
+        # Live scan (fresh heartbeat) just under the 24h hard cap → kept.
+        session = self._make_session(
+            "running", SCAN_TIMEOUT_MINUTES - 1, progress_minutes_ago=1
+        )
         count = reap_stuck_scans()
         assert count == 0
         session.refresh_from_db()
@@ -102,7 +123,8 @@ class TestReapStuckScans:
     def test_reaps_multiple_stuck_scans(self, db):
         self._make_session("running", SCAN_TIMEOUT_MINUTES + 5, "a.com")
         self._make_session("pending", SCAN_TIMEOUT_MINUTES + 5, "b.com")
-        self._make_session("running", SCAN_TIMEOUT_MINUTES - 1, "c.com")  # recent — skip
+        # Live scan just under the hard cap (fresh heartbeat) — skipped.
+        self._make_session("running", SCAN_TIMEOUT_MINUTES - 1, "c.com", progress_minutes_ago=1)
         count = reap_stuck_scans()
         assert count == 2
 
@@ -191,51 +213,6 @@ class TestReapStuckScans:
 
         ids = latest_session_ids(domains=["x.example.com"])
         assert partial.id in ids
-
-
-# ---------------------------------------------------------------------------
-# purge_expired_blacklisted_tokens
-# ---------------------------------------------------------------------------
-
-class TestPurgeExpiredBlacklistedTokens:
-    def _make_outstanding_token(self, expired=False):
-        import uuid as _uuid
-        from ninja_jwt.token_blacklist.models import OutstandingToken
-        delta = timedelta(seconds=1) if expired else timedelta(days=7)
-        sign = -1 if expired else 1
-        return OutstandingToken.objects.create(
-            jti=str(_uuid.uuid4()),
-            token="dummy.token.value",
-            expires_at=timezone.now() + sign * delta,
-        )
-
-    def test_deletes_expired_tokens(self, db):
-        from ninja_jwt.token_blacklist.models import OutstandingToken
-        expired = self._make_outstanding_token(expired=True)
-        jti = expired.jti
-        count = purge_expired_blacklisted_tokens()
-        assert count >= 1
-        assert not OutstandingToken.objects.filter(jti=jti).exists()
-
-    def test_keeps_valid_tokens(self, db):
-        from ninja_jwt.token_blacklist.models import OutstandingToken
-        valid = self._make_outstanding_token(expired=False)
-        count = purge_expired_blacklisted_tokens()
-        assert count == 0
-        assert OutstandingToken.objects.filter(jti=valid.jti).exists()
-
-    def test_mixed_expired_and_valid(self, db):
-        from ninja_jwt.token_blacklist.models import OutstandingToken
-        self._make_outstanding_token(expired=True)
-        self._make_outstanding_token(expired=True)
-        valid = self._make_outstanding_token(expired=False)
-        count = purge_expired_blacklisted_tokens()
-        assert count >= 2
-        assert OutstandingToken.objects.filter(jti=valid.jti).exists()
-        assert OutstandingToken.objects.count() == 1
-
-    def test_returns_zero_when_nothing_to_purge(self, db):
-        assert purge_expired_blacklisted_tokens() == 0
 
 
 # ---------------------------------------------------------------------------

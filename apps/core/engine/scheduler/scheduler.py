@@ -2,8 +2,7 @@
 
 On the `local` branch the cron layer is DBOS @scheduled workflows
 (apps/core/durable/workflows.py); the functions here are the plain callables
-those workflows invoke (daily_scan, run_due_monitoring_scans, reap_stuck_scans,
-purge_expired_blacklisted_tokens). setup_core_schedules / sync_domain_monitoring_jobs
+those workflows invoke (daily_scan, run_due_monitoring_scans, reap_stuck_scans). setup_core_schedules / sync_domain_monitoring_jobs
 are retained as no-ops for legacy callers.
 """
 
@@ -32,6 +31,14 @@ SCAN_TIMEOUT_MINUTES = _config("SCAN_TIMEOUT_MINUTES", default=1440, cast=int)  
 # that legitimately queue scans for long stretches behind long-running ones.
 SCAN_PENDING_TIMEOUT_MINUTES = _config("SCAN_PENDING_TIMEOUT_MINUTES", default=60, cast=int)
 
+# H10 — no-progress watchdog. A running scan that has not completed a step (no
+# heartbeat on ScanSession.last_progress_at) for this many minutes is treated as
+# wedged and reaped, freeing its scarce concurrency slot in minutes rather than
+# waiting out the 24h hard cap (SCAN_TIMEOUT_MINUTES). Must stay COMFORTABLY above
+# the longest single-tool runtime (nuclei/amass can run tens of minutes and the
+# heartbeat only ticks between steps) so a slow-but-alive scan is never killed.
+SCAN_NO_PROGRESS_MINUTES = _config("SCAN_NO_PROGRESS_MINUTES", default=60, cast=int)
+
 
 # ---------------------------------------------------------------------------
 # Core schedule setup (legacy no-op — schedules are DBOS @scheduled workflows)
@@ -40,8 +47,7 @@ SCAN_PENDING_TIMEOUT_MINUTES = _config("SCAN_PENDING_TIMEOUT_MINUTES", default=6
 def setup_core_schedules():
     """No-op on the DBOS branch.
 
-    The unattended-scanning backbone (daily scan, monitoring sweep, watchdog,
-    token purge) is now a set of DBOS @scheduled workflows in
+    The unattended-scanning backbone (daily scan, monitoring sweep, watchdog) is now a set of DBOS @scheduled workflows in
     apps/core/durable/workflows.py, registered when the dbos_worker imports
     that module — there is no Django-Q Schedule setup to perform. Kept as a
     callable so any legacy caller (and the scheduler AppConfig) stays valid.
@@ -227,16 +233,32 @@ def reap_stuck_scans():
     now = django_tz.now()
     running_cutoff = now - django_tz.timedelta(minutes=SCAN_TIMEOUT_MINUTES)
     pending_cutoff = now - django_tz.timedelta(minutes=SCAN_PENDING_TIMEOUT_MINUTES)
+    no_progress_cutoff = now - django_tz.timedelta(minutes=SCAN_NO_PROGRESS_MINUTES)
+    # A running scan is stuck if EITHER it has exceeded the 24h hard cap
+    # (SCAN_TIMEOUT_MINUTES) OR it has made no progress for
+    # SCAN_NO_PROGRESS_MINUTES (H10). The heartbeat (ScanSession.last_progress_at,
+    # stamped on every step completion) is the liveness signal: a slow-but-alive
+    # scan keeps it fresh and is NOT reaped; a wedged scan goes stale and is freed
+    # in minutes instead of a day. NULL heartbeat (no step has finished yet) falls
+    # back to start_time, so a scan that never completes a first step is still
+    # reaped once it's stale. NO_PROGRESS must exceed the longest single-tool
+    # runtime (heartbeat is per-step), hence a generous default.
+    running_stuck = Q(status="running") & (
+        Q(start_time__lt=running_cutoff)
+        | Q(last_progress_at__lt=no_progress_cutoff)
+        | Q(last_progress_at__isnull=True, start_time__lt=no_progress_cutoff)
+    )
     stuck_qs = ScanSession.objects.filter(
-        Q(status="running", start_time__lt=running_cutoff)
-        | Q(status="pending", start_time__lt=pending_cutoff)
+        running_stuck | Q(status="pending", start_time__lt=pending_cutoff)
     ).select_related("workflow_run")
 
     reap_msg = "reaped by watchdog after timeout"
     partial_count = 0
     failed_count = 0
+    reaped_ids = []
 
     for session in stuck_qs:
+        reaped_ids.append(session.id)
         run = getattr(session, "workflow_run", None)
         completed_step = False
         if run is not None:
@@ -254,8 +276,18 @@ def reap_stuck_scans():
         # total_findings is still 0 even though completed steps wrote Findings.
         # Recompute it here so reaped scans show their real count, not 0.
         from apps.core.engine.scans.pipeline import _count_all_findings
-        session.total_findings = _count_all_findings(session)
-        session.save(update_fields=["status", "end_time", "total_findings"])
+        save_fields = ["status", "end_time"]
+        try:
+            session.total_findings = _count_all_findings(session)
+            save_fields.append("total_findings")
+        except Exception:  # noqa: BLE001 — a count hiccup must not abort the sweep
+            # Leave total_findings as-is (don't fake a 0); the scan is already
+            # labeled partial/failed, so a stale count here isn't misread as clean.
+            logger.warning(
+                "[watchdog] could not recount findings for scan %s — leaving total_findings unchanged",
+                session.id, exc_info=True,
+            )
+        session.save(update_fields=save_fields)
 
         if new_status == "partial":
             partial_count += 1
@@ -268,19 +300,249 @@ def reap_stuck_scans():
             f"[watchdog] Reaped {total} stuck scan(s) — "
             f"{partial_count} as partial (kept findings), {failed_count} as failed"
         )
+    # H4/H9 reconcile (source-fix): a scan we just reaped to terminal leaves its
+    # DBOS run_scan workflow still ENQUEUED/PENDING — a phantom that holds a
+    # scans-queue concurrency slot. Cancel those workflows inline, in the SAME
+    # pass that reaped the sessions, so a phantom never outlives its scan
+    # (rather than depending on reap_orphaned_scan_workflows running afterwards —
+    # that remains the periodic safety net for anything missed). The heartbeat
+    # reap (H10) is the liveness signal that keeps us from reaping a scan DBOS is
+    # legitimately still advancing, which is H4's "don't fight DBOS resume" goal.
+    _cancel_workflows_for_sessions(reaped_ids)
     return total
 
 
+def _cancel_workflows_for_sessions(session_ids) -> int:
+    """Cancel the ENQUEUED/PENDING run_scan DBOS workflows for the given sessions
+    (matched by deduplication_id ``scan-{id}``). Fail-graceful — logs and returns
+    0 on any error so it never aborts the watchdog sweep. Idempotent: cancelling
+    an already-terminal workflow is a no-op."""
+    if not session_ids:
+        return 0
+    try:
+        from apps.core.engine.durable.client import get_client
+        from apps.core.engine.durable.constants import QUEUE_NAME
+
+        client = get_client()
+        workflows = client.list_workflows(
+            name="run_scan",
+            status=["ENQUEUED", "PENDING"],
+            queue_name=QUEUE_NAME,
+            load_input=False,
+            load_output=False,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("[watchdog] could not list run_scan workflows to cancel", exc_info=True)
+        return 0
+
+    wanted = {f"scan-{sid}" for sid in session_ids}
+    cancelled = 0
+    for wf in workflows:
+        if (getattr(wf, "deduplication_id", None) or "") in wanted:
+            try:
+                client.cancel_workflow(wf.workflow_id)
+                cancelled += 1
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "[watchdog] failed to cancel workflow %s", wf.workflow_id, exc_info=True
+                )
+    if cancelled:
+        logger.info("[watchdog] cancelled %d DBOS workflow(s) for reaped scan(s)", cancelled)
+    return cancelled
+
+
 # ---------------------------------------------------------------------------
-# JWT token cleanup
+# Orphaned-workflow reaper (H8 — free jammed `scans`-queue concurrency slots)
 # ---------------------------------------------------------------------------
 
-def purge_expired_blacklisted_tokens():
-    """Delete expired OutstandingToken rows to keep the table small."""
-    from ninja_jwt.token_blacklist.models import OutstandingToken
+# A ScanSession is "live" only while it is pending or running; any other status
+# is terminal. A DBOS run_scan workflow that is still ENQUEUED/PENDING while its
+# ScanSession is terminal (or gone) is a *phantom*: it occupies a scarce
+# `scans`-queue concurrency slot but has no live work behind it. With
+# concurrency=2, a couple of phantoms permanently jam the queue so no new scan
+# dequeues (observed 2026-09-12: a worker rollout orphaned in-flight run_scan
+# workflows pinned to the old app-version; their sessions were later reaped to
+# `failed` by reap_stuck_scans, but the DBOS workflows stayed PENDING and held
+# both slots). This reaper cancels those phantoms so the slots free.
+#
+# It only ever cancels a workflow whose session is NOT live, so it can never kill
+# a legitimately in-flight scan — making it safe to run unattended from the
+# watchdog cron (no app-version guessing, no rolling-deploy race). Pending/running
+# version-orphans are first flipped to terminal by reap_stuck_scans (pending after
+# SCAN_PENDING_TIMEOUT_MINUTES), after which this reaper clears their workflows.
+_SCAN_ACTIVE_STATUSES = {"pending", "running"}
 
-    cutoff = django_tz.now()
-    deleted, _ = OutstandingToken.objects.filter(expires_at__lt=cutoff).delete()
-    if deleted:
-        logger.info(f"[token_purge] Deleted {deleted} expired outstanding token(s)")
-    return deleted
+
+def reap_orphaned_scan_workflows(apply: bool = True):
+    """Cancel ENQUEUED/PENDING `run_scan` DBOS workflows whose ScanSession is
+    terminal or missing (phantoms holding a `scans`-queue concurrency slot).
+
+    Returns a list of ``(workflow_id, deduplication_id, session_status)`` tuples
+    that were (or, when ``apply=False``, would be) cancelled. Fail-graceful: any
+    error is logged and an empty list returned — it runs inside the watchdog cron
+    and must never abort the sweep.
+    """
+    try:
+        from apps.core.engine.durable.client import get_client
+        from apps.core.engine.durable.constants import QUEUE_NAME
+        from apps.core.engine.scans.models import ScanSession
+
+        client = get_client()
+        workflows = client.list_workflows(
+            name="run_scan",
+            status=["ENQUEUED", "PENDING"],
+            queue_name=QUEUE_NAME,
+            load_input=False,
+            load_output=False,
+        )
+    except Exception:  # noqa: BLE001 — never abort the watchdog sweep
+        logger.warning("[orphan-reaper] could not list run_scan workflows", exc_info=True)
+        return []
+
+    reaped = []
+    for wf in workflows:
+        dedup = getattr(wf, "deduplication_id", None) or ""
+        # enqueue_scan() always sets deduplication_id="scan-{session_id}".
+        session_id = None
+        if dedup.startswith("scan-"):
+            try:
+                session_id = int(dedup[len("scan-"):])
+            except ValueError:
+                session_id = None
+
+        if session_id is None:
+            # No resolvable session handle — leave it; we only reap workflows we
+            # can prove are orphaned (don't guess about un-mappable ones).
+            continue
+
+        status = (
+            ScanSession.objects.filter(id=session_id)
+            .values_list("status", flat=True)
+            .first()
+        )
+        session_is_live = status in _SCAN_ACTIVE_STATUSES
+        if session_is_live:
+            continue  # a pending/running session may still be legitimate work
+
+        # status is None (session deleted) or terminal → phantom slot holder.
+        reaped.append((wf.workflow_id, dedup, status or "missing"))
+        if apply:
+            try:
+                client.cancel_workflow(wf.workflow_id)
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "[orphan-reaper] failed to cancel workflow %s (%s)",
+                    wf.workflow_id, dedup, exc_info=True,
+                )
+
+    if reaped:
+        verb = "Cancelled" if apply else "Would cancel"
+        logger.warning(
+            "[orphan-reaper] %s %d phantom run_scan workflow(s) holding a queue slot: %s",
+            verb, len(reaped), ", ".join(f"{d}({s})" for _, d, s in reaped),
+        )
+    return reaped
+
+
+# ---------------------------------------------------------------------------
+# System cron registry dispatch (H7)
+# ---------------------------------------------------------------------------
+
+def dispatch_scheduled(name: str, fn):
+    """Run a backbone cron job `fn` unless its ScheduledJob row is disabled, then
+    stamp last_run_at. The DBOS @scheduled decorator still owns timing/exactly-once;
+    this adds runtime enable/disable + last-run visibility via the editable table.
+
+    Fails OPEN: if the row is missing or the enabled-check errors, the job still
+    runs — a DB hiccup or a deleted row must never silently stop the backbone.
+    """
+    from apps.core.engine.scans.models import ScheduledJob
+
+    job = None
+    try:
+        job = ScheduledJob.objects.filter(name=name).first()
+        if job is not None and not job.enabled:
+            logger.info("[scheduler] job '%s' disabled via ScheduledJob — skipping", name)
+            return
+    except Exception:  # noqa: BLE001 — never let the registry lookup block a job
+        logger.warning("[scheduler] ScheduledJob lookup failed for '%s' — running anyway", name, exc_info=True)
+
+    fn()
+
+    if job is not None:
+        try:
+            job.last_run_at = django_tz.now()
+            job.save(update_fields=["last_run_at"])
+        except Exception:  # noqa: BLE001 — a stamp failure must not fail the job
+            logger.warning("[scheduler] could not stamp last_run_at for '%s'", name, exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# Scan retention / pruning (H3 — bounded result store)
+# ---------------------------------------------------------------------------
+
+def prune_old_scans():
+    """Delete old scan history to bound DB growth — OPT-IN (no-op unless
+    SCAN_RETENTION_ENABLED). Per domain, keep the newest
+    SCAN_RETENTION_KEEP_PER_DOMAIN scans AND any newer than
+    SCAN_RETENTION_MAX_AGE_DAYS; delete the rest. Invariants:
+
+    - The single newest scan per domain is ALWAYS kept (a domain never ends up
+      with zero scans, even if its newest is older than MAX_AGE_DAYS).
+    - pending/running scans are NEVER deleted (they may be in-flight); only
+      terminal scans are deletion candidates.
+    - Deletion cascades to the scan's assets/findings (FK on_delete=CASCADE);
+      the persistent asset_inventory + Issue registers keep the long-term
+      surface history, so pruning raw scans doesn't lose the over-time story.
+
+    Returns the number of ScanSessions deleted.
+    """
+    from django.conf import settings
+
+    if not getattr(settings, "SCAN_RETENTION_ENABLED", False):
+        return 0
+
+    from apps.core.engine.scans.models import ScanSession
+
+    keep_n = getattr(settings, "SCAN_RETENTION_KEEP_PER_DOMAIN", 30)
+    max_age_days = getattr(settings, "SCAN_RETENTION_MAX_AGE_DAYS", 180)
+    age_cutoff = (
+        django_tz.now() - django_tz.timedelta(days=max_age_days)
+        if max_age_days and max_age_days > 0
+        else None
+    )
+    terminal = ["completed", "failed", "partial", "cancelled"]
+
+    # order_by() clears ScanSession.Meta.ordering — otherwise the ordering field
+    # is added to the SELECT and defeats DISTINCT (one row per scan, not per domain).
+    domains = list(
+        ScanSession.objects.order_by().values_list("domain", flat=True).distinct()
+    )
+    to_delete = []
+    for domain in domains:
+        # Newest-first; only terminal scans are candidates for deletion.
+        sessions = list(
+            ScanSession.objects.filter(domain=domain, status__in=terminal)
+            .order_by("-start_time")
+            .values_list("id", "start_time")
+        )
+        for idx, (sid, start_time) in enumerate(sessions):
+            if idx == 0:
+                continue  # always keep the newest terminal scan for the domain
+            if idx < keep_n:
+                continue  # within the keep-N window
+            if age_cutoff is not None and start_time >= age_cutoff:
+                continue  # within the max-age window
+            to_delete.append(sid)
+
+    if not to_delete:
+        return 0
+
+    deleted, _ = ScanSession.objects.filter(id__in=to_delete).delete()
+    # `deleted` counts cascaded rows too; report the ScanSession count explicitly.
+    session_count = len(to_delete)
+    logger.info(
+        "[retention] Pruned %d old scan(s) across %d domain(s) (keep=%d, max_age_days=%s)",
+        session_count, len(set(domains)), keep_n, max_age_days,
+    )
+    return session_count

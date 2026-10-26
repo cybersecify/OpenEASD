@@ -11,6 +11,12 @@ pattern — **at-least-once side-effects, low observability, and an unbounded
 result store** — to make it correct, observable, and bounded. It does **not**
 change the architecture or remove features.
 
+A later **resilience track (H8–H10)** extends the plan with fixes for a
+*demonstrated* failure mode — the 2026-09-12 preprod queue-jam, where a worker
+rollout during active scans stranded in-flight workflows on the old app-version
+and permanently saturated the `concurrency=2` queue. These are deploy-safety and
+state-consistency hardening, same additive-and-safe discipline.
+
 **Owner:** OpenEASD core. **Depends on:** nothing external.
 
 ---
@@ -64,6 +70,25 @@ nothing; a first call with no prior `Alert` rows still sends.
 
 ## 4. Phase H2 — Queue / consumer observability (`/metrics`)
 
+> **Status:** ✅ Shipped — as a **DB-backed exporter** (deliberate deviation from the
+> in-process-counter design below). `apps/core/console/observability/metrics.py`
+> `render_metrics()` queries Postgres on each scrape and emits Prometheus text;
+> `GET /metrics` (web tier, unauthenticated, `no-store`; `METRICS_ENABLED` toggle —
+> **OFF by default / opt-in**, per M3 of the API security review: it's unauth so it
+> ships closed and is enabled only once network-restricted to the scraper).
+> Metrics: `openeasd_scans{status}`,
+> `openeasd_scan_queue_depth`, `openeasd_findings{severity}`, `openeasd_domains`,
+> `openeasd_scan_last_journey_seconds` (enqueue=start_time → finalize=end_time,
+> principle #13), and `openeasd_seconds_since_last_progress` (worker liveness).
+> A `ScanSession.last_progress_at` **heartbeat** (migration `0015`) is stamped by
+> `_run_single_step` on every step completion — it powers both the liveness metric
+> and **H10**. **Why DB-backed, not in-process counters:** it needs no worker HTTP
+> listener and no cross-pod aggregation (the web↔worker problem the options below
+> wrestle with), is drift-free (reflects real stored state), and survives restarts.
+> Trade-off: point-in-time gauges + stored-timestamp journey latency, no per-request
+> histograms — sufficient at this scale. No new dependency. Tests:
+> `tests/unit/test_metrics.py` (9).
+
 **Problem:** long-running durable work with no runtime visibility.
 
 **Change:**
@@ -103,6 +128,15 @@ auth behaviour.
 
 ## 5. Phase H3 — Bounded result store (retention / pruning)
 
+> **Status:** ✅ Shipped — `prune_old_scans()` (`scheduler.py`) + `scheduled_scan_prune`
+> (`@DBOS.scheduled`, `SCAN_PRUNE_CRON` default `30 3 * * *`). OFF by default
+> (`SCAN_RETENTION_ENABLED`); when on, keeps per domain the newest
+> `SCAN_RETENTION_KEEP_PER_DOMAIN` (30) scans + any within
+> `SCAN_RETENTION_MAX_AGE_DAYS` (180), always keeps the single newest, never deletes
+> pending/running, and cascades to assets/findings. Hygiene cron (self-gates on the
+> setting), so NOT tied to `SCHEDULED_SCANS_ENABLED`. Tests:
+> `tests/unit/test_scan_retention.py` (7). No migration.
+
 **Problem:** unbounded growth of scan history.
 
 **Change:**
@@ -123,6 +157,16 @@ no-op when disabled.
 **Effort:** ~1 PR. Slots into the existing `@scheduled` + scheduler-callable pattern.
 
 ## 5b. Phase H4 — reconcile the watchdog with DBOS resume (design smell)
+
+> **Status:** ✅ Resolved via the heartbeat, not the spec's "query DBOS liveness"
+> option. H10's `last_progress_at` heartbeat IS the liveness signal: the watchdog
+> only reaps a `running` scan that has made **no progress** for
+> `SCAN_NO_PROGRESS_MINUTES` (or exceeded the 24h cap), so a scan DBOS is
+> legitimately resuming/advancing keeps its heartbeat fresh and is never reaped —
+> which is exactly H4's "don't fight DBOS resume" goal, achieved without querying
+> the DBOS workflow store on every sweep. Paired with H9 (below), the reap now also
+> cancels the scan's DBOS workflow inline. Tests: `test_no_progress_watchdog.py` +
+> `test_watchdog_reconcile.py`.
 
 **Problem:** `reap_stuck_scans` (the `scheduled_watchdog` cron) and DBOS's own
 crash-resume are **two uncoordinated recovery mechanisms** for the same scans.
@@ -157,6 +201,17 @@ terminal/absent DBOS workflow past cutoff is reaped as today.
 **Effort:** ~1 PR. **Priority:** low (narrow race, high timeout) — do after H2/H3.
 
 ## 5c. Phase H5 — idempotent phase-group steps (pipeline principle #4)
+
+> **Status:** ✅ Shipped — implemented at **per-tool** granularity (finer than the
+> per-group option A), in `runner.py::_run_single_step`. The existing F1b resume
+> guard already skips tools that reached a terminal state and re-runs only a tool
+> left non-terminal by a crash; in exactly that re-run branch we now
+> **delete the tool's prior `Finding` rows for the session** (`source == tool`)
+> before re-executing, so Finding writes (bulk_create, no unique constraint)
+> converge instead of duplicating. Assets need no cleanup — they are
+> `(session, …)`-unique and written with `ignore_conflicts=True`, so re-writes are
+> already idempotent. Tests: `test_workflow_runner.py::TestResumeIdempotencyH5`
+> (3: crash-resume no-dup, completed-tool-not-rerun, first-run-normal). No migration.
 
 **Problem:** `_run_phase_group` is a `@DBOS.step` that runs *all* tools in a phase.
 DBOS skips a step that **completed**, but a step that **crashes mid-run** re-runs
@@ -229,6 +284,21 @@ touches the durable core, so do it deliberately (not under time pressure).
 
 ## 5e. Phase H7 — `ScheduledJob` table for system crons (pipeline principle #8)
 
+> **Status:** ✅ Shipped as the **lower-risk slice**. A `ScheduledJob` model
+> (`scans` app: `name`, `cron`, `enabled`, `description`, `last_run_at`; migration
+> `0016` + seed `0017`; Django-admin editable with inline `enabled` toggle) now
+> controls each backbone cron. Each `@DBOS.scheduled` body dispatches through
+> `scheduler.dispatch_scheduled(name, fn)`, which honours the row's `enabled` flag
+> (runtime on/off, no deploy) and stamps `last_run_at` (visibility) — **failing
+> OPEN** (missing row or lookup error ⇒ job still runs, never silently disabled).
+> **Deliberate deviation:** DBOS `@scheduled` still owns the tick + exactly-once, so
+> `cron` here is informational and changing a job's *timing* still needs a deploy.
+> The full runtime-cron-rescheduling dispatcher (one sweep replacing every cron)
+> was **not** done: it would mean reimplementing DBOS's per-cron exactly-once in a
+> hand-rolled loop — backbone risk disproportionate to the benefit for a single-user
+> tool whose schedules rarely change. Runtime enable/disable + last-run visibility
+> is the high-value, low-risk 80%. Tests: `tests/unit/test_scheduled_jobs.py` (7).
+
 **Problem:** the system crons (daily scan, monitoring/user sweeps, watchdog, token
 purge) are `@DBOS.scheduled` decorators with cron strings from `settings` — changing
 a schedule needs a deploy or env change. Principle #8: *"put every timed job in one
@@ -250,6 +320,162 @@ suppresses scans.
 
 **Effort:** ~1 PR (cleanest **after** H6, so scheduled rows dispatch through the
 adapter). **Priority:** medium — operator-experience win.
+
+## 5f. Phase H8 — drain / quiesce the queue before a worker rollout (deploy safety)
+
+> **Status:** ✅ Slice 1 shipped — the **safe, race-free** core. A
+> `reap_orphaned_scan_workflows()` reaper (`scheduler.py`) cancels ENQUEUED/PENDING
+> `run_scan` workflows whose `ScanSession` is terminal/missing (phantoms holding a
+> `scans`-queue slot); it runs automatically in the `scheduled_watchdog` cron
+> (after `reap_stuck_scans` flips stale sessions terminal) and on demand via
+> `manage.py reap_orphan_scans [--dry-run]`. Drain runbook added to
+> `docs/OPERATIONS.md` (`SCHEDULED_SCANS_ENABLED=false` + wait + post-rollout
+> reap). Tests: `tests/unit/test_orphan_reaper.py` (9). **Deferred:** the
+> *auto version-orphan reaper on worker startup* (option 2a) — it has a
+> rolling-deploy race (a still-live old-version worker's in-flight scans) and
+> needs `DBOS__APPVERSION` pinning we don't have; the terminal-session reaper
+> subsumes its practical need (a pending version-orphan is reaped to terminal by
+> `reap_stuck_scans` after `SCAN_PENDING_TIMEOUT_MINUTES`, then cancelled here).
+> The *running*-session version-orphan (held up to the 24h cap) is **H10's** gap.
+
+> **Origin:** a real 2026-09-12 preprod incident. The v2.16.0 rollout landed
+> **while scans were running**. DBOS pins an in-flight workflow to the code's
+> **app-version hash**; the new worker computed a different hash, so it could
+> **not recover** the two `PENDING` `run_scan` workflows left mid-flight by the
+> replaced worker. Because the `scans` queue is `concurrency=2`, those two
+> un-recoverable `PENDING` rows **occupied both slots permanently** → every scan
+> enqueued afterward (3 of them) sat `pending` indefinitely. Recovery required
+> manually cancelling the orphans via `DBOSClient.cancel_workflow`. Memory:
+> `project_dbos_rollout_queue_jam.md`.
+
+**Problem:** a worker rollout (k8s `apply -k` / `rollout restart`, or any image
+bump) during active scans strands the in-flight workflows on the **old**
+app-version. With a small `concurrency` (2), a handful of stranded `PENDING`
+workflows is enough to **saturate the queue forever** — a self-inflicted full
+stall with no automatic recovery. This is distinct from a clean crash (where the
+*same-version* worker resumes): the version **changes** across a deploy, which is
+precisely when resume does not apply.
+
+**Change (options, combine 1 + one of a/b):**
+1. **Document + script a pre-rollout drain** (smallest, do first): a
+   `just drain-scans` / runbook step that refuses (or waits) to roll the worker
+   while `ScanSession.objects.filter(status__in=["running","pending"])` is
+   non-empty — or scales the worker to 0, lets in-flight scans finish, then rolls.
+   Pair with the existing `SCHEDULED_SCANS_ENABLED=false` to stop *new* enqueues
+   during a maintenance window.
+2. Pick one automatic backstop so a drain that was skipped still recovers:
+   - **(a)** A startup **version-orphan reaper** in the worker entrypoint / a DBOS
+     `@scheduled` sweep: on launch, find `run_scan` workflows in `ENQUEUED`/`PENDING`
+     whose `application_version` ≠ the current worker's, and **cancel** them (their
+     `ScanSession` is re-enqueued fresh under the new version if still wanted).
+     This is the programmatic form of the manual fix from the incident.
+   - **(b)** Raise/curb reliance on a fixed `concurrency` so a couple of stranded
+     rows can't wholesale-block — e.g. a dedicated higher-concurrency lane for
+     quick passive scans (relates to the route-by-resource idea deliberately not
+     adopted for the general case; here it's a safety valve, not choreography).
+Recommend **1 + 2(a)**: a drain runbook to *prevent* it, plus a version-orphan
+reaper to *auto-heal* it. (a) must use the DBOS client API
+(`cancel_workflow`) — never a raw `UPDATE dbos.workflow_status` (the latter
+corrupts queue accounting and is blocked by tooling safety classifiers anyway).
+
+**Tests:** simulate a stranded `PENDING` with a mismatched `application_version`
+→ the reaper cancels it and frees the slot; a same-version `PENDING` (legit
+resume) is **never** touched; drain refuses to roll while scans are in-flight.
+
+**Effort:** ~1 PR (drain runbook + reaper). **Priority:** **high** — this failure
+has *already occurred* and fully stalls the scan subsystem with no auto-recovery.
+
+## 5g. Phase H9 — reconcile phantom `PENDING` workflows with terminal sessions
+
+> **Status:** ✅ Shipped — two complementary mechanisms. **Source-fix:**
+> `reap_stuck_scans` now cancels each reaped scan's DBOS workflow inline
+> (`_cancel_workflows_for_sessions`, matched by `scan-{id}` dedup), so a phantom
+> never outlives its scan. **Periodic safety net:** `reap_orphaned_scan_workflows`
+> (H8), wired after `reap_stuck_scans` in the watchdog, still sweeps any
+> non-terminal workflow whose session is already terminal. Both are fail-graceful
+> and idempotent. Tests: `test_watchdog_reconcile.py` (6) + `test_orphan_reaper.py`.
+
+> **Origin:** same 2026-09-12 incident. Observed `scan-25` (raga.ai) with
+> `ScanSession.status = "failed"` **but** its DBOS workflow still `PENDING`,
+> `executor=local` — a "phantom" holding a `concurrency` slot with no live
+> session behind it. The two sources of truth (Django `ScanSession` and
+> `dbos.workflow_status`) had **diverged**, and nothing reconciles them.
+
+**Problem:** `ScanSession.status` (domain truth) and the DBOS workflow status
+(engine truth) are separate records that can drift — a session reaped to
+`failed`/`cancelled` while its DBOS workflow lingers `PENDING`/`ENQUEUED`. A
+phantom `PENDING` silently consumes a scarce `concurrency` slot indefinitely, and
+nothing detects or clears it. This is the **inverse** of H4 (which stops the
+watchdog reaping a *live* scan): H9 cleans up an *orphaned engine workflow whose
+session is already terminal*.
+
+**Change:** add a lightweight **reconciliation sweep** (DBOS `@scheduled`, or fold
+into the H4/watchdog pass): for each non-terminal `run_scan` DBOS workflow
+(`ENQUEUED`/`PENDING`), look up its `ScanSession` (via the `deduplication_id`
+`scan-{id}` ↔ session id mapping observed in the incident); if the session is
+**terminal** (`completed`/`failed`/`partial`/`cancelled`), **cancel the workflow**
+(`cancel_workflow`) to free the slot. Emit a log/metric so a recurring divergence
+is visible (it signals a bug upstream, e.g. the watchdog reaping without
+cancelling the workflow — which H4 should also fix at the source).
+
+**Relationship to H4:** H4 makes the watchdog *not* reap sessions with a live DBOS
+workflow; H9 makes a separate pass *clean up* DBOS workflows whose session is
+already dead. Ideally H4 also **cancels the DBOS workflow when it reaps a session**
+(fixing the divergence at the source), leaving H9 as the periodic safety net.
+Do H9 **with or right after H4**.
+
+**Tests:** a `PENDING` workflow whose session is `failed` → reconciler cancels it
+and frees the slot; a `PENDING` workflow with a `running` session (legit
+in-flight) is untouched; reconciler is idempotent (re-running cancels nothing new).
+
+**Effort:** ~1 PR (shares the session↔workflow lookup with H4/H8). **Priority:**
+**medium-high** — a single undetected phantom halves a `concurrency=2` queue.
+
+## 5h. Phase H10 — short "no-progress" liveness watchdog (distinct from the 24h cap)
+
+> **Status:** ✅ Shipped — `reap_stuck_scans` now reaps a `running` scan when its
+> `last_progress_at` heartbeat (H2) is older than `SCAN_NO_PROGRESS_MINUTES`
+> (default 60), in addition to the 24h `SCAN_TIMEOUT_MINUTES` hard cap. A
+> slow-but-alive scan keeps the heartbeat fresh (stamped per step completion) and
+> is not reaped; a NULL heartbeat falls back to `start_time`. The default stays
+> comfortably above the longest single-tool runtime (heartbeat only ticks between
+> steps). The existing orphan reaper wired after `reap_stuck_scans` then cancels the
+> reaped scan's DBOS workflow (frees the slot). Tests:
+> `tests/unit/test_no_progress_watchdog.py` (5) + updated `test_scheduler.py`
+> (live scans now carry a heartbeat). No migration (uses H2's field).
+
+> **Origin:** same incident exposed the gap. `SCAN_TASK_TIMEOUT` / the watchdog
+> cutoff is ~**24h** (deliberately high so a healthy long scan is never flipped
+> mid-run, per H4). But that means a **genuinely wedged** scan — or a phantom
+> holding a slot — can sit for **up to a day** before anything reaps it. On a
+> `concurrency=2` queue, two wedged slots = a **24h total stall**.
+
+**Problem:** there is exactly one timeout (the 24h hard cap), serving two
+conflicting goals: (i) *don't kill healthy long scans* (wants a **high** cutoff)
+and (ii) *free a wedged slot quickly* (wants a **low** cutoff). A single value
+can't do both, so today it's tuned for (i) and (ii) is unprotected.
+
+**Change:** add a **liveness / no-progress** signal separate from total runtime.
+- Have the runner stamp a **heartbeat** on the `ScanSession` (e.g.
+  `last_progress_at`) whenever it completes a phase-group step or writes a batch of
+  rows (the instrumentation point H2 already adds).
+- A **short** watchdog (`SCAN_NO_PROGRESS_MINUTES`, e.g. 30–60m, ≪ the 24h cap)
+  reaps a `running` scan whose `last_progress_at` is stale **and** whose DBOS
+  workflow is not actively advancing (compose with H4's live-workflow check and
+  H9's reconcile) — freeing the slot in minutes, not a day, **without** killing a
+  scan that is slow-but-progressing (its heartbeat keeps moving).
+- Keep the 24h hard cap as the absolute ceiling for a scan that *is* progressing
+  but has simply run too long.
+
+**Tests:** a scan emitting heartbeats past `SCAN_NO_PROGRESS_MINUTES` is **not**
+reaped (slow-but-alive); a scan with a stale heartbeat past the cutoff **is**
+reaped and its slot freed; the 24h cap still applies to a heartbeating-but-
+overlong scan.
+
+**Effort:** ~1 PR (the heartbeat stamp rides on H2's instrumentation; the watchdog
+extends the existing reaper). **Priority:** **medium-high** — directly bounds the
+blast radius of H8/H9 failures on the small-concurrency queue. Implements pipeline
+principle #12 (per-stage safety net) at a useful granularity.
 
 ## 6. Non-goals / explicitly out of scope
 
@@ -277,6 +503,20 @@ adapter). **Priority:** medium — operator-experience win.
 7. **H4 — watchdog ↔ DBOS-resume reconcile** (1 PR) — closes the recovery-path
    overlap. Lowest priority (narrow race, high timeout); do last.
 
+**Resilience track (H8–H10) — surfaced by the 2026-09-12 preprod queue-jam
+incident, not the original audit.** These address a *demonstrated* full-stall
+failure mode, so they jump ahead of the lower-priority cleanup items:
+
+8. **H8 — drain/quiesce before worker rollout + version-orphan reaper** (1 PR) —
+   **highest resilience priority**; the failure has already happened and fully
+   stalls scans with no auto-recovery. Do alongside or before H2.
+9. **H9 — reconcile phantom `PENDING` workflows with terminal sessions** (1 PR) —
+   do **with or right after H4** (shares the session↔workflow lookup; ideally H4
+   cancels the workflow at reap time and H9 is the periodic safety net).
+10. **H10 — short no-progress liveness watchdog** (1 PR) — bounds the blast radius
+    of H8/H9 on the `concurrency=2` queue; rides on H2's heartbeat instrumentation,
+    so sequence it **after/with H2**, composing with H4 + H9.
+
 **Reference implementation:** H2 (metrics), H6 (`@durable_task`), and H7
 (`ScheduledJob`) are all **proven in the sibling `cybersecify/backend` repo**
 (`config/metrics.py`, `apps/core/durable/task.py`, `ScheduledJob` model) — copy the
@@ -291,7 +531,7 @@ not each run). H4 = principle #12 (per-stage safety net + alarm). The checklist'
 #3/#6/#9 (many small workflows, write-triggered stages, per-resource queues) are a
 *choreography* pattern OpenEASD deliberately does not adopt — it is an
 *orchestrated* single-workflow-per-scan pipeline (valid for a fixed dataflow); see
-DESIGN.md "Workflow vs. Pipeline". Those are not tracked as gaps.
+03-system.md "Workflow vs. Pipeline". Those are not tracked as gaps.
 
 ## 8. Verification
 
@@ -308,5 +548,15 @@ DESIGN.md "Workflow vs. Pipeline". Those are not tracked as gaps.
   enqueues; dedup preserved; scan/agent flows unchanged.
 - H7: a disabled `ScheduledJob` row never fires; an edited cron takes effect with
   no deploy; `SCHEDULED_SCANS_ENABLED=false` still suppresses scans.
+- H8: a stranded `PENDING` `run_scan` with a mismatched `application_version` is
+  cancelled by the version-orphan reaper and its slot freed; a same-version
+  `PENDING` (legit resume) is never touched; drain refuses to roll the worker
+  while scans are in-flight.
+- H9: a `PENDING` workflow whose `ScanSession` is terminal (`failed`/`cancelled`)
+  is cancelled and its slot freed; a `PENDING` with a `running` session is
+  untouched; the reconciler is idempotent.
+- H10: a scan emitting heartbeats past `SCAN_NO_PROGRESS_MINUTES` is NOT reaped
+  (slow-but-alive); a scan with a stale heartbeat past the cutoff IS reaped and
+  its slot freed; the 24h hard cap still applies to a heartbeating-but-overlong run.
 - Whole: with every feature unused/disabled, a scan is byte-identical to today
   (additive-safety check).

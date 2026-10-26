@@ -16,7 +16,7 @@ def _session():
 def _lookalike(session, candidate, ips, weaponized=False):
     from apps.core.data.findings.models import Finding
     return Finding.objects.create(
-        session=session, source="typosquat", check_type="lookalike_domain",
+        session=session, source="tldsquatting", check_type="lookalike_domain",
         severity="high" if weaponized else "medium",
         title=f"Registered lookalike domain {candidate}",
         description="d", remediation="r", target=candidate,
@@ -35,7 +35,7 @@ class TestMeta:
 
     def test_phase_group(self):
         from apps.core.engine.workflows.registry import get_tool_phase_groups
-        assert get_tool_phase_groups().get("asn_cluster") == "Domain Intelligence"
+        assert get_tool_phase_groups().get("asn_cluster") == "Brand Threat"
 
 
 # ---------------------------------------------------------------------------
@@ -95,8 +95,8 @@ class TestCluster:
             {"candidate": "exampl3.com", "ips": ["1.1.1.2"], "weaponized": False},
         ]
         asn_by_ip = {
-            "1.1.1.1": {"asn": "13335", "as_name": "CLOUDFLARENET", "prefix": "1.1.1.0/24"},
-            "1.1.1.2": {"asn": "13335", "as_name": "CLOUDFLARENET", "prefix": "1.1.1.0/24"},
+            "1.1.1.1": {"asn": "212238", "as_name": "SMALLHOST", "prefix": "1.1.1.0/24"},
+            "1.1.1.2": {"asn": "212238", "as_name": "SMALLHOST", "prefix": "1.1.1.0/24"},
         }
         out = cluster(sess, lookalikes, asn_by_ip)
         assert len(out) == 1
@@ -131,6 +131,62 @@ class TestCluster:
         assert out[0].severity == "high"
         assert out[0].extra["weaponized_count"] == 1
 
+    def test_generic_asn_without_weaponized_member_is_skipped(self):
+        # Millions of unrelated (often parked) domains share hyperscaler and
+        # registrar networks — co-location on AS16509 proves no campaign.
+        from apps.asn_cluster.analyzer import cluster
+        sess = _session()
+        lookalikes = [
+            {"candidate": "a.com", "ips": ["1.1.1.1"], "weaponized": False},
+            {"candidate": "b.com", "ips": ["1.1.1.2"], "weaponized": False},
+        ]
+        asn_by_ip = {
+            "1.1.1.1": {"asn": "16509", "as_name": "AMAZON-02", "prefix": ""},
+            "1.1.1.2": {"asn": "16509", "as_name": "AMAZON-02", "prefix": ""},
+        }
+        assert cluster(sess, lookalikes, asn_by_ip) == []
+
+    def test_generic_asn_one_weaponized_is_skipped(self):
+        # On shared infra (Cloudflare/AWS/parking), a SINGLE weaponized member
+        # among co-located lookalikes is just one domain, not a campaign — skip it
+        # (avoids the "40 lookalikes share AWS" FP).
+        from apps.asn_cluster.analyzer import cluster
+        sess = _session()
+        lookalikes = [
+            {"candidate": "a.com", "ips": ["1.1.1.1"], "weaponized": True},
+            {"candidate": "b.com", "ips": ["1.1.1.2"], "weaponized": False},
+        ]
+        asn_by_ip = {
+            "1.1.1.1": {"asn": "13335", "as_name": "CLOUDFLARENET", "prefix": ""},
+            "1.1.1.2": {"asn": "13335", "as_name": "CLOUDFLARENET", "prefix": ""},
+        }
+        assert cluster(sess, lookalikes, asn_by_ip) == []
+
+    def test_generic_asn_two_weaponized_clusters_only_weaponized(self):
+        # >=2 weaponized sharing a generic ASN IS a weak campaign signal — report
+        # it, but cluster ONLY the weaponized members (not the co-located benign).
+        from apps.asn_cluster.analyzer import cluster
+        sess = _session()
+        lookalikes = [
+            {"candidate": "a.com", "ips": ["1.1.1.1"], "weaponized": True},
+            {"candidate": "b.com", "ips": ["1.1.1.2"], "weaponized": True},
+            {"candidate": "benign.com", "ips": ["1.1.1.3"], "weaponized": False},
+        ]
+        asn_by_ip = {
+            "1.1.1.1": {"asn": "16509", "as_name": "AMAZON-02", "prefix": ""},
+            "1.1.1.2": {"asn": "16509", "as_name": "AMAZON-02", "prefix": ""},
+            "1.1.1.3": {"asn": "16509", "as_name": "AMAZON-02", "prefix": ""},
+        }
+        out = cluster(sess, lookalikes, asn_by_ip)
+        assert len(out) == 1
+        assert out[0].severity == "high"
+        assert sorted(out[0].extra["candidates"]) == ["a.com", "b.com"]  # benign excluded
+        assert out[0].extra["member_count"] == 2
+
+    def test_safenames_asn_is_generic(self):
+        from apps.asn_cluster.analyzer import _generic_asns
+        assert "60819" in _generic_asns()
+
     def test_unresolved_ips_ignored(self):
         from apps.asn_cluster.analyzer import cluster
         sess = _session()
@@ -163,8 +219,10 @@ class TestScanner:
         _lookalike(sess, "examp1e.com", ["1.1.1.1"])
         _lookalike(sess, "exampl3.com", ["1.1.1.2"])
 
+        # Non-generic ASN: a small hosting network where co-location is a real
+        # campaign signal (a generic hyperscaler/CDN/parking ASN would be skipped).
         def fake_lookup(ip):
-            return {"asn": "13335", "as_name": "CLOUDFLARENET", "prefix": "1.1.1.0/24"}
+            return {"asn": "212238", "as_name": "SMALLHOST", "prefix": "1.1.1.0/24"}
 
         with patch("apps.asn_cluster.scanner.lookup_asn", side_effect=fake_lookup):
             out = run_asn_cluster(sess)
@@ -178,7 +236,7 @@ class TestScanner:
         from apps.core.data.findings.models import Finding
         for c in ("a.com", "b.com"):
             Finding.objects.create(
-                session=sess, source="typosquat", check_type="lookalike_domain",
+                session=sess, source="tldsquatting", check_type="lookalike_domain",
                 severity="low", title=f"lookalike {c}", description="d", remediation="r",
                 target=c, extra={"candidate": c, "resolved_ips": []},
             )

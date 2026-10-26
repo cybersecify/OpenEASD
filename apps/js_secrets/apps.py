@@ -10,7 +10,7 @@ class JsSecretsConfig(AppConfig):
         "label": "JS Secrets (gitleaks)",
         "runner": "apps.js_secrets.scanner.run_js_secrets",
         "phase": 12,
-        "phase_group": "Credential Exposure",
+        "phase_group": "Web Exposure",
         "requires": ["gitleaks"],
         "produces_findings": True,
         "active": True,  # fetches JS from the target — active

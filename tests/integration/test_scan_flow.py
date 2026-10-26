@@ -7,7 +7,6 @@ Tests the complete flow:
 
 import pytest
 from unittest.mock import patch, MagicMock
-from django.utils import timezone
 
 
 def _mock_rdap_response(days_until_expiry=365, statuses=None):
@@ -91,7 +90,9 @@ class TestDomainSecurityScanFlow:
         titles = [f.title for f in findings]
         assert "SPF record missing" in titles
         assert "DMARC record missing" in titles
-        assert "DKIM could not be confirmed" in titles
+        # DKIM title is now confidence-aware; with no provider detected it reads
+        # "DKIM not found on common selectors (could not verify)" (severity LOW).
+        assert any(t.startswith("DKIM not found") for t in titles)
 
         high_findings = [f for f in findings if f.severity == "high"]
         assert len(high_findings) >= 2
@@ -296,70 +297,6 @@ class TestFullScanPipeline:
         # Same findings → no "new" deltas
         new_deltas = ScanDelta.objects.filter(session=s2, change_type="new")
         assert new_deltas.count() == 0
-
-
-@pytest.mark.django_db
-class TestDomainDeleteCascade:
-    """Integration test: deleting a domain wipes all related data."""
-
-    def test_delete_domain_cascades_all_data(self, auth_client, db):
-        from apps.core.data.domains.models import Domain
-        from apps.core.engine.scans.models import ScanSession
-        from apps.core.data.findings.models import Finding
-        from apps.core.console.insights.models import ScanSummary
-
-        domain = Domain.objects.create(name="cascade.com", is_primary=True)
-        session = ScanSession.objects.create(
-            domain="cascade.com", scan_type="full", status="completed",
-            end_time=timezone.now()
-        )
-        Finding.objects.create(session=session, source="domain_security", target="cascade.com", check_type="dns", severity="high", title="No MX"
-        )
-        ScanSummary.objects.create(
-            session=session, domain="cascade.com",
-            scan_date=timezone.now(), total_findings=1, high_count=1
-        )
-
-        auth_client.post(f"/api/domains/{domain.pk}/delete/",
-                         content_type="application/json")
-
-        assert not Domain.objects.filter(name="cascade.com").exists()
-        assert not ScanSession.objects.filter(domain="cascade.com").exists()
-        assert not Finding.objects.filter(source="domain_security", target="cascade.com").exists()
-        assert not ScanSummary.objects.filter(domain="cascade.com").exists()
-
-    def test_delete_domain_cascades_all_assets(self, auth_client, db):
-        """Regression test: deleting a domain must clean up subdomains, IPs, ports, URLs, NmapFindings."""
-        from apps.core.data.domains.models import Domain
-        from apps.core.engine.scans.models import ScanSession
-        from apps.core.data.assets.models import Subdomain, IPAddress, Port
-        from apps.core.data.web_assets.models import URL
-        from apps.core.data.findings.models import Finding
-
-        domain = Domain.objects.create(name="cascade.com", is_primary=True)
-        session = ScanSession.objects.create(
-            domain="cascade.com", scan_type="full", status="completed",
-            end_time=timezone.now(),
-        )
-        sub = Subdomain.objects.create(session=session, domain="cascade.com", subdomain="api.cascade.com", source="subfinder")
-        ip = IPAddress.objects.create(session=session, subdomain=sub, address="1.2.3.4", version=4, source="dnsx")
-        port = Port.objects.create(session=session, ip_address=ip, address="1.2.3.4", port=22, protocol="tcp", state="open", source="naabu")
-        URL.objects.create(session=session, port=port, subdomain=sub, url="http://api.cascade.com:80", host="api.cascade.com", port_number=80, source="httpx")
-        Finding.objects.create(
-            session=session, source="nmap", check_type="cve", port=port,
-            target="1.2.3.4:22", severity="high", title="CVE-2024-6387",
-            extra={"cve": "CVE-2024-6387", "cvss_score": 8.1, "address": "1.2.3.4", "port_number": 22},
-        )
-
-        auth_client.post(f"/api/domains/{domain.pk}/delete/",
-                         content_type="application/json")
-
-        # All asset types must be gone
-        assert Subdomain.objects.filter(session=session).count() == 0
-        assert IPAddress.objects.filter(session=session).count() == 0
-        assert Port.objects.filter(session=session).count() == 0
-        assert URL.objects.filter(session=session).count() == 0
-        assert Finding.objects.filter(session=session, source="nmap").count() == 0
 
 
 @pytest.mark.django_db

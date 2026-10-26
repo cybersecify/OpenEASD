@@ -10,10 +10,11 @@ class DnsHistoryConfig(AppConfig):
         "label": "Historical DNS Records",
         "runner": "apps.dns_history.scanner.run_dns_history",
         "phase": 1,
-        "phase_group": "Domain Intelligence",
+        "phase_group": "Domain Posture",
         "requires": [],
         "produces_findings": True,
         # Passive: queries a third-party passive-DNS dataset, never the target's
         # own systems. No packets to the target → no DomainAuthorization needed.
         "active": False,
+        "quick_recon": True,  # light passive — apex-scoped, fast (Quick Recon)
     }

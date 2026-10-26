@@ -11,14 +11,6 @@ def user(db):
 
 
 @pytest.fixture
-def auth_client(client, user):
-    from ninja_jwt.tokens import AccessToken
-    token = AccessToken.for_user(user)
-    client.defaults["HTTP_AUTHORIZATION"] = f"Bearer {token}"
-    return client
-
-
-@pytest.fixture
 def domain(db):
     from apps.core.data.domains.models import Domain
     return Domain.objects.create(name="example.com", is_primary=True, is_active=True)

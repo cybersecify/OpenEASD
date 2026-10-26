@@ -16,4 +16,5 @@ class HudsonRockConfig(AppConfig):
         # Passive: queries Hudson Rock's Cavalier API (third-party threat
         # intel), never sends a packet to the target's own systems.
         "active": False,
+        "quick_recon": True,  # light passive — apex-scoped, fast (Quick Recon)
     }

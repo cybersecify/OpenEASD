@@ -10,7 +10,7 @@ class DomainProbeConfig(AppConfig):
         "label": "Domain Probes",
         "runner": "apps.domain_probe.scanner.run_domain_probe",
         "phase": 1,
-        "phase_group": "Domain Intelligence",
+        "phase_group": "Domain Posture",
         "requires": [],
         "produces_findings": True,
         # ACTIVE: these checks touch the target directly — AXFR zone transfers

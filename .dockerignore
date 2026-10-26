@@ -4,9 +4,6 @@ __pycache__/
 *.egg-info/
 .venv/
 
-# Node
-frontend/node_modules/
-
 # Git
 .git/
 .gitignore
@@ -19,7 +16,6 @@ docs/
 *.md
 
 # Build artifacts already copied via multi-stage
-frontend/dist/
 
 # Data (mounted as volume at runtime)
 data/

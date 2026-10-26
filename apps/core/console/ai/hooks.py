@@ -12,10 +12,15 @@ logger = logging.getLogger(__name__)
 
 
 def run_ai_post_scan(session) -> None:
-    """Triage + summaries, inline in the scan task. Called from
+    """Triage + summaries + adjudication, inline in the scan task. Called from
     _finalize_session after build_insights and before _dispatch_alerts (so
-    alerts can embed the summary). Bounded: at most 4 LLM calls, each with a
-    hard client timeout."""
+    alerts can embed the summary). Bounded: each step enforces the shared
+    per-scan LLM call budget, and each call has a hard client timeout.
+
+    Adjudication is optional and advisory only — it annotates deterministic
+    verification verdicts (extra["verification"]["ai"]) and never changes
+    Finding.verification_status or Finding.status. It runs last so triage/
+    summaries are never starved of call budget by it."""
     try:
         from .guard import is_ai_active
         if not is_ai_active():
@@ -28,6 +33,8 @@ def run_ai_post_scan(session) -> None:
         if cfg.summaries_enabled:
             from .summaries import run_summaries
             run_summaries(session)
+        from .adjudicate import run_adjudication
+        run_adjudication(session)
     except Exception:  # noqa: BLE001 — AI must never fail a scan
         logger.exception("[ai:%s] post-scan AI step failed — scan unaffected", session.id)
 

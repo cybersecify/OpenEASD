@@ -463,6 +463,46 @@ class TestWebCheckerCollector:
         assert mock_get.call_count == 1
         assert len(results) == 1
 
+    def test_deduplicates_trailing_slash_and_missing_port_number(self):
+        """A katana/gau URL with a trailing slash and no port_number must
+        collapse into the same probe as the canonical httpx URL for the same
+        host — not a second fetch (report EASD-005/006, 050/051)."""
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.assets.models import Subdomain, IPAddress, Port
+        from apps.core.data.web_assets.models import URL
+
+        sess = ScanSession.objects.create(domain="example.com", scan_type="full")
+        ip = IPAddress.objects.create(session=sess, address="1.2.3.4", version=4, source="dnsx")
+        port = Port.objects.create(session=sess, ip_address=ip, address="1.2.3.4",
+                                   port=443, protocol="tcp", state="open", source="naabu")
+        sub = Subdomain.objects.create(session=sess, domain="example.com",
+                                       subdomain="www.example.com", source="subfinder")
+        # httpx: canonical URL, port_number populated.
+        URL.objects.create(session=sess, subdomain=sub, port=port,
+                           url="https://www.example.com:443", host="www.example.com",
+                           port_number=443, scheme="https", source="httpx")
+        # katana: same endpoint, but trailing slash + no port_number.
+        URL.objects.create(session=sess, subdomain=sub, port=port,
+                           url="https://www.example.com:443/", host="www.example.com",
+                           port_number=None, scheme="https", source="katana")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {}
+        mock_resp.text = ""
+        mock_resp.raw.headers.getlist.return_value = []
+        mock_resp.cookies = []
+
+        with patch("apps.web_checker.collector.requests.get", return_value=mock_resp) as mock_get:
+            results = collect(sess)
+
+        # Only 1 fetch — the two rows are the same effective endpoint.
+        assert mock_get.call_count == 1
+        assert len(results) == 1
+        # httpx-first ordering means the canonical httpx URL wins as the
+        # representative fetched.
+        assert results[0]["url"] == "https://www.example.com:443"
+
     def test_different_hosts_each_get_fetched(self):
         """Two different subdomains on the same port → two fetches."""
         from apps.core.engine.scans.models import ScanSession

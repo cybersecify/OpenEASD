@@ -6,22 +6,14 @@ authorization boundary: a passive-only scan needs no DomainAuthorization while
 any scan containing an active tool keeps the gate.
 """
 
-import datetime
-import json
-from unittest.mock import patch
-
 import pytest
-
-
-def post_json(client, path, data):
-    return client.post(path, data=json.dumps(data), content_type="application/json")
 
 
 # Canonical classification — the legal boundary. Passive tools use only public /
 # third-party data and never touch the target.
 _PASSIVE = {
     "subfinder", "alterx", "dnsx", "historical_urls",
-    "cloud_assets", "cve_intel", "asn_discovery", "typosquat", "breach_check",
+    "cloud_assets", "cve_intel", "asn_discovery", "tldsquatting", "breach_check",
     # domain_security is passive now that its active probes (AXFR/open-relay/
     # MTA-STS fetch) were split out into domain_probe.
     "domain_security",
@@ -73,8 +65,8 @@ class TestRegistryActiveFlag:
 
 class TestPhaseGroupCategories:
     # The leak-detection tools live in their own "Credential Exposure" category
-    # rather than being mixed into Domain Intelligence / Web Exposure.
-    _CRED_EXPOSURE = {"hudson_rock", "breach_check", "github_secrets", "js_secrets"}
+    # rather than being mixed into Domain Posture / Web Exposure.
+    _CRED_EXPOSURE = {"hudson_rock", "breach_check", "github_secrets"}
 
     def test_credential_exposure_tools_grouped_together(self):
         from apps.core.engine.workflows.registry import get_tool_phase_groups
@@ -84,11 +76,11 @@ class TestPhaseGroupCategories:
                 f"{tool} should be in the Credential Exposure phase_group, got {groups.get(tool)!r}"
             )
 
-    def test_domain_intelligence_excludes_leak_tools(self):
-        # Domain Intelligence keeps domain-posture tools only; leak tools moved out.
+    def test_domain_posture_excludes_leak_tools(self):
+        # Domain Posture keeps domain-posture tools only; leak tools moved out.
         from apps.core.engine.workflows.registry import get_tool_phase_groups
         groups = get_tool_phase_groups()
-        di = {t for t, g in groups.items() if g == "Domain Intelligence"}
+        di = {t for t, g in groups.items() if g == "Domain Posture"}
         assert di.isdisjoint(self._CRED_EXPOSURE)
         assert "domain_security" in di
 
@@ -136,11 +128,11 @@ class TestIsPassiveToolSet:
 class TestPassiveScanWorkflow:
     def test_workflow_exists(self):
         from apps.core.engine.workflows.models import Workflow
-        assert Workflow.objects.filter(name="Passive Scan").exists()
+        assert Workflow.objects.filter(name="Passive Scan Deep").exists()
 
     def test_workflow_is_not_default(self):
         from apps.core.engine.workflows.models import Workflow
-        wf = Workflow.objects.get(name="Passive Scan")
+        wf = Workflow.objects.get(name="Passive Scan Deep")
         assert wf.is_default is False
 
     def test_every_step_is_passive(self):
@@ -148,7 +140,7 @@ class TestPassiveScanWorkflow:
         # workflow, or a passive scan would probe an unauthorized target.
         from apps.core.engine.workflows.models import Workflow
         from apps.core.engine.workflows.registry import get_tool_active
-        wf = Workflow.objects.get(name="Passive Scan")
+        wf = Workflow.objects.get(name="Passive Scan Deep")
         active = get_tool_active()
         for tool in wf.enabled_tools():
             assert active.get(tool, True) is False, f"{tool} in Passive Scan is active!"
@@ -156,164 +148,6 @@ class TestPassiveScanWorkflow:
     def test_workflow_is_passive_tool_set(self):
         from apps.core.engine.workflows.models import Workflow
         from apps.core.engine.workflows.registry import is_passive_tool_set
-        wf = Workflow.objects.get(name="Passive Scan")
+        wf = Workflow.objects.get(name="Passive Scan Deep")
         assert is_passive_tool_set(wf.enabled_tools()) is True
 
-
-# ---------------------------------------------------------------------------
-# Authorization gate — the critical boundary
-# ---------------------------------------------------------------------------
-
-@pytest.mark.django_db
-class TestPassiveScanAuthorizationGate:
-    def _passive_workflow_id(self):
-        from apps.core.engine.workflows.models import Workflow
-        return Workflow.objects.get(name="Passive Scan").id
-
-    def test_passive_scan_bypasses_authorization(self, auth_client, domain):
-        # domain fixture (example.com) has NO DomainAuthorization. A passive-only
-        # scan must still be accepted — it never touches the target.
-        fake_session = type("S", (), {"uuid": "passive-uuid-1", "id": 1})()
-        with patch("apps.core.engine.scans.tasks.run_scan_task"), \
-             patch("apps.core.engine.scans.pipeline.create_scan_session", return_value=fake_session):
-            resp = post_json(auth_client, "/api/scans/start/", {
-                "domain": "example.com",
-                "schedule_type": "now",
-                "workflow_id": self._passive_workflow_id(),
-            })
-        assert resp.status_code == 201, resp.content
-        assert resp.json()["uuid"] == "passive-uuid-1"
-
-    def test_active_workflow_still_requires_authorization(self, auth_client, domain):
-        # An explicit active workflow (Full Scan) on an unauthorized domain → 403.
-        from apps.core.engine.workflows.models import Workflow
-        full = Workflow.objects.get(name="Full Scan")
-        resp = post_json(auth_client, "/api/scans/start/", {
-            "domain": "example.com",
-            "schedule_type": "now",
-            "workflow_id": full.id,
-        })
-        assert resp.status_code == 403
-        assert resp.json()["error"]["message"] == "Domain is not authorized for scanning"
-
-    def test_default_now_scan_still_requires_authorization(self, auth_client, domain):
-        # No workflow_id → default Full Scan (active) → gate still applies.
-        resp = post_json(auth_client, "/api/scans/start/", {
-            "domain": "example.com",
-            "schedule_type": "now",
-        })
-        assert resp.status_code == 403
-
-    def test_passive_scan_also_works_when_authorized(self, auth_client, domain):
-        from apps.core.data.domains.models import DomainAuthorization
-        DomainAuthorization.objects.create(
-            domain=domain, auth_type="owner",
-            authorized_at=datetime.date(2026, 1, 15), authorized_by="Alice",
-        )
-        fake_session = type("S", (), {"uuid": "passive-uuid-2", "id": 2})()
-        with patch("apps.core.engine.scans.tasks.run_scan_task"), \
-             patch("apps.core.engine.scans.pipeline.create_scan_session", return_value=fake_session):
-            resp = post_json(auth_client, "/api/scans/start/", {
-                "domain": "example.com",
-                "schedule_type": "now",
-                "workflow_id": self._passive_workflow_id(),
-            })
-        assert resp.status_code == 201
-
-    def test_scheduled_passive_workflow_id_ignored_gate_applies(self, auth_client, domain):
-        # Scheduled (once/recurring) scans run the default active workflow
-        # regardless of any workflow_id, so the gate must still apply.
-        resp = post_json(auth_client, "/api/scans/start/", {
-            "domain": "example.com",
-            "schedule_type": "once",
-            "scheduled_at": "2030-01-01T03:00:00",
-            "workflow_id": self._passive_workflow_id(),
-        })
-        assert resp.status_code == 403
-
-    def test_passive_tools_subset_bypasses_authorization(self, auth_client, domain):
-        # A category-scoped scan of only passive tools on an unauthorized domain
-        # is accepted, and the run is restricted to those tools (subscan_tools).
-        captured = {}
-
-        def fake_create(domain, triggered_by="manual", workflow=None, tools=None):
-            captured["tools"] = tools
-            return type("S", (), {"uuid": "cat-uuid-1", "id": 7})()
-
-        with patch("apps.core.engine.scans.tasks.run_scan_task"), \
-             patch("apps.core.engine.scans.pipeline.create_scan_session", side_effect=fake_create):
-            resp = post_json(auth_client, "/api/scans/start/", {
-                "domain": "example.com",
-                "schedule_type": "now",
-                "tools": ["cve_intel"],  # passive
-            })
-        assert resp.status_code == 201, resp.content
-        assert captured["tools"] == ["cve_intel"]
-
-    def test_active_tools_subset_requires_authorization(self, auth_client, domain):
-        # Including an active tool (e.g. domain_probe — AXFR/open-relay/MTA-STS)
-        # keeps the auth gate, even alongside passive tools.
-        resp = post_json(auth_client, "/api/scans/start/", {
-            "domain": "example.com",
-            "schedule_type": "now",
-            "tools": ["typosquat", "domain_probe"],
-        })
-        assert resp.status_code == 403
-
-    def test_unknown_tool_rejected(self, auth_client, domain):
-        resp = post_json(auth_client, "/api/scans/start/", {
-            "domain": "example.com",
-            "schedule_type": "now",
-            "tools": ["not_a_real_tool"],
-        })
-        assert resp.status_code == 400
-
-
-# ---------------------------------------------------------------------------
-# Subscan gate — active tools against a parent domain need authorization
-# ---------------------------------------------------------------------------
-
-@pytest.mark.django_db
-class TestSubscanAuthorizationGate:
-    def _parent(self):
-        from apps.core.engine.scans.models import ScanSession
-        return ScanSession.objects.create(
-            domain="example.com", scan_type="full", status="completed",
-        )
-
-    def test_active_subscan_on_unauthorized_domain_rejected(self, auth_client, domain):
-        parent = self._parent()  # example.com, no DomainAuthorization
-        resp = post_json(
-            auth_client, f"/api/scans/{parent.uuid}/subscan/",
-            {"tools": ["nmap"]},
-        )
-        assert resp.status_code == 403
-        assert resp.json()["error"]["message"] == "Domain is not authorized for scanning"
-
-    def test_passive_subscan_on_unauthorized_domain_allowed(self, auth_client, domain):
-        parent = self._parent()
-        fake_session = type("S", (), {"uuid": "sub-uuid-1", "id": 9})()
-        with patch("apps.core.engine.scans.tasks.run_scan_task"), \
-             patch("apps.core.engine.scans.pipeline.create_subscan_session", return_value=fake_session):
-            resp = post_json(
-                auth_client, f"/api/scans/{parent.uuid}/subscan/",
-                {"tools": ["subfinder", "dnsx"]},
-            )
-        assert resp.status_code == 200, resp.content
-        assert resp.json()["uuid"] == "sub-uuid-1"
-
-    def test_active_subscan_allowed_when_authorized(self, auth_client, domain):
-        from apps.core.data.domains.models import DomainAuthorization
-        DomainAuthorization.objects.create(
-            domain=domain, auth_type="owner",
-            authorized_at=datetime.date(2026, 1, 15), authorized_by="Alice",
-        )
-        parent = self._parent()
-        fake_session = type("S", (), {"uuid": "sub-uuid-2", "id": 10})()
-        with patch("apps.core.engine.scans.tasks.run_scan_task"), \
-             patch("apps.core.engine.scans.pipeline.create_subscan_session", return_value=fake_session):
-            resp = post_json(
-                auth_client, f"/api/scans/{parent.uuid}/subscan/",
-                {"tools": ["nmap"]},
-            )
-        assert resp.status_code == 200, resp.content

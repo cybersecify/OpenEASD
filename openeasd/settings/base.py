@@ -2,12 +2,11 @@
 Django settings for OpenEASD project.
 
 OpenEASD - Automated External Attack Surface Detection
-Company: Cybersecify | Author: Rathnakara G N
+Company: Cybersecify | Authors: Rathnakara GN, Ashok Kamat
 """
 
 import os
 import sys
-from datetime import timedelta
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -31,24 +30,34 @@ DEBUG = config("DEBUG", default=False, cast=bool)
 def _validate_secret_key(secret_key: str, debug: bool) -> None:
     """Fail fast in production on an unset/placeholder SECRET_KEY.
 
-    The key also signs JWTs (NINJA_JWT["SIGNING_KEY"] below), so the well-known
-    default would let anyone forge access/refresh tokens for any user. DEBUG
+    The key signs Django session cookies, CSRF tokens, and password-reset
+    tokens, so the well-known default would let anyone forge them. DEBUG
     builds keep the default for local dev.
     """
     if not debug and secret_key.startswith("django-insecure"):
         raise ImproperlyConfigured(
             "SECRET_KEY is unset or still the insecure default while DEBUG=False. "
             "Generate one with `openssl rand -hex 32` and set it via the SECRET_KEY "
-            "environment variable. This key also signs JWT access/refresh tokens, so "
-            "the default value allows anyone to forge authentication tokens."
+            "environment variable. This key also signs session cookies and CSRF "
+            "tokens, so the default value allows anyone to forge an authenticated session."
         )
 
 
-# Skip enforcement under the test runner: pytest-django imports settings before
-# any conftest/env hook can set a key, and token-signing key strength is
-# irrelevant to tests. The logic itself is covered by unit tests that call
-# _validate_secret_key directly.
-if "pytest" not in sys.modules:
+def _under_pytest() -> bool:
+    """True only when the pytest runner is the actual process entrypoint.
+
+    The production fail-fast guards below skip under the test runner: pytest-django
+    imports settings before any conftest/env hook can provide real secrets, and
+    key/password strength is irrelevant to tests. We detect the *runner* via
+    ``sys.argv[0]`` rather than ``"pytest" in sys.modules`` (F-sec2) — a transitive
+    import of pytest in a production process (a dependency, a debug shell) must
+    never disable a security guard. The subprocess wiring tests run ``python -c``
+    (argv[0] != pytest), so the guards still fire there and prove it.
+    """
+    return os.path.basename(sys.argv[0] or "").startswith(("pytest", "py.test"))
+
+
+if not _under_pytest():
     _validate_secret_key(SECRET_KEY, DEBUG)
 
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
@@ -81,10 +90,12 @@ def _security_settings(debug: bool) -> dict:
 
 globals().update(_security_settings(DEBUG))
 
-# Allow Vite dev server to make CSRF-protected POST requests in development
+# Trusted origins for CSRF-protected POST requests. The UI is same-origin
+# (Django serves it directly), so the local default is the runserver origin;
+# real deployed hosts (behind the TLS proxy) are set via the env var.
 CSRF_TRUSTED_ORIGINS = config(
     "CSRF_TRUSTED_ORIGINS",
-    default="http://localhost:5173,http://127.0.0.1:5173",
+    default="http://localhost:8001,http://127.0.0.1:8001",
 ).split(",")
 
 INSTALLED_APPS = [
@@ -100,6 +111,7 @@ INSTALLED_APPS = [
     "apps.core.data.web_assets",
     "apps.core.engine.service_detection",
     "apps.core.data.findings",
+    "apps.core.data.issues",
     "apps.core.data.asset_inventory",
     "apps.core.engine.scans",
     "apps.core.data.domains",
@@ -111,8 +123,6 @@ INSTALLED_APPS = [
     "apps.core.console.reports",
     "apps.core.console.ai",
     "apps.core.engine.durable",
-    "ninja_jwt",
-    "ninja_jwt.token_blacklist",
     "apps.domain_security",
     "apps.domain_probe",
     "apps.asn_cluster",
@@ -137,9 +147,10 @@ INSTALLED_APPS = [
     "apps.nuclei",
     "apps.nuclei_network",
     "apps.web_checker",
+    "apps.mvp",
     "apps.js_secrets",
     "apps.shodan",
-    "apps.typosquat",
+    "apps.tldsquatting",
     "apps.github_secrets",
     "apps.github_recon",
     "apps.cve_intel",
@@ -152,32 +163,17 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.mvp.middleware.MustChangePasswordMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "apps.core.console.api.ratelimit.LoginRateLimitMiddleware",
 ]
-
-# Brute-force rate limiting for POST /api/token/pair (see apps/core/api/ratelimit.py).
-LOGIN_RATELIMIT_ENABLED = config("LOGIN_RATELIMIT_ENABLED", default=True, cast=bool)
-# Whether to key the limiter on the leftmost X-Forwarded-For entry (the client,
-# behind the mandated TLS reverse proxy) vs the raw REMOTE_ADDR. Keep True for the
-# standard proxied deployment. Set False ONLY if OpenEASD is somehow exposed
-# without a trusted proxy — then XFF is attacker-controllable and would let a
-# brute-forcer rotate the header to evade the per-IP limit; REMOTE_ADDR (the TCP
-# peer) is unspoofable but, behind a proxy, is the proxy itself (one shared IP).
-LOGIN_RATELIMIT_TRUST_FORWARDED_FOR = config(
-    "LOGIN_RATELIMIT_TRUST_FORWARDED_FOR", default=True, cast=bool
-)
-LOGIN_RATELIMIT_MAX_FAILURES = config("LOGIN_RATELIMIT_MAX_FAILURES", default=5, cast=int)
-LOGIN_RATELIMIT_WINDOW_SECONDS = config("LOGIN_RATELIMIT_WINDOW_SECONDS", default=900, cast=int)
-LOGIN_RATELIMIT_LOCKOUT_SECONDS = config("LOGIN_RATELIMIT_LOCKOUT_SECONDS", default=900, cast=int)
 
 ROOT_URLCONF = "openeasd.urls"
 
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates", BASE_DIR / "frontend" / "dist"],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -198,22 +194,55 @@ ASGI_APPLICATION = "openeasd.asgi.application"
 # durable scan execution and so scans can run with real concurrency (no more
 # single-writer lock). Configure via DB_* env vars; DATABASE_URL wins if set.
 _DATABASE_URL = config("DATABASE_URL", default="")
+_DB_PASSWORD = config("DB_PASSWORD", default="openeasd")  # only used on the DB_* path
+
+
+def _validate_db_password(using_database_url: bool, db_password: str, debug: bool) -> None:
+    """Fail fast in production on the well-known default DB password.
+
+    Mirrors _validate_secret_key. Only the DB_* path carries a default
+    ('openeasd'); DATABASE_URL supplies its own credentials, so it's exempt.
+    A shipped default password is a trivial foothold on the database that holds
+    every scan result AND the encrypted BYOK credentials. DEBUG builds keep the
+    default for local dev.
+    """
+    if not debug and not using_database_url and db_password == "openeasd":
+        raise ImproperlyConfigured(
+            "DB_PASSWORD is still the insecure default 'openeasd' while DEBUG=False. "
+            "Set a strong DB_PASSWORD (or a full DATABASE_URL) via the environment. "
+            "This database holds all scan results and encrypted BYOK credentials, "
+            "so the well-known default leaves them open to anyone who can reach it."
+        )
+
+
 if _DATABASE_URL:
     import dj_database_url  # type: ignore
 
-    DATABASES = {"default": dj_database_url.parse(_DATABASE_URL, conn_max_age=600)}
+    DATABASES = {"default": dj_database_url.parse(_DATABASE_URL, conn_max_age=600, conn_health_checks=True)}
 else:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": config("DB_NAME", default="openeasd"),
             "USER": config("DB_USER", default="openeasd"),
-            "PASSWORD": config("DB_PASSWORD", default="openeasd"),
+            "PASSWORD": _DB_PASSWORD,
             "HOST": config("DB_HOST", default="127.0.0.1"),
             "PORT": config("DB_PORT", default="5432"),
             "CONN_MAX_AGE": config("DB_CONN_MAX_AGE", default=600, cast=int),
+            # With persistent connections (CONN_MAX_AGE>0), verify a reused
+            # connection is still alive before handing it out and transparently
+            # reconnect if the server dropped it (e.g. a Postgres restart/OOM).
+            # Without this, a reused dead connection raises "the connection is
+            # closed" until it ages out — the error that wedged the worker for
+            # hours after a Postgres OOM.
+            "CONN_HEALTH_CHECKS": config("DB_CONN_HEALTH_CHECKS", default=True, cast=bool),
         }
     }
+
+# Skip under the test runner for the same reason as the SECRET_KEY guard (see
+# _under_pytest — runner-entrypoint detection, not mere importability).
+if not _under_pytest():
+    _validate_db_password(bool(_DATABASE_URL), _DB_PASSWORD, DEBUG)
 
 # DBOS durable-execution system database. Checkpoints scan workflows/steps so a
 # crashed or restarted worker RESUMES a scan instead of losing it (retiring the
@@ -237,9 +266,9 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [
-    BASE_DIR / "frontend" / "dist",
-]
+# No project-level static dir — the mvp app's static (Bulma/HTMX) is collected
+# via AppDirectoriesFinder. (The React SPA's frontend/dist was removed.)
+STATICFILES_DIRS = []
 STORAGES = {
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
@@ -254,9 +283,6 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Scan schedule (24h clock, uses TIME_ZONE above)
 SCAN_DAILY_HOUR = config("SCAN_DAILY_HOUR", default=2, cast=int)
 SCAN_DAILY_MINUTE = config("SCAN_DAILY_MINUTE", default=0, cast=int)
-
-# Set to False on extra gunicorn workers so only one process runs the scheduler
-SCHEDULER_ENABLED = config("SCHEDULER_ENABLED", default=True, cast=bool)
 
 # Master switch for unattended scanning (daily scan + per-domain monitoring).
 # Default True preserves self-hosted behaviour. Set False for a manual-only
@@ -291,6 +317,34 @@ DBOS_APP_NAME = config("DBOS_APP_NAME", default="openeasd")
 # politeness and host RAM (nuclei/amass are memory-hungry).
 DBOS_SCAN_CONCURRENCY = config("DBOS_SCAN_CONCURRENCY", default=2, cast=int)
 SCAN_STEP_TIMEOUT = config("SCAN_STEP_TIMEOUT", default=SCAN_TASK_TIMEOUT, cast=int)
+
+# Scan retention / pruning (H3 — bounded result store). OFF by default: pruning
+# deletes scan history (cascading to its assets/findings), so it is opt-in. When
+# enabled, prune_old_scans keeps, per domain, the newest KEEP_PER_DOMAIN scans AND
+# any scan newer than MAX_AGE_DAYS; older ones are deleted. The single latest scan
+# per domain is ALWAYS kept regardless. The persistent asset_inventory + Issue
+# registers preserve the long-term "surface over time" story, so pruning raw scan
+# rows does not lose it. Set MAX_AGE_DAYS=0 to disable the age rule (count only).
+SCAN_RETENTION_ENABLED = config("SCAN_RETENTION_ENABLED", default=False, cast=bool)
+SCAN_RETENTION_KEEP_PER_DOMAIN = config("SCAN_RETENTION_KEEP_PER_DOMAIN", default=30, cast=int)
+SCAN_RETENTION_MAX_AGE_DAYS = config("SCAN_RETENTION_MAX_AGE_DAYS", default=180, cast=int)
+
+# Prometheus metrics endpoint (H2). GET /metrics is UNAUTHENTICATED (counts only,
+# no finding detail), so it is OPT-IN: OFF by default (404). Enable it deliberately
+# (METRICS_ENABLED=true) once the endpoint is network-restricted to your scraper —
+# leaving it public exposes aggregate posture (open-finding counts by severity, scan
+# activity) to any caller. (M3, API security review.)
+METRICS_ENABLED = config("METRICS_ENABLED", default=False, cast=bool)
+
+# Finding verification — deterministic re-probe of medium+ findings at finalize.
+FINDING_VERIFICATION_ENABLED = config("FINDING_VERIFICATION_ENABLED", default=True, cast=bool)
+FINDING_VERIFICATION_MIN_SEVERITY = config("FINDING_VERIFICATION_MIN_SEVERITY", default="medium")
+
+# tldsquatting FP reduction — collapse benign lookalike classes (owned/parked/
+# unrelated/pre_existing, from apps/tldsquatting/classify.py) into a single
+# info-severity rollup Finding per class instead of one Finding per domain.
+# Threat-classified lookalikes always stay individual regardless of this flag.
+TLDSQUATTING_COLLAPSE_BENIGN = config("TLDSQUATTING_COLLAPSE_BENIGN", default=True, cast=bool)
 
 # Scanner timeouts (seconds) — override in .env if needed
 SCANNER_DNS_TIMEOUT = config("SCANNER_DNS_TIMEOUT", default=5, cast=int)
@@ -583,16 +637,6 @@ LOGGING = {
             "level": "WARNING",
             "propagate": False,
         },
-        "weasyprint": {
-            "handlers": ["file"],
-            "level": "WARNING",
-            "propagate": False,
-        },
-        "fontTools": {
-            "handlers": ["file"],
-            "level": "WARNING",
-            "propagate": False,
-        },
     },
 }
 
@@ -609,14 +653,3 @@ LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/login/"
 
-# ninja-jwt token configuration
-NINJA_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-    "ALGORITHM": "HS256",
-    "SIGNING_KEY": SECRET_KEY,
-    "AUTH_HEADER_TYPES": ("Bearer",),
-    "ROTATE_REFRESH_TOKENS": False,
-    "BLACKLIST_AFTER_ROTATION": False,
-    "UPDATE_LAST_LOGIN": False,
-}

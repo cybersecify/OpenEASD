@@ -21,8 +21,11 @@ After tools complete: finalise session, delta detection, insights, alerts.
 
 import logging
 
+from django.conf import settings
 from django.db import transaction, DatabaseError
 from django.utils import timezone as django_tz
+
+from apps.core.engine.verification.verifier import verify_session
 
 from .models import ScanSession, ScanDelta
 
@@ -34,6 +37,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _detect_deltas(session):
+    # Idempotency (F1): finalize is a replayable DBOS step — a worker crash after
+    # this ran but before the step checkpointed re-runs the whole finalize. Clear
+    # any ScanDelta rows from a prior pass before recreating (delete-then-insert),
+    # or a replay double-counts deltas, which build_insights reads as inflated
+    # new/removed-exposure counts.
+    ScanDelta.objects.filter(session=session).delete()
+
     # Exclude subscans: they only run a subset of tools, so using one as the
     # baseline would produce spurious "new finding" deltas on the next full scan.
     # Filter on scan_type (immutable) rather than parent_session, which is
@@ -53,23 +63,37 @@ def _detect_deltas(session):
 
     from apps.core.data.findings.models import Finding
 
-    current_keys = {
-        f"{f.source}:{f.check_type}:{f.title}"
-        for f in Finding.objects.filter(session=session)
-    }
-    prev_keys = {
-        f"{f.source}:{f.check_type}:{f.title}"
-        for f in Finding.objects.filter(session=previous)
-    }
+    # Exclude the scan_coverage meta-warning from delta keys: it's a
+    # finalize-generated marker, not a real attack-surface finding. Including it
+    # would make it a spurious "new" delta on replay (it is created *after* this
+    # runs, so a re-run would see last pass's copy) and a spurious "removed"
+    # delta on the next scan that doesn't regress.
+    # Identity must match the Issue register (item 3): dedup on (check_id, target)
+    # via the shared issue_key — NOT source:check_type:title. The old title-based key
+    # disagreed with the register (a reworded title showed as a phantom new+removed
+    # delta, and the same rule on different hosts collapsed). We map that identity to
+    # a readable "source:check_type:title" label for item_identifier (the change feed
+    # + dispatcher display that format), so detection agrees with the register while
+    # the stored identifier stays human-readable.
+    from apps.core.data.issues.models import issue_key
+
+    def _finding_map(s):
+        m = {}
+        for f in Finding.objects.filter(session=s).exclude(source="scan_coverage"):
+            m[issue_key(f.check_id, f.target)] = f"{f.source}:{f.check_type}:{f.title}"
+        return m
+
+    current = _finding_map(session)
+    prev = _finding_map(previous)
     deltas = []
-    for key in current_keys - prev_keys:
+    for key in current.keys() - prev.keys():
         deltas.append(ScanDelta(session=session, previous_session=previous,
                                 change_type="new", change_category="finding",
-                                item_identifier=key))
-    for key in prev_keys - current_keys:
+                                item_identifier=current[key]))
+    for key in prev.keys() - current.keys():
         deltas.append(ScanDelta(session=session, previous_session=previous,
                                 change_type="removed", change_category="finding",
-                                item_identifier=key))
+                                item_identifier=prev[key]))
     if deltas:
         ScanDelta.objects.bulk_create(deltas)
 
@@ -85,6 +109,13 @@ def _check_coverage_regression(session):
     """
     from apps.core.data.web_assets.models import URL
     from apps.core.data.findings.models import Finding
+
+    # Idempotency (F1): reached via the replayable finalize step. Remove any
+    # coverage_regression finding from a prior pass so a replay recreates it
+    # exactly once instead of stacking duplicates (delete-then-insert).
+    Finding.objects.filter(
+        session=session, source="scan_coverage", check_type="coverage_regression"
+    ).delete()
 
     def _httpx_urls(s):
         return URL.objects.filter(session=s, source="httpx").count()
@@ -153,11 +184,21 @@ def _check_coverage_regression(session):
 
 
 def _count_all_findings(session) -> int:
-    try:
-        from apps.core.data.findings.models import Finding
-        return Finding.objects.filter(session=session).count()
-    except Exception:
-        return 0
+    from apps.core.data.findings.models import Finding
+    # Exclude the scan_coverage meta-warning — it's a finalize-generated marker,
+    # not a real attack-surface finding. Excluding it keeps the count stable
+    # across a finalize replay (F1): on the first pass the warning doesn't exist
+    # yet, so a replay would otherwise count N+1.
+    #
+    # No broad `except -> return 0` (F4): a DB error must NOT masquerade as
+    # "0 findings / clean". Let it propagate so finalize fails honestly (the
+    # reaper, the only other caller, guards its own call so a hiccup there can't
+    # abort the watchdog sweep).
+    return (
+        Finding.objects.filter(session=session)
+        .exclude(source="scan_coverage")
+        .count()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +285,16 @@ def _finalize_session(session):
     from apps.core.console.insights.builder import build_insights
     build_insights(session)
 
+    # Give every finding a stable per-rule check_id before the issue rollup keys the
+    # persistent register on it. Granular tools get "{source}:{check_type}" here;
+    # coarse + CVE/secret tools set it explicitly at construction (left untouched).
+    # Fail-graceful — a backfill error must never fail a scan.
+    try:
+        from apps.core.data.findings.checkid import backfill_check_ids
+        backfill_check_ids(session)
+    except Exception:  # noqa: BLE001
+        logger.exception("[%s] check_id backfill failed — scan unaffected", session.id)
+
     # Roll this scan's assets into the persistent inventory (fail-graceful —
     # a rollup error must never fail a scan). See apps/core/asset_inventory.
     try:
@@ -251,6 +302,23 @@ def _finalize_session(session):
         rollup_session(session)
     except Exception:  # noqa: BLE001
         logger.exception("[%s] asset-inventory rollup failed — scan unaffected", session.id)
+
+    # Deterministic finding verification — re-probe medium+ findings before the
+    # issue rollup so the verdict mirrors onto the Issue. Gated + fail-graceful.
+    if getattr(settings, "FINDING_VERIFICATION_ENABLED", True):
+        try:
+            verify_session(session)
+        except Exception:  # noqa: BLE001
+            logger.exception("[%s] verification failed — scan unaffected", session.id)
+
+    # Roll findings into the persistent Issue register so triage status persists
+    # across scans (after the asset rollup, so Finding.asset links exist to ground
+    # each Issue). Fail-graceful — a rollup error must never fail a scan.
+    try:
+        from apps.core.data.issues.rollup import rollup_session_issues
+        rollup_session_issues(session)
+    except Exception:  # noqa: BLE001
+        logger.exception("[%s] issue-register rollup failed — scan unaffected", session.id)
 
     # AI triage + summaries (no-op unless keys + consent — apps/core/ai/hooks
     # is fail-graceful). Must precede _dispatch_alerts so alerts can carry the
@@ -374,7 +442,7 @@ def _seed_apex_into_assets(session) -> None:
                 if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
                     continue
                 public_ips.append((ip_str, ip.version))
-        except Exception:
+        except Exception:  # noqa: BLE001
             # NXDOMAIN, no answer, timeout — all benign; just leave IPs unresolved.
             continue
 
@@ -578,7 +646,20 @@ def prepare_session_assets(session_id: int) -> None:
         _copy_assets_from_parent(session)
     else:
         _seed_apex_into_assets(session)
-    WorkflowRun.objects.get_or_create(session=session, defaults={"workflow": session.workflow})
+    # Mark the run "running" here (the durable path's equivalent of
+    # run_workflow()'s status flip). Without this the run stays "pending" through
+    # execution, and finalize_session_by_id's terminal-status decision — which
+    # flips a scan to "partial" when a tool failed — would be skipped, letting a
+    # failed tool masquerade as "completed" (the fake-complete the pipeline rules
+    # forbid). A resume reuses the existing run; leave a terminal one untouched.
+    run, created = WorkflowRun.objects.get_or_create(
+        session=session,
+        defaults={"workflow": session.workflow, "status": "running", "started_at": django_tz.now()},
+    )
+    if not created and run.status == "pending":
+        run.status = "running"
+        run.started_at = run.started_at or django_tz.now()
+        run.save(update_fields=["status", "started_at"])
 
 
 def phase_groups_for_session(session_id: int) -> list:
@@ -615,7 +696,11 @@ def finalize_session_by_id(session_id: int) -> None:
     session = ScanSession.objects.get(id=session_id)
     session.refresh_from_db(fields=["status"])
     run = WorkflowRun.objects.filter(session=session).order_by("-id").first()
-    if run is not None and run.status == "running":
+    # Decide the terminal status for a run still in flight — "running" normally,
+    # but also "pending" as a safety net: if a run never got flipped to running
+    # (a missed transition), it must still get a terminal partial/completed
+    # decision here rather than silently finalizing the scan as "completed".
+    if run is not None and run.status in ("running", "pending"):
         if session.status == "cancelled":
             run.status = "cancelled"
         elif WorkflowStepResult.objects.filter(run=run, status="failed").exists():

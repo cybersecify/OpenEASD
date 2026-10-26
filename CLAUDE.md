@@ -3,22 +3,46 @@
 External Attack Surface Detection platform. Scans domains for network and
 web vulnerabilities using a dynamic workflow engine with auto-registered tools.
 
-## Status (v2.13.0 — 2026-09-11)
+## Status (v3.0.1 — 2026-10-14 — plain-Django UI + single image)
 
-- **Released**: v2.13.0 — images `ghcr.io/cybersecify/openeasd-{web,worker}` at
-  `:v2.13.0` / `:v2.13` / `:latest` (web on python:3.12-slim, worker on Ubuntu 24.04/3.12 — both Python 3.12; Django 5.2 LTS). 3-tier deploy: `db` (postgres:17) + `web`
-  (gunicorn, no tools) + `worker` (`dbos_worker` + scanner matrix, `NET_RAW`).
+- **v3.0.0 (UI + deploy change):** the served UI is now a **plain-Django,
+  server-rendered app** (`apps/mvp` — vendored Bulma CSS + vendored HTMX, Django
+  **session** auth) at `/`. The Django-Ninja REST API + JWT (incl. the token-blacklist + purge cron and the
+  django-ninja* deps) are **REMOVED** (2026-10-14); the React SPA (`frontend/`) is **deleted**. **PDF reports are removed; CSV is kept.** A
+  **single Docker image** (embedded PostgreSQL + gunicorn + DBOS worker in one
+  container) is the primary MVP deploy; the 3-tier compose/k8s path remains as the
+  privilege-separated / scalable alternative. The engine (DBOS + Postgres) is unchanged.
+  The legacy SPA / JWT / PDF sections have been removed or corrected below; any
+  remaining mention is historical.
+
+- **v3.0.1 (maintenance):** docs reconciled with the v3.0.0 code (full layer
+  chain + README/CONTRIBUTING/OPERATIONS; new ADR **D-018**); removed dead code
+  (orphaned `LoginThrottle` model + drop-migration), unused deps
+  (`pypdf`/`lxml`/`black`/`isort`/`mypy`), and broken/superseded deploy paths
+  (`docker-compose.dev.yml` + `just deploy-dev`, the bare-metal `install.sh`).
+  No behavior change; slightly slimmer image.
+
+- **Released**: v3.0.1 — single image `ghcr.io/cybersecify/openeasd` at
+  `:v3.0.1` / `:v3.0` / `:latest` (embedded PostgreSQL + gunicorn + DBOS worker
+  in one container; Python 3.12; Django 5.2 LTS). The 3-tier `web`/`worker`
+  images are no longer published to GHCR — build them locally from the Dockerfile
+  `web`/`worker` targets for the compose/k8s path.
 - **Scope**: 30 registered scan tools across 13 pipeline phases; single-user
   (one admin, no RBAC) by design.
 - **Engine**: DBOS durable workflows on PostgreSQL — one multi-step `run_scan`
   workflow per scan (checkpoint/resume) + `@durable_task` for one-step tasks
   (`ai_triage`, `agent_step`) + `@scheduled` crons. No SQLite, no Django-Q/Celery.
 - **AI**: optional Cloudflare Workers AI layer (BYOK, off by default, consent-gated).
-- **Docs**: [`docs/DESIGN.md`](docs/DESIGN.md) (architecture — layers/tiers,
-  workflow-vs-pipeline, apps), [`docs/DECISIONS.md`](docs/DECISIONS.md) (why),
-  [`docs/PRD.md`](docs/PRD.md) (product), `docs/specs/` (feature specs +
-  producer→queue→consumer hardening plan H1–H7). Release notes: `CHANGELOG.md`.
-- **Health**: `GET /health/` (unauth, K8s probes) · `GET /api/version/`.
+- **Docs** (`docs/`, read as a layer chain): **PRD ([`01-prd.md`](docs/01-prd.md))
+  → DDD ([`02-domain.md`](docs/02-domain.md)) → System
+  ([`03-system.md`](docs/03-system.md)) → Technical
+  ([`04-technical.md`](docs/04-technical.md), indexes `docs/specs/`) → API
+  ([`05-api.md`](docs/05-api.md)) → Coding ([`06-coding.md`](docs/06-coding.md))**.
+  [`docs/OPERATIONS.md`](docs/OPERATIONS.md) (runbook) and
+  [`docs/DECISIONS.md`](docs/DECISIONS.md) (ADRs, incl. D-017) sit outside the
+  chain. Doc drift is treated like a failing test — the commit that changes a
+  layer updates its doc. Release notes: `CHANGELOG.md`.
+- **Health**: `GET /health/` (unauth, K8s probes) · `GET /metrics/` (unauth Prometheus exporter — **opt-in, OFF by default**; enable `METRICS_ENABLED=true` only once network-restricted to your scraper — M3).
 
 ## GitHub Flow
 
@@ -106,15 +130,13 @@ git describe --tags --abbrev=0
 
 ## CI/CD (GitHub Actions)
 - Pipeline: `.github/workflows/ci.yml` — runs on every push to `main` and `v*` tags
-- **4 jobs:**
+- **4 jobs (test, docker, publish, release):**
   - `test` — ruff (lint), pytest (fast, excludes `test_domain_security.py`) against a **`postgres:17-alpine` service container** (DB_* env) with a **coverage gate** (`--cov-fail-under=80`; config in `[tool.coverage.run]`, ~83% currently), bandit (SAST), pip-audit (CVE scan)
-  - `frontend` — `npm ci`, `npm run test:run` (Vitest + Testing Library, happy-dom env), `npm run build`
-  - `docker` — matrix over the `web` + `worker` build targets, `docker buildx build` for `linux/amd64` (no push, cache check per target)
-  - `publish` — matrix over `web` + `worker`; builds `linux/amd64` and pushes to `ghcr.io/cybersecify/openeasd-web` and `-worker`
+  - `docker` — **PR-only** build gate (`if: github.event_name == 'pull_request'`): builds the `singleimage` target for `linux/amd64` (no push), warming the `type=gha` cache (`scope=singleimage`). **Skipped on main/tag pushes** — `publish` rebuilds+pushes from that warm cache there.
+  - `publish` — builds the `singleimage` target for `linux/amd64` and pushes the **single image** `ghcr.io/cybersecify/openeasd` (one container: embedded Postgres + gunicorn + DBOS worker). `needs: [test]` only (NOT `docker`, which is PR-only and would cascade-skip publish); it's the sole image builder on release. (The 3-tier `web`/`worker` images are no longer published to GHCR — build them locally from the Dockerfile `web`/`worker` targets if you use the 3-tier compose/k8s path.)
 - **Publish triggers:** every push to `main` (`:latest` tag) and `v*` git tags. A tag push emits both the full `:vX.Y.Z` (from `type=ref,event=tag`) and a floating `:vX.Y` major.minor tag (from `type=match,pattern=v\d+\.\d+`) so downstream can pin to a minor line and still get patch updates
-- Runner: `ubuntu-24.04`, Python 3.12, `uv sync --group dev` for deps, `libcairo2-dev gcc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0` system deps required (WeasyPrint PDF rendering)
-- `pip-audit --ignore-vuln PYSEC-2025-183` — disputed PyJWT weak-key-length CVE, no fix available
-- **Build provenance:** the `publish` job computes `OPENEASD_VERSION` (git tag for `v*`, else `pyproject.toml` version), `OPENEASD_GIT_SHA` (`github.sha`), and `OPENEASD_BUILD_DATE` (ISO UTC) and passes them as `build-args` to buildx. The Dockerfile bakes them into `ENV` (placed late so they never bust the cache of the heavy layers). Settings read them via `config()` with `dev`/`unknown` defaults for local runs. Surfaced at `GET /health/` + `GET /api/version/`, and shown as a muted footer on the login + change-password pages AND in the authenticated app sidebar (`frontend/src/components/BuildInfo.jsx`). The sidebar footer also does an "update available" check via `GET /api/version/latest/` (authenticated; compares the running build to the latest GitHub release, cached 6h, fail-graceful — logic in `apps/core/console/api/update_check.py`). The app never self-updates; it only surfaces a heads-up + release link.
+- Runner: `ubuntu-24.04`, Python 3.12, `uv sync --group dev` for deps, no Node or WeasyPrint system libs are installed (no frontend, no PDF)
+- **Build provenance:** the `publish` job computes `OPENEASD_VERSION` (git tag for `v*`, else `pyproject.toml` version), `OPENEASD_GIT_SHA` (`github.sha`), and `OPENEASD_BUILD_DATE` (ISO UTC) and passes them as `build-args` to buildx. The Dockerfile bakes them into `ENV` (placed late so they never bust the cache of the heavy layers). Settings read them via `config()` with `dev`/`unknown` defaults for local runs. Surfaced at `GET /health/` (`{status, version, git_sha, build_date}`). The app never self-updates.
 
 ## Commands
 - Always use `uv run python` instead of `python` or `python3`
@@ -128,65 +150,70 @@ git describe --tags --abbrev=0
 ### Backend
 - Django 5.2 LTS with plain Django views (no DRF, no Celery, no Redis) — pinned to
   the LTS line (`django>=5.2.17,<6.0`), not floated to non-LTS 6.x
-- **Django Ninja** REST API under `/api/` — Schema-based, auto-docs at `/api/docs`
-- **JWT Bearer auth** — access + refresh tokens via `djangorestframework-simplejwt` (ninja-jwt wrapper); token blacklist handled by simplejwt's built-in `OutstandingToken`/`BlacklistedToken` models
-- **DBOS** — durable-execution engine for scan execution AND all scheduling, backed by PostgreSQL (its checkpoint tables live in a `dbos` schema in the same DB). Scans are durable workflows whose phases are checkpointed steps, so a crashed/restarted worker RESUMES a scan instead of losing it. Scheduling is DBOS `@scheduled` cron workflows (daily scan, monitoring sweep, user-schedule sweep, stuck-scan watchdog, JWT token purge) registered by the `dbos_worker` process. Django-Q2 and APScheduler have been fully removed.
-- **WhiteNoise** — serves collected static files (frontend bundle) when `DEBUG=False` (Docker/prod); uses `CompressedManifestStaticFilesStorage` for gzip + content-hash fingerprinting
+- **No REST API** — removed 2026-10-14. The UI is server-rendered plain Django with **session auth**; CSV export (`/reports/<uuid>/csv/`) is the only HTTP data export (plus `/health/`, `/metrics/`). No JWT, so no token-purge cron.
+- **DBOS** — durable-execution engine for scan execution AND all scheduling, backed by PostgreSQL (its checkpoint tables live in a `dbos` schema in the same DB). Scans are durable workflows whose phases are checkpointed steps, so a crashed/restarted worker RESUMES a scan instead of losing it. Scheduling is DBOS `@scheduled` cron workflows (daily scan, monitoring sweep, user-schedule sweep, stuck-scan watchdog, scan prune) registered by the `dbos_worker` process. Django-Q2 and APScheduler have been fully removed.
+- **WhiteNoise** — serves collected static files (Bulma/HTMX vendor assets) when `DEBUG=False` (Docker/prod); uses `CompressedManifestStaticFilesStorage` for gzip + content-hash fingerprinting
 - **PostgreSQL** database — configured via `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`/`DB_PASSWORD` (or `DATABASE_URL`). Postgres has no single-writer lock, so scans run concurrently (`DBOS_SCAN_CONCURRENCY`, default 2).
 
-### Frontend (React SPA — new primary UI)
-- **React 19 + Vite 8** — `frontend/` directory, builds to `frontend/dist/`
-- **shadcn/ui** — component library on top of Tailwind CSS 3 + Radix UI; CSS variables in `src/index.css`; components in `src/components/ui/`
-- **react-router-dom** — `createBrowserRouter` route tree in `src/router.jsx`; auth-gated routes via a `ProtectedRoute` (`Outlet` + `<Navigate to="/login">`) that checks `auth.isLoggedIn()`. There is no `App.jsx`; `main.jsx` renders `<RouterProvider>`.
-- `src/api/client.js` — thin `apiGet(path)` / `apiPost(path, body)` wrappers over `axiosInstance.js`. The axios instance's request interceptor adds `Authorization: Bearer <token>`; the response interceptor, on 401, silently refreshes via `/api/token/refresh` (single shared `_refreshPromise` dedupes concurrent refreshes) and only clears tokens + redirects to `/login` if refresh fails.
-- `auth.js` — isolated localStorage helpers (`getToken`, `getRefresh`, `setTokens`, `clear`, `isLoggedIn`)
-- **@tanstack/react-query** — `useQuery({ queryKey: [path, ...deps], queryFn: () => apiGet(path) })` for all data fetching; `queryClient` in `src/lib/queryClient.js` (`staleTime: 0`, `retry: false`), `<QueryClientProvider>` in `main.jsx`. Live scan status polls via `refetchInterval: shouldPoll ? 3000 : false` (3s). No custom `useFetch`/`usePolling` hooks.
-- **Shared components:** `Badge` (cva severity/status variants), `Spinner`, `Pagination`, `ConfirmButton` (AlertDialog), `Notification` (re-exports sonner `toast`)
-- **shadcn UI primitives** (`src/components/ui/`): `Button`, `Card`, `Table`, `Badge`, `AlertDialog`, `Pagination`, `Sonner`
-- **Toast notifications:** `import { toast } from '../components/Notification.jsx'` → `toast.success()` / `toast.error()`; `<Toaster>` mounted in `main.jsx`
-- Dark theme throughout: bg `#0d1117`, card `#161b22`, border `#30363d`, accent `#30c074`; mapped to shadcn CSS vars (`--background`, `--card`, `--border`, `--primary`)
-- **Dev:** Vite proxy forwards `/api/` → Django on port **8001** (no CORS config needed)
-- **Prod:** `npm run build` → `frontend/dist/` → served by Django via WhiteNoise
-- **`/change-password` route** — forced redirect after login if `must_change_password=true`; clears flag on success
+### Frontend (plain-Django UI — `apps/mvp`)
 
-### Frontend dev setup
+The served UI is a **server-rendered Django app**, `apps/mvp`, mounted at `/`:
+vendored **Bulma** CSS + vendored **HTMX** (no CDN, no build step, no Node), Django
+**session** auth (login/logout; forced change-password via
+`apps/mvp/middleware.py::MustChangePasswordMiddleware`). Views call the engine
+service layer directly (`create_scan_session` → `run_scan_task`) — no serializers,
+no API round-trip. Pages: dashboard; domains (list/detail/add/authorize/monitoring/
+delete); scan start (2×2 modes Passive Light/Deep, Active Light, Full + custom
+workflow pick, same passive-bypass / active-needs-`DomainAuthorization` gate as
+before); scan detail (HTMX live progress polled every 3s, stop, findings table
+filterable by severity + verification, CSV link); scans history. Tests:
+`tests/unit/test_mvp_views.py`.
+
+**Removed:** the React SPA (`frontend/`), the Django-Ninja REST API and JWT are gone;
+there is no frontend toolchain (no Node/Vite). Unknown paths redirect to the dashboard.
+
+### Dev setup
 
 **Task runners:** both a `Makefile` and a `justfile` are provided with the same
 recipes (`dev`, `worker`, `test`, `lint`, `migrate`, …) — use `make <target>` or
 `just <target>` interchangeably. `just` adds a few extras: **`just ci`** runs the
-whole CI pipeline locally (ruff + pytest w/ 80% coverage + bandit + pip-audit +
-vitest + build — mirrors `.github/workflows/ci.yml`), and `just up`/`down`/`logs`/`ps`
-drive the 3-container Docker Compose stack. `just` (no arg) lists all recipes.
+CI pipeline locally (ruff + pytest w/ 80% coverage + bandit + pip-audit), and
+`just up`/`down`/`logs`/`ps` drive the 3-container Docker Compose stack. `just`
+(no arg) lists all recipes.
 
 ```bash
-# Quickest: starts Django (:8001) + Vite dev server + DBOS worker together
-make dev        # or: just dev
-
-# Or manually in three terminals:
-# Terminal 1 — Django
+# Terminal 1 — Django (serves the UI at http://localhost:8001)
 uv run manage.py runserver 8001
 
-# Terminal 2 — Vite dev server (proxies /api/ to Django at :8001)
-cd frontend && npm install && npm run dev
-# App runs at http://localhost:5173
-
-# Terminal 3 — DBOS worker (required for scans to execute; needs PostgreSQL running)
+# Terminal 2 — DBOS worker (required for scans to execute; needs PostgreSQL running)
 uv run manage.py dbos_worker
 ```
 
-### Frontend rules
-- New interactive features → React pages in `frontend/src/pages/`, wired into the route tree in `src/router.jsx`
-- Fetch data with react-query `useQuery` + `apiGet`/`apiPost` (keyed by the API path); don't reintroduce ad-hoc `fetch`/`useFetch`. Navigate with react-router-dom's `useNavigate`, not a hand-rolled router.
-- New API data → add endpoint to the relevant `apps/core/<module>/api.py` router + wire in `apps/core/console/api/ninja.py`
-- Shared UI primitives → `frontend/src/components/`
-- Don't add CORS headers — always use same-origin (Vite proxy in dev, Django serves in prod)
-- Legacy HTMX/Alpine/Django-template stack is **retired**. All UI is the React SPA.
-- SPA catch-all in `openeasd/urls.py` serves `frontend/dist/index.html` for all non-API paths.
-- Run `cd frontend && npm run build` to update the production bundle before deployment.
+### UI rules
+- UI work → `apps/mvp` (plain Django views + templates + HTMX partials; call the service layer directly; session auth). No REST API, no SPA, no build step.
 
 ## Deployment
 
-### Docker (production) — 3 services
+### Single Docker image (primary MVP deploy)
+
+One container runs **embedded PostgreSQL + gunicorn + the DBOS worker** under
+`honcho`. Build the `singleimage` target and run it with the mandatory `/data` volume
+(Postgres data + logs live there; entrypoint `docker/entrypoint-singleimage.sh`):
+
+```bash
+docker buildx build --target singleimage -t openeasd:singleimage .
+docker run -d --name openeasd -p 8000:8000 -v openeasd-data:/data \
+  -e SECRET_KEY=<long random> -e DB_PASSWORD=<strong> -e DEBUG=False \
+  -e ALLOWED_HOSTS=<host,localhost> openeasd:singleimage
+# or: docker compose -f docker-compose.singleimage.yml up -d --build
+```
+- Smoke-verified end-to-end; the simplest way to run a trusted single-user instance.
+- Trade-off: scanner tools + `NET_RAW` share a container with the web process (no
+  privilege separation) and web/worker cannot scale independently — use the 3-tier
+  path below when that matters. See `docs/OPERATIONS.md` for the run recipe.
+- Same HTTPS-in-front rule applies (see below).
+
+### Docker (3-tier alternative) — 3 services
 
 The stack is **PostgreSQL + web + worker** (Option B) — the **recommended
 architecture**: it keeps offensive tooling + `NET_RAW` off the internet-facing
@@ -214,23 +241,23 @@ docker compose up -d --build
   amass brute so ~1GB completes without OOM; `balanced` (2-8GB) is the old
   default; `high` (≥8GB) raises LOCAL concurrency. **Exception:** a phase group
   of only light, network-I/O-only tools (`runner._LOW_MEM_PARALLEL_SAFE` —
-  domain_security/domain_probe/typosquat/dns_history/hudson_rock/breach_check/
+  domain_security/domain_probe/tldsquatting/dns_history/hudson_rock/breach_check/
   github_secrets) runs concurrently *even under low memory* (they never OOM like
   nuclei/amass), so the phase-1 intelligence group stays fast on a 1GB box;
-  override via `SCAN_LOW_MEM_PARALLEL_SAFE`. `typosquat` also resolves its
-  candidates and probes homepages concurrently (`TYPOSQUAT_DNS_CONCURRENCY`=16 /
-  `TYPOSQUAT_FETCH_CONCURRENCY`=8) instead of serially. Per-target request rate stays
+  override via `SCAN_LOW_MEM_PARALLEL_SAFE`. `tldsquatting` also resolves its
+  candidates and probes homepages concurrently (`TLDSQUATTING_DNS_CONCURRENCY`=16 /
+  `TLDSQUATTING_FETCH_CONCURRENCY`=8) instead of serially. Per-target request rate stays
   capped across all profiles (politeness — a big box is no licence to hammer the
   target; higher rates just trip WAFs, which the coverage report flags). Add
   swap on 1GB hosts. Resolver + tuning in settings/base.py (`_resolve_profile`,
   `_PROFILE_TUNING`). nuclei is also severity-scoped per profile (`NUCLEI_SEVERITY`;
   low=critical/high/medium, else +low; `info` dropped everywhere) — the fix for
   its freeze/timeout since it compiles all ~13.5k templates into RAM. See
-  `docs/SCAN_OPERATIONAL_LEARNINGS.md`.
+  `docs/OPERATIONS.md`.
 - Volumes: PostgreSQL data (its own volume/PVC) and `openeasd-logs` persist across container replacements; app data lives in Postgres, not a file
 - Static files served by WhiteNoise (no nginx needed)
 - **Serve it over HTTPS.** Do NOT expose the app on bare HTTP — login sends
-  credentials and JWTs in cleartext. Put a TLS-terminating reverse proxy in
+  credentials and session cookies in cleartext. Put a TLS-terminating reverse proxy in
   front (Caddy/nginx + Let's Encrypt on a real domain, or Cloudflare) — a bare
   IP like `http://<ip>/` cannot get a normal cert and must not be used with real
   credentials. The app already sends `SECURE_PROXY_SSL_HEADER`; once TLS is in
@@ -266,8 +293,20 @@ k8s/
   worker-deployment.yaml — openeasd-worker: DBOS worker (tier: worker, NET_RAW, no Service)
   service.yaml           — NodePort 30808 → 8000, selector tier: web ONLY
   ingress.yaml           — nginx Ingress; TLS annotations ready to uncomment
-  kustomization.yaml     — kubectl apply -k k8s/ (does NOT include secret.yaml)
+  kustomization.yaml     — kubectl apply -k k8s/ (does NOT include secret.yaml);
+                           pins the image tag via images[].newTag — the SINGLE
+                           source of truth for which version prod runs
 ```
+
+**Image pinning (deterministic promote + rollback):** the Deployments carry
+**bare image names** (`ghcr.io/cybersecify/openeasd-{web,worker}`, no tag); the
+version is set only by `kustomization.yaml` `images[].newTag`. To promote a
+release, smoke-test the published `:vX.Y.Z` image first (`OPENEASD_TAG=vX.Y.Z
+just deploy-dev`), then bump `newTag` to that version and `kubectl apply -k k8s/`.
+Rollback = set `newTag` back and re-apply. `imagePullPolicy: IfNotPresent` +
+immutable tags make this reproducible. Never pin prod to `:latest`. Enforced by
+`test_k8s_manifests.py::test_images_pinned_to_release_tag` (newTag must be `vX…`).
+See the full flow in `docs/OPERATIONS.md` (Ship it — verify, then promote).
 
 **Key constraints:**
 - `replicas: 1` on each Deployment by default. Postgres removes the SQLite single-writer limit, so `openeasd-worker` can scale to multiple replicas pulling the same DBOS queue (`kubectl scale deploy/openeasd-worker --replicas=N`) independently of `openeasd-web`
@@ -298,7 +337,7 @@ Runs on every container start (init container in K8s, or `CMD` override in Docke
 4. `exec "$@"` — hands off to the actual process
 
 ### First login
-`docker-entrypoint.sh` is role-aware (`OPENEASD_ROLE`): both roles wait for PostgreSQL; the web/init role runs migrate + collectstatic + admin setup (creating `admin/admin` with `must_change_password=True` on first run, re-flagging if the default password is still in use), while the worker role waits for `migrate --check` to pass then launches (no DDL race). The React app redirects to `/change-password` before allowing access.
+`docker-entrypoint.sh` is role-aware (`OPENEASD_ROLE`): both roles wait for PostgreSQL; the web/init role runs migrate + collectstatic + admin setup (creating `admin/admin` with `must_change_password=True` on first run, re-flagging if the default password is still in use), while the worker role waits for `migrate --check` to pass then launches (no DDL race). The plain-Django UI redirects to `/change-password` (via `MustChangePasswordMiddleware`) before allowing access. The single-image entrypoint does the equivalent bootstrap in one container.
 
 ### microk8s deployment (host IP changed)
 If the host IP changes, microk8s certs and kubeconfigs reference the old IP and the cluster goes "not running":
@@ -341,20 +380,24 @@ allowlist us deliberately. The httpx analyzer classifies each probe's
 `URL.reachability` (`reached`/`blocked`/`challenged`/`rate_limited`, via
 `apps/httpx/waf.py`); `_finalize_session` aggregates it into `ScanSession`
 coverage fields (`waf_vendor`, `endpoints_probed`, `endpoints_blocked`), surfaced
-as a "Scan Coverage" block in the PDF report. See
+as a "Scan Coverage" block in the report. See
 `docs/specs/2026-08-16-waf-coverage-honest-scope.md` (Phase 1: C1–C3; the
 request-counting proxy C4 is deferred).
 
 ## Architecture
 
-### Core infrastructure — `apps/core/` (16 sub-apps)
+### Core infrastructure — `apps/core/` (17 sub-apps)
 
-The 16 core apps are grouped into layer subpackages: **`apps/core/console/`**
-(dashboard, insights, reports, notifications, ai, credentials, api), **`apps/core/engine/`**
-(scans, workflows, durable, scheduler, service_detection), and
-**`apps/core/data/`** (domains, assets, web_assets, findings, asset_inventory).
+The 17 core apps are grouped into layer subpackages: **`apps/core/console/`**
+(dashboard, insights, reports, notifications, ai, credentials — plus the
+`observability/` sub-package, the Prometheus exporter, not a registered app),
+**`apps/core/engine/`**
+(scans, workflows, durable, scheduler, service_detection, plus the internal
+`verification/` sub-package — not a registered app, no models — invoked
+directly by the scan pipeline's finalize step), and
+**`apps/core/data/`** (domains, assets, web_assets, findings, issues, asset_inventory).
 Django labels are unchanged — the nesting is organisational only (import paths are
-`apps.core.<layer>.<app>`). See `docs/DESIGN.md` for the layer model.
+`apps.core.<layer>.<app>`). See `docs/03-system.md` for the layer model.
 
 | App | Label | Purpose |
 |---|---|---|
@@ -363,54 +406,22 @@ Django labels are unchanged — the nesting is organisational only (import paths
 | `assets/` | `assets` | Network assets: Subdomain, IPAddress, Port |
 | `web_assets/` | `web_assets` | Web assets: URL |
 | `service_detection/` | `service_detection` | Enriches Port.service + Port.is_web via nmap -sV |
-| `findings/` | `findings` | Unified Finding model — all tools write here |
+| `findings/` | `findings` | Unified **raw** `Finding` model (per-scan) — all finding-producing tools write here (browsed in the `apps/mvp` scan-detail findings table) |
+| `issues/` | `issues` | Persistent, cross-scan **`Issue`** register (the deduped promotion of Findings) — populated by a finalize rollup, mirrors `asset_inventory`. `issue_key = (check_id, target)` — title-independent, so a reworded title keeps the same Issue (register item 2). **Triage persists here across scans** — `status` **+ `assigned_to` + `resolution_note`** (the full triage record, not on the disposable `Finding`; #517), written via the service layer / Django admin **and the `apps/mvp` Issues page** (`/issues/`, inline triage via `/issues/<id>/update/`). Split out of `findings` (D-017); keeps table `findings_issue` |
 | `asset_inventory/` | `asset_inventory` | Persistent, deduplicated `Asset` inventory (domain-scoped, first/last-seen + status) — populated by a fail-graceful rollup at finalize; `Finding.asset` links findings to it. Spec: `docs/specs/2026-09-06-asset-centric-inventory.md` (PR1: model + rollup + backfill) |
 | `scans/` | `scans` | ScanSession, ScanDelta, pipeline orchestrator |
 | `workflows/` | `workflow` | Workflow CRUD, dynamic runner, tool registry |
-| `scheduler/` | `scheduler` | Scan callables (daily_scan, run_due_monitoring_scans, run_due_user_scans, reap_stuck_scans, token purge) invoked by the DBOS `@scheduled` workflows in `apps/core/engine/durable` |
+| `scheduler/` | `scheduler` | Scan callables (daily_scan, run_due_monitoring_scans, run_due_user_scans, reap_stuck_scans) invoked by the DBOS `@scheduled` workflows in `apps/core/engine/durable` |
+| `durable/` | `durable` | DBOS engine adapter — the one multi-step `run_scan` workflow, `@durable_task` one-step tasks (`ai_triage`, `agent_step`) and the `@scheduled` cron workflows; DBOS is isolated to this package |
 | `notifications/` | `alerts` | Slack/Teams alerts, NotificationConfig model, alert history |
 | `insights/` | `insights` | ScanSummary (incl. per-scan Exposure Score + grade, `scoring.py`), FindingTypeSummary, charts |
-| `reports/` | `reports` | CSV + PDF export (synchronous, served by the web tier) |
+| `reports/` | `reports` | CSV export (synchronous, served by the web tier; session auth). **PDF export was removed** (WeasyPrint + route + template dropped); the CSV is the live report artifact |
 | `ai/` | `ai` | AI analysis (Cloudflare Workers AI, BYOK): finding triage, bounded adaptive orchestration, report/alert summaries, consent + per-call audit log |
-| `credentials/` | `credentials` | UI-managed BYOK API keys — `ToolCredentials` encrypted singleton + `get_credential()` resolver (DB-wins-over-env) + write-only `/api/credentials/` + the `/credentials` **CredentialsPage**. Tools read via the resolver (shodan/breach_check/github_recon/github_secrets/dns_history) — a DB key overrides env with no redeploy |
-| `api/` | — | Django Ninja API — routers, JWT auth, error handlers |
+| `credentials/` | `credentials` | UI-managed BYOK API keys — `ToolCredentials` encrypted singleton + `get_credential()` resolver (DB-wins-over-env) (managed via Django admin; the `apps/mvp` UI has no credentials page yet). Tools read via the resolver (shodan/breach_check/github_recon/github_secrets/dns_history) — a DB key overrides env with no redeploy |
 
-### REST API module — `apps/core/console/api/`
+### No REST API
 
-```
-apps/core/console/api/
-    __init__.py
-    ninja.py          — NinjaAPI instance, ninja-jwt auth routes (/token/pair|refresh|verify|blacklist),
-                        /user/ endpoint, error handlers, router registration
-
-Per-module routers (each file exports a `router = Router(auth=JWTAuth())`):
-    apps/core/console/dashboard/api.py   — /api/dashboard/
-    apps/core/data/domains/api.py     — /api/domains/ CRUD
-    apps/core/engine/scans/api.py       — /api/scans/ + findings
-    apps/core/engine/workflows/api.py   — /api/workflows/ CRUD + /tools/
-    apps/core/console/insights/api.py    — /api/insights/
-    apps/core/console/notifications/api.py — /api/notifications/ config + test + alerts
-    apps/core/console/credentials/api.py — /api/credentials/ (write-only BYOK key store)
-    apps/core/data/asset_inventory/api.py — /api/assets/ list + summary + detail
-    (scheduled router in scans/api.py) — /api/scheduled/
-```
-
-**Response format:** Flat JSON — no envelope wrapper.
-```json
-{"id": 1, "domain": "example.com", ...}           // success
-{"error": {"code": "NOT_FOUND", "message": "..."}} // error
-```
-
-**Auth:** JWT Bearer tokens via ninja-jwt (simplejwt). React stores tokens in `localStorage` via `auth.js`.
-- Access token: short-lived, sent as `Authorization: Bearer <token>`
-- Refresh token: long-lived, sent in POST body to `/api/token/refresh`
-- Logout: blacklists refresh token via `/api/token/blacklist` (simplejwt OutstandingToken/BlacklistedToken)
-- **Brute-force rate limiting:** `LoginRateLimitMiddleware` (`apps/core/console/api/ratelimit.py`) locks out an IP after `LOGIN_RATELIMIT_MAX_FAILURES` (default 5) failed `POST /api/token/pair` attempts within the window, returning 429 + `Retry-After`. State is the DB-backed `LoginThrottle` model (shared across gunicorn workers, unlike the per-process LocMemCache). Only `/token/pair` is limited (not `/refresh`); a successful login clears the IP's counter. Per-IP via `X-Forwarded-For` when `LOGIN_RATELIMIT_TRUST_FORWARDED_FOR` is on (default, for the mandated proxy); off → falls back to the unspoofable `REMOTE_ADDR` so a bare deployment can't be evaded by rotating the header. Tunable/`LOGIN_RATELIMIT_ENABLED`-toggle via settings. Tests: `tests/unit/test_login_ratelimit.py`.
-
-**Adding a new API endpoint:**
-1. Add endpoint function to the relevant `apps/core/<module>/api.py` router
-2. Register the router in `apps/core/console/api/ninja.py` if it's a new module
-3. Consume in `frontend/src/api/client.js` or a page component
+The Django-Ninja REST API + JWT (incl. the `LoginRateLimitMiddleware`, token blacklist and the token-purge cron) was **removed**. The UI is server-rendered (`apps/mvp`) and calls the service layer directly; there is no JSON API contract. Add UI features as `apps/mvp` views.
 
 ### Tool auto-registration
 
@@ -428,6 +439,11 @@ the registry and 19 in every actual scan):
    `tests/unit/test_default_workflow.py::test_full_scan_covers_every_registered_tool`,
    which fails CI if a registered non-core tool is missing from Full Scan.
 3. Set the `"active"` flag correctly (passive = no target contact → no auth).
+   - If the tool is passive AND apex-scoped + fast (no discovery fan-out —
+     a handful of lookups against the apex or a third-party API keyed on it),
+     set `"quick_recon": True` so it joins the light passive tier. The
+     `test_quick_recon.py` drift lock then requires it in the "Passive Scan Light"
+     workflow migration too — keep the flag and the migration in sync.
 4. Update `README.md` — the tool count, the tool list, and the pipeline diagram.
 5. Update `CHANGELOG.md` (What + Why) and the tool tables in this file.
 6. **Flag the website session** — cybersecify.com's tool count, feature cards,
@@ -469,21 +485,21 @@ guards that every registered tool appears in the output.
 
 | App | Phase | Phase Group | produces_findings | Description |
 |---|---|---|---|---|
-| `apps/domain_security/` | 1 | Domain Intelligence | Yes | **Passive** DNS/DNSSEC/CAA/wildcard/lame-delegation, email-auth (SPF/DMARC/DKIM/TLS-RPT/BIMI) via public resolvers, and RDAP (expiry/locks/status). No packets to the target — needs no authorization |
-| `apps/domain_probe/` | 1 | Domain Intelligence | Yes | **Active** domain probes split out of domain_security: AXFR zone transfer (nameservers), SMTP open-relay (MX:25), and MTA-STS policy fetch (`mta-sts.<domain>`). Touches the target directly → requires `DomainAuthorization` |
+| `apps/domain_security/` | 1 | Domain Posture | Yes | **Passive** DNS/DNSSEC/CAA/wildcard, email-auth (SPF/DMARC/DKIM/TLS-RPT/BIMI) via public resolvers, and RDAP (expiry/locks/status). No packets to the target — needs no authorization |
+| `apps/domain_probe/` | 1 | Domain Posture | Yes | **Active** domain probes split out of domain_security: AXFR zone transfer (nameservers), **lame delegation** (direct SOA query to each nameserver), SMTP open-relay (MX:25), and MTA-STS policy fetch (`mta-sts.<domain>`). Touches the target directly → requires `DomainAuthorization` |
 | `apps/hudson_rock/` | 2 | Credential Exposure | Yes | Infostealer-log exposure via Hudson Rock's keyless Cavalier API (aggregate counts only, no plaintext); passive, fail-graceful |
-| `apps/dns_history/` | 1 | Domain Intelligence | Yes | Historical A/AAAA/MX records via a passive-DNS dataset — surfaces past hosting / stale records (info findings). Passive, BYO `DNS_HISTORY_API_URL` (no-op if unset), fail-graceful |
+| `apps/dns_history/` | 1 | Domain Posture | Yes | Historical A/AAAA/MX records via a passive-DNS dataset — surfaces past hosting / stale records (info findings). Passive, BYO `DNS_HISTORY_API_URL` (no-op if unset), fail-graceful |
 | `apps/github_secrets/` | 2 | Credential Exposure | Yes | Leaked secrets in PUBLIC GitHub — searches GitHub's code-search API (org-scoped by default) for the target org's committed credentials, fetches the hits, runs gitleaks over them (same engine as `js_secrets`), REDACTS before storage (`check_type="exposed_secret"`, shared with js_secrets). Passive (queries GitHub, not the target); BYOK MANDATORY (`GITHUB_TOKEN` — code-search needs auth; no token → logged no-op); fail-graceful |
-| `apps/typosquat/` | 1 | Domain Intelligence | Yes | Lookalike / typosquat domain detection — generates lookalike candidates algorithmically (homoglyph/typo/omission/insertion/repetition/transposition/hyphenation/TLD-swap), checks which are registered via public DNS, then scores **weaponization**: registered web-serving lookalikes get a capped, fail-graceful homepage fetch for a login form (credential phishing) or brand mention (impersonation) → **high** (active impersonation, prioritise takedown); A/MX-only → medium; NS-only → low. Passive w.r.t. the target (contacts only the lookalike domains, never yours), no key, fail-graceful. Weaponization model ported from the standalone `tldsquatting` project |
+| `apps/tldsquatting/` | 1 | Brand Threat | Yes | TLD-squatting / lookalike domain detection (**supersedes the former `typosquat` tool** — broader TLD coverage). Generates lookalike candidates algorithmically: **TLD permutation across ~900 registrable TLDs** (bundled `tlds.txt`, emitted first so the high-precision "exact name, other TLD" signal survives the candidate cap) plus character-level typos (**off by default** — `TLDSQUATTING_INCLUDE_TYPOS=True` to enable; TLD cybersquatting is the focus). Checks which are registered via public DNS (extended for registered candidates to the full posture: A/AAAA/MX/NS-targets/CNAME/TXT/SPF/DMARC/CAA/DNSSEC + a capped, fail-graceful homepage fetch for a login form / brand mention), then rates each via a **ported risk + threat scoring model** (`scoring.py`): `calculate_risk_score` (registration recency + infra + suspicious DNS combos + security config + HTTPS + NS-provider tier) → `calculate_threat_score` (adds login-form/brand/parked). The **threat band maps to severity** (`PRE-EXISTING→info, LOW→low, MEDIUM→medium, HIGH→high, CRITICAL→critical`), with numeric scores + levels stored in `extra`. **RDAP registration-age** (`rdap.org`, `TLDSQUATTING_RDAP_AGE`) feeds the model's dominant **PRE-EXISTING** rule: a lookalike registered before the target scores 0.0 → **info** (it can't be impersonating a domain that didn't exist yet — e.g. `amnic.net` 1994 vs `amnic.com` 1997). **FP-reduction classify + collapse layer** (`apps/tldsquatting/classify.py`, pure `classify_lookalike()`): every registered lookalike is classified `owned` / `parked` / `unrelated` / `pre_existing` / `threat` against a passive target baseline (apex NS-operator set + RDAP registrant, gathered via public DNS/RDAP only — never the target's own systems) — `owned` on a positive NS-operator or registrant match, `parked` on parking signals, `unrelated` on different-NS + no brand mention + own inspected content, with forcing rules that always keep a brand-mentioned or email-only-phishing-prep candidate at `threat` regardless of NS/parked signals. The four benign classes (`owned`/`parked`/`unrelated`/`pre_existing`) **collapse into one `info` rollup Finding per non-empty class** (`check_type` `lookalike_owned`/`lookalike_parked`/`lookalike_unrelated`/`lookalike_pre_existing`, full member list — domain/technique/reason/scores — in `extra["domains"]`, rendered in the CSV / UI); only `threat` stays an **individual** `lookalike_domain` finding with unchanged scoring and the v2.23.0 no-weaponization cap. Toggle: `TLDSQUATTING_COLLAPSE_BENIGN` (default `True`; `False` reverts to per-domain findings for every class). `check_type="lookalike_domain"` (consumed by `asn_cluster`, which treats `high`/`critical` as weaponized — collapsed benign classes never emit it, so clustering naturally covers only real threats). Passive w.r.t. the target (contacts only the lookalike domains + RDAP, never yours), no key, fail-graceful. Spec: `docs/specs/2026-09-30-tldsquatting-fp-reduction.md`. |
 | `apps/breach_check/` | 2 | Credential Exposure | Yes | Data-breach exposure for the domain. BYOK: free keyless XposedOrNot catalog by default, authoritative Have I Been Pwned `breacheddomain` when `HIBP_API_KEY` set. Aggregate COUNTS + public breach metadata only — never email aliases/credentials. Passive, fail-graceful |
-| `apps/subfinder/` | 3 | Surface Enumeration | No | Passive subdomain enumeration |
-| `apps/amass/` | 3 | Surface Enumeration | No | Active subdomain enumeration |
-| `apps/asn_discovery/` | 3 | Surface Enumeration | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
-| `apps/alterx/` | 3 | Surface Enumeration | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
-| `apps/github_recon/` | 3 | Surface Enumeration | Yes | GitHub Org Recon — enumerates the target org's PUBLIC GitHub repos via GitHub's official REST API and surfaces exposed infra references (internal hostnames/subdomains, cloud-bucket URLs, API endpoints) in that public code/config. Two-tier BYO-token: keyless unauthenticated API (60 req/hr, request-capped) works out of the box, `GITHUB_TOKEN` raises to 5000 req/hr. Complements `js_secrets`/`github_secrets` (secrets) — this finds infra exposure. Passive (queries GitHub, never the target), fail-graceful |
-| `apps/dnsx/` | 4 | Surface Enumeration | No | DNS resolution, public IP filtering |
-| `apps/takeover_check/` | 5 | Surface Enumeration | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
-| `apps/cloud_assets/` | 5 | Surface Enumeration | Yes | Public cloud bucket enumeration via cloud_enum (AWS S3 / Azure Blob / GCP Storage) |
+| `apps/subfinder/` | 3 | Asset Discovery | No | Passive subdomain enumeration |
+| `apps/amass/` | 3 | Asset Discovery | No | Active subdomain enumeration |
+| `apps/asn_discovery/` | 3 | Asset Discovery | Yes | Owned ASN / CIDR discovery via `amass intel` (passive registry/BGP recon); reports ranges only, no auto-scan expansion |
+| `apps/github_recon/` | 3 | Asset Discovery | Yes | **Passive** GitHub Org Recon — enumerates the target org's PUBLIC GitHub repos via GitHub's REST API and surfaces infrastructure references (internal hostnames/subdomains, cloud-bucket URLs, API endpoints) leaked in that public code/config (`check_type` `github_public_repos`/`github_infra_exposure`; complements `github_secrets`, which finds actual secrets). Queries GitHub, not the target → no auth; keyless at 60 req/hr (capped), richer with `GITHUB_TOKEN`; fail-graceful |
+| `apps/alterx/` | 3 | Asset Discovery | No | Subdomain permutation via alterx (generates candidates from discovered subdomains) |
+| `apps/dnsx/` | 4 | Asset Discovery | No | DNS resolution, public IP filtering |
+| `apps/takeover_check/` | 5 | Asset Exposure | Yes | Subdomain takeover detection via subzy (dangling DNS → unclaimed cloud) |
+| `apps/cloud_assets/` | 5 | Asset Exposure | Yes | Public cloud bucket enumeration via cloud_enum (AWS S3 / Azure Blob / GCP Storage) |
 | `apps/naabu/` | 6 | Port Discovery | No | Port scanning (top 100 TCP) |
 | `apps/shodan/` | 6 | Port Discovery | Yes | Passive exposure intel from Shodan's own scan data — ports/services/CVEs per resolved IP. BYOK: free InternetDB tier (no key, no credits), full host API when `SHODAN_API_KEY` set (`SHODAN_MAX_IPS` caps the paid path). CVEs land in `extra["cve_ids"]` so `cve_intel` enriches them. Passive, fail-graceful |
 | `apps/core/engine/service_detection/` | 7 | Port Discovery | No | nmap -sV enriches Port.service + is_web |
@@ -496,9 +512,9 @@ guards that every registered tool appears in the output.
 | `apps/katana/` | 11 | Web Exposure | No | Web crawling, endpoint discovery |
 | `apps/nuclei/` | 12 | Web Exposure | Yes | Web vuln scan (community templates) |
 | `apps/web_checker/` | 12 | Web Exposure | Yes | Security headers, cookies, CORS; + security.txt (RFC 9116) responsible-disclosure check on the apex |
-| `apps/js_secrets/` | 12 | Credential Exposure | Yes | Hardcoded-secret detection — fetches discovered `.js` assets and runs gitleaks over them; secret is redacted before storage |
+| `apps/js_secrets/` | 12 | Web Exposure | Yes | Hardcoded-secret detection — fetches discovered `.js` assets and runs gitleaks over them; secret is redacted before storage |
 | `apps/cve_intel/` | 13 | Prioritization | No | Enriches CVE findings in place with EPSS scores + CISA KEV flags (no new findings) |
-| `apps/asn_cluster/` | 13 | Domain Intelligence | Yes | Lookalike ASN clustering — reads typosquat's `lookalike_domain` findings, resolves their IPs to ASNs via Team Cymru (keyless DNS), and groups lookalikes sharing an autonomous system into `lookalike_cluster` campaign findings (weaponized member → high). Passive, fail-graceful, `requires: [typosquat]` |
+| `apps/asn_cluster/` | 13 | Brand Threat | Yes | Lookalike ASN clustering — reads tldsquatting's `lookalike_domain` findings, resolves their IPs to ASNs via Team Cymru (keyless DNS), and groups lookalikes sharing an autonomous system into `lookalike_cluster` campaign findings (weaponized member → high). Passive, fail-graceful, `requires: [tldsquatting]` |
 
 ### Tool app structure
 ```
@@ -509,6 +525,9 @@ apps/<tool>/
     collector.py    — runs binary or probes, returns raw data (no DB)
     analyzer.py     — parses raw data, builds shared Asset/Finding objects
 ```
+A tool can add extra pure modules alongside this shape when a step needs no DB
+access — e.g. `apps/tldsquatting/classify.py` (pure `classify_lookalike()`,
+imported by `analyzer.py`, no I/O of its own).
 
 ## Scan pipeline
 
@@ -516,13 +535,13 @@ All scans run through the **dynamic workflow system**. The default "Full Scan"
 workflow executes the full tool set in phase order. Custom workflows can include
 any subset of tools. (A newly registered tool is available to any workflow, but
 only joins the default Full Scan when a data migration appends it — see
-`workflows/migrations/0021_*`; `asn_discovery` and `js_secrets` are registered
-but not yet in the default set.)
+`workflows/migrations/`. Full Scan currently covers **all 29 non-core registered
+tools**, enforced by `test_default_workflow::test_full_scan_covers_every_registered_tool`.)
 
 ```
 Phase 1  domain_security    → Finding (DNS/DNSSEC/email-auth/RDAP — passive)
 Phase 1  domain_probe        → Finding (AXFR / open-relay / MTA-STS fetch — active)
-Phase 1  typosquat           → Finding (registered lookalike/typosquat domains via public DNS — passive)
+Phase 1  tldsquatting        → Finding (registered lookalike / TLD-squat domains via public DNS — passive)
 Phase 1  dns_history         → Finding (historical A/AAAA/MX records via passive DNS — passive)
 Phase 2  hudson_rock         → Finding (infostealer exposure via Hudson Rock — passive)      ┐ Credential Exposure
 Phase 2  github_secrets      → Finding (leaked secrets in public GitHub via gitleaks — passive)│
@@ -530,8 +549,8 @@ Phase 2  breach_check        → Finding (data-breach exposure: XposedOrNot / HI
 Phase 3  subfinder          → Subdomain (passive enumeration)
 Phase 3  amass              → Subdomain (active enumeration)
 Phase 3  asn_discovery      → Finding (owned ASN/CIDR ranges via amass intel — informational)
+Phase 3  github_recon       → Finding (infra refs in the org's public GitHub repos — passive)
 Phase 3  alterx             → Subdomain (permutation candidates from existing subdomains)
-Phase 3  github_recon       → Finding (infra refs in the org's PUBLIC GitHub repos — passive)
 Phase 4  dnsx               → IPAddress (public-only filter)
 Phase 5  takeover_check     → Finding (subzy — dangling DNS → unclaimed cloud)
 Phase 5  cloud_assets       → Finding (open S3/Azure/GCP buckets — cloud_enum)
@@ -547,9 +566,9 @@ Phase 10 historical_urls    → URL (gau — archived endpoints)
 Phase 11 katana             → URL (web crawling, endpoint discovery)
 Phase 12 nuclei             → Finding (web vulns via templates on URLs)
 Phase 12 web_checker        → Finding (headers, cookies, CORS on URLs; + security.txt RFC 9116 on apex)
-Phase 12 js_secrets         → Finding (gitleaks over fetched .js assets — secret redacted)     [Credential Exposure]
+Phase 12 js_secrets         → Finding (gitleaks over fetched .js assets — secret redacted)
 Phase 13 cve_intel          → enriches CVE findings (EPSS + CISA KEV; no new findings)
-Phase 13 asn_cluster        → Finding (groups lookalikes by shared hosting ASN — passive)     [Domain Intelligence]
+Phase 13 asn_cluster        → Finding (groups lookalikes by shared hosting ASN — passive)     [Brand Threat]
 ```
 
 ### Passive vs active scan modes (the authorization boundary)
@@ -564,7 +583,7 @@ the registry via `get_tool_active()` and `is_passive_tool_set(tools)`.
   `DomainAuthorization`**.
   Passive tools: `domain_security`, `subfinder`, `alterx`, `dnsx`,
   `historical_urls`, `cloud_assets`, `cve_intel`, `asn_discovery`, `hudson_rock`,
-  `shodan`, `typosquat`, `breach_check`, `github_secrets`, `github_recon`,
+  `shodan`, `tldsquatting`, `breach_check`, `github_secrets`, `github_recon`,
   `dns_history`, `asn_cluster`.
 - **Active** (`active=True`): probes the target directly (port scans, HTTP/TLS/SSH
   connections, crawling, vuln templates, AXFR/SMTP/mta-sts probes). **Requires
@@ -579,22 +598,79 @@ missing flag can never let a scanner probe an unauthorized target.
 **`domain_security` is now passive; its active probes live in `domain_probe`.**
 The passive tool does DNS/DNSSEC/CAA/email-auth via public resolvers and RDAP via
 rdap.org — no packets to the target. The active probes that DO touch the target —
-AXFR zone transfers, SMTP open-relay, and the MTA-STS policy-file fetch — were
-split into `apps/domain_probe` (active). A tool with ANY code path that touches
+AXFR zone transfers, lame delegation (a direct SOA query to each nameserver's IP,
+not via a public resolver), SMTP open-relay, and the MTA-STS policy-file fetch —
+were split into `apps/domain_probe` (active). A tool with ANY code path that touches
 the target is active; keeping those paths isolated lets the passive DNS/email/RDAP
 intelligence run in a no-auth passive scan.
 
-**Authorization rule (`apps/core/engine/scans/api.py`):** a `schedule_type="now"` scan
+**Authorization rule (enforced at scan start in `apps/mvp/views.py::scan_start`):** a `schedule_type="now"` scan
 whose resolved workflow contains **only passive tools** bypasses the
 `DomainAuthorization` gate. Any active tool, a bare `now` scan (default = active
 Full Scan), or any scheduled (`once`/`recurring`) scan keeps the gate. The
-`subscan` endpoint applies the same rule: an active-tool subscan requires
+subscan path applies the same rule: an active-tool subscan requires
 authorization for the parent scan's domain.
 
-**"Passive Scan" workflow** (migration `0022_create_passive_scan_workflow.py`):
+**"Passive Scan Deep" workflow** (migration `0022_create_passive_scan_workflow.py`):
 predefined, non-default, contains only passive tools — a no-auth recon mode.
 `tests/unit/test_passive_scan.py` asserts every step is passive, so adding an
 active tool there fails CI.
+
+**"Passive Scan Light" workflow** (migration `0036_create_quick_recon_workflow.py`):
+predefined, non-default, instant no-auth first look — four apex-scoped
+passive tools that each do a handful of lookups and finish in seconds, with
+no discovery fan-out: `domain_security`, `dns_history`, `hudson_rock`,
+`breach_check`. Being all-passive, it inherits the same no-auth bypass as
+Passive Scan Deep above. This splits the passive tool set along a cost/scope axis:
+**light passive** = passive AND `quick_recon` (`registry.light_passive_tools()`)
+— exactly the Passive Scan Light four; **deep passive** = passive and not light (the
+derived complement — e.g. `tldsquatting`, `subfinder`, `shodan`). The
+`quick_recon` flag defaults `False` and is exposed via
+`registry.get_tool_quick_recon()`. `tests/unit/test_quick_recon.py` is the
+drift lock: it binds the workflow's tool membership to `light_passive_tools()`
+in both directions and asserts every step stays passive, so flag/workflow
+drift fails CI.
+
+**The 2×2 scan modes:** Passive Scan Light and Active Light complete the matrix —
+light/deep crossed with passive/active, plus Custom for an arbitrary tool
+subset:
+
+| | **light** | **deep** |
+|---|---|---|
+| **passive** | Passive Scan Light | Passive Scan Deep |
+| **active** | Active Light | Full Scan |
+
+The authorization boundary runs along the passive/active axis, not the
+light/deep one: both passive-row modes (Passive Scan Light, Passive Scan Deep) bypass
+`DomainAuthorization` per the rule above; both active-row modes (Active Light,
+Full Scan) require it, as does Custom whenever the selected tools include any
+active one. The scan-start UI (`apps/mvp/views.py`) renders
+the four named cells as a 2×2 grid via `_scan_modes()`, which binds each
+`SCAN_MODE_DEFS` entry to its predefined workflow by name and derives
+`needs_auth` from the workflow's tool set (`is_passive_tool_set`); a cell whose workflow doesn't exist yet
+(older DB, migration not applied) is simply omitted so the grid degrades
+gracefully.
+
+**"Active Light" workflow** (migration `0037_create_active_light_workflow.py`):
+predefined, non-default, the active counterpart of Passive Scan Light — a fast
+*authorized* scan. 8 steps: a discovery backbone (`subfinder` → `dnsx` →
+`naabu` → `httpx`) feeding four cheap config/exposure checks (`domain_probe`,
+`web_checker`, `tls_checker`, `ssh_checker`). `service_detection` is **not** a
+stored step — like every other naabu-driven workflow it's `core: True` and the
+runner auto-injects it after `naabu`. Deliberately excludes the slow engines
+(`nmap`, `nuclei`, `nuclei_network`, `katana`, `amass`, `cloud_assets`,
+`takeover_check`, `js_secrets`, `historical_urls`, `asn_discovery`,
+`asn_cluster`, `github_recon`, `github_secrets`, `shodan`, `tldsquatting`,
+`cve_intel`). Because it contains active tools, `is_passive_tool_set()` is
+`False` for it, so it requires `DomainAuthorization` — the same gate as Full
+Scan, no new auth code.
+
+**Why "light" is a curated workflow, not a flag:** light means different
+things on each axis — passive-light (Passive Scan Light) is apex-only, no discovery
+fan-out at all; active-light (Active Light) is the opposite shape, it runs the
+discovery backbone (subfinder/dnsx/naabu/httpx) but skips the slow engines
+downstream of it. One boolean can't express both, so each matrix cell is its
+own named, explicit-tool-list workflow rather than a shared "light" flag.
 
 **Runner safety fix:** `service_detection` (active nmap -sV) is auto-injected only
 when `naabu` is in the run. A passive/naabu-less workflow therefore never triggers
@@ -609,7 +685,11 @@ create_scan_session(domain)          # auto-assigns default workflow
         → run_workflow(run_id)       # loops enabled tools, records StepResults
       → _finalize_session(session)   # count findings → coverage → status
           → _detect_deltas / _check_coverage_regression / build_insights
-          → run_ai_post_scan(session)     # AI triage + summaries (no-op unless keys+consent)
+          → rollup_session(session)       # asset-inventory rollup (fail-graceful)
+          → verify_session(session)       # deterministic finding verification (fail-graceful,
+          │                                #   gated by FINDING_VERIFICATION_ENABLED, default True)
+          → rollup_session_issues(session) # persistent Issue register rollup (fail-graceful)
+          → run_ai_post_scan(session)     # AI triage + summaries + adjudication (no-op unless keys+consent)
           → _dispatch_alerts(session)     # Slack/Teams (carries the AI alert summary)
           → maybe_start_agent(session)    # queues the bounded orchestration agent
 ```
@@ -654,7 +734,7 @@ foundational ones and consciously differs on the *choreography* ones (it's
 row notes OpenEASD's stance. Full plan + status: `docs/specs/2026-09-07-producer-queue-consumer-hardening.md`.
 
 **Design**
-1. **Draw the pipeline before writing a workflow** — name the phase, the rows it stores, what triggers the next. ✅ (13 phases in DESIGN.md)
+1. **Draw the pipeline before writing a workflow** — name the phase, the rows it stores, what triggers the next. ✅ (13 phases in 03-system.md)
 2. **Stages talk through stored data, never workflow calls** — a tool writes rows, the next phase reads them. ✅ (the empty-`models.py` rule)
 3. **One workflow per unit of work** — ⚠️ *deliberate deviation*: OpenEASD runs one multi-step `run_scan` per scan (orchestrated), not per-unit; retry granularity is per phase-group (checkpointed step).
 4. **Every workflow idempotent** (delete-then-insert / upsert, not append) — 🟡 partial: alerts ✅ (H1), phase-step idempotency is **H5**.
@@ -684,6 +764,9 @@ class Finding(models.Model):
     session     = FK(ScanSession)
     source      = CharField()      # auto-registered from tool_meta
     check_type  = CharField()      # tool-specific: "dns", "cve", "weak_ssh_kex", etc.
+    check_id    = CharField()      # stable per-rule identity, title-independent ("{source}:{check_type}"
+                                   # backfilled at finalize for granular tools; explicit per-rule for
+                                   # domain_security/domain_probe + CVE/secret tools). Issue.key is built from this.
     severity    = "critical" | "high" | "medium" | "low" | "info"
     title       = CharField()
     description = TextField()
@@ -692,7 +775,16 @@ class Finding(models.Model):
     port        = FK(Port, null=True)
     url         = FK(web_assets.URL, null=True)
     extra       = JSONField()      # tool-specific: cve, cvss_score, cipher_name, etc.
+    verification_status = CharField(default="unverified")  # "unverified"|"verified"|"inconclusive"
+    verified_at = DateTimeField(null=True)  # set only when verification_status="verified"
 ```
+
+**Finding verification:** `verification_status`/`verified_at` are set by the
+deterministic re-probe (`apps/core/engine/verification/verifier.py::verify_session`,
+run at finalize — see Scan flow) and stamp `extra["verification"]` with the
+verdict's evidence/detail. `Issue.verification_status` (`apps/core/data/issues/`)
+mirrors the latest occurrence's verdict for display on the persistent register.
+See `docs/specs/2026-09-15-finding-verification.md`.
 
 **JSON-field aggregation:** the codebase groups JSON-extracted fields (e.g. `extra__cvss_score`) in Python rather than via `Max(...)` DB aggregation — a habit from the former SQLite backend. PostgreSQL supports these aggregations natively, but the Python-side grouping is kept for portability; no need to "fix" it.
 
@@ -721,7 +813,7 @@ post-finalize over the whole session and has orchestration authority, so its
 gate is consent + keys, never workflow membership.
 
 - **Backend:** Cloudflare Workers AI only, called directly via REST. BYOK
-  credentials: saved via the /ai page (stored in `AISettings`, write-only —
+  credentials: saved via Django admin (stored in `AISettings`, write-only —
   never serialized back out, **encrypted at rest** — see Secrets at rest below)
   or `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`
   env vars as fallback (DB wins). `CLOUDFLARE_AI_MODEL` (default
@@ -754,73 +846,37 @@ gate is consent + keys, never workflow membership.
 
 ## URL layout
 
-### REST API (`/api/`)
+### UI (`apps/mvp`, served at `/`, Django session auth)
 ```
-POST /api/token/pair                      — JWT login → {access, refresh}
-POST /api/token/blacklist                 — blacklist refresh token (logout)
-POST /api/token/refresh                   — exchange refresh → new access token
-POST /api/token/verify                    — verify token validity
-GET  /api/version/                        — build provenance {version, git_sha, git_sha_short, build_date, support_email} (unauthenticated; no-store)
-GET  /api/version/latest/                 — update check {current_version, latest_version, update_available, release_url} (authenticated; cached 6h, fail-graceful)
-GET  /api/user/                           — current user info + must_change_password flag
-POST /api/user/change-password/           — change password; clears must_change_password flag
-GET  /api/dashboard/                      — KPIs, domain status (incl. per-domain exposure_score/grade), urgent findings
-GET  /api/domains/                        — list domains (enriched)
-POST /api/domains/                        — add domain
-POST /api/domains/<pk>/toggle/            — activate/deactivate
-POST /api/domains/<pk>/delete/            — delete domain + all scan data
-POST /api/domains/<pk>/monitoring/        — set/clear per-domain monitoring interval
-POST /api/domains/<pk>/authorize/         — grant DomainAuthorization (attestation required)
-GET  /api/scans/                          — paginated scan list (?domain=&status=&page=)
-POST /api/scans/start/                    — start/schedule scan
-GET  /api/scans/<uuid>/                   — full scan detail (assets + findings)
-GET  /api/scans/<uuid>/status/            — lightweight status (React polls every 3s)
-POST /api/scans/<uuid>/stop/              — cancel running scan
-POST /api/scans/<uuid>/delete/            — delete scan session
-POST /api/scans/<uuid>/subscan/           — re-run a single tool / subset against an existing scan
-GET  /api/scans/urls/                     — paginated web-asset URLs (?domain=&page=)
-GET  /api/scans/findings/                 — paginated findings (?severity=&domain=&status=&source=)
-POST /api/scans/findings/<id>/status/     — update finding lifecycle status
-GET  /api/scheduled/                      — scheduled jobs list
-POST /api/scheduled/<job_id>/cancel/      — cancel scheduled job
-GET  /api/workflows/                      — list workflows
-POST /api/workflows/create/               — create workflow
-GET  /api/workflows/tools/                — all registered tool choices (for create form)
-GET  /api/workflows/<pk>/                 — workflow detail + tool_steps + recent runs
-POST /api/workflows/<pk>/update/          — update workflow name/tools
-POST /api/workflows/<pk>/rename/          — rename workflow
-POST /api/workflows/<pk>/delete/          — delete workflow
-POST /api/workflows/<pk>/steps/<tool>/toggle/ — toggle single tool step
-GET  /api/assets/                         — persistent asset inventory (paginated; ?domain=&kind=&status=&q=), each row with per-severity open-finding counts
-GET  /api/assets/summary/                 — inventory totals by kind + active/gone
-GET  /api/assets/<id>/                     — asset detail: metadata + extra, findings, scan timeline (seen_in_scans)
-GET  /api/insights/                       — trends, top hosts, asset growth, KPIs, Exposure Score + trend (per-scan exposure_score/grade + top-level exposure block)
-GET  /api/notifications/config/           — get Slack/Teams notification config
-POST /api/notifications/config/           — update notification config
-POST /api/notifications/test/             — send a test alert
-GET  /api/notifications/alerts/           — alert history
-GET  /api/credentials/                    — BYOK key presence booleans + db|env|none source per key (values never returned)
-POST /api/credentials/                    — set/clear BYOK keys (write-only; None=unchanged, ""=clear→env fallback)
-GET  /api/ai/config/                      — AI settings (credential presence booleans only — values are never returned)
-POST /api/ai/config/                      — enable/disable + save credentials (write-only; None=unchanged, ""=clear→env fallback); enabling requires current-version consent (consent_accepted stamps it)
-POST /api/ai/test/                        — Workers AI connectivity probe (fixed prompt, no scan data; allowed pre-consent)
-GET  /api/ai/triage/<uuid>/               — triage status + ranked items + agent decisions (disabled|absent|running|complete|failed)
-POST /api/ai/triage/<uuid>/run/           — manual (re-)run via DBOS (409 while scan/triage in flight)
-GET  /api/ai/audit/                       — paginated AI call log (metadata only, never bodies)
+/                       — dashboard
+/login  /logout         — session login / logout
+/change-password        — forced when must_change_password (MustChangePasswordMiddleware)
+/domains/…              — list / detail / add / authorize / monitoring / delete
+/scans/…                — start (2×2 modes + custom workflow), history, detail
+                          (HTMX progress partial polled every 3s, stop, findings filters)
+/findings/              — all findings across scans (severity / verification / source filters)
+/issues/                — persistent Issue register; inline triage (status / assignee / note) via /issues/<id>/update/
+/reports/<uuid>/csv/    — CSV export (session auth)
+/admin/                 — Django admin
 ```
+Unknown paths redirect to the dashboard (the SPA catch-all was removed). Exact route
+names live in `apps/mvp/urls.py`.
+
+### REST API — REMOVED
+No `/api/` routes exist. The only HTTP data export is `GET /reports/<uuid>/csv/` (session auth); plus `GET /health/` and (opt-in) `GET /metrics/`.
 
 ### Other routes
-- `/reports/<uuid>/csv/` → CSV export (**synchronous** Django view on the web tier, `_report_auth_required` — accepts session auth or `?token=<access_token>`)
-- `/reports/<uuid>/pdf/` → PDF export (**synchronous** Django view on the web tier, rendered with WeasyPrint, `_report_auth_required` — accepts session auth or `?token=<access_token>`)
-- **Reports UI:** the React SPA has a dedicated **Reports page** (`/reports`, nav item + `ReportsPage.jsx`) listing completed scans with per-scan CSV/PDF export + a `min_severity` filter (auth'd fetch+Blob, JWT in header); also still available as CSV/PDF buttons on the Scan Detail page. The SPA `/reports` route and the Django `/reports/<uuid>/{csv,pdf}/` endpoints coexist — Django's SPA catch-all serves bare `/reports`, and the Vite dev proxy uses a `^/reports/.+` regex so only the endpoints proxy to Django.
+- `/reports/<uuid>/csv/` → CSV export (**synchronous** Django view on the web tier, `_report_auth_required` — now session auth only; the old `?token=` query-param was removed in F-sec3, and the gate now also honors `must_change_password`)
+- `/reports/<uuid>/pdf/` → **REMOVED** (PDF reports dropped along with WeasyPrint; CSV is the supported export)
+- **Reports UI:** CSV download is a link on the `apps/mvp` scan-detail page.
 - `/admin/` → Django admin
-- `/api/docs` → Django Ninja auto-generated OpenAPI docs
-- `/*` → React SPA catch-all (`frontend/dist/index.html`)
+- `/*` (unknown) → redirect to the dashboard (the former React SPA catch-all was removed)
 
 ## Tests
 
 | File | Tests | Notes |
 |---|---|---|
+| `tests/unit/test_mvp_views.py` | ~28 | Plain-Django UI (`apps/mvp`) — login/logout + forced change-password middleware, dashboard, domains CRUD/authorize/monitoring, scan start (mode grid, passive bypass vs active-auth gate), scan detail + HTMX progress partial, findings filters, history, CSV link |
 | `tests/unit/test_alerts.py` | 7 | Slack/Teams dispatcher |
 | `tests/unit/test_alterx.py` | 17 | collector (binary missing, timeout, happy path, stdin), analyzer, scanner |
 | `tests/unit/test_amass.py` | 21 | Active subdomain enum collector, analyzer, scanner |
@@ -830,18 +886,18 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_cve_intel.py` | 24 | EPSS/KEV enrichment, CVE extraction (both finding shapes), feed-failure fallback |
 | `tests/unit/test_dnsx.py` | 21 | Public IP filter, analyzer, scanner |
 | `tests/unit/test_domain_authorization.py` | 10 | DomainAuthorization model + scan-entry gating |
-| `tests/unit/test_domain_security.py` | 46 | Passive DNS/DNSSEC/email-auth/RDAP — **slow, real network** (active AXFR/open-relay/MTA-STS tests moved to test_domain_probe) |
+| `tests/unit/test_domain_security.py` | 42 | Passive DNS/DNSSEC/email-auth/RDAP — **slow, real network** (active AXFR/open-relay/MTA-STS/lame-delegation tests moved to test_domain_probe) |
 | `tests/unit/test_domain_security_email.py` | 15 | Email-auth DEPTH (fast, mocked): SPF neutral/no-all/soft-fail/+all, RFC-7208 lookup-limit (>10 permerror / near-limit) + counter; DMARC p/quarantine, sp=none-not-misread-as-p=none regression, pct<100, missing rua, malformed pct |
-| `tests/unit/test_domain_probe.py` | 17 | Active domain probes — tool_meta (active/runner/group), AXFR zone transfer, MTA-STS policy fetch, SMTP open-relay (all mocked, source="domain_probe"), orchestrator stamps controls |
+| `tests/unit/test_domain_probe.py` | 21 | Active domain probes — tool_meta (active/runner/group), AXFR zone transfer, lame delegation (direct SOA to NS; authoritative/non-auth/no-A/timeout), MTA-STS policy fetch, SMTP open-relay (all mocked, source="domain_probe"), orchestrator stamps controls |
 | `tests/unit/test_domains.py` | 13 | Domain CRUD |
 | `tests/unit/test_historical_urls.py` | 37 | collector (missing binary, timeout, happy path), analyzer (noise filter, FK links, dedup), scanner |
 | `tests/unit/test_httpx.py` | 16 | JSON parser, Port lookup, Subdomain link, honest UA, tech-detect flag + technology storage/dedup |
-| `tests/unit/test_github_recon.py` | 39 | Org resolution (domain-derived + `GITHUB_ORG` override), collector (org/user confirm + fallback, repo enumeration/pagination, fork skip, `GITHUB_MAX_REPOS`/`GITHUB_MAX_REQUESTS` caps, config-file base64 decode + size cap, BYO-token auth header + honest UA), fail-graceful (timeout/500/rate-limit-backoff/hard-403/bad-JSON never raise), infra-reference extraction (hostname/api-endpoint/cloud-bucket, apex excluded), analyzer (summary + per-ref low Findings, dedup), scanner never-raises |
 | `tests/unit/test_hudson_rock.py` | 17 | collector (both endpoints keyless + honest UA, fail-graceful on timeout/500/429/bad-JSON, 429 retry), analyzer (severity, counts/families/URLs/attribution, no-finding-when-zero, **no plaintext/email persisted**, URL cap), scanner |
 | `tests/unit/test_dns_history.py` | 17 | Historical-DNS passive tool — collector (no-URL no-op, fail-graceful on request-error/non-200/bad-JSON, honest UA, type filter, dedup, cap, wrapped-dict), analyzer (info Finding per record, skip empty), scanner (no-domain/no-records skip, saves, never-raises) |
 | `tests/unit/test_breach_check.py` | 29 | Two-tier BYOK — free XposedOrNot parse (keyless + honest UA) + HIBP `breacheddomain` path (key set → HIBP used, `hibp-api-key` header sent, 404/403 = no-data), fail-graceful (timeout/500/429/bad-JSON never raise), 429 backoff, analyzer (severity high on large-account/recent, counts + attribution, no-finding-when-zero, breach-name cap), **PRIVACY: alias keys/emails/credentials never persisted (collector + analyzer + end-to-end)**, scanner |
 | `tests/unit/test_shodan.py` | 20 | collector tier selection (free InternetDB vs paid host API, BYO-key), `SHODAN_MAX_IPS` cap on paid path only, fail-graceful (404/timeout/500/429/bad-JSON never raise), analyzer (exposure + CVE findings, `extra["cve_ids"]` for cve_intel enrichment, invalid-CVE filter), scanner |
 | `tests/unit/test_js_secrets.py` | 26 | `.js` URL filter + cap, fetch-error handling, gitleaks JSON parser, analyzer Findings + dedup + secret redaction (full secret never stored), scanner, binary-missing/timeout |
+| `tests/unit/test_github_recon.py` | 39 | GitHub Org Recon — org resolution (override / apex-label derivation), org/user account confirmation, repo listing (fork-skip, cap, pagination), well-known-file fetch (base64 decode, size/count caps), request-budget guard, rate-limit backoff (403/429 + Retry-After), collector fail-graceful (network/non-200/bad-JSON never raise), `extract_infra_refs` (hostname/api_endpoint/cloud_bucket, apex-excluded), analyzer Findings (`github_public_repos` info + `github_infra_exposure` low, dedup, cap), scanner |
 | `tests/unit/test_github_secrets.py` | 32 | no-token skip (BYOK gate), org resolution (override high-confidence / apex-label low-confidence), org-scoped query building + global-search opt-in, rate-limit helpers (429/403-zero-remaining/secondary + capped backoff), collector fail-graceful (network/500/429-exhausted/bad-JSON never raise) + 429-then-success backoff, search→fetch→gitleaks happy path, gitleaks binary-missing/timeout raise, redaction (full secret never persisted — asserted at DB level), analyzer Finding shape + dedup, scanner |
 | `tests/unit/test_k8s_manifests.py` | 66 | k8s manifest structure — split web/worker Deployments, tier labels, Service→web-only selector, envFrom order, probes + probe-host, worker NET_RAW/role/entrypoint, no-PVC, kustomization |
 | `tests/unit/test_katana.py` | 19 | JSONL parser, Port/Subdomain FK links, scanner orchestrator, honest UA |
@@ -858,16 +914,23 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_qcluster_config.py` | 3 | Scan-timeout invariants (Q_CLUSTER removed; SCAN_TASK_TIMEOUT + watchdog bound) |
 | `tests/unit/test_durable_task.py` | 7 | `@durable_task` engine adapter (H6) — in-process call, `.delay()` enqueue, dedupe template + override, registry, real tasks are DurableTasks, enqueue_* wrappers delegate |
 | `tests/unit/test_credentials.py` | 13 | UI-managed BYOK credentials (C1+C3) — singleton, ciphertext-at-rest/plaintext-via-ORM, resolver DB-wins-over-env + env fallback + source + never-raises, write-only API (presence-only never values, set/none-unchanged/clear), and a DB key reaching `shodan.collect` (paid tier, no env key) |
-| `tests/unit/test_reports.py` | 80 | CSV export content/structure, PDF export (WeasyPrint, mocked via _render_pdf), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block, technology stack block, AI Analyst Summary block (absent without AI rows), "Since Your Last Scan" delta block (new/resolved/still-open, baseline + subscan + min_severity rules, CSV new-flag column), per-finding "Recommended Next Steps" checklist (hosted-only gating, effective-key mapping incl. email control, empty for unmapped) |
+| `tests/unit/test_reports.py` | 89 | CSV export content/structure (the PDF export tests were removed with PDF reports), min_severity filter, per-severity count aggregation, issue grouping, scope/CWE/CVSS/risk enrichment, WAF coverage block, technology stack block, AI Analyst Summary block (absent without AI rows), "Since Your Last Scan" delta block (new/resolved/still-open, baseline + subscan + min_severity rules, CSV new-flag column), per-finding "Recommended Next Steps" checklist (hosted-only gating, effective-key mapping incl. email control, empty for unmapped), tldsquatting rollup findings render the `extra["domains"]` member list under the title (a finding with no `domains` key renders unaffected) |
 | `tests/unit/test_waf_detection.py` | 16 | WAF/block/challenge classifier (spec C1) — vendor fingerprint, false-positive guards, analyzer wiring |
 | `tests/unit/test_coverage.py` | 6 | Scan coverage (spec C2) — endpoint counts, dominant vendor, report note wording |
 | `tests/unit/test_scans.py` | 30 | ScanSession, scheduling, scan_start views |
 | `tests/unit/test_scheduler.py` | 33 | reap_stuck_scans, token purge, daily_scan, authorization gate, `SCHEDULED_SCANS_ENABLED` switch |
+| `tests/unit/test_scan_retention.py` | 7 | H3 scan pruning — opt-in (`SCAN_RETENTION_ENABLED`), keep newest-N per domain, max-age window, always keep latest, never delete pending/running, per-domain, cascade to findings |
+| `tests/unit/test_scheduled_jobs.py` | 7 | H7 ScheduledJob registry — `dispatch_scheduled` honours enabled toggle, stamps last_run_at, skips disabled (no stamp), fails open on missing row / lookup error; migration seeds the 6 system crons enabled |
+| `tests/unit/test_watchdog_reconcile.py` | 6 | H4/H9 watchdog↔DBOS reconcile — reap_stuck_scans cancels the reaped scan's DBOS workflow inline (`_cancel_workflows_for_sessions` matches `scan-{id}` dedup); empty no-op, list/cancel failures swallowed, reap-then-cancel end-to-end |
+| `tests/unit/test_no_progress_watchdog.py` | 5 | H10 no-progress watchdog — reap running scan on stale `last_progress_at` heartbeat (fresh → kept, stale → reaped, NULL+old → reaped, NULL+recent → kept, 24h hard cap still applies) |
+| `tests/unit/test_metrics.py` | 10 | H2 DB-backed Prometheus exporter — scans-by-status, queue depth, findings-by-severity, domains, journey latency, liveness staleness; `/metrics` endpoint (prometheus text, no-store, unauthenticated, `METRICS_ENABLED` 404 toggle, **off by default** — M3); `last_progress_at` heartbeat stamped per step |
+| `tests/unit/test_orphan_reaper.py` | 9 | H8 orphaned-workflow reaper — cancels ENQUEUED/PENDING `run_scan` workflows whose `ScanSession` is terminal/missing (phantom queue-slot holders); keeps live (pending/running) sessions; dry-run; fail-graceful (list/cancel errors swallowed) |
 | `tests/unit/test_service_detection.py` | 64 | XML parsing, Port enrichment, is_web |
 | `tests/unit/test_ssh_checker.py` | 34 | SSH probe, host key, kex/cipher/MAC, auth, collector |
 | `tests/unit/test_subfinder.py` | 10 | JSON parser, dedup, hostname normalization |
 | `tests/unit/test_subscan.py` | 12 | Targeted re-scan of a single tool / subset |
-| `tests/unit/test_typosquat.py` | 36 | candidate generation (all 8 techniques, uniqueness, no-original, www-strip, cap/truncation-logged), passive DNS registration check (A/MX/NS, NXDOMAIN + timeout never raise), weaponization homepage probe (login form + brand mention flagged, fetch failure graceful), analyzer severity (A/MX → medium, NS-only → low, login-form/brand → high), scanner (saves + never-raises), concurrent collect (order-preserving, all-registered-checked, fetch cap) |
+| `tests/unit/test_tldsquatting.py` | 65 | candidate generation (all 8 techniques, uniqueness, no-original, www-strip, cap/truncation-logged), passive DNS registration check (A/MX/NS + full posture, NXDOMAIN + timeout never raise), weaponization homepage probe (login form + brand mention flagged, fetch failure graceful), RDAP registration-age (parse/fail-graceful/predates) + registrant/registrar parsing, target-NS resolution (`resolve_target_ns`), **ported scoring model** (PRE-EXISTING when predates/apex, email-infra combo → critical, NS-tier classification, threat content signals, bad-input never raises), analyzer severity mapped from threat band (predates → info, login-form+infra → high, fully-weaponized-recent → critical, enterprise-NS lowers, parked → low, scores stored in extra), **classify + collapse rollup** (owned lookalikes collapse to one info rollup, threat stays individual, `TLDSQUATTING_COLLAPSE_BENIGN=False` reverts to per-domain findings), scanner (saves + never-raises), concurrent collect (order-preserving, all-registered-checked, fetch cap) |
+| `tests/unit/test_tldsquatting_classify.py` | 10 | Pure `classify_lookalike()` (apps/tldsquatting/classify.py) — `ns_operators` reduces NS hostnames to registrable operators; precedence: pre_existing wins over all; owned via NS-operator match (even with a brand mention) or registrant match; brand-mentioned / email-only-phishing-prep forcing rules always win to `threat` when not owned; parked when no brand/not owned; unrelated on different-NS + no-brand + own inspected content (a login form alone doesn't elevate it); uninspected content defaults to `threat` (conservative) |
 | `tests/unit/test_asn_cluster.py` | 13 | Lookalike ASN clustering — meta (passive/group), Team Cymru IP→ASN parse (asn/prefix/name, space-list ASN, non-IPv4 + DNS-failure → None), clustering (≥2 same-ASN → finding, single → none, weaponized → high, unresolved-IPs ignored), scanner (<2 lookalikes no-op, persists, skips IP-less, no lookup when nothing to cluster) |
 | `tests/unit/test_takeover_check.py` | 35 | collector (missing binary, bad JSON, happy path), analyzer (vulnerable/non-vulnerable, FK link, dedup), scanner |
 | `tests/unit/test_tls_checker.py` | 87 | Cert parsing, ciphers, protocols, HSTS, collector, scanner, cipher enumeration |
@@ -875,33 +938,39 @@ GET  /api/ai/audit/                       — paginated AI call log (metadata on
 | `tests/unit/test_user_profile.py` | 7 | UserProfile `must_change_password` flag |
 | `tests/unit/test_settings_security.py` | 16 | SECRET_KEY strength guard (DEBUG=False + insecure default) |
 | `tests/unit/test_insights_builder.py` | 4 | FindingTypeSummary prune only when aggregation_complete |
-| `tests/unit/test_exposure_score.py` | 38 | Exposure Score — formula (clean=0, weights, saturation cap), grade bands, trend delta (up/down/flat/no-baseline), builder populates ScanSummary, insights + dashboard API fields, PDF report exposure block |
+| `tests/unit/test_exposure_score.py` | 38 | Exposure Score — formula (clean=0, weights, saturation cap), grade bands, trend delta (up/down/flat/no-baseline), builder populates ScanSummary, insights + dashboard API fields, (PDF report exposure-block test removed with PDF reports) |
 | `tests/unit/test_web_checker.py` | 58 | Headers, cookies, CORS, disclosure, collector; security.txt (RFC 9116) — expires parsing, SPA-catch-all guard, missing=info/expired=low findings, reachable-vs-absent (unreachable ⇒ no false "missing"), apex-only collection + fail-graceful |
-| `tests/unit/test_passive_scan.py` | 27 | registry `active` classification (domain_security passive / domain_probe active), `is_passive_tool_set`, Credential Exposure grouping, Passive Scan workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
-| `tests/unit/test_workflow_runner.py` | 35 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism (concurrent same-phase; LOW_MEMORY serialises heavy phases but light phase-1 tools still parallel) |
-| `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow with the complete 18-tool set (migration 0021), idempotent gap-fill |
+| `tests/unit/test_passive_scan.py` | 27 | registry `active` classification (domain_security passive / domain_probe active), `is_passive_tool_set`, Credential Exposure grouping, Passive Scan Deep workflow all-passive invariant, passive-scan auth-gate bypass + active-scan gate, subscan gate |
+| `tests/unit/test_workflow_runner.py` | 38 | run_workflow, naabu-gated service_detection injection, step failure, cancellation, phase parallelism (concurrent same-phase; LOW_MEMORY serialises heavy phases but light phase-1 tools still parallel); **H5 resume idempotency** (crash-resume re-run deletes the tool's stale Findings first → no duplicates; completed tool not re-run; first run normal) |
+| `tests/unit/test_default_workflow.py` | 5 | Full Scan is the default workflow covering every registered non-core tool (29), idempotent gap-fill; `test_full_scan_covers_every_registered_tool` fails CI on any gap |
+| `tests/unit/test_verification_verdict.py` | 3 | `Verdict` value object — construction defaults, evidence/detail carried, closed status vocabulary |
+| `tests/unit/test_verification_registry.py` | 2 | `get_tool_verifiers()` — returns callables for tools declaring a verifier, skips tools without one |
+| `tests/unit/test_verification_model.py` | 1 | `Finding.verification_status` defaults to `"unverified"` |
+| `tests/unit/test_verification_orchestrator.py` | 8 | `verify_session`/`verify_one_finding` — below-threshold left unverified, passive-tool verified writes verdict+evidence, active-tool-without-authorization is inconclusive with no verifier call, verifier exception is inconclusive (scan unaffected), tool without a verifier stays unverified, idempotent re-run overwrites not appends |
+| `tests/unit/test_verification_pipeline.py` | 4 | `_finalize_session` wiring — verify runs before the issue rollup, skipped when `FINDING_VERIFICATION_ENABLED=False` (mocked), disabled leaves a real Finding row `"unverified"` end-to-end (regression lock), a raising `verify_session` never fails finalize |
+| `tests/unit/test_web_checker_verify.py` | 6 | web_checker seed verifier — missing-header/HSTS still missing = verified, now present = inconclusive, fetch failure inconclusive, unmapped check_type inconclusive, registered in `tool_meta` |
+| `tests/unit/test_tls_checker_verify.py` | 6 | tls_checker seed verifier — weak protocol (incl. TLS 1.1) still offered = verified, no longer offered = inconclusive, connection failure inconclusive, unmapped check_type inconclusive, registered in `tool_meta` |
+| `tests/unit/test_ssh_checker_verify.py` | 15 | ssh_checker seed verifier — weak kex/cipher/mac/host-key(DSA/short RSA)/SSHv1/password-auth/root-login still offered = verified, each remediated = inconclusive, connect failure + unrecognized check_type inconclusive |
+| `tests/unit/test_nuclei_verify.py` | 8 | nuclei seed verifier — template re-match = verified (web check_type also covered), no match/different-template-hit/missing template_id or target/binary error = inconclusive, registered in `tool_meta` |
+| `tests/unit/test_nmap_verify.py` | 9 | nmap seed verifier — CVE still reported = verified, gone/scan-error/missing-CVE/missing-port = inconclusive, `verify_finding` calls rescan with host+port, `_rescan_cves` backport-exclusion/inclusion/empty-output |
 | `tests/integration/test_scan_flow.py` | 12 | Full pipeline (mocked) + delete cascade |
-| `tests/unit/test_update_check.py` | 22 | Update-available check — version parse/compare, cached GitHub fetch, fail-graceful on timeout/HTTP-error/bad-payload, endpoint shape |
 | `tests/unit/test_proc_env.py` | 4 | `go_memory_env()` — GOMEMLIMIT/GOGC set in low profile, unchanged otherwise, preserves existing env |
 | `tests/unit/test_coverage_regression.py` | 10 | Silent-block coverage counting (probed-vs-reached), coverage-regression finding (high block ratio / findings drop / stable = no flag), partial scan status when a tool fails |
 | `tests/unit/test_ai_client.py` | 20 | Workers AI client — envelope parsing (dict/string response), audit rows + token accounting, 429/5xx retry, schema-mismatch corrective retry, per-scan call budget |
 | `tests/unit/test_ai_models.py` | 9 | AISettings singleton + consent versioning, AIInvocation no-TextField invariant, audit survives session deletion, OneToOne/unique constraints |
 | `tests/unit/test_ai_guard.py` | 12 | is_ai_active gate matrix, gate_subscan_tools (unknown-drop, passive-allowed, active-needs-DomainAuthorization) |
-| `tests/unit/test_ai_api.py` | 27 | config GET/POST (no credential leak, CONSENT_REQUIRED, consent stamping, disable-keeps-consent), test endpoint, triage GET/run status matrix, triage task, audit pagination |
 | `tests/unit/test_ai_context.py` | 7 | Prompt builders — severity-ranked selection + cap, info excluded, description truncation, message payloads |
 | `tests/unit/test_ai_triage.py` | 6 | Ranked item persistence, hallucinated/duplicate id drop, failed status, replace-on-rerun |
 | `tests/unit/test_ai_summaries.py` | 7 | Report + alert kinds, absent-on-failure, triage overview feeds prompt, update-in-place |
 | `tests/unit/test_ai_pipeline.py` | 10 | Invariants 1 + 5 — AI-off finalize byte-identical, hook ordering before alerts, subscan skip, failure swallowing |
 | `tests/unit/test_ai_orchestrator.py` | 22 | Agent loop — gate/revocation terminal, iteration pre-consumption, caps, denied-without-auth, sanctioned subscan path (`triggered_by="agent"`), flag never mutates Finding.status, chain hooks |
+| `tests/unit/test_ai_adjudication.py` | 5 | Advisory AI adjudication of verification verdicts — no-op when AI inactive, annotates `extra["verification"]["ai"]` but never flips `verification_status`, AI failure swallowed, low-severity/unverified findings skipped, a None model response is skipped without error |
 | `tests/unit/test_ai_invariants.py` | 3 | Grep-style: AI layer only Finding.objects.filter, audit writer has no body params, client creates only AIInvocation |
 | `tests/integration/test_ai_flow.py` | 6 | AI end-to-end (only the Cloudflare HTTP edge + queue mocked): finalize → triage/summaries/agent/audit, report + alert carry output, subscan chain roundtrip, AI-off zero traces, Cloudflare-down scan still completes; plus an opt-in LIVE smoke test (runs only with real `CLOUDFLARE_*` env: `pytest tests/integration/test_ai_flow.py -k live`) |
-| `tests/test_api_endpoints.py` | 104 | Smoke tests for all API endpoints (auth + payload shape), incl. build-provenance `/health/` + `/api/version/` (+ `no-store`) + update-check `/api/version/latest/` |
 | `tests/unit/test_crypto.py` | 16 | At-rest secret encryption — Fernet roundtrip/non-determinism/legacy-plaintext tolerance, key derivation/override/rotation, DB-holds-ciphertext + ORM-returns-plaintext for AI/notifications/amass/subfinder |
-| `tests/unit/test_login_ratelimit.py` | 13 | Login brute-force limiter — threshold lockout, window reset, success clears, X-Forwarded-For keying (+ untrusted-XFF fallback / spoof-evasion), middleware integration (per-IP isolation, disabled bypass, refresh endpoint unaffected) |
 
 | `tests/unit/test_asset_inventory.py` | 11 | Asset-inventory rollup — upsert per kind, dedup across scans, honest gone-marking (completed-only, observed-kinds-only, not on partial/subscan), no-Domain skip, Finding→Asset linkage (url/port/target) |
-| `tests/unit/test_asset_inventory_api.py` | 14 | `/api/assets/` — auth required, list (filters kind/status/domain/q, pagination, per-asset open-finding counts), summary (totals + by_kind), detail (metadata/findings/seen_in_scans, 404); Finding→Asset cross-link in the findings API; dashboard asset KPI |
+| `tests/unit/test_issue_register.py` | 17 | Issue-register rollup — `issue_key`/`check_id` identity, triage persists across scans (status + assignee + resolution note), title-reword keeps same Issue, auto-resolve unseen (comprehensive-scan-only), regression reopen, idempotent replay, subscan no-op, asset grounding |
 
-**Total: 1870 tests** (1824 fast + 46 slow domain_security)
+**Total:** the per-file counts above predate the plain-Django UI change and are approximate — PDF tests were removed from `test_reports.py` / `test_exposure_score.py` and `test_mvp_views.py` was added. Run `uv run pytest tests/ --ignore=tests/unit/test_domain_security.py` for the current figure. Slow `test_domain_security.py` is unchanged.
 
-Frontend: **22 Vitest + Testing Library tests** (`frontend/src/**/*.test.{js,jsx}`, happy-dom env) — auth token helpers, the `Badge` component, the axios 401-refresh interceptor, the Assets `SeverityChips`, and the Credentials source-label mapping. Run with `cd frontend && npm run test:run`.

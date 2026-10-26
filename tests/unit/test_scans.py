@@ -116,44 +116,6 @@ class TestCreateScanSessionConcurrency:
 
 
 @pytest.mark.django_db
-class TestParseSchedule:
-    """_parse_schedule() maps a ScheduledScan row to the API dict."""
-
-    def _sched(self, job_id, domain, kind, frequency="—"):
-        s = MagicMock()
-        s.job_id = job_id
-        s.domain = domain
-        s.kind = kind
-        s.frequency = frequency
-        s.next_run = None
-        return s
-
-    def test_recurring_maps_fields(self):
-        from apps.core.engine.scans.api import _parse_schedule
-        r = _parse_schedule(self._sched("recurring_example.com", "example.com", "recurring", "Daily"))
-        assert r["job_id"] == "recurring_example.com"
-        assert r["domain"] == "example.com"
-        assert r["job_type"] == "recurring"
-        assert r["frequency"] == "Daily"
-
-    def test_recurring_underscored_domain(self):
-        from apps.core.engine.scans.api import _parse_schedule
-        r = _parse_schedule(self._sched("recurring_sub_domain.example.com", "sub_domain.example.com", "recurring"))
-        assert r["domain"] == "sub_domain.example.com"
-
-    def test_once_maps_to_one_time(self):
-        from apps.core.engine.scans.api import _parse_schedule
-        r = _parse_schedule(self._sched("once_example.com_" + "a" * 32, "example.com", "once"))
-        assert r["domain"] == "example.com"
-        assert r["job_type"] == "one-time"
-
-    def test_weekly_frequency_passthrough(self):
-        from apps.core.engine.scans.api import _parse_schedule
-        r = _parse_schedule(self._sched("recurring_example.com", "example.com", "recurring", "Weekly (Mondays)"))
-        assert r["frequency"] == "Weekly (Mondays)"
-
-
-@pytest.mark.django_db
 class TestDetectDeltas:
     def test_new_findings_create_new_deltas(self, db):
         from apps.core.engine.scans.models import ScanSession, ScanDelta
@@ -163,9 +125,9 @@ class TestDetectDeltas:
 
         s1 = ScanSession.objects.create(domain="delta.com", scan_type="full", status="completed", end_time=timezone.now())
         s2 = ScanSession.objects.create(domain="delta.com", scan_type="full", status="completed", end_time=timezone.now())
-        Finding.objects.create(session=s1, source="domain_security", target="delta.com", check_type="dns", severity="high", title="Old Issue")
-        Finding.objects.create(session=s2, source="domain_security", target="delta.com", check_type="dns", severity="high", title="Old Issue")
-        Finding.objects.create(session=s2, source="domain_security", target="delta.com", check_type="dns", severity="medium", title="New Issue")
+        Finding.objects.create(session=s1, source="domain_security", target="delta.com", check_type="dns", check_id="domain_security:caa_missing", severity="high", title="Old Issue")
+        Finding.objects.create(session=s2, source="domain_security", target="delta.com", check_type="dns", check_id="domain_security:caa_missing", severity="high", title="Old Issue")
+        Finding.objects.create(session=s2, source="domain_security", target="delta.com", check_type="dns", check_id="domain_security:dnssec_missing", severity="medium", title="New Issue")
 
         _detect_deltas(s2)
 
@@ -181,7 +143,7 @@ class TestDetectDeltas:
 
         s1 = ScanSession.objects.create(domain="rem.com", scan_type="full", status="completed", end_time=timezone.now())
         s2 = ScanSession.objects.create(domain="rem.com", scan_type="full", status="completed", end_time=timezone.now())
-        Finding.objects.create(session=s1, source="domain_security", target="rem.com", check_type="dns", severity="high", title="Gone")
+        Finding.objects.create(session=s1, source="domain_security", target="rem.com", check_type="dns", check_id="domain_security:caa_missing", severity="high", title="Gone")
         # s2 has no findings
 
         _detect_deltas(s2)
@@ -206,12 +168,12 @@ class TestDetectDeltas:
         from django.utils import timezone
 
         full1 = ScanSession.objects.create(domain="b.com", scan_type="full", status="completed", end_time=timezone.now())
-        Finding.objects.create(session=full1, source="web_checker", target="b.com", check_type="hdr", severity="low", title="Missing HSTS")
+        Finding.objects.create(session=full1, source="web_checker", target="b.com", check_type="hdr", check_id="web_checker:missing_hsts", severity="low", title="Missing HSTS")
         # A subscan (subset of tools) runs later — highest id, but not a valid baseline.
         sub = ScanSession.objects.create(domain="b.com", scan_type="subscan", status="completed", end_time=timezone.now())
-        Finding.objects.create(session=sub, source="tls_checker", target="b.com:443", check_type="cipher", severity="medium", title="Weak cipher")
+        Finding.objects.create(session=sub, source="tls_checker", target="b.com:443", check_type="cipher", check_id="tls_checker:weak_cipher", severity="medium", title="Weak cipher")
         full2 = ScanSession.objects.create(domain="b.com", scan_type="full", status="completed", end_time=timezone.now())
-        Finding.objects.create(session=full2, source="web_checker", target="b.com", check_type="hdr", severity="low", title="Missing HSTS")
+        Finding.objects.create(session=full2, source="web_checker", target="b.com", check_type="hdr", check_id="web_checker:missing_hsts", severity="low", title="Missing HSTS")
 
         _detect_deltas(full2)
 

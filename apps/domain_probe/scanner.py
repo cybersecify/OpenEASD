@@ -19,6 +19,10 @@ import smtplib
 import dns.resolver
 import dns.query
 import dns.zone
+import dns.message
+import dns.flags
+import dns.rcode
+import dns.rdatatype
 from dns.resolver import NXDOMAIN as _DNS_NXDOMAIN, NoAnswer as _DNS_NoAnswer, NoNameservers as _DNS_NoNameservers
 import requests
 from django.conf import settings
@@ -91,6 +95,7 @@ def _check_zone_transfer(session, domain, ns_records) -> list:
                 findings.append(Finding(
                     session=session, source="domain_probe", target=domain, check_type="dns",
                     severity="critical",
+                    check_id="domain_probe:axfr",
                     title=f"DNS zone transfer allowed on {ns_host}",
                     description=(
                         f"The nameserver {ns_host} allows unauthenticated AXFR zone transfers. "
@@ -128,6 +133,7 @@ def _check_mta_sts(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_probe", target=domain, check_type="email",
             severity="medium",
+            check_id="domain_probe:mta_sts_missing",
             title="MTA-STS not configured",
             description=(
                 f"{domain} has no MTA-STS policy. Email delivery to your mail server is not "
@@ -152,6 +158,7 @@ def _check_mta_sts(session, domain) -> list:
         findings.append(Finding(
             session=session, source="domain_probe", target=domain, check_type="email",
             severity="high",
+            check_id="domain_probe:mta_sts_unreachable",
             title="MTA-STS policy file not reachable",
             description=(
                 f"{domain} has an MTA-STS DNS record but the policy file at {policy_url} "
@@ -193,6 +200,7 @@ def _check_mta_sts(session, domain) -> list:
     findings.append(Finding(
         session=session, source="domain_probe", target=domain, check_type="email",
         severity="medium",
+        check_id=f"domain_probe:mta_sts_{mode}",
         title=title_map.get(mode, "MTA-STS policy mode is invalid or missing"),
         description=description_map.get(mode, (
             f"{domain} MTA-STS policy at {policy_url} has an unrecognised or missing "
@@ -230,6 +238,7 @@ def _check_open_relay(session, domain) -> list:
                 return [Finding(
                     session=session, source="domain_probe", target=mx_host,
                     check_type="open_relay", severity="critical",
+                    check_id="domain_probe:open_relay",
                     title="Open mail relay detected",
                     description=(
                         f"The mail server {mx_host} (MX for {domain}) accepted a relay "
@@ -257,6 +266,63 @@ def _check_open_relay(session, domain) -> list:
     return []
 
 
+def _check_lame_delegation(session, domain, ns_records) -> list:
+    """Check for lame delegation — NS records that don't answer authoritatively.
+
+    ACTIVE: sends a direct SOA query over UDP to each nameserver's IP (not via a
+    public recursive resolver), so it touches the target's DNS infrastructure —
+    lame delegation can only be detected by asking the delegated NS itself whether
+    it answers authoritatively. Lives here (not in the passive domain_security)
+    for exactly that reason: it keeps passive scans zero-packets-to-target.
+    """
+    findings = []
+    lame_servers = []
+
+    for ns in ns_records:
+        try:
+            ns_host = str(ns.target).rstrip(".")
+        except AttributeError:
+            ns_host = str(ns).rstrip(".")
+
+        try:
+            ns_ips = dns.resolver.resolve(ns_host, "A", lifetime=_DNS_TIMEOUT)
+            ns_ip = str(ns_ips[0])
+        except Exception:
+            lame_servers.append(f"{ns_host} (no A record)")
+            continue
+
+        try:
+            request = dns.message.make_query(domain, dns.rdatatype.SOA)
+            response = dns.query.udp(request, ns_ip, _DNS_TIMEOUT)
+            if not response.flags & dns.flags.AA:
+                lame_servers.append(f"{ns_host} (non-authoritative response)")
+            elif response.rcode() in (dns.rcode.SERVFAIL, dns.rcode.REFUSED, dns.rcode.NXDOMAIN):
+                lame_servers.append(f"{ns_host} (rcode={dns.rcode.to_text(response.rcode())})")
+        except Exception:
+            lame_servers.append(f"{ns_host} (no response / timeout)")
+
+    if lame_servers:
+        findings.append(Finding(
+            session=session, source="domain_probe", target=domain, check_type="dns",
+            severity="high",
+            check_id="domain_probe:lame_delegation",
+            title=f"Lame delegation detected ({len(lame_servers)} nameserver(s))",
+            description=(
+                f"{domain} has nameservers that do not answer authoritatively for the zone: "
+                f"{', '.join(lame_servers)}. "
+                "This causes intermittent DNS resolution failures and, if the NS hostname is "
+                "unregistered, can be hijacked by an attacker who registers it."
+            ),
+            remediation=(
+                "Ensure all NS records listed for the domain are configured to host the zone. "
+                "Remove any NS records pointing to servers not authoritative for this domain."
+            ),
+            extra={"lame_servers": lame_servers},
+        ))
+
+    return findings
+
+
 # ---------------------------------------------------------------------------
 # Main orchestrator
 # ---------------------------------------------------------------------------
@@ -266,10 +332,18 @@ def run_domain_probe(session) -> list:
     domain = session.domain
     logger.info(f"[domain_probe:{session.id}] Starting active probes for {domain}")
 
-    findings = []
-    findings += _check_zone_transfer(session, domain, _resolve(domain, "NS"))
-    findings += _stamp_control(_check_mta_sts(session, domain), "mta_sts")
-    findings += _stamp_control(_check_open_relay(session, domain), "open_relay")
+    # Fail-graceful like the passive Domain Posture siblings: a probe error
+    # (AXFR/SMTP/MTA-STS/lame-delegation) must never propagate and fail the scan.
+    try:
+        findings = []
+        ns_records = _resolve(domain, "NS")
+        findings += _check_zone_transfer(session, domain, ns_records)
+        findings += _check_lame_delegation(session, domain, ns_records)
+        findings += _stamp_control(_check_mta_sts(session, domain), "mta_sts")
+        findings += _stamp_control(_check_open_relay(session, domain), "open_relay")
+    except Exception:  # noqa: BLE001 — never let this tool fail a scan
+        logger.exception("[domain_probe:%s] unexpected error — skipping", session.id)
+        return []
 
     if findings:
         Finding.objects.bulk_create(findings)

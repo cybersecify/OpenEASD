@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 # Postgres handles concurrent writers, so more than one scan can run at once
 # (bounded for target politeness + host RAM, not by a SQLite single-writer lock).
+# dbos 2.31.1+ registers a module-level Queue() into its pending registry with no
+# live engine (the 2.31.0 "cannot be constructed directly" guard is gone), so the
+# web can import this module to enqueue by name and the worker drains it on launch.
 scan_queue = Queue(QUEUE_NAME, concurrency=getattr(settings, "DBOS_SCAN_CONCURRENCY", 2))
 
 
@@ -60,7 +63,12 @@ def run_scan_workflow(session_id: int) -> None:
     logger.info("[dbos] scan workflow complete for session %s", session_id)
 
 
-@durable_task("ai_triage", dedupe="triage-{0}")
+# No dedupe (F2): a "triage-{id}" deduplication_id with return-existing made a
+# manual re-triage return the prior (completed) workflow and silently no-op,
+# defeating the whole point of the re-run endpoint. Each manual run now enqueues
+# a fresh workflow; the API endpoint serializes concurrent runs atomically
+# (run_triage_now). Matches agent_step, which also carries no dedupe.
+@durable_task("ai_triage")
 def ai_triage(session_id: int) -> None:
     """Manual (re-)triage of a finished scan, durably (one-step task)."""
     from apps.core.console.ai.tasks import run_triage_and_summaries
@@ -120,7 +128,6 @@ _DAILY_CRON = "{m} {h} * * *".format(
 )
 _MONITORING_SWEEP_CRON = getattr(settings, "MONITORING_SWEEP_CRON", "*/15 * * * *")
 _WATCHDOG_CRON = getattr(settings, "WATCHDOG_CRON", "*/15 * * * *")
-_TOKEN_PURGE_CRON = getattr(settings, "TOKEN_PURGE_CRON", "0 3 * * *")
 
 
 def _scheduled_scans_enabled() -> bool:
@@ -157,37 +164,65 @@ def run_user_scans_sweep_if_enabled() -> None:
 _USER_SCHED_SWEEP_CRON = getattr(settings, "USER_SCHEDULE_SWEEP_CRON", "* * * * *")
 
 
+# Each cron dispatches through scheduler.dispatch_scheduled(name, fn) so its
+# ScheduledJob row (H7) can enable/disable it at runtime and record last_run_at.
+# DBOS still owns the tick + exactly-once; the table adds runtime control.
+
 @DBOS.scheduled(_DAILY_CRON)
 @DBOS.workflow(name="scheduled_daily_scan")
 def scheduled_daily_scan(scheduled_time, actual_time) -> None:
-    run_daily_scan_if_enabled()
+    from apps.core.engine.scheduler.scheduler import dispatch_scheduled
+
+    dispatch_scheduled("daily_scan", run_daily_scan_if_enabled)
 
 
 @DBOS.scheduled(_MONITORING_SWEEP_CRON)
 @DBOS.workflow(name="scheduled_monitoring_sweep")
 def scheduled_monitoring_sweep(scheduled_time, actual_time) -> None:
     """Enqueue a scan for each active, authorized, monitored domain that is due."""
-    run_monitoring_sweep_if_enabled()
+    from apps.core.engine.scheduler.scheduler import dispatch_scheduled
+
+    dispatch_scheduled("monitoring_sweep", run_monitoring_sweep_if_enabled)
 
 
 @DBOS.scheduled(_USER_SCHED_SWEEP_CRON)
 @DBOS.workflow(name="scheduled_user_scans_sweep")
 def scheduled_user_scans_sweep(scheduled_time, actual_time) -> None:
     """Fire user-created one-time/recurring scans that are due (ScheduledScan)."""
-    run_user_scans_sweep_if_enabled()
+    from apps.core.engine.scheduler.scheduler import dispatch_scheduled
+
+    dispatch_scheduled("user_scans_sweep", run_user_scans_sweep_if_enabled)
 
 
 @DBOS.scheduled(_WATCHDOG_CRON)
 @DBOS.workflow(name="scheduled_watchdog")
 def scheduled_watchdog(scheduled_time, actual_time) -> None:
-    from apps.core.engine.scheduler.scheduler import reap_stuck_scans
+    from apps.core.engine.scheduler.scheduler import dispatch_scheduled
 
-    reap_stuck_scans()
+    def _watchdog():
+        from apps.core.engine.scheduler.scheduler import (
+            reap_orphaned_scan_workflows,
+            reap_stuck_scans,
+        )
+        # Order matters: reap_stuck_scans first flips stale pending/running
+        # sessions to terminal (failed/partial) and cancels their workflows
+        # inline; reap_orphaned_scan_workflows then sweeps any remaining phantom
+        # DBOS workflow still holding a `scans`-queue concurrency slot.
+        reap_stuck_scans()
+        reap_orphaned_scan_workflows()
+
+    dispatch_scheduled("watchdog", _watchdog)
 
 
-@DBOS.scheduled(_TOKEN_PURGE_CRON)
-@DBOS.workflow(name="scheduled_token_purge")
-def scheduled_token_purge(scheduled_time, actual_time) -> None:
-    from apps.core.engine.scheduler.scheduler import purge_expired_blacklisted_tokens
+_SCAN_PRUNE_CRON = getattr(settings, "SCAN_PRUNE_CRON", "30 3 * * *")
 
-    purge_expired_blacklisted_tokens()
+
+@DBOS.scheduled(_SCAN_PRUNE_CRON)
+@DBOS.workflow(name="scheduled_scan_prune")
+def scheduled_scan_prune(scheduled_time, actual_time) -> None:
+    """Prune old scan history (H3). A hygiene cron — always
+    registered, but a no-op unless SCAN_RETENTION_ENABLED (the function self-gates),
+    so it is NOT tied to SCHEDULED_SCANS_ENABLED."""
+    from apps.core.engine.scheduler.scheduler import dispatch_scheduled, prune_old_scans
+
+    dispatch_scheduled("scan_prune", prune_old_scans)

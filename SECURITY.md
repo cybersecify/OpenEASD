@@ -50,9 +50,9 @@ A proof-of-concept exploit is welcome but not required.
 
 ## What's in scope
 
-Vulnerabilities in **OpenEASD itself** — the Django app, the React SPA,
-the REST API, the workflow runner, the Docker image, the Kubernetes
-manifests, the auth flow, the way we shell out to external tools, etc.
+Vulnerabilities in **OpenEASD itself** — the Django app, the server-rendered
+UI (`apps/mvp`), the workflow runner, the Docker image, the Kubernetes
+manifests, the session-auth flow, the way we shell out to external tools, etc.
 
 Examples of what we'd treat as security issues:
 - Authentication bypass on the API or web UI

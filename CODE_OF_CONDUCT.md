@@ -29,8 +29,8 @@ reports as confidential.
 - **Email fallback:** **contact@cybersecify.com** with
   `[OpenEASD CoC]` in the subject line.
 
-Reports are read by the maintainers: **Rathnakara G N** and
-**Ashok S Kamat** of Cybersecify.
+Reports are read by the maintainers: **Rathnakara GN** and
+**Ashok Kamat** of Cybersecify.
 
 ## Enforcement
 

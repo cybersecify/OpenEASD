@@ -61,13 +61,50 @@ def _run_single_step(run, session, tool: str, order: int) -> None:
     close_old_connections()
     from .registry import get_tool_produces_findings
 
-    step_result = WorkflowStepResult.objects.create(
-        run=run,
-        tool=tool,
-        order=order,
-        status="running",
-        started_at=django_tz.now(),
+    # Resume idempotency (F1b): the phase-group DBOS step re-runs the WHOLE group
+    # on a crash-resume. Don't re-execute a tool that already reached a terminal
+    # state, and reuse any non-terminal (crashed "running"/"pending") row rather
+    # than creating a duplicate — WorkflowStepResult has no (run, tool) unique
+    # constraint, so a naive create() would stack duplicates on every resume.
+    existing = (
+        WorkflowStepResult.objects.filter(run=run, tool=tool).order_by("id").first()
     )
+    if existing is not None and existing.status in ("completed", "failed", "skipped"):
+        return
+    if existing is not None:
+        step_result = existing
+        step_result.order = order
+        step_result.status = "running"
+        step_result.started_at = django_tz.now()
+        step_result.finished_at = None
+        step_result.error = ""
+        step_result.findings_count = 0
+        step_result.save(update_fields=[
+            "order", "status", "started_at", "finished_at", "error", "findings_count",
+        ])
+        # Idempotency (H5, pipeline principle #4): a non-terminal existing row means
+        # this tool was interrupted mid-run (worker crash), so it is about to be
+        # RE-executed. Finding writes use bulk_create (append, no unique constraint),
+        # so any Findings the tool wrote before the crash would be DUPLICATED by the
+        # re-run. Delete this tool's prior Findings for the session first, so the
+        # re-run converges to the same state (delete-then-insert). source == the
+        # registry tool key. Assets need no cleanup — they are (session, …)-unique
+        # and written with ignore_conflicts=True, so re-writes are already idempotent.
+        from apps.core.data.findings.models import Finding
+        deleted, _ = Finding.objects.filter(session=session, source=tool).delete()
+        if deleted:
+            logger.info(
+                "[workflow:%s] resume: cleared %d stale %s finding(s) before re-run",
+                run.id, deleted, tool,
+            )
+    else:
+        step_result = WorkflowStepResult.objects.create(
+            run=run,
+            tool=tool,
+            order=order,
+            status="running",
+            started_at=django_tz.now(),
+        )
 
     status = "completed"
     error_msg = ""
@@ -92,6 +129,13 @@ def _run_single_step(run, session, tool: str, order: int) -> None:
     step_result.error = error_msg
     step_result.finished_at = django_tz.now()
     step_result.save(update_fields=["status", "findings_count", "error", "finished_at"])
+
+    # Liveness heartbeat (H2): a step just finished, so the scan is making
+    # progress. Stamp the session (targeted UPDATE, no full save — safe from the
+    # parallel tool threads) so the no-progress watchdog (H10) can distinguish a
+    # slow-but-alive scan from a wedged one.
+    from apps.core.engine.scans.models import ScanSession
+    ScanSession.objects.filter(id=session.id).update(last_progress_at=django_tz.now())
 
 
 def resolve_phase_groups(workflow, only_tools: list | None = None) -> list:
@@ -125,7 +169,7 @@ def resolve_phase_groups(workflow, only_tools: list | None = None) -> list:
 # intelligence group finish fast on a 1 GB box without risking an OOM. A group is
 # only parallelised under low memory when EVERY tool in it is on this list.
 _LOW_MEM_PARALLEL_SAFE = frozenset({
-    "domain_security", "domain_probe", "typosquat", "dns_history",
+    "domain_security", "domain_probe", "tldsquatting", "dns_history",
     "hudson_rock", "breach_check", "github_secrets",
 })
 
@@ -138,6 +182,18 @@ def run_one_phase_group(run, session, group: list, base_order: int) -> None:
     one checkpointed group at a time."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from django.conf import settings
+
+    # Resume (F1b): skip tools that already reached a terminal state this run, so a
+    # crash-resume doesn't re-dispatch them. _run_single_step is the authoritative
+    # guard; this just avoids spinning up threads/connections for already-done work.
+    done = set(
+        WorkflowStepResult.objects
+        .filter(run=run, tool__in=group, status__in=("completed", "failed", "skipped"))
+        .values_list("tool", flat=True)
+    )
+    group = [t for t in group if t not in done]
+    if not group:
+        return
 
     safe = getattr(settings, "SCAN_LOW_MEM_PARALLEL_SAFE", _LOW_MEM_PARALLEL_SAFE)
     low_mem = getattr(settings, "LOW_MEMORY", False)

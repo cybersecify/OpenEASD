@@ -13,7 +13,7 @@ body:
         [SECURITY.md](https://github.com/cybersecify/OpenEASD/blob/main/SECURITY.md).
 
         **About this project:** OpenEASD is MIT-licensed open source
-        maintained by Cybersecify (Rathnakara G N + Ashok S Kamat).
+        maintained by Cybersecify (Rathnakara GN + Ashok Kamat).
         We don't pay for bug reports or run a bug bounty program —
         community reports are welcomed and credited in CHANGELOG /
         commit attribution / Discussions.
@@ -33,9 +33,9 @@ body:
       label: How are you running it?
       options:
         - Docker (single container)
+        - Docker Compose (3-tier: db + web + worker)
         - Kubernetes (manifests in k8s/)
-        - Standalone (no Docker, install.sh)
-        - Local dev (uv run python main.py + vite)
+        - Local dev (uv run manage.py runserver)
     validations:
       required: true
 

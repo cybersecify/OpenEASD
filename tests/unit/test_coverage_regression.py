@@ -103,29 +103,9 @@ class TestCoverageRegression:
 
 @pytest.mark.django_db
 class TestCoverageRegressionReport:
-    """End-to-end: the coverage-regression Finding must surface in the rendered
-    report AND must never be flagged as a 'new finding' delta (it is created after
-    delta detection by design)."""
-
-    def _render_html(self, session):
-        from unittest.mock import patch
-        from django.contrib.auth.models import User
-        from django.test import Client
-
-        user = User.objects.create_user("covrepuser", password="x")
-        client = Client()
-        client.force_login(user)
-
-        captured = {}
-
-        def capture_html(html):
-            captured["html"] = html
-            return b"%PDF-1.7"
-
-        with patch("apps.core.console.reports.views._render_pdf", side_effect=capture_html):
-            res = client.get(f"/reports/{session.uuid}/pdf/")
-        assert res.status_code == 200
-        return captured["html"]
+    """End-to-end: the coverage-regression Finding must be created at finalize AND
+    must never be flagged as a 'new finding' delta (it is created after delta
+    detection by design)."""
 
     def test_regression_finding_renders_and_is_not_a_new_delta(self):
         from django.utils import timezone
@@ -157,18 +137,102 @@ class TestCoverageRegressionReport:
         reg = Finding.objects.get(session=cur, check_type="coverage_regression")
         assert reg.title == "Scan coverage dropped sharply — results may be incomplete"
 
-        # 2. Its title renders in the report HTML.
-        cur.refresh_from_db()
-        html = self._render_html(cur)
-        assert "Scan coverage dropped sharply" in html
-
-        # 3. Deltas ran (the normal finding is a 'new' delta) but the synthetic
+        # 2. Deltas ran (the normal finding is a 'new' delta) but the synthetic
         #    coverage-regression finding is NOT a 'new' delta — _check_coverage_
         #    regression runs after _detect_deltas by design.
         new_deltas = ScanDelta.objects.filter(session=cur, change_type="new")
         assert new_deltas.count() >= 1
         assert not new_deltas.filter(
             item_identifier__startswith="scan_coverage:coverage_regression"
+        ).exists()
+
+
+@pytest.mark.django_db
+class TestCountAllFindings:
+    def test_propagates_db_error_not_fake_zero(self):
+        # F4: a DB error while counting must NOT be swallowed into 0 (which reads
+        # as a clean scan) — it propagates so finalize fails honestly.
+        from unittest.mock import patch
+        from django.db import DatabaseError
+        from apps.core.engine.scans.pipeline import _count_all_findings
+        s = _session()
+        with patch("apps.core.data.findings.models.Finding.objects.filter",
+                   side_effect=DatabaseError("boom")):
+            with pytest.raises(DatabaseError):
+                _count_all_findings(s)
+
+
+@pytest.mark.django_db
+class TestFinalizeReplayIdempotency:
+    """F1: finalize is a replayable DBOS step. Running it twice (a worker crash
+    after side effects but before the step checkpoints, then resume) must NOT
+    duplicate the rows it produces — ScanDelta rows and the coverage_regression
+    meta-finding — nor drift total_findings."""
+
+    def _setup(self):
+        from django.utils import timezone
+        from apps.core.engine.scans.models import ScanSession
+        from apps.core.data.findings.models import Finding
+        from apps.core.engine.workflows.models import Workflow, WorkflowRun
+
+        # Baseline (completed) with a finding unique to it → a genuine "removed"
+        # delta; the current scan gets a different finding → a genuine "new" delta.
+        base = ScanSession.objects.create(
+            domain="example.com", scan_type="full", status="completed",
+            end_time=timezone.now(),
+        )
+        Finding.objects.create(
+            session=base, source="web_checker", target="example.com",
+            check_type="missing_header", check_id="web_checker:missing_header",
+            severity="medium",
+            title="Baseline only finding", description="d", remediation="f",
+        )
+        # High block ratio → coverage_regression fires.
+        cur = _session(status="running", endpoints_probed=10, endpoints_blocked=10)
+        Finding.objects.create(
+            session=cur, source="web_checker", target="example.com",
+            check_type="directory_listing", check_id="web_checker:directory_listing",
+            severity="medium",
+            title="Current only finding", description="d", remediation="f",
+        )
+        wf = Workflow.objects.create(name="wf")
+        WorkflowRun.objects.create(workflow=wf, session=cur, status="completed")
+        return cur
+
+    def test_second_finalize_does_not_duplicate_rows(self):
+        from apps.core.engine.scans.models import ScanDelta
+        from apps.core.data.findings.models import Finding
+
+        cur = self._setup()
+
+        _finalize_session(cur)
+        cur.refresh_from_db()
+        deltas_1 = ScanDelta.objects.filter(session=cur).count()
+        new_1 = ScanDelta.objects.filter(session=cur, change_type="new").count()
+        total_1 = cur.total_findings
+        reg_1 = Finding.objects.filter(
+            session=cur, check_type="coverage_regression"
+        ).count()
+
+        assert deltas_1 >= 2            # at least one "new" + one "removed"
+        assert new_1 >= 1
+        assert reg_1 == 1
+
+        # Replay the exact same finalize step.
+        _finalize_session(cur)
+        cur.refresh_from_db()
+
+        # Nothing duplicated, nothing drifted.
+        assert ScanDelta.objects.filter(session=cur).count() == deltas_1
+        assert ScanDelta.objects.filter(session=cur, change_type="new").count() == new_1
+        assert cur.total_findings == total_1
+        assert Finding.objects.filter(
+            session=cur, check_type="coverage_regression"
+        ).count() == 1
+
+        # The meta-warning never becomes a delta on replay either.
+        assert not ScanDelta.objects.filter(
+            session=cur, item_identifier__startswith="scan_coverage:"
         ).exists()
 
 
@@ -199,3 +263,53 @@ class TestPartialStatus:
         _finalize_session(s)
         s.refresh_from_db()
         assert s.status == "partial"
+
+
+@pytest.mark.django_db
+class TestDurableFinalizePartialStatus:
+    """Regression (durable path): the DBOS worker runs phases via
+    run_one_phase_group and leaves the WorkflowRun 'pending' through execution
+    (unlike run_workflow(), which flips it to 'running'). finalize_session_by_id
+    must STILL give a terminal partial/completed decision for a pending run, or a
+    failed tool is silently masked as 'completed'. The older TestPartialStatus
+    tests only cover _finalize_session with a pre-set terminal run status."""
+
+    def _setup(self, step_statuses):
+        from apps.core.engine.workflows.models import Workflow, WorkflowRun, WorkflowStepResult
+        s = _session(status="running")
+        wf = Workflow.objects.create(name="wf")
+        run = WorkflowRun.objects.create(workflow=wf, session=s, status="pending")  # durable state
+        for i, (tool, st) in enumerate(step_statuses, start=1):
+            WorkflowStepResult.objects.create(run=run, tool=tool, status=st, order=i)
+        return s, run
+
+    def test_failed_step_on_pending_run_marks_partial(self):
+        from apps.core.engine.scans.pipeline import finalize_session_by_id
+        s, run = self._setup([("domain_security", "completed"), ("cloud_assets", "failed")])
+        finalize_session_by_id(s.id)
+        s.refresh_from_db(); run.refresh_from_db()
+        assert run.status == "partial"
+        assert s.status == "partial"
+
+    def test_all_completed_on_pending_run_marks_completed(self):
+        from apps.core.engine.scans.pipeline import finalize_session_by_id
+        s, run = self._setup([("domain_security", "completed"), ("subfinder", "completed")])
+        finalize_session_by_id(s.id)
+        s.refresh_from_db(); run.refresh_from_db()
+        assert run.status == "completed"
+        assert s.status == "completed"
+
+
+@pytest.mark.django_db
+class TestPrepareAssetsMarksRunRunning:
+    """prepare_session_assets (durable path) must flip the run to 'running'."""
+
+    def test_new_run_is_running(self):
+        from apps.core.engine.scans.pipeline import prepare_session_assets
+        from apps.core.engine.workflows.models import Workflow, WorkflowRun
+        wf = Workflow.objects.create(name="wf")
+        s = _session(status="running", workflow=wf)
+        prepare_session_assets(s.id)
+        run = WorkflowRun.objects.get(session=s)
+        assert run.status == "running"
+        assert run.started_at is not None

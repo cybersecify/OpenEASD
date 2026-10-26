@@ -17,7 +17,7 @@ on:
   # sets -disable-update-check (no runtime template fetch), so without this the
   # templates freeze at build time and rot (miss new CVEs). schedule runs on the
   # default branch, so the publish job pushes a fresh :latest. See
-  # docs/SCAN_OPERATIONAL_LEARNINGS.md.
+  # docs/OPERATIONS.md.
   schedule:
     - cron: "0 6 * * 1"   # Mondays 06:00 UTC
 
@@ -55,7 +55,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install system dependencies
-        run: sudo apt-get install -y libcairo2-dev gcc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0
+        # `apt-get update` first: the runner image ships a stale package index, so
+        # a bare `install` pins versions the mirror has already superseded and 404s
+        # (e.g. libglib2.0-dev point-release bump) — refresh the index first.
+        run: sudo apt-get update && sudo apt-get install -y
 
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh && echo "$HOME/.local/bin" >> $GITHUB_PATH
@@ -90,37 +93,13 @@ jobs:
         # -ll = LOW+ severity only (skip INFO noise); -x = exclude test dirs
 
       - name: Dependency vulnerability scan — pip-audit
-        run: uv run pip-audit --ignore-vuln PYSEC-2025-183
-        # PYSEC-2025-183 (pyjwt weak key length) is disputed by PyJWT maintainers — no fix available
-
-  frontend:
-    name: Frontend Build
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-
-      - name: Set up Node 20
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v6
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        run: cd frontend && npm ci
-
-      - name: Test — vitest
-        run: cd frontend && npm run test:run
-
-      - name: Build
-        run: cd frontend && npm run build
+        run: uv run pip-audit
 
   docker:
-    # One job (kept named "Docker Build" — a required status check) that builds
-    # both image targets. NOT a matrix: a matrix would report as
-    # "Docker Build (web)"/"(worker)" and the required "Docker Build" context
-    # would never report, permanently blocking the PR.
+    # PR-only build gate: proves the single image builds and warms the type=gha
+    # cache. SKIPPED on main/tag pushes — `publish` rebuilds+pushes from that warm
+    # cache there. One job named "Docker Build" (a required status check).
+    if: github.event_name == 'pull_request'
     name: Docker Build
     runs-on: ubuntu-24.04
 
@@ -130,37 +109,38 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4
 
-      - name: Build web image (amd64)
+      - name: Build single image (amd64)
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: .
-          target: web
+          target: singleimage
           platforms: linux/amd64
           push: false
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,mode=max,scope=web
+          cache-from: type=gha,scope=singleimage
+          cache-to: type=gha,mode=max,scope=singleimage
 
-      - name: Build worker image (amd64)
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
-        with:
-          context: .
-          target: worker
-          platforms: linux/amd64
-          push: false
-          cache-from: type=gha,scope=worker
-          cache-to: type=gha,mode=max,scope=worker
+  frontend:
+    # Legacy no-op shim. The React SPA was removed (the UI is server-rendered
+    # Django now), but main's branch protection still REQUIRES a "Frontend Build"
+    # status check. This job satisfies it so PRs can merge. Remove this job once
+    # "Frontend Build" is dropped from the main branch-protection required checks.
+    if: github.event_name == 'pull_request'
+    name: Frontend Build
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "No frontend to build (server-rendered Django UI); no-op shim for the legacy required check."
 
   publish:
     name: Publish to GHCR
     runs-on: ubuntu-24.04
-    needs: [test, frontend, docker]
+    # NOT `needs: docker` — docker is PR-only and would be skipped here, which
+    # would cascade-skip publish. publish is the sole builder on release and
+    # reuses the type=gha cache the PR's docker job warmed.
+    needs: [test]
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: read
       packages: write
-    strategy:
-      matrix:
-        target: [web, worker]   # publish both images: openeasd-web + openeasd-worker
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -179,7 +159,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6
         with:
-          images: ghcr.io/cybersecify/openeasd-${{ matrix.target }}
+          images: ghcr.io/cybersecify/openeasd
           # type=ref,event=tag       → full version tag,  e.g. v2.0.0
           # type=match (v-prefixed)  → major.minor tag,   e.g. v2.0 (floats to
           #                            the latest patch of that minor line)
@@ -204,11 +184,11 @@ jobs:
             echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build and push ${{ matrix.target }} (amd64)
+      - name: Build and push the single image (amd64)
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: .
-          target: ${{ matrix.target }}
+          target: singleimage
           platforms: linux/amd64   # amd64 only — arm64 not required
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -217,11 +197,40 @@ jobs:
             OPENEASD_VERSION=${{ steps.prov.outputs.version }}
             OPENEASD_GIT_SHA=${{ github.sha }}
             OPENEASD_BUILD_DATE=${{ steps.prov.outputs.build_date }}
-          cache-from: type=gha,scope=${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+          cache-from: type=gha,scope=singleimage
+          cache-to: type=gha,mode=max,scope=singleimage
           # Supply-chain transparency: SBOM + SLSA provenance baked into the
           # image manifest. Retrieve with:
           #   docker buildx imagetools inspect ghcr.io/cybersecify/openeasd-web:vX.Y --format '{{ json . }}'
           # SBOM lists every package in the image; provenance attests the build.
           sbom: true
           provenance: mode=max
+
+  # Create (or update) the GitHub Release for a v* tag, with notes from the
+  # matching CHANGELOG section. Runs only on tag pushes, after images publish,
+  # so a `git tag vX.Y.Z && push` now yields both the images AND the Release —
+  # previously the Release was a manual step that drifted (see the v2.11.0→v2.16.0
+  # gap that had to be backfilled).
+  release:
+    name: GitHub Release
+    runs-on: ubuntu-24.04
+    needs: [publish]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write   # create / edit GitHub Releases
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Create or update the Release from CHANGELOG
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"   # e.g. v2.16.0
+          # Extract this version's CHANGELOG section (between its header and the next).
+          awk -v h="## [$TAG]" 'index($0,h)==1{f=1;next} /^## \[/{if(f)exit} f' CHANGELOG.md > notes.md
+          if [ -s notes.md ]; then NOTES_ARG=(--notes-file notes.md); else
+            echo "No CHANGELOG section for $TAG — auto-generating notes."; NOTES_ARG=(--generate-notes); fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TAG" "${NOTES_ARG[@]}"
+          else
+            gh release create "$TAG" --title "$TAG" --verify-tag "${NOTES_ARG[@]}"
+          fi

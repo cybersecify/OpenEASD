@@ -1,0 +1,2 @@
+web: gunicorn openeasd.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120 --access-logfile - --error-logfile -
+worker: env OPENEASD_ROLE=worker python manage.py dbos_worker

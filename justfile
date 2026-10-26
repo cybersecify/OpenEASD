@@ -11,19 +11,18 @@ default:
 
 # ── First-time setup ─────────────────────────────────────────────────────────
 
-# Sync the Python env, migrate, install frontend deps
+# Sync the Python env + migrate
 setup:
     uv sync --group dev
     uv run manage.py migrate
-    cd frontend && npm install
     @echo "Done. Start dev with: just dev"
 
 # ── Development ───────────────────────────────────────────────────────────────
 
-# Django ({{PORT}}) + DBOS worker + Vite dev server together (Ctrl-C stops all)
+# Django ({{PORT}}) + DBOS worker together (Ctrl-C stops all). The UI is the
+# server-rendered plain-Django app at http://localhost:{{PORT}}/.
 dev:
     #!/usr/bin/env bash
-    (cd frontend && npm run dev) & \
     (uv run manage.py runserver {{PORT}}) & \
     (uv run manage.py dbos_worker) & \
     wait || kill 0
@@ -35,10 +34,6 @@ worker:
 # Only the Django dev server
 backend:
     uv run manage.py runserver {{PORT}}
-
-# Build the frontend bundle once
-frontend:
-    cd frontend && npm run build
 
 # ── Database ──────────────────────────────────────────────────────────────────
 
@@ -62,7 +57,7 @@ lint:
 
 # Auto-format + fix
 format:
-    uv run black apps/
+    uv run ruff format apps/ openeasd/ tests/
     uv run ruff check apps/ openeasd/ tests/ --fix
 
 # Fast test suite (excludes the slow real-network domain_security tests)
@@ -81,31 +76,22 @@ ci-backend:
     uv run pytest tests/ --ignore=tests/unit/test_domain_security.py -q \
         --cov --cov-report=term-missing --cov-fail-under=80
     uv run bandit -r apps/ openeasd/ -ll -x tests/
-    uv run pip-audit --ignore-vuln PYSEC-2025-183
+    uv run pip-audit
 
-# Frontend CI: vitest + production build (mirrors the ci.yml `frontend` job)
-ci-frontend:
-    cd frontend && npm run test:run
-    cd frontend && npm run build
-
-# Full local CI = backend + frontend (what must be green before pushing)
-ci: ci-backend ci-frontend
-    @echo "✅ local CI passed (ruff + pytest+coverage + bandit + pip-audit + vitest + build)"
+# Full local CI = backend (what must be green before pushing)
+ci: ci-backend
+    @echo "✅ local CI passed (ruff + pytest+coverage + bandit + pip-audit)"
 
 # ── Dev deployment (3-container stack: db + web + worker) ─────────────────────
 # NOTE ON THE SPLIT:
-#   • DEV lifecycle lives here in `just` — setup, dev, up, deploy-dev.
+#   • DEV lifecycle lives here in `just` — setup, dev, up.
 #   • PRODUCTION is the GitHub pipeline (unchanged): `git tag vX.Y.Z` → CI builds
 #     & publishes pinned :vX.Y.Z images to GHCR; deploy them via the base
 #     docker-compose.yml. `just` is NOT used for production.
 
-# Dev deploy: build the stack locally from source (http://localhost:8000)
+# Dev deploy: build the 3-tier stack locally from source (http://localhost:8000)
 up:
     docker compose up -d --build
-
-# Dev deploy from the CI-published :latest images (no local build — pulls GHCR)
-deploy-dev:
-    docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --no-build --pull always
 
 # Stop the stack (keep the db volume)
 down:
@@ -122,5 +108,5 @@ ps:
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 
 clean:
-    rm -rf .venv frontend/node_modules frontend/dist staticfiles
-    @echo "Removed .venv, node_modules, dist, staticfiles"
+    rm -rf .venv staticfiles
+    @echo "Removed .venv, staticfiles"

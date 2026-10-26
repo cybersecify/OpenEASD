@@ -10,7 +10,7 @@ class DnsxConfig(AppConfig):
         "label": "DNSx (Resolve)",
         "runner": "apps.dnsx.scanner.run_dnsx",
         "phase": 4,
-        "phase_group": "Surface Enumeration",
+        "phase_group": "Asset Discovery",
         "requires": ["subfinder"],
         "produces_findings": False,
         "active": False,

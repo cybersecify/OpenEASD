@@ -2,16 +2,50 @@
 
 Turns N isolated `lookalike_domain` findings into a campaign signal: when two or
 more lookalikes resolve into the same autonomous system, that shared
-infrastructure is a strong indicator of coordinated phishing — worth prioritising
-as one takedown rather than N separate ones.
+infrastructure is an indicator of coordinated phishing — worth prioritising as
+one takedown rather than N separate ones.
+
+The signal only means something on networks small enough that co-location is a
+choice. On hyperscale clouds, CDNs, and registrar-parking networks, millions of
+unrelated domains "share hosting" the way strangers share a parking lot — a
+cluster of parked lookalikes on AS16509 (Amazon) proves nothing. Those generic
+ASNs are skipped unless the cluster contains a weaponized member (a confirmed
+phishing page makes the grouping meaningful even on shared infrastructure).
 """
 
 import logging
 from collections import defaultdict
 
+from django.conf import settings
+
 from apps.core.data.findings.models import Finding
 
 logger = logging.getLogger(__name__)
+
+# Networks where co-location carries no campaign signal: hyperscale clouds,
+# major CDNs, and registrar / domain-parking infrastructure. Curated, and
+# overridable via settings.ASN_CLUSTER_GENERIC_ASNS.
+_GENERIC_ASNS = frozenset({
+    "16509", "14618",   # Amazon (AWS / Global Accelerator — also Afternic parking)
+    "13335",            # Cloudflare
+    "15169", "396982",  # Google
+    "8075",             # Microsoft
+    "54113",            # Fastly
+    "16625", "20940",   # Akamai
+    "26496",            # GoDaddy
+    "22612",            # Namecheap (incl. registrar parking)
+    "14061",            # DigitalOcean
+    "16276",            # OVH
+    "24940",            # Hetzner
+    "47846",            # Sedo parking
+    "60819",            # Safenames — corporate brand-protection registrar
+                        #   (domains here are typically the brand's OWN defensive regs)
+})
+
+
+def _generic_asns() -> frozenset:
+    override = getattr(settings, "ASN_CLUSTER_GENERIC_ASNS", None)
+    return frozenset(str(a) for a in override) if override is not None else _GENERIC_ASNS
 
 
 def cluster(session, lookalikes: list[dict], asn_by_ip: dict) -> list[Finding]:
@@ -21,7 +55,7 @@ def cluster(session, lookalikes: list[dict], asn_by_ip: dict) -> list[Finding]:
     asn_by_ip:  ``{ip: {"asn", "as_name", "prefix"}}``
 
     A cluster with any weaponized member (login form / brand impersonation, as
-    flagged by typosquat) is `high`; otherwise `medium`.
+    flagged by tldsquatting) is `high`; otherwise `medium`.
     """
     members: dict[str, set] = defaultdict(set)      # asn -> {candidate}
     weaponized: dict[str, set] = defaultdict(set)    # asn -> {weaponized candidate}
@@ -46,11 +80,26 @@ def cluster(session, lookalikes: list[dict], asn_by_ip: dict) -> list[Finding]:
 
     findings: list[Finding] = []
     apex = getattr(session, "domain", "") or ""
+    generic = _generic_asns()
     for asn, candidates in members.items():
-        if len(candidates) < 2:
-            continue  # not a cluster — a single lookalike per ASN is unremarkable
         cands = sorted(candidates)
         weap = sorted(weaponized[asn])
+        if str(asn) in generic:
+            # Shared hyperscaler / CDN / parking / brand-protection hosting: the
+            # co-location of benign lookalikes carries NO campaign signal (half the
+            # internet is on AWS). Only WEAPONIZED members hint at coordination, and
+            # only when >=2 share the ASN — one weaponized domain on AWS is just one
+            # domain, not a 40-member campaign. Report only the weaponized members.
+            if len(weap) < 2:
+                logger.info(
+                    "asn_cluster: skipping AS%s (%s) — generic shared infrastructure "
+                    "(%d lookalikes, %d weaponized)",
+                    asn, as_names.get(asn, ""), len(cands), len(weap),
+                )
+                continue
+            cands = weap
+        elif len(candidates) < 2:
+            continue  # not a cluster — a single lookalike on dedicated hosting
         name = as_names.get(asn) or "unknown network"
         severity = "high" if weap else "medium"
         weap_note = (

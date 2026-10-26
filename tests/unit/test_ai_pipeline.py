@@ -48,6 +48,11 @@ class TestAiOffInvariant:
     def test_no_env_no_ai_rows_no_http(self, settings):
         settings.CLOUDFLARE_ACCOUNT_ID = ""
         settings.CLOUDFLARE_API_TOKEN = ""
+        # Verification is a separate feature (finding-verification spec) that
+        # also runs inside _finalize_session; hold it constant so this
+        # comparison stays purely about the AI gate, not a second feature's
+        # side effects on the Finding row.
+        settings.FINDING_VERIFICATION_ENABLED = False
         sess = _session()
         _finding(sess)
         with patch("apps.core.console.ai.client.requests.post") as post:

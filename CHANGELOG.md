@@ -5,7 +5,945 @@ All notable changes to OpenEASD are recorded here. Format loosely follows
 **Why** note on non-obvious changes so reviewers don't have to dig through
 commits to recover the reasoning.
 
-## [Unreleased]
+## [v3.0.1] — 2026-10-14
+
+Maintenance release — documentation reconciled with the v3.0.0 code, plus
+dead-code / dependency / deploy-path cleanup. No user-facing behavior change
+(the published image is slightly slimmer after the dependency removals).
+
+### Changed
+- **Docs reconciled with code.** The full `docs/` layer chain (PRD → DDD →
+  System → Technical → API → Coding), `README.md`, `CONTRIBUTING.md`,
+  `OPERATIONS.md`, and `CLAUDE.md` were swept for v3.0.0 drift: no REST
+  API/JWT/React SPA/PDF, plain-Django `apps/mvp` UI, single-image-primary
+  deploy, correct tool/app counts (30 tools, 17 core apps), and the real HTTP
+  surface. New ADR **D-018** records the v3.0.0 UI + deploy decision.
+- `make/just format` now uses `ruff format` (ruff is already the linter).
+
+### Removed
+- **Orphaned `LoginThrottle` model** (0 references — the JWT rate-limit
+  middleware that used it is gone), via drop-migration
+  `core/0005_delete_loginthrottle`.
+- **Unused dependencies**: `pypdf` (PDF export removed), `lxml` (unused — nmap
+  parses XML via `defusedxml`), and dev-only `black`/`isort`/`mypy`. Kept `idna`
+  (CVE floor pin). Re-locked; `pip-audit` passes without the former PyJWT ignore.
+- **Broken/superseded deploy paths**: `docker-compose.dev.yml` + the
+  `just deploy-dev` recipe (pulled web/worker GHCR images that are no longer
+  published), and the bare-metal `install.sh` (broken for v3 and counter to
+  D-003 Docker-only) with its README section.
+- Leftover frontend/JWT/PDF references: `.nvmrc`, `/frontend/*` ignore/owner
+  entries, the dead `enqueue_triage` wrapper and unread `SCHEDULER_ENABLED`
+  setting, and stale JWT/PDF/React wording in comments.
+
+## [v3.0.0] — 2026-10-14
+
+### Changed
+- **Plain-Django UI replaces the React SPA as the served UI.** New `apps/mvp`
+  (vendored Bulma + vendored HTMX, Django session auth) at `/`: dashboard, domains,
+  scan start (2×2 modes + custom workflow, unchanged passive/active authorization
+  gate), scan detail (HTMX progress every 3s, findings filters, CSV link), history,
+  login/logout and a forced change-password middleware. Views call the engine service
+  layer directly. The SPA `spa` view + catch-all were removed from `openeasd/urls.py`
+  (unknown paths redirect to the dashboard). **Why:** a much simpler MVP surface —
+  no Node toolchain, no JWT/API round-trip, one process to serve it.
+- **Django-Ninja REST API + JWT REMOVED; the React SPA deleted.** `/api/`, the
+  `apps/core/console/api/` package and per-app `api.py` routers are gone. **Why:** the
+  server-rendered UI uses session auth and the service layer directly.
+- **`dbos` pinned `>=2.31.1,<3`.** 2.31.0 guarded module-level `Queue()` construction.
+- **CI publishes a single image to GHCR: `ghcr.io/cybersecify/openeasd`** (built
+  from the Dockerfile `singleimage` target), replacing the former two-image
+  `openeasd-web` + `openeasd-worker` publish matrix. Tags on a `v*` release:
+  `:vX.Y.Z`, the floating `:vX.Y`, and `:latest` on `main`. **Why:** the single
+  image is the primary MVP deploy; the 3-tier `web`/`worker` images are no longer
+  pushed to GHCR — build them locally from the Dockerfile `web`/`worker` targets if
+  you run the 3-tier compose/k8s path.
+
+### Removed
+- **API teardown completed.** JWT token-blacklist app (`ninja_jwt.token_blacklist`), the
+  `purge_expired_blacklisted_tokens` function + `scheduled_token_purge` DBOS cron, and the
+  `django-ninja`, `django-ninja-jwt`, `pyjwt` dependencies. New data migration
+  `scans/0018_remove_token_purge_job` deletes the seeded `token_purge` `ScheduledJob`
+  row. `pydantic` is now a direct dependency (the AI layer used it; it was transitive via
+  django-ninja). **Why:** no JWT tokens exist any more, so nothing to blacklist or purge.
+- **PDF reports** (WeasyPrint, the `/reports/<uuid>/pdf/` route, the PDF template and
+  its tests). **CSV export is kept** (`/reports/<uuid>/csv/`, now session-auth only).
+- **The React SPA source** (`frontend/` — React/Vite/Vitest), the CI `frontend` job, and the
+  Dockerfile node build stage, plus the dependabot npm entry + dead frontend/WeasyPrint install
+  steps. **Why:** the server-rendered `apps/mvp` UI replaces it; no Node toolchain remains.
+
+### Added
+- **Single Docker image deploy** (`--target singleimage`): embedded PostgreSQL +
+  gunicorn + DBOS worker via honcho in one container, data on the mandatory `/data`
+  volume (`docker/entrypoint-singleimage.sh`). The primary MVP deploy; the 3-tier
+  compose/k8s path remains as the privilege-separated / scalable alternative.
+  **Why:** one-container run for a small trusted single-user instance.
+
+### Fixed
+- **cloud_enum timeout now degrades the scan to `partial` instead of wedging it.**
+  `apps/cloud_assets/collector.py` ran `cloud_enum` via `subprocess.run(capture_output=True,
+  timeout=1800)`. `cloud_enum` forks a worker process per cloud provider, and a
+  surviving grandchild holding the captured stdout pipe can make `subprocess.run`
+  block **past** its own timeout — `TimeoutExpired` fires internally but
+  `communicate()` never returns, so the scan step wedges and never surfaces the
+  timeout. The scan then sits `running` until the no-progress watchdog reaps it
+  (and, in the MSSP wrapper, the poller gave up first and recorded `failed`).
+  Fix: route `cloud_enum` through the existing `run_capped` helper (temp-file
+  redirect + process-group SIGKILL + `wait()` on the direct child — the same
+  anti-hang fix nuclei/nuclei_network already use), so the 30-min cap reliably
+  raises `ToolTimeout`. The runner records that as a failed step and the scan
+  finalizes **`partial` with a report** rather than hanging. **Why:** five
+  Passive·Deep scans had failed for days on `cloud_enum timed out after 1800s`;
+  a single passive tool timing out must not fail the whole scan.
+- **Postgres OOM + worker connection resilience (preprod outage).** A batch of
+  Passive·Deep scans failed because `openeasd-postgres` was OOM-killed under
+  concurrent scan load (1Gi limit, exit 137, killed 8×); each kill dropped every
+  worker DB connection, and with persistent connections but no health checks the
+  worker kept reusing the dead ones ("the connection is closed") for ~18h until
+  it was manually restarted. Three-part fix: (1) `k8s/postgres.yaml` memory
+  limit 1Gi→**4Gi** (request 256Mi→1Gi) so a batch of concurrent scans doesn't
+  OOM the DB; (2) `CONN_HEALTH_CHECKS=True` on the Django DB config so a reused
+  connection is verified + transparently reconnected after a server restart,
+  instead of raising until it ages out; (3) a **worker liveness probe** (exec DB
+  round-trip; no HTTP listener on the worker) that restarts the pod after ~2 min
+  of Postgres unreachability so it re-establishes fresh connections. The
+  OpenEASD-MSSP wrapper reported these faithfully — it was not the cause.
+
+## [v2.25.10] — 2026-10-07
+
+### Changed
+- **tldsquatting: email-capable lookalikes keep their severity + smarter fetch
+  budget.** A Passive Scan Deep review found the LOW bucket was hiding staged
+  impersonation infrastructure: lookalikes with a website **and** a configured
+  mail-auth stack (MX + SPF/DMARC) — e.g. `gitlab.xyz` (threat_score 7.5) — were
+  demoted to LOW. Two causes: (1) the no-weaponization severity cap only exempted
+  *email-only* lookalikes (no website), so a mail-configured domain that also had
+  a website got capped; (2) the capped homepage-fetch budget (25) was spent in
+  candidate-generation order, so staged domains past the cap were never inspected
+  (`content_checked=False`), which guaranteed the cap fired. **Fix:** a lookalike
+  with MX + SPF/DMARC now escapes the cap and keeps its mapped severity even with
+  a website; and the fetch budget is ranked by suspicion (mail-auth stack /
+  recent registration first, pre-existing last) instead of generation order.
+  Genuinely inert bare registrations (A record, no mail, no brand/login) still
+  cap to LOW — the FP protection from the FP-reduction work is preserved.
+  Spec: `docs/specs/2026-10-07-tldsquatting-email-capable-severity.md`.
+
+## [v2.25.9] — 2026-10-06
+
+### Changed
+- **Shodan web-only exposures collapsed into one info rollup (#559).** A Passive
+  Scan Deep review found Shodan "exposed services" findings were ~99% noise: one
+  `shodan_exposure` info finding per resolved IP that exposes only standard web
+  ports (80/443 and common CDN/proxy alt-ports like Cloudflare's 2052–8880) —
+  expected for any load-balanced or CDN-fronted site, and already assessed by the
+  active web tools (httpx/web_checker/nuclei). **Why:** on a CDN-heavy target this
+  produced hundreds of near-identical info rows (stripe.com alone: 248) that
+  buried Shodan's actually-useful signal — *non-web* services (databases, SSH/RDP,
+  admin panels). The analyzer now classifies each host's ports: a host exposing
+  any non-web port still gets its own individual `shodan_exposure` finding
+  (actionable), while web-only hosts are collapsed into a single
+  `shodan_web_exposure` info rollup (`extra["hosts"]` carries the full list).
+  CDN-edge IPs are still skipped entirely (v2.25.5) and CVE findings are
+  unchanged.
+
+### Changed
+- **Two more lookalike false-positive reductions (#557)** — completing the FP
+  sweep from the 5-domain Passive Scan Deep review.
+  - **tldsquatting owned-via-redirect:** a lookalike whose homepage redirects to
+    the brand's own site (e.g. `stripe.blog` → stripe.com) was classified a THREAT
+    (even CRITICAL) because the redirect landed on the brand URL (`brand_mentioned`).
+    The collector now records `redirects_to_target` and `classify` treats it as
+    **owned**, before the brand-mention forcing rule.
+  - **asn_cluster generic-ASN clustering:** "40 lookalikes share AWS" was emitted
+    whenever ≥1 member was weaponized, lumping co-located benign domains into a
+    "campaign". On a generic ASN (hyperscaler/CDN/parking/brand-protection) it now
+    requires **≥2 weaponized** members and clusters only those; dedicated-hosting
+    clusters are unchanged. Added Safenames (AS60819) to the generic set.
+
+## [v2.25.7] — 2026-10-06
+
+### Fixed
+- **DNS records no longer reported "missing" when the lookup failed (#555).** A
+  Passive Scan Deep FP review surfaced false HIGH findings — "No A/AAAA record",
+  "No NS records", "SPF record missing", "DMARC record missing" — on live domains
+  (stripe.com, gitlab.com) that demonstrably have all of them. Root cause:
+  `_resolve`/`_get_txt_record` returned `[]` for both "record absent" and a
+  *failed* lookup (timeout/SERVFAIL/NoNameservers/resolver rate-limiting), so an
+  empty result read as "missing". They now return a `_DnsResult` carrying
+  `.resolved` (plus one retry); the missing-record checks (A/AAAA, NS, MX, CAA,
+  SPF, DMARC) gate on it, so a failed lookup is treated as "unknown", never
+  "missing". `_DnsResult` subclasses `list`, so existing callers/mocks are
+  unchanged.
+
+## [v2.25.6] — 2026-10-06
+
+### Fixed
+- **Durable (worker) scans now report `partial` when a tool fails (#553).** The
+  DBOS worker runs phases via `run_one_phase_group` and left the `WorkflowRun`
+  in `pending` through execution (only the non-durable `run_workflow()` flips it
+  to `running`). `finalize_session_by_id` guarded its terminal partial/completed
+  decision on `run.status == "running"`, so for a pending run the decision was
+  **skipped** — a failed/timed-out tool left the run `pending` and the scan
+  finalized as `completed` instead of `partial`, the "fake-complete" the pipeline
+  rules forbid. Every worker-run scan with a failed tool was mislabeled. Fix:
+  `prepare_session_assets` now marks the run `running`, and the finalize guard was
+  widened to `("running","pending")` as a safety net. Regression-locked by new
+  durable-path tests. (Tests missed it because they exercise `run_workflow()`,
+  not the durable phase-by-phase path.)
+
+## [v2.25.5] — 2026-10-06
+
+### Changed
+- **Two passive-scan false-positive reductions (#549).** Found during a Passive
+  Scan Deep FP review.
+  - **Shodan CDN-edge noise:** a CDN-fronted domain resolves to the CDN's shared
+    edge IPs (Cloudflare/Fastly/CloudFront), where ports 80/443 are open for every
+    site on that CDN — not the target's asset. New `apps/shodan/cdn.py::is_cdn_ip()`
+    skips the `shodan_exposure` finding for those ranges. Never hides a real origin
+    exposure (a leaked origin is on a non-CDN IP, still flagged); CVE findings kept.
+  - **DKIM over-confidence:** DKIM selectors aren't enumerable, so a missing record
+    can't be proven. `domain_security` DKIM severity is now confidence-aware —
+    MEDIUM only when a mail provider was detected (its real selectors were checked);
+    otherwise LOW with "DKIM not found on common selectors (could not verify)"
+    wording, instead of a flat MEDIUM "DKIM could not be confirmed".
+
+## [v2.25.4] — 2026-10-02
+
+### Security
+- **Passive scans are now provably zero-packets-to-target (#546).** The
+  lame-delegation check moved from the passive `domain_security` tool to the active
+  `domain_probe` tool. It sends a direct `SOA` query over UDP to each of the
+  target's authoritative nameservers (`dns.query.udp`) — a packet to the target's
+  DNS infrastructure — and was the one remaining path by which a Passive scan
+  (Light or Deep) contacted the target. Detecting lame delegation inherently
+  requires querying the delegated nameserver directly, so it can only be an active
+  probe (requires `DomainAuthorization`), mirroring the earlier AXFR / open-relay /
+  MTA-STS split. All 16 passive tools audited: no direct-to-target DNS/socket/SMTP
+  primitives remain — passive = public resolvers + RDAP + third-party feeds only.
+  The 4 (mocked) lame tests moved to `test_domain_probe`.
+
+## [v2.25.3] — 2026-10-02
+
+### Changed
+- **Passive predefined workflows renamed to Light / Deep (#544).** "Quick Recon"
+  → **"Passive Scan Light"** (migration 0038) and "Passive Scan" →
+  **"Passive Scan Deep"** (migration 0039), so the two passive workflows read as a
+  matched pair in the scan-mode UI eyebrow, scan history, and reports. Display-name
+  only — workflow membership, the `quick_recon` tool flag, and `light_passive_tools()`
+  are unchanged; both migrations are idempotent + reversible. The scan-mode card
+  quadrant titles (Passive Light / Passive Deep) are unchanged.
+
+## [v2.25.2] — 2026-10-02
+
+### Fixed
+- **No scan-type flash on the Start-Scan page load (#542).** `ScanStartPage`
+  initialized the selection to empty and applied the default (Passive Light) in a
+  post-paint effect, so the first frame briefly showed "Authorization required"
+  before snapping to the no-auth default. The effective selection is now derived
+  synchronously during render (`effectiveScanType = scanType || defaultScanKey`);
+  an explicit click still wins. UI-only; no behavior change.
+
+## [v2.25.1] — 2026-10-01
+
+### Changed
+- **Scan-mode cards titled by quadrant (#540).** The Start-Scan 2×2 now reads as
+  one consistent taxonomy: **Passive Light / Passive Deep / Active Light / Active
+  Deep**. The underlying predefined workflow name (Quick Recon / Passive Scan /
+  Full Scan) moves to the muted card eyebrow — cards still bind to their workflow
+  by name, and DB/API/report names are unchanged. UI-only; no logic change.
+
+### Security
+- **pypdf → 6.19.0 (#540).** Clears the CVE-2026-10299x cluster (8 CVEs in
+  pypdf 6.16.1, all fixed by 6.19.0). pip-audit had gone red repo-wide; bumped to
+  unblock CI.
+
+## [v2.25.0] — 2026-10-01
+
+### Added
+- **Scan Modes 2×2 — Active Light workflow + Start-Scan matrix (#538).** The
+  Start-Scan page is now a **passive/active × light/deep** matrix (plus Custom),
+  backed by four predefined workflows, with the missing cell filled in:
+  **Active Light**.
+  - **Active Light** (migration `0037_create_active_light_workflow.py`, non-default)
+    is the fast *authorized* scan: a discovery backbone (`subfinder`, `dnsx`,
+    `naabu`, `httpx`) feeding quick config/exposure checks (`domain_probe`,
+    `web_checker`, `tls_checker`, `ssh_checker`) — 8 steps; `service_detection`
+    auto-injects after `naabu`. It deliberately **excludes the slow engines**
+    (nmap NSE, nuclei/nuclei_network, katana, amass, cloud_assets, takeover_check,
+    js_secrets, historical_urls) — that is what keeps it "light." It contains
+    active tools, so it requires `DomainAuthorization` (no new auth code).
+  - **The four modes:** Quick Recon (passive light) · Passive Scan (passive deep) ·
+    Active Light (active light) · Full Scan (active deep). The **authorization
+    boundary runs along the passive/active axis** — both passive cells need no
+    authorization; both active cells require it.
+  - **Start-Scan UI** restructured into a 2×2 grid + Custom (`ScanStartPage.jsx`),
+    each cell bound to its workflow by name via a pure `buildScanModes()` helper
+    (Vitest-covered); a cell whose workflow is absent on an older DB hides
+    gracefully; default = Quick Recon. Every card shows a consistent
+    `Passive/Active · Light/Deep` eyebrow so the matrix reads uniformly.
+  - **Why:** there was no fast *authorized* mode — only the full active sweep
+    (Full Scan) or passive-only. Active Light gives a quick directed probe without
+    the minutes-long template/enumeration engines. "Light" is realized as **curated
+    workflows** (not one flag) because it means different things per axis
+    (passive-light = apex-only, no fan-out; active-light = discovery + cheap checks).
+  - Additive: Quick Recon, Passive Scan, Full Scan, the `quick_recon` flag, and the
+    authorization boundary are unchanged. Spec:
+    `docs/specs/2026-10-01-scan-modes-2x2.md`.
+  - **Known follow-up (non-blocking):** a one-frame "Authorization required" flash
+    on page load before the default applies — flashes toward the *more* restrictive
+    state, zero safety impact.
+
+## [v2.24.0] — 2026-10-01
+
+### Added
+- **Quick Recon — light passive tier + workflow (#536).** The passive tool set is
+  now split into a **light** tier and a derived **deep** complement, and the light
+  tier is backed by a predefined, non-default **"Quick Recon"** workflow — an
+  instant, no-auth first look made of the four apex-scoped, keyless-capable passive
+  tools (`domain_security`, `dns_history`, `hudson_rock`, `breach_check`) that each
+  hit the apex (or a third-party API keyed on it) with a handful of lookups and
+  finish in seconds, versus the full Passive Scan which fans out into minutes of
+  subdomain/CT/archive enumeration.
+  - **Classification:** a `tool_meta["quick_recon"]` flag (registry default `False` —
+    safe, mirroring `active` defaulting `True`, so an unclassified tool is never
+    light), a `get_tool_quick_recon()` accessor, and a single-source-of-truth
+    `light_passive_tools()` helper (passive **AND** `quick_recon`). *Deep passive* is
+    the derived complement; active tools have no tier — a stray flag on an active tool
+    is a no-op, never an authorization hole.
+  - **Workflow:** migration `0036_create_quick_recon_workflow.py` (non-default,
+    idempotent). All four tools are passive, so Quick Recon inherits the existing
+    no-auth bypass for `now` scans with zero new authorization code.
+  - **Drift lock:** `tests/unit/test_quick_recon.py` binds the workflow membership to
+    `light_passive_tools()` with bidirectional set equality, so the flag and the
+    migration can never drift apart (fails CI otherwise).
+  - **Why:** there was no way to ask for *just the instant read* — a quick posture +
+    credential-exposure snapshot previously meant running the full Passive Scan and
+    waiting out the heavy enumeration. The light/deep split is deliberately its own
+    cost/scope axis, distinct from `runner._LOW_MEM_PARALLEL_SAFE` (a memory/IO axis).
+  - Additive only: no change to Full Scan, Passive Scan, the authorization boundary,
+    or any tool's runtime behavior. The tier is exposed additively in
+    `GET /api/workflows/tools/`; a React badge is a documented follow-up. Spec:
+    `docs/specs/2026-10-01-quick-recon-passive-tier.md`.
+
+## [v2.23.1] — 2026-10-01
+
+### Changed
+- **tldsquatting false-positive reduction (#533).** Registered lookalikes are now
+  **classified** — `owned` / `parked` / `unrelated` / `pre_existing` / `threat` — and
+  the four benign classes **collapse into one `info` rollup finding each**
+  (`check_type` `lookalike_owned` / `_parked` / `_unrelated` / `_pre_existing`), with
+  the full member list + per-domain reason/scores in `extra["domains"]` (auditable,
+  nothing dropped). Only `threat` lookalikes stay as individual `lookalike_domain`
+  findings, with the ported scoring + the v2.23.0 no-weaponization cap unchanged.
+  Classification uses a **passive** target baseline (authoritative NS + registrant via
+  public DNS/RDAP — the org's own systems are never contacted); `scoring.py` is
+  untouched and the `asn_cluster` contract is preserved.
+  - **False-negative safety:** a brand mention or the email-only phishing-prep
+    fingerprint always forces `threat` (never collapsed); `owned` requires a positive
+    NS or **non-redacted** registrant match (a redaction/privacy-proxy guard prevents a
+    shared proxy registrant from masking an impersonator).
+  - Toggle `TLDSQUATTING_COLLAPSE_BENIGN` (default on) reverts to per-domain findings.
+  - **Why:** large-brand scans produced hundreds of lookalike rows that were
+    overwhelmingly the company's own domains, parked/for-sale, or unrelated businesses;
+    this turns a ~200-finding report into a handful of real threats plus a few
+    auditable rollups.
+
+### Fixed
+- **Dependency CVEs (#534).** Bumped **pyjwt 2.13.0 → 2.15.1** (CVE-2026-101917/101918/
+  102265–102274 — the JWT auth library) and **urllib3 2.7.0 → 2.8.0** (CVE-2026-97687/
+  97688/97689). pip-audit clean; JWT/auth suites unaffected.
+
+## [v2.23.0] — 2026-09-29
+
+### Added
+- **Finding verification (#530).** At scan finalize, medium-or-higher findings are
+  re-probed by their originating tool and labeled **`verified` / `inconclusive` /
+  `unverified`**; the verdict is mirrored onto the enduring `Issue` (persists across
+  scans) and surfaced in the API + PDF report (badge + evidence line).
+  - New engine package `apps/core/engine/verification/` — a `Verdict` value object
+    and a `verify_session` orchestrator that is **severity-gated** (min severity via
+    `FINDING_VERIFICATION_MIN_SEVERITY`, default `medium`), **authorization-gated**
+    (active-tool re-probes reuse `DomainAuthorization.is_authorized()` — no target
+    contact without authorization), fail-graceful, and idempotent. Master toggle
+    `FINDING_VERIFICATION_ENABLED` (default on); disabled ⇒ finalize is byte-identical.
+  - **Approach A** registry: tools opt in via `tool_meta["verifier"]`
+    (`get_tool_verifiers()`); a tool without one leaves its findings honestly
+    `unverified`. Seed verifiers ship for `web_checker`, `tls_checker`, `ssh_checker`,
+    `nuclei` (single-template re-run) and `nmap` (backport-aware CVE re-match, so a
+    backport-patched CVE is never falsely re-verified).
+  - New fields `Finding.verification_status`/`verified_at`, `Issue.verification_status`
+    (migrations findings `0013`, issues `0006`); on-demand `POST /api/scans/<uuid>/verify/`
+    and `POST /api/findings/<id>/verify/`.
+  - Optional **AI adjudication** layer — advisory only: annotates
+    `extra["verification"]["ai"]`, never changes the deterministic verdict or
+    `Finding.status`, no-op when AI is inactive, audited + budget-bounded.
+  - **Why:** move from "here is a finding" to "here is a finding, and we re-checked it
+    still reproduces" — separating real issues from stale/parked/unconfirmed noise,
+    honestly (a maybe is never dressed up as confirmed).
+
+### Fixed
+- **Scanner false-positive reduction (#531).** Triaging a real scan report surfaced
+  over-severe / duplicate findings across five tools:
+  - **TLS cert-expiry rebanding** (`tls_checker`): a healthy cert 31–90 days out was
+    MEDIUM → now **low**; ≤14d critical → **high**; ≤30d high → **medium**; expired
+    stays critical. **Why:** a 55-day cert is normal, not a medium risk.
+  - **Subdomain-takeover confidence** (`takeover_check`): an unidentified-service
+    subzy hit was HIGH → now **medium**; HIGH is reserved for an identified fingerprint.
+  - **Shodan banner-CVE severity** (`shodan`): version-approximate banner CVEs
+    MEDIUM → **low** (cve_intel still re-prioritizes confirmed ones).
+  - **tldsquatting no-weaponization cap** (`tldsquatting`): a resolving-website
+    lookalike with no login form and no brand mention is capped at **low**
+    (monitor-only); the ported risk/threat scores are unchanged in `extra`, and
+    **email-only phishing-prep fingerprints (MX/SPF/DMARC, no site) are exempt** and
+    keep full severity — no false negatives.
+  - **web_checker dedup normalization** (`web_checker`): the same endpoint probed
+    twice (trailing-slash / missing-port variants) → dedup now keys on
+    `(host, effective_port)` with a scheme-default fallback, collapsing duplicates.
+
+## [v2.22.0] — 2026-09-14
+
+### Added
+- **`tldsquatting` risk + threat scoring model (ported).** Lookalike severity is no
+  longer an ad-hoc ladder — it is the band of a two-stage score ported from the
+  reference `tldsquatting` project (`apps/tldsquatting/scoring.py`):
+  - `calculate_risk_score` scores **registration timing + DNS posture** — recency,
+    infrastructure (A/AAAA/MX/NS), suspicious record combinations (MX-without-website,
+    SPF/DMARC-without-website, full email infra without a site = phishing setup),
+    security config (SPF/DMARC/CAA/DNSSEC), HTTPS/valid-cert, and NS-provider tier
+    (enterprise NS lowers, parking raises — classified from the resolved NS targets,
+    no extra network call).
+  - `calculate_threat_score` layers **live weaponization** on top (login form +3,
+    brand mentions +1/+2, parked −1). SSL/subdomain/IP-reputation signals aren't
+    gathered by OpenEASD yet and contribute 0 (graceful).
+  - The **threat band → Finding severity** (`PRE-EXISTING→info, LOW→low, MEDIUM→
+    medium, HIGH→high, CRITICAL→critical`), and the numeric `risk_score`/`threat_score`
+    + levels + creation dates are stored in `extra` so the report and AI triage can
+    show what drove the rating.
+- **`tldsquatting` RDAP registration-age enrichment.** Each registered lookalike's
+  registration date is looked up via the RDAP bootstrap (`rdap.org`, fail-graceful,
+  bounded by `TLDSQUATTING_RDAP_MAX_LOOKUPS`, off via `TLDSQUATTING_RDAP_AGE=False`)
+  and compared to the target's — the input to the scoring model's dominant
+  **PRE-EXISTING** rule: a lookalike that was registered **before the target cannot
+  be impersonating it** (it existed first — e.g. `amnic.net` 1994 vs `amnic.com`
+  1997), so it scores 0.0 and is reported as **info**, killing that class of false
+  positive. Passive (RDAP is third-party registry data; the target's own systems are
+  never contacted). The registered-lookalike DNS check was also extended to gather
+  the full posture the scorer needs (AAAA/CNAME/TXT/SPF/DMARC/CAA/DNSSEC/NS targets),
+  bounded to registered candidates only so the ~1000 NXDOMAIN candidates stay a
+  two-lookup check.
+
+### Changed
+- **`tldsquatting` focuses on TLD cybersquatting by default.** The character-level
+  mutation techniques (homoglyph/adjacent-key/omission/insertion/repetition/
+  transposition/hyphenation) are now **off by default** — they're the noisy half
+  (many unrelated `ammic`/`aminc`/`amic`-style registrations), while TLD-swap
+  ("your exact name on another TLD") is the high-precision Brand Threat signal.
+  Set `TLDSQUATTING_INCLUDE_TYPOS=True` to re-enable the char-mutation candidates.
+
+### Fixed
+- **Report coverage table now reflects the tools that actually ran.** A category /
+  tool-subset scan (`subscan_tools` set) listed the *entire* pipeline in the
+  "Attack Vector" coverage table, showing "0 findings" for vectors that never ran —
+  which reads as "scanned, came back clean" (a false negative in a buyer report).
+  The table now includes only the vectors whose tools actually executed. (Full
+  scans are unchanged.)
+
+## [v2.21.0] — 2026-09-14
+
+### Added
+- **Report reads the Issue register + exposure score excludes triaged (items 6 & 7).**
+  The PDF report gains an **Issue Register** section sourced from the persistent
+  cross-scan register (not per-scan findings): *new this month*, *still open with
+  age*, *resolved this month*. A new **`accepted` ("Accepted Risk")** status joins
+  `false_positive` as a triage decision, and both are now **excluded from the Issue
+  Register and from the exposure score** — a dismissed or accepted risk no longer
+  inflates the number. Per-finding detail stays as evidence. `accepted` added to
+  `STATUS_CHOICES` (migrations `findings/0012`, `issues/0004`).
+
+### Added
+- **Auto-resolve Issues no longer seen (identity/register item 4).** When a
+  *comprehensive* scan finalizes — a **completed** run of the **default full
+  workflow** with **no tool subset** — any active Issue (`open`/`acknowledged`/
+  `in_progress`) for that domain not observed in the scan is set to `resolved` with
+  a new `resolved_at` timestamp. Before this the register only ever grew (nothing
+  set `resolved`). Guarded hard against false closes: a **partial** scan (a tool
+  failed), a **tool-subset**/category scan (`subscan_tools` set), or a **non-default**
+  workflow (e.g. Passive Scan) never auto-resolves — an Issue's absence there
+  doesn't mean it's gone. `false_positive` (a triage decision) is never touched. If
+  a resolved Issue reappears it reopens and `resolved_at` is cleared. `Issue` gains
+  a `resolved_at` column (migration `issues/0003`).
+
+### Changed
+- **Delta detection keyed on `check_id` (identity/register item 3).**
+  `_detect_deltas` now dedups findings by the shared `issue_key(check_id, target)`
+  — the **same identity as the Issue register** — instead of `source:check_type:title`
+  (no target). This ends the disagreement between the change-feed and the register:
+  a reworded title no longer shows as a phantom new+removed delta, and the same rule
+  on different hosts is no longer conflated. The stored `item_identifier` stays a
+  readable `source:check_type:title` label (so `/api/changes/` + alerts are
+  unchanged); only the detection identity changed.
+- **Issue register keyed on `check_id` (identity/register item 2).** `issue_key`
+  changes from `(source, check_type, title, target)` to **`(check_id, target)`** —
+  dropping the human `title` from the identity. A reworded title now keeps the same
+  `Issue` (triage preserved) instead of orphaning it and creating a duplicate; the
+  displayed title refreshes to the latest wording. `Issue` gains a `check_id`
+  column. **Fresh-register migration** (`issues/0002`): existing title-keyed Issue
+  rows are dropped (they can't be re-keyed reliably — the coarse tools embedded the
+  title in the old key); the register repopulates with stable keys on the next full
+  scan. `_detect_deltas` still uses its own key — realigning it is item 3.
+
+- **`tldsquatting` supersedes the `typosquat` tool.** New `apps/tldsquatting/`
+  tool app that keeps typosquat's proven engine (8 candidate-generation
+  techniques + passive public-DNS registration check + capped homepage
+  weaponization probe) and adds **TLD-permutation breadth**: it checks the exact
+  registrable name across **~900 purchasable TLDs** (bundled `tlds.txt`), emitted
+  ahead of the noisier char-mutations so the high-precision "your exact name on
+  another TLD" signal survives the candidate cap. Same `check_type="lookalike_domain"`
+  finding shape, so **`asn_cluster` is repointed** (`requires: [tldsquatting]`,
+  reads `source="tldsquatting"`) with no behaviour change. `typosquat` is retired
+  (app + tests removed); workflow migration `workflow/0035` drops it from all
+  workflows and adds `tldsquatting` to Full Scan + Passive Scan. Registry count
+  unchanged (one out, one in). Core scope only — RDAP/SSL/CT-subdomain/reputation/
+  IP-intel enrichment from the reference project is deferred. Passive (no auth).
+
+### Removed
+- **Preprod auto-deploy config** — removed `.github/workflows/deploy-preprod.yml`
+  and its OPERATIONS.md note. Development is local-dev-only; preprod CD is not
+  pursued. Releases (tag → GHCR publish) and the manual prod promote (`k8s/`)
+  are unchanged. (The v2.20.0 entry below is kept as history — the workflow did
+  ship then; this removes it going forward.)
+
+## [v2.20.0] — 2026-09-14
+
+### Added
+- **`Finding.check_id`** — a stable per-rule identity independent of the human
+  `title` (which gets reworded), and the foundation the persistent `Issue`
+  register will key on (identity/register item 1). Granular tools get
+  `"{source}:{check_type}"` backfilled at finalize; the coarse tools
+  (`domain_security` 33 rules, `domain_probe` 5) and the CVE/secret tools
+  (`nmap`/`nuclei`/`nuclei_network`/`js_secrets`/`github_secrets`) set an explicit
+  per-rule `check_id` at construction (`domain_security:spf_missing`,
+  `nmap:{cve}`, `js_secrets:{rule_id}`, …). Migration `findings/0011` (additive
+  indexed column). The rollup still uses the old `issue_key` — re-keying it onto
+  `check_id` is item 2. +8 tests (`test_check_id.py`).
+
+### CI / Infrastructure
+- **Preprod auto-deploy** (`.github/workflows/deploy-preprod.yml`): on every
+  published GitHub Release (and manual dispatch), a self-hosted runner on the
+  preprod host `pg_dump`s the DB, `kubectl set image`s web (incl. the `init`
+  container so migrations run) + worker to the release tag, waits for rollout,
+  and verifies `/health`. Preprod-only; prod stays on the manual promote.
+- Fixed the stale `k8s/kustomization.yaml` image pin (`v2.15.0` → `v2.19.0`).
+
+## [v2.19.0] — 2026-09-14
+
+### Added
+- **`github_recon` (GitHub Org Recon) tool restored** — passive, phase-3 "Asset
+  Discovery". Enumerates the target org's PUBLIC GitHub repos via GitHub's REST
+  API and surfaces infrastructure references (internal hostnames/subdomains,
+  cloud-bucket URLs, API endpoints) leaked in that public code/config
+  (`github_public_repos` info + `github_infra_exposure` low findings). Keyless at
+  GitHub's 60 req/hr public limit (capped by `GITHUB_MAX_REPOS`/`GITHUB_MAX_REQUESTS`),
+  richer with a `GITHUB_TOKEN`; passive (queries GitHub, not the target → no
+  `DomainAuthorization`), fail-graceful. Re-added to Full Scan + Passive Scan
+  (migration `workflow/0034`). Registry count **29 → 30**. **Why:** it was retired
+  in v2.x (#438) as overlapping with `github_secrets`, but the two are
+  complementary — `github_secrets` finds leaked *secrets*, `github_recon` finds
+  *infra exposure* (recon surface). +39 tests (`test_github_recon.py`).
+  Its phase group moved from the retired "Surface Enumeration" to "Asset
+  Discovery" (beside `asn_discovery`, its passive-infra-recon analog).
+
+### Docs
+- **Design-flow documentation** (#490): `docs/02-domain.md` (the domain model in pure
+  DDD terms — ubiquitous language, bounded contexts, aggregates, domain events),
+  a docs index + reading order (PRD → DDD → System Design →
+  Technical Design → API Contract → Coding), and `docs/05-api.md` (API-contract
+  conventions — auth, error shape, pagination, perspectives — pointing to the live
+  OpenAPI at `/api/docs`). All existing docs cross-linked; governing rule stated
+  once: the running code is the source of truth.
+
+## [v2.18.0] — 2026-09-13
+
+Backend structure aligned to the D-017 domain-centric model, plus a second API
+security/robustness review. **Breaking API-path changes** (below) — the in-repo
+React SPA is updated; any other client must update paths. Migrations are
+**state-only** (no data change).
+
+### Changed (breaking — API paths relocated to perspective namespaces, D-017)
+- `GET /api/scans/findings/` → **`GET /api/findings/`**
+- `POST /api/scans/findings/{id}/status/` → **`POST /api/findings/{id}/status/`**
+- `GET /api/scans/urls/` → **`GET /api/assets/urls/`**
+- `GET /api/scans/deltas/` → **`GET /api/changes/`**
+  So `/api/scans/` is now cleanly scan-lifecycle-only (~7 endpoints).
+
+### Changed (structure)
+- **`Issue` split into its own `apps/core/data/issues` app** (persistent
+  cross-scan register), paralleling `asset_inventory` for assets — raw
+  (`findings`) vs persistent (`issues`) now symmetric. Model move is
+  **state-only** (`SeparateDatabaseAndState`, keeps table `findings_issue`) — no
+  data migration.
+
+### Fixed (second API review — all LOW; HIGH/MED from v2.17.x verified still present)
+- `/api/findings/` open-by-severity `counts` now respect the `domain`/`source`
+  filter (was whole-fleet — misleading KPI).
+- `workflow_id` on a scheduled scan → **400** (was silently dropped, quietly
+  running the default Full Scan).
+- `/api/scans/?status=` and `/api/changes/?change_type=` reject unknown enum
+  values with 400 (were silent-empty).
+
+### Docs
+- **D-017 tool-centric perspective dropped** — not a product goal; the 4 backed
+  perspectives are scan / asset / finding / issue.
+
+## [v2.17.2] — 2026-09-13
+
+### Fixed
+- **`/metrics` is now opt-in, OFF by default (M3).** The Prometheus endpoint is
+  unauthenticated (counts only), so it ships closed: `METRICS_ENABLED` defaults to
+  `False` (404 unless explicitly enabled). Enable it only once the endpoint is
+  network-restricted to your scraper — leaving it public exposes aggregate posture
+  (open-finding counts by severity, scan activity) to any caller. Closes the last
+  open finding from the API security review.
+
+### Docs
+- Added the **D-017 flow diagram** to `docs/03-system.md` (write → execute → promote →
+  read path of the domain-centric architecture).
+
+## [v2.17.1] — 2026-09-13
+
+Security + robustness fixes from a UI-independent API contract/security review.
+Code-only (no migrations); the active-scan authorization gate was traced
+end-to-end and is unchanged (holds).
+
+### Fixed
+- **Webhook secret leak (HIGH).** `POST /api/notifications/test/` no longer
+  interpolates the `requests` exception into its 502 body — that embedded the
+  full webhook URL, whose path carries the Slack/Teams secret token, letting an
+  authenticated client exfiltrate the write-only webhook by triggering a failed
+  test. Detail is logged server-side; the response is generic.
+- **Login brute-force evasion (HIGH).** The rate-limiter now keys on the
+  **rightmost** `X-Forwarded-For` entry (the hop the trusted proxy appends)
+  instead of the client-forgeable leftmost — a rotated spoofed XFF header can no
+  longer hand each guess a fresh throttle key.
+- **Report password-gate bypass (MED).** CSV/PDF report downloads now honour
+  `must_change_password` like the API's `JWTAuth` — a default-credential holder
+  can no longer pull reports via a Bearer token while locked out of `/api/*`.
+- **Token revocation on password change (MED).** Changing the password now
+  blacklists the user's outstanding refresh tokens, so the change ends other
+  (possibly stolen) sessions instead of leaving them minting access tokens.
+- **Password-change hashing DoS (MED).** `new_password` is capped at 128 chars
+  (`set_password` PBKDF2-hashes the raw string).
+- **Pagination 500s (LOW).** `/api/ai/audit/` and `/api/notifications/alerts/`
+  clamp `page>=1` and cap `page_size` — a `page<=0` previously produced a
+  negative slice offset that raised an unhandled 500 outside the error envelope.
+- **Silent auth_type coercion (LOW).** `POST /api/domains/<pk>/authorize/` now
+  returns 400 on an invalid `auth_type` instead of silently recording `"owner"`
+  (which mis-attributed the scan-consent basis).
+- **Past scheduled scan (LOW).** `schedule_type=once` rejects a past
+  `scheduled_at` instead of firing it on the next sweep.
+
+### Docs
+- **D-017** recorded: OpenEASD's architecture north star — domain-centric,
+  API-driven, DBOS-orchestrated, UI-agnostic data model (`docs/DECISIONS.md`,
+  `docs/03-system.md`).
+
+## [v2.17.0] — 2026-09-13
+
+Producer→queue→consumer **resilience hardening** — the full open plan
+(`docs/specs/2026-09-07-producer-queue-consumer-hardening.md`, H2–H10) plus the
+deploy-incident follow-ups. No UI changes; all additive and safe when unused.
+
+### Added
+- **Prometheus `/metrics` endpoint + scan heartbeat (H2).** A DB-backed exporter
+  (`apps/core/console/observability/metrics.py`) serves `GET /metrics` on the web
+  tier (unauthenticated like `/health`, `METRICS_ENABLED` toggle, `no-store`):
+  `openeasd_scans{status}`, `openeasd_scan_queue_depth`,
+  `openeasd_findings{severity}`, `openeasd_domains`,
+  `openeasd_scan_last_journey_seconds` (enqueue→finalize), and
+  `openeasd_seconds_since_last_progress` (worker liveness). **Why** DB-backed, not
+  in-process counters: no worker HTTP listener, no cross-pod aggregation,
+  drift-free, survives restarts, no new dependency. A `ScanSession.last_progress_at`
+  heartbeat (migration `0015`) is stamped on every step completion.
+- **Opt-in scan retention / pruning (H3).** `prune_old_scans()` + a
+  `scheduled_scan_prune` hygiene cron keep, per domain, the newest
+  `SCAN_RETENTION_KEEP_PER_DOMAIN` (30) scans + any within
+  `SCAN_RETENTION_MAX_AGE_DAYS` (180); older terminal scans are deleted (cascade).
+  **OFF by default** (`SCAN_RETENTION_ENABLED`); never deletes the latest per
+  domain or an in-flight scan. **Why:** bound unbounded scan-history growth — the
+  asset/Issue registers keep the long-term surface story.
+- **No-progress watchdog (H10).** `reap_stuck_scans` now reaps a `running` scan
+  whose `last_progress_at` is stale beyond `SCAN_NO_PROGRESS_MINUTES` (60), freeing
+  a wedged `concurrency=2` slot in minutes instead of the 24h hard cap. A
+  slow-but-alive scan keeps its heartbeat fresh and is never reaped.
+- **`ScheduledJob` registry for runtime cron control (H7).** An admin-editable
+  table (migration `0016`+seed `0017`) with one row per backbone cron; each
+  `@DBOS.scheduled` body dispatches through `dispatch_scheduled(name, fn)` which
+  honours the row's `enabled` toggle (on/off with no deploy) and records
+  `last_run_at`. Fails open (missing row ⇒ job still runs). DBOS still owns timing.
+
+### Fixed
+- **Idempotent crash-resume (H5).** A tool re-run after a worker crash (non-terminal
+  step row) now deletes its prior `Finding` rows for the session before
+  re-executing, so Finding writes (bulk_create, no unique constraint) converge
+  instead of duplicating. Assets are already `(session,*)`-unique + `ignore_conflicts`.
+- **Watchdog ↔ DBOS reconcile (H4 + H9).** `reap_stuck_scans` cancels each reaped
+  scan's DBOS `run_scan` workflow inline (matched by `scan-{id}` dedup), so a
+  phantom `PENDING` workflow never outlives its scan and can't hold a scans-queue
+  slot; the H8 orphan reaper remains the periodic safety net. H4's "don't fight
+  DBOS resume" goal is met via the H10 heartbeat (only non-progressing scans are
+  reaped) rather than querying the DBOS store each sweep.
+- **Queue-jam recovery (H8, carried from v2.16.x line).** A version-orphaned /
+  phantom `run_scan` workflow (e.g. stranded by a worker rollout mid-scan) that
+  holds a `concurrency=2` slot is auto-cancelled — `reap_orphaned_scan_workflows`
+  in the watchdog + `manage.py reap_orphan_scans` for immediate cleanup — plus a
+  drain-before-rollout runbook in `docs/OPERATIONS.md`.
+
+## [v2.16.0] — 2026-09-12
+
+### Added
+- **Dashboard cross-link cards (finding-centric PR4).** Two clickable summary
+  cards on the dashboard: **Open Issues** (open/acknowledged/in-progress by
+  severity, from `/issues/summary/`) linking to the Findings register, and
+  **Asset Inventory** (active / gone / total, from `/assets/summary/`) linking to
+  Assets. Restores the cross-scan posture cards #406 removed and completes the
+  finding-centric-grounded-on-asset-centric UI direction
+  (`docs/specs/2026-09-12-finding-centric-ui-direction.md`). Frontend-only —
+  reuses existing summary endpoints.
+- **Changes feed — "what changed since last scan" (finding-centric PR5).** New
+  **Changes** page (nav + `/changes`) and `/api/scans/deltas/` endpoint over the
+  existing `ScanDelta` records: a recency-ordered feed of **new / removed**
+  findings across scans, filterable by domain and change type, each row linking
+  to its scan. The delta-detection identity key (`source:check_type:title`) is
+  parsed for display (colons in titles preserved). The delta/change-centric entry
+  point for the finding-centric UI (asset grounding = PR1, persistent issues =
+  PR2, register = PR3). Dashboard cross-link cards remain deferred.
+- **Findings register UI — the finding-centric primary surface (PR3).** New
+  **Findings** page (nav + `/findings`) and `/api/issues/` API (list ranked by
+  severity, `summary`, and a `status` endpoint) over the persistent `Issue`
+  register. It's a cross-scan issue list — filter by status/severity/domain/
+  search — where inline triage **patches `Issue.status`, so a dismissal persists
+  across scans** (the whole point of PR2). Targets link to their asset; the
+  empty state and header explicitly note "empty ≠ clean — check Scans for
+  coverage." This is the visible finding-centric turn, grounded on the asset
+  layer (PR1) and the persistent identity (PR2).
+- **Persistent Issue register — cross-scan finding identity (finding-centric PR2).**
+  New `findings.Issue` model (mirrors `asset_inventory`): one row per
+  `(domain, source, check_type, title, target)`, carrying `first_seen`/`last_seen`
+  and — the point — a **persistent triage `status`**. A fail-graceful finalize
+  rollup upserts issues from each completed full scan, so a **dismissal
+  (`false_positive`/`acknowledged`) now survives a re-scan** instead of resetting
+  to `open` every run; a `resolved` issue that reappears is re-opened (regression).
+  Grounded on the asset layer via `Issue.asset`. Backend/model only — the
+  Findings/Issues register UI is the next step. Spec:
+  `docs/specs/2026-09-12-finding-centric-ui-direction.md`.
+- **Assets inventory UI restored (asset-centric grounding).** Re-introduces the
+  persistent **Assets** page (list) + **Asset detail** page over the existing
+  `/api/assets/` layer, with a nav entry and `/assets` + `/assets/:id` routes.
+  The list filters by kind/status/domain/search, paginates, and shows per-asset
+  open-finding severity chips; the detail page shows metadata, findings, and the
+  scan timeline. This is step 1 of the finding-centric-grounded-on-asset-centric
+  UI direction (`docs/specs/2026-09-12-finding-centric-ui-direction.md`), which
+  supersedes the "strictly scan-centric" decision (#406). The `/api/assets/` data
+  layer was never removed — this is UI wiring only.
+
+## [v2.15.1] — 2026-09-11
+
+### Fixed
+- **typosquat now handles multi-label ccTLD domains (PSL/ccTLD).** The apex was
+  split by a naive last dot, so `example.co.uk` became name=`example.co` /
+  tld=`uk` — TLD-swap then emitted garbage like `example.co.com` (which never
+  resolves) and char-mutations mangled the suffix, so **ccTLD targets got
+  effectively no lookalike detection**. `_split_apex` now recognises common
+  multi-label public suffixes (`co.uk`, `com.au`, `co.in`, …) and splits on the
+  registrable label, so `example.co.uk` → `("example", "co.uk")` and TLD-swap
+  yields real lookalikes (`example.com`, `example.net`, …). Curated set (not the
+  full ~9k-entry PSL — keeps the worker dependency-free and offline); extend via
+  `TYPOSQUAT_MULTI_LABEL_SUFFIXES`.
+- **Review cleanup: honest error handling + de-duplication (F4 / F5 / F-dup / comments).**
+  - **F4** — `_count_all_findings` no longer swallows a DB error into `0`
+    ("clean"): the error propagates so finalize fails honestly, and the stuck-scan
+    reaper guards its own recount so a hiccup leaves `total_findings` unchanged
+    rather than aborting the watchdog sweep or faking a 0.
+  - **F5** — the scan-status endpoint's bare `except: pass` is gone (it now
+    queries for the `WorkflowRun` instead of catching "no run yet", so a real DB
+    error surfaces); two other broad catches that already log / carry a reason
+    got the `# noqa: BLE001` convention tag.
+  - **F-dup** — `ai/context.py` dropped its private `_SEVERITY_ORDER` in favour of
+    the shared `apps.core.constants.SEVERITY_RANK` (behavior-preserving ordering).
+  - **Comments / frontend:** corrected the stale nuclei wall-clock-cap comment
+    (6h, not "2h"), the `asn_cluster` phase-vs-phase_group comment, and made
+    `Badge.jsx` derive its known-status set from the variant map (one source of
+    truth).
+- **Consistent 404 response shape across the API (F6).** `get_object_or_404`
+  misses rendered Django Ninja's default `{"detail": "Not Found"}`, a second
+  shape alongside the `{"error": {"code", "message"}}` envelope every
+  `HttpError` uses. Added a single `Http404` exception handler so all 404s —
+  current and future `get_object_or_404` call sites — render the standard
+  envelope (`{"error": {"code": "NOT_FOUND", …}}`).
+- **Phase-group execution resumes cleanly after a crash (F1b).** The per-phase
+  DBOS step re-runs the *whole* group on a crash-resume, but within-group
+  execution wasn't idempotent — a resume re-created `WorkflowStepResult` rows
+  (no `(run, tool)` unique constraint) and re-executed tools that had already
+  finished. `_run_single_step` now skips a tool that already reached a terminal
+  state and reuses a non-terminal (crashed "running") row instead of duplicating
+  it; `run_one_phase_group` skips already-terminal tools up front. Checkpointing
+  is no longer only at the group boundary.
+- **Manual AI re-triage actually re-runs now (F2).** The `ai_triage` durable task
+  deduped on `triage-{session_id}` with `return-existing`, so a second manual
+  re-triage returned the prior *completed* workflow and silently did nothing —
+  while the UI sat at "running". Dropped the dedupe (each manual run enqueues a
+  fresh workflow, matching `agent_step`), and moved the concurrency protection it
+  incidentally provided into the `/triage/<uuid>/run/` endpoint as an atomic
+  `select_for_update` in-flight guard (two near-simultaneous clicks → one run +
+  409). The automatic post-scan triage was unaffected (it runs inline, not via
+  this task).
+- **Tool consistency pass (F-tool1 / F-tool4 / config drift).** Aligned a few
+  tool apps with the conventions their siblings already follow:
+  - `domain_security` and `domain_probe` now wrap collect+analyze in
+    `try/except → return []` so an unexpected DNS/RDAP/probe error can never
+    propagate and fail the whole scan — matching their passive Domain-Posture
+    siblings (`breach_check`/`hudson_rock`/`dns_history`).
+  - `web_checker` now sends the shared honest User-Agent
+    (`settings.OPENEASD_USER_AGENT`) instead of a tool-specific string — it was
+    the only tool that diverged, so a target allowlisting the scanner now sees a
+    consistent UA across httpx/katana/nuclei/web_checker.
+  - Added the missing `default_auto_field` to six tool `apps.py`
+    (`cve_intel`, `nuclei_network`, `ssh_checker`, `takeover_check`,
+    `tls_checker`, `web_checker`). No migrations (these apps define no models).
+  - `cloud_assets` now **propagates** a missing/timed-out `cloud_enum` (F-tool3):
+    dropped the upfront `shutil.which → []` silent skip, so the binary-missing
+    case raises `ToolBinaryMissing` like every other binary collector and the
+    runner marks the scan "partial" instead of a fake "clean". Ruling: binary
+    tools propagate, matching `takeover_check` — restoring the intent of the
+    earlier "tool failures no longer hidden behind `completed`" change.
+  - `domain_security` now honors the configured DNS timeout on **all** lookups
+    (F-tool2): `_DNS_TIMEOUT` (`SCANNER_DNS_TIMEOUT`, default 5s) was applied to
+    only the lame-delegation probe, so a slow/hung authoritative server could
+    stall a scan past the bound. Added `lifetime=_DNS_TIMEOUT` to all six
+    `dns.resolver.resolve` calls.
+
+### Security
+- **Centralized the domain-authorization gate into one predicate (F3).** The
+  "is this domain authorized for active scanning?" check
+  (`DomainAuthorization.objects.filter(domain__name=X).exists()`) was hand-copied
+  in three places — the scan-start gate, the subscan gate, and the AI agent's
+  `gate_subscan_tools`. For a security gate, three copies are a drift hazard; they
+  now all call a single `DomainAuthorization.is_authorized(domain)` classmethod,
+  so any future change (e.g. authorization expiry) applies everywhere at once.
+  Behavior-preserving.
+- **Production guards skip only under the pytest runner, not mere importability
+  (F-sec2).** The SECRET_KEY and default-DB-password fail-fast guards skipped
+  whenever `"pytest" in sys.modules` — so any process that transitively imported
+  pytest (a dependency, a debug shell) silently disabled them. A new
+  `_under_pytest()` detects the test *runner* via the process entrypoint
+  (`sys.argv[0]`), so the guards still skip during `pytest` runs but fire
+  everywhere else. (Prod images install only `.[prod]`, so pytest isn't present
+  there anyway — this is defense-in-depth.)
+- **Removed the `?token=<JWT>` query-param auth on report endpoints (F-sec3).**
+  The CSV/PDF report views accepted a JWT in the query string, which leaks into
+  browser history, `Referer` headers, server access logs, and proxy caches.
+  `_report_auth_required` now authenticates only via Django session or the
+  `Authorization: Bearer` header — both SPA report pages already send the header
+  (fetch+Blob, never in the URL), so nothing depended on the query-param path; a
+  token in the query string is now ignored.
+- **Fail fast on the default DB password in production (F-sec1).** `DB_PASSWORD`
+  defaulted to `"openeasd"` with nothing stopping a `DEBUG=False` deploy from
+  booting on it — a trivial foothold on the database that holds every scan
+  result and the encrypted BYOK credentials. A new `_validate_db_password` guard
+  (mirroring the existing `SECRET_KEY` guard) raises `ImproperlyConfigured` at
+  settings import when `DEBUG=False` and the DB_* path still uses the default
+  `"openeasd"`. The `DATABASE_URL` path is exempt (it carries its own creds), and
+  the guard is skipped under the test runner. Like the SECRET_KEY guard it
+  matches only the **code default**, so the shipped docker-compose / k8s configs
+  (which set a real password or `"change-me-in-production"`) boot unchanged.
+
+### Fixed
+- **Brand-threat false positives (typosquat + asn_cluster).** Triaging a real
+  amnic.com report showed the Brand Threat category badly over-calling: a
+  legitimate ccTLD registry (amnic.net = the Armenia Network Information Centre)
+  flagged as "active impersonation", and parked lookalikes sharing an AWS/
+  Cloudflare/Namecheap IP reported as a "coordinated phishing infrastructure"
+  cluster. Three tuning fixes, no new tools:
+  - **typosquat now gates "high" on a login form only.** A brand-name string on
+    the page is a *review signal* (kept in the description), not proof of
+    impersonation — short brand strings legitimately appear in unrelated
+    organizations' own names. Brand-mention-alone no longer escalates to high.
+  - **typosquat detects domain parking** (known parking/for-sale anycast IPs +
+    sale boilerplate on the homepage) and caps a parked lookalike at **low** —
+    registrar-default A/MX records are speculation, not the buyer's phishing
+    infrastructure. A confirmed login form still outranks the parked signal.
+  - **asn_cluster skips generic networks** (hyperscale clouds, major CDNs,
+    registrar/parking ASNs — AWS/Cloudflare/Google/Namecheap/etc.) where
+    millions of unrelated domains co-locate, *unless* the cluster contains a
+    weaponized member. Overridable via `ASN_CLUSTER_GENERIC_ASNS`.
+  - (The multi-label-ccTLD apex-split limitation noted here originally is now
+    fixed — see "typosquat now handles multi-label ccTLD domains" below.)
+
+## [v2.15.0] — 2026-09-11
+
+### Changed
+- **Split "Domain Intelligence" into "Domain Posture" + "Brand Threat."** The old
+  category mixed two subjects: *your own domain's health* and *external
+  impersonation threats*. Now `domain_security`, `domain_probe`, `dns_history`
+  form **Domain Posture** (your DNS/email/RDAP health), and `typosquat` +
+  `asn_cluster` form **Brand Threat** (lookalike domains + coordinated
+  phishing-infra clusters). Split by subject (a tool-clean cut — no rewrites);
+  execution phases unchanged. 8 → 9 phase groups. Display-only `phase_group` change.
+- **Split the exposure findings out of Asset Discovery into a new "Asset
+  Exposure" category.** `takeover_check` (subdomain takeover) and `cloud_assets`
+  (open cloud buckets) are *findings about exposed assets*, not discovery — so
+  they now group under **Asset Exposure** (phase 5), leaving **Asset Discovery**
+  (phases 3–4) as pure discovery: `subfinder`, `amass`, `alterx`, `asn_discovery`,
+  `dnsx`. Execution order is unchanged (both still run at phase 5); display-only
+  `phase_group` change. Also refreshed the stale phase-group table in 03-system.md.
+- **Renamed the "Surface Enumeration" tool category to "Asset Discovery."** More
+  accurate and standard: the phases-3–5 tools (`subfinder`, `amass`, `alterx`,
+  `asn_discovery`, `dnsx`, `takeover_check`, `cloud_assets`) discover the org's
+  external *assets* — subdomains, IP ranges, cloud storage. Parallels the existing
+  "Port Discovery" category and ties to the `asset_inventory` app. Display-only
+  `phase_group` rename.
+
+### Removed
+- **Retired the `github_recon` tool.** The GitHub Org Recon tool (infra references —
+  internal hostnames/subdomains, cloud-bucket URLs, API endpoints — in the org's
+  public GitHub repos) is removed: app, tests, and its Full Scan + Passive Scan
+  workflow steps (migration 0033 cleans existing DBs on deploy). Registry tool
+  count 30 → 29. The secret-scanning GitHub tool (`github_secrets`) and infra
+  discovery via subdomains/ASN remain.
+
+### Changed
+- **`js_secrets` moved to the Web Exposure category.** It runs at phase 12 (it
+  needs discovered `.js` assets), so it now groups with its execution neighbors
+  (`nuclei`/`web_checker`) instead of Credential Exposure. This makes **Credential
+  Exposure a clean, single-phase (phase 2) category** — `breach_check`,
+  `hudson_rock`, `github_secrets`. Display-only `phase_group` change; `js_secrets`
+  still finds and redacts hardcoded secrets, unchanged.
+
+## [v2.14.2] — 2026-09-11
+
+### Changed
+- **Faster releases — stop building the images twice.** On a release (main/tag
+  push) the `docker` CI job built both images and then `publish` rebuilt+pushed
+  them again, in series. `docker` is now **PR-only** (its role is the required
+  build gate on PRs, where it also warms the `type=gha` cache); on main/tag pushes
+  it's skipped and `publish` is the sole builder, reusing that cache. Removes a
+  redundant full worker build from the release critical path (~2–4 min/release).
+  No change to what ships or to the PR gate.
+
+## [v2.14.1] — 2026-09-11
+
+### Changed
+- **Deterministic prod image pinning + a documented verify→promote flow.** The k8s
+  Deployments now use **bare image names**; the version is pinned in one place —
+  `k8s/kustomization.yaml` `images[].newTag` (bumped from a stale `v2.1.1` to the
+  current release) — with `imagePullPolicy: IfNotPresent`. Promotion is now a
+  deliberate, reversible act (bump `newTag` → apply; rollback = set it back),
+  instead of the non-deterministic `:latest` the Deployment fields previously
+  named. `docker-compose.dev.yml` takes an `OPENEASD_TAG` (default `latest`) so
+  `just deploy-dev` can **smoke-test the exact release image** before promoting —
+  closing the "native dev ≠ shipped artifact" gap. Full playbook added to
+  `docs/OPERATIONS.md` ("Ship it — verify in dev, then promote to prod").
+
+## [v2.14.0] — 2026-09-11
 
 ### Changed
 - **Renamed the "Data Leak" tool category to "Credential Exposure."** More
@@ -557,13 +1495,13 @@ commits to recover the reasoning.
   CLAUDE.md spells out the override + probe-host requirement.
 
 ### Removed
-- **Duplicate/stale docs.** Dropped the root `PRD.md` — a diverged duplicate of
-  the canonical `docs/PRD.md` whose "Delivered" section duplicated the CHANGELOG
+- **Duplicate/stale docs.** Dropped the root `01-prd.md` — a diverged duplicate of
+  the canonical `docs/01-prd.md` whose "Delivered" section duplicated the CHANGELOG
   and whose "Planned" roadmap was mostly shipped or now contradicts the
   single-user design. Also removed `docs/LOCAL_BRANCH_DBOS.md`, an unreferenced
   status doc for the long-since-merged DBOS branch, and the two historical
   `docs/specs/2026-06-01-cloud-assets-*.md` implementation specs for a shipped
-  feature (unreferenced). `docs/PRD.md` is the single canonical PRD; the WAF
+  feature (unreferenced). `docs/01-prd.md` is the single canonical PRD; the WAF
   coverage spec (still referenced from CLAUDE.md + settings) stays.
 - **Dead SQLite WAL signal handler** in settings — a leftover `connection_created`
   hook that only fired for the SQLite backend, which no longer exists (Postgres
@@ -875,7 +1813,7 @@ commits to recover the reasoning.
   hang the web collector was rewritten to avoid; both now share `run_capped`
   (`apps/core/workflows/proc.py`). Added a **weekly CI cron** so baked
   nuclei-templates refresh on cadence. Learnings + the corrected freeze
-  attribution recorded in `docs/SCAN_OPERATIONAL_LEARNINGS.md`.
+  attribution recorded in `docs/OPERATIONS.md`.
 
 ### Added
 - **Configurable support channel for the in-app "Report an issue" / "Request a
@@ -896,7 +1834,7 @@ commits to recover the reasoning.
   dropped everywhere. Overridable via `NUCLEI_SEVERITY`. Cuts template-load
   memory **and** request volume, raising signal. Combined with the existing
   low-profile `GOMEMLIMIT` cap, this is what lets nuclei complete on a 1 GB box.
-  **Learning captured in** `docs/SCAN_OPERATIONAL_LEARNINGS.md` with regression
+  **Learning captured in** `docs/OPERATIONS.md` with regression
   tests, per the standing "operational issues become tests" rule.
 
 ### Fixed
@@ -1174,7 +2112,7 @@ commits to recover the reasoning.
 
 - **Backport-aware CVE matching in nmap analyzer** — The nmap collector now consults a curated `backports.json` knowledge file before emitting CVE findings, so distro-backported fixes are recognised. Concretely: Ubuntu 24.04 packages OpenSSH as `9.6p1-3ubuntu13.16`. The CVE-2024-6387 (regreSSHion) fix landed in `3ubuntu13.3` (USN-6859-1, July 2024), but the upstream version string stays `9.6p1` — so `nmap --script vulners` (and any tool wrapping it) reports CVE-2024-6387 as present even though the binary is patched. The analyzer now parses the distro hint from the banner, looks up `(distro, CVE, package)` in `backports.json`, and demotes the finding to `info` with `extra={"backport_applied": true, "first_fixed_in": "..."}` if the installed version is at or beyond the fixed version. The seed dataset covers the noisiest false positives on Ubuntu LTS and Debian stable (OpenSSH, OpenSSL, nginx, Apache HTTPD, Postfix). **Why:** scan-output quality is the differentiator vs. running `nmap --script vulners` directly — without backport awareness, every Linux scan carries the same false positives the upstream tool does, eroding trust in OpenEASD's other findings. **Hypothesis:** backport-aware filtering will reduce the false-positive count on Ubuntu/Debian targets significantly (rough estimate ~80% reduction on OpenSSH-related CVEs for fully-patched LTS hosts), improving end-user trust without adding new false negatives. **Evidence:** data-oriented — the issue was opened after observing this exact pattern on a real Ubuntu 24.04 host during a production scan (host's installed `openssh-server` had the regreSSHion backport but nmap NSE vulners still flagged CVE-2024-6387). Contributed by [@turfin-logic](https://github.com/turfin-logic).
 
-- **Product and architecture docs** — `docs/PRD.md` (5W PM view: audience, 11 attack vectors, constraints, anti-features, success criteria) and `docs/DESIGN.md` (full architecture reference: core apps, tool registry, scan pipeline phases, data model, REST API, frontend, deployment topologies).
+- **Product and architecture docs** — `docs/01-prd.md` (5W PM view: audience, 11 attack vectors, constraints, anti-features, success criteria) and `docs/03-system.md` (full architecture reference: core apps, tool registry, scan pipeline phases, data model, REST API, frontend, deployment topologies).
 
 ### Changed
 
@@ -1484,7 +2422,13 @@ security learners. The pre-launch work below tightens the load-bearing
   limit would have shown Infra Scan at id=2 with `is_default=true`.)
 
 <!-- Version compare links (Keep a Changelog) -->
-[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.13.0...HEAD
+[Unreleased]: https://github.com/cybersecify/OpenEASD/compare/v2.16.0...HEAD
+[v2.16.0]: https://github.com/cybersecify/OpenEASD/compare/v2.15.1...v2.16.0
+[v2.15.1]: https://github.com/cybersecify/OpenEASD/compare/v2.15.0...v2.15.1
+[v2.15.0]: https://github.com/cybersecify/OpenEASD/compare/v2.14.2...v2.15.0
+[v2.14.2]: https://github.com/cybersecify/OpenEASD/compare/v2.14.1...v2.14.2
+[v2.14.1]: https://github.com/cybersecify/OpenEASD/compare/v2.14.0...v2.14.1
+[v2.14.0]: https://github.com/cybersecify/OpenEASD/compare/v2.13.0...v2.14.0
 [v2.13.0]: https://github.com/cybersecify/OpenEASD/compare/v2.12.0...v2.13.0
 [v2.12.0]: https://github.com/cybersecify/OpenEASD/compare/v2.11.0...v2.12.0
 [v2.11.0]: https://github.com/cybersecify/OpenEASD/compare/v2.10.1...v2.11.0

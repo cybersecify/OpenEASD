@@ -163,6 +163,8 @@ def analyze(session, xml_outputs: dict[str, str]) -> list[Finding]:
                             session=session,
                             source="nmap",
                             check_type="cve",
+                            # Per-CVE identity, else all CVEs on one host:port collapse.
+                            check_id=f"nmap:{v['id']}",
                             port=port_fk,
                             target=f"{ip}:{port_num}",
                             severity=severity,

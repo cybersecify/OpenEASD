@@ -1,6 +1,6 @@
 PORT := 8001
 
-.PHONY: setup dev backend frontend migrate makemigrations shell createsuperuser \
+.PHONY: setup dev backend worker migrate makemigrations shell createsuperuser \
         lint format test clean
 
 ## ── First-time setup ────────────────────────────────────────────────────────
@@ -10,18 +10,15 @@ setup:
 	uv sync --group dev
 	@echo "==> Running database migrations (needs PostgreSQL running)..."
 	uv run manage.py migrate
-	@echo "==> Installing frontend dependencies..."
-	cd frontend && npm install
 	@echo ""
 	@echo "  Done. Start dev with: make dev"
 
 ## ── Development servers ─────────────────────────────────────────────────────
 
-## Run Django + worker + Vite dev server together (Ctrl-C stops all)
-## React served by Vite at http://localhost:5173 (proxies /api/ to Django)
+## Run Django + worker together (Ctrl-C stops all). The UI is the server-rendered
+## plain-Django app at http://localhost:$(PORT)/ (no separate frontend dev server).
 dev:
-	@(cd frontend && npm run dev) & \
-	(uv run manage.py runserver $(PORT)) & \
+	@(uv run manage.py runserver $(PORT)) & \
 	(uv run manage.py dbos_worker) & \
 	wait || kill 0
 
@@ -32,10 +29,6 @@ worker:
 ## Run only the Django dev server
 backend:
 	uv run manage.py runserver $(PORT)
-
-## Build frontend once
-frontend:
-	cd frontend && npm run build
 
 ## ── Database ────────────────────────────────────────────────────────────────
 
@@ -59,7 +52,7 @@ lint:
 	uv run ruff check apps/ openeasd/ tests/
 
 format:
-	uv run black apps/
+	uv run ruff format apps/ openeasd/ tests/
 	uv run ruff check apps/ openeasd/ tests/ --fix
 
 test:
@@ -71,5 +64,5 @@ test-all:
 ## ── Cleanup ─────────────────────────────────────────────────────────────────
 
 clean:
-	rm -rf .venv frontend/node_modules frontend/dist staticfiles
-	@echo "Removed .venv, node_modules, dist, staticfiles"
+	rm -rf .venv staticfiles
+	@echo "Removed .venv, staticfiles"

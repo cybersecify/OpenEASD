@@ -295,8 +295,55 @@ class TestWorkerDeployment:
         assert "limits" in worker["resources"]
         assert "requests" in worker["resources"]
 
+    def test_worker_has_db_liveness_probe(self):
+        # The worker takes no inbound traffic (no Service/HTTP), so liveness is an
+        # exec DB round-trip: if Postgres is unreachable the pod restarts and
+        # re-establishes fresh connections (self-heal for the OOM/restart case).
+        worker = find_container(self.pod_spec["containers"], "worker")
+        probe = worker["livenessProbe"]
+        cmd = probe["exec"]["command"]
+        assert "psycopg" in " ".join(cmd)
+        assert "SELECT 1" in " ".join(cmd)
+        # sustained unreachability (not a brief blip) before restart
+        assert probe["failureThreshold"] >= 3
+        assert probe["periodSeconds"] >= 15
+
     def test_worker_has_no_volumes(self):
         assert not self.pod_spec.get("volumes")
+
+
+# ---------------------------------------------------------------------------
+# Postgres StatefulSet
+# ---------------------------------------------------------------------------
+
+class TestPostgres:
+    def setup_method(self):
+        docs = load("postgres.yaml")
+        self.doc = next(d for d in docs if d["kind"] == "StatefulSet")
+        self.container = find_container(
+            self.doc["spec"]["template"]["spec"]["containers"], "postgres"
+        )
+
+    def test_kind(self):
+        assert self.doc["kind"] == "StatefulSet"
+
+    def _mem_to_mib(self, val: str) -> int:
+        if val.endswith("Gi"):
+            return int(val[:-2]) * 1024
+        if val.endswith("Mi"):
+            return int(val[:-2])
+        raise AssertionError(f"unexpected memory unit: {val}")
+
+    def test_memory_limit_survives_concurrent_scans(self):
+        # 1Gi OOM-killed Postgres under concurrent Passive·Deep load (exit 137),
+        # cascading into failed scans. The limit must be >= 4Gi so a batch of
+        # concurrent scans doesn't OOM the DB.
+        limit = self.container["resources"]["limits"]["memory"]
+        assert self._mem_to_mib(limit) >= 4096, f"postgres memory limit too low: {limit}"
+
+    def test_memory_request_raised(self):
+        request = self.container["resources"]["requests"]["memory"]
+        assert self._mem_to_mib(request) >= 1024, f"postgres memory request too low: {request}"
 
 
 # ---------------------------------------------------------------------------

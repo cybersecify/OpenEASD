@@ -17,7 +17,15 @@ STATUS_CHOICES = [
     ("in_progress", "In Progress"),
     ("resolved", "Resolved"),
     ("false_positive", "False Positive"),
+    ("accepted", "Accepted Risk"),
 ]
+
+# Triage decisions that take an Issue out of the active risk picture: excluded from
+# the report's Issue Register and from the exposure score (register item 7).
+TRIAGED_STATUSES = ["false_positive", "accepted"]
+# Statuses that are still "live" work (shown in the report's open list, eligible for
+# auto-resolve when unseen).
+ACTIVE_STATUSES = ["open", "acknowledged", "in_progress"]
 
 
 class Finding(models.Model):
@@ -33,6 +41,12 @@ class Finding(models.Model):
     )
     source = models.CharField(max_length=50, db_index=True)  # no choices constraint — registry is source of truth
     check_type = models.CharField(max_length=50, blank=True, db_index=True)
+    # Stable per-rule identity, independent of the human `title` (which gets
+    # reworded). Default `"{source}:{check_type}"` is backfilled at finalize for the
+    # granular tools (1 check_type : 1 rule); coarse tools (domain_security/
+    # domain_probe) and CVE/secret tools set it explicitly per rule at construction.
+    # This is the cross-scan identity `Issue.key` is built from (see issues/rollup).
+    check_id = models.CharField(max_length=100, blank=True, db_index=True)
     severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES, db_index=True)
     title = models.CharField(max_length=500)
     description = models.TextField(blank=True)
@@ -91,6 +105,12 @@ class Finding(models.Model):
     assigned_to = models.CharField(max_length=150, blank=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
     resolution_note = models.TextField(blank=True)
+
+    # Verification (deterministic re-probe at finalize; see engine/verification).
+    verification_status = models.CharField(
+        max_length=20, default="unverified", db_index=True
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-discovered_at"]

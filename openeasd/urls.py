@@ -3,11 +3,24 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.http import JsonResponse
-from django.shortcuts import render
+from django.contrib.auth import views as auth_views
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import redirect
 from django.urls import path, include, re_path
 
-from apps.core.console.api.ninja import api
+
+def metrics(request):
+    """Prometheus metrics (H2). Unauthenticated (counts only, no finding detail) and
+    therefore OPT-IN: OFF by default (M3) — enable METRICS_ENABLED only once the
+    endpoint is network-restricted to your scraper. Served by the web tier but
+    reflects worker state too (DB-backed exporter)."""
+    if not getattr(settings, "METRICS_ENABLED", False):
+        return HttpResponse(status=404)
+    from apps.core.console.observability.metrics import render_metrics
+
+    resp = HttpResponse(render_metrics(), content_type="text/plain; version=0.0.4")
+    resp["Cache-Control"] = "no-store"
+    return resp
 
 
 def health(request):
@@ -18,30 +31,28 @@ def health(request):
         "build_date": settings.OPENEASD_BUILD_DATE,
     })
     # Never let a CDN/proxy cache provenance — a cached response makes the app
-    # report a stale build after a redeploy (Cloudflare cached /api/version/).
+    # report a stale build after a redeploy (Cloudflare cached this endpoint).
     resp["Cache-Control"] = "no-store"
     return resp
 
 
-def spa(request):
-    """Serve the SPA entry point with no caching.
+def favicon(request):
+    return HttpResponse(status=204)
 
-    index.html references content-hashed JS/CSS bundles, so a CDN/browser that
-    caches it keeps serving the OLD bundle (stale UI) after a deploy even though
-    the backend is new — exactly what happened when Cloudflare cached index.html
-    with max-age=3600 and showed the pre-release UI post-v2.10.0. The hashed
-    assets under /static/ stay long-cached (WhiteNoise); only this mutable entry
-    point must always revalidate. Same class of fix as /health above.
-    """
-    resp = render(request, "index.html")
-    resp["Cache-Control"] = "no-store"
-    return resp
+
+def catch_all(request):
+    """Unmatched paths land on the dashboard."""
+    return redirect("mvp:dashboard")
 
 
 urlpatterns = [
     path("health/", health),
+    path("favicon.ico", favicon),
+    path("metrics/", metrics),
     path("admin/", admin.site.urls),
-    path("api/", api.urls),
     path("reports/", include("apps.core.console.reports.urls")),
-    re_path(r'^(?!api/|admin|static/|media/).*$', spa, name='spa'),
+    path("login/", auth_views.LoginView.as_view(), name="login"),
+    path("logout/", auth_views.LogoutView.as_view(next_page="login"), name="logout"),
+    path("", include("apps.mvp.urls")),
+    re_path(r"^(?!admin|static/|media/|metrics/|reports/|login/|logout/).*$", catch_all),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

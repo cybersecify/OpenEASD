@@ -155,6 +155,8 @@ class TestAnalyze:
             findings = analyze(sess, records)
         assert len(findings) == 1
         assert "unidentified service" in findings[0].title
+        # Lower-confidence signal (no service fingerprint) — medium, not high.
+        assert findings[0].severity == "medium"
 
     def test_dedupes_by_subdomain_name(self):
         sess = self._session()
@@ -319,7 +321,7 @@ class TestScanner:
 # Regression: subzy null / non-dict array elements (scan went `partial` when a
 # subzy JSON array carried a null element → analyzer crashed on None.get()).
 # Fixed in #292 (analyzer guard) + collector filter (defence in depth). Guarded
-# here so it can't come back. See docs/SCAN_OPERATIONAL_LEARNINGS.md.
+# here so it can't come back. See docs/OPERATIONS.md.
 # ---------------------------------------------------------------------------
 
 class TestSubzyNullRecordRegression:

@@ -1,0 +1,684 @@
+"""TLD-squatting / lookalike collector — algorithmic candidate generation +
+passive public-DNS registration checks.
+
+Two stages, no external binary:
+
+  1. GENERATE lookalike candidates from the session's apex domain. Brand Threat
+     focuses on TLD CYBERSQUATTING: the same registrable name across a broad set
+     of purchasable TLDs (loaded from ``tlds.txt``, ~900 entries) — a
+     high-precision set where every registered hit ("your exact name on another
+     TLD") is almost always meaningful. Character-level typos (homoglyph,
+     adjacent-key, omission, insertion, repetition, transposition, hyphenation)
+     are the noisy half and are OFF by default — opt in with
+     ``TLDSQUATTING_INCLUDE_TYPOS=True``. Deterministic and deduped; capped at
+     ``MAX_CANDIDATES`` (truncation is logged, never silent).
+  2. CHECK which candidates are registered / weaponizable via PUBLIC DNS. For
+     each candidate we resolve A + MX (and NS only when neither is present). A
+     candidate with A or MX records can host a phishing page or receive mail
+     (weaponizable); one with only NS is registered/parked. NXDOMAIN = not
+     registered → skipped.
+
+Passive contract: every DNS query targets the CANDIDATE domain's public DNS —
+the org's own systems are never contacted. FAIL-GRACEFUL, ALWAYS: any resolver
+error / timeout / NXDOMAIN on a candidate is treated as "not registered" and
+skipped; the collector never raises. There is no binary, so it never raises
+ToolBinaryMissing / ToolTimeout.
+"""
+
+import logging
+import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+import dns.resolver
+import requests
+from django.conf import settings
+
+from .scoring import _age_days
+
+logger = logging.getLogger(__name__)
+
+# Bounded concurrency for the two network-bound passes. Candidate resolution and
+# homepage probes are I/O-bound and independent, so a small thread pool collapses
+# hundreds of serial round-trips into a few rounds. Kept bounded (and hitting
+# only third-party lookalike DNS / sites, never the target) so it stays polite.
+_DNS_CONCURRENCY = getattr(settings, "TLDSQUATTING_DNS_CONCURRENCY", 16)
+_FETCH_CONCURRENCY = getattr(settings, "TLDSQUATTING_FETCH_CONCURRENCY", 8)
+
+# Cap on generated candidates AND the per-scan DNS-lookup budget (one candidate =
+# up to a few short lookups). Raised vs. the old typosquat cap because the TLD
+# list alone is ~900 entries and TLD-swap is the high-value signal we want to
+# cover in full; still bounded so a scan stays polite. Override via settings.
+MAX_CANDIDATES = getattr(settings, "TLDSQUATTING_MAX_CANDIDATES", 1000)
+
+# Weaponization content probe (spec: distinguish an ACTIVE phishing lookalike
+# from a merely-registered one). For registered, web-serving lookalikes we fetch
+# the homepage over HTTPS and look for a login form / brand impersonation. This
+# contacts the THIRD-PARTY lookalike, never the user's own domain, so the tool
+# stays passive w.r.t. the authorization boundary (like cloud_enum probing
+# buckets). Capped + short-timeout + fail-graceful for politeness.
+CONTENT_MAX_FETCHES = getattr(settings, "TLDSQUATTING_CONTENT_MAX_FETCHES", 25)
+CONTENT_TIMEOUT = 6               # seconds per fetch
+_LOGIN_FORM_RE = re.compile(r"<form[^>]*(?:login|sign.?in|auth|password)[^>]*>", re.I)
+
+# Domain-parking detection. A parked lookalike resolves and often carries
+# registrar-default MX, which used to read as "weaponizable right now" — but a
+# parking lot is speculation, not phishing infrastructure. Two independent
+# signals, either one marks the record parked:
+#
+#   1. Anycast IPs of the major parking / for-sale services. These are stable,
+#      well-known landing addresses (GoDaddy/Afternic ride AWS Global
+#      Accelerator; Namecheap, Sedo, Bodis, ParkingCrew use their own ranges).
+#   2. Sale/parking boilerplate on the fetched homepage.
+_PARKING_IPS = frozenset({
+    "76.223.54.146", "13.248.169.48",    # Afternic / GoDaddy (AWS Global Accelerator)
+    "3.33.130.190", "15.197.148.33",     # GoDaddy parking (AWS Global Accelerator)
+    "34.102.136.180",                    # GoDaddy CashParking
+    "91.195.240.94", "91.195.241.136",   # Sedo
+    "199.59.243.228", "199.59.243.226",  # Bodis
+    "192.64.119.87", "192.64.119.254",   # Namecheap parking
+    "162.255.119.112",                   # Namecheap registrar default
+    "185.53.177.30", "185.53.178.30",    # ParkingCrew / TeamInternet
+    "208.91.197.27",                     # Confluence Networks parking
+})
+_PARKING_PREFIXES = (
+    "185.53.177.", "185.53.178.", "185.53.179.",  # ParkingCrew / TeamInternet
+    "199.59.243.",                                # Bodis
+    "91.195.240.", "91.195.241.",                 # Sedo
+)
+_PARKED_CONTENT_RE = re.compile(
+    r"domain (?:is |may be )?for sale|buy this domain|this domain is parked|"
+    r"domain parking|parked free|hugedomains|afternic|sedo\.com|dan\.com|"
+    r"godaddy\.com/forsale|is available for purchase",
+    re.I,
+)
+
+
+def _parked_by_ip(ips: list[str]) -> bool:
+    return any(
+        ip in _PARKING_IPS or ip.startswith(_PARKING_PREFIXES) for ip in ips or []
+    )
+
+# Per-lookup DNS timeout / overall lifetime (seconds). Short — most candidates are
+# NXDOMAIN and resolve fast; we never want a hung resolver to stall a scan.
+_DNS_TIMEOUT = 3
+
+
+def _load_tlds() -> list[str]:
+    """Load the bundled purchasable-TLD list (one per line; blanks/# ignored).
+
+    This is the TLD-permutation breadth that distinguishes this tool from a
+    handful of hard-coded common TLDs — every registered hit of your exact name
+    on another TLD is a high-precision brand-threat signal. Falls back to a small
+    built-in set if the file is missing, so the tool never hard-fails on a
+    packaging glitch.
+    """
+    path = Path(__file__).with_name("tlds.txt")
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:  # pragma: no cover - packaging safety net
+        logger.warning("tldsquatting: could not read tlds.txt (%s) — using fallback set", exc)
+        return ["com", "net", "org", "co", "io", "info", "xyz", "app", "dev", "biz"]
+    tlds = []
+    for line in lines:
+        t = line.strip().lower().lstrip(".")
+        if t and not t.startswith("#"):
+            tlds.append(t)
+    return tlds
+
+
+# Loaded once at import — the broad TLD set used for TLD-swap candidates. Override
+# the file to curate; override the concurrency/cap via settings above.
+_TLDS = _load_tlds()
+
+# Homoglyph / visually-similar single-character substitutions.
+_HOMOGLYPHS = {
+    "o": ["0"],
+    "l": ["1", "i"],
+    "i": ["1", "l"],
+    "e": ["3"],
+    "a": ["4"],
+    "s": ["5", "z"],
+    "b": ["8"],
+    "g": ["9", "q"],
+    "m": ["rn"],
+    "w": ["vv"],
+    "0": ["o"],
+    "1": ["l"],
+}
+
+# QWERTY adjacency for adjacent-key (fat-finger) typos.
+_KEYBOARD = {
+    "q": "wa", "w": "qeas", "e": "wrds", "r": "etdf", "t": "ryfg",
+    "y": "tugh", "u": "yihj", "i": "uojk", "o": "ipkl", "p": "ol",
+    "a": "qwsz", "s": "awedxz", "d": "serfcx", "f": "drtgvc",
+    "g": "ftyhbv", "h": "gyujnb", "j": "huikmn", "k": "jiolm",
+    "l": "kop", "z": "asx", "x": "zsdc", "c": "xdfv", "v": "cfgb",
+    "b": "vghn", "n": "bhjm", "m": "njk",
+}
+
+
+# Common multi-label public suffixes — ccTLD second-level registries. NOT the
+# full ~9k-entry Public Suffix List: a curated set of the ones real targets use,
+# which keeps us dependency-free (tldextract fetches the PSL over the network by
+# default — a scanner worker shouldn't). Override/extend via
+# settings.TLDSQUATTING_MULTI_LABEL_SUFFIXES.
+_MULTI_LABEL_SUFFIXES = (
+    "co.uk", "org.uk", "gov.uk", "ac.uk", "me.uk", "net.uk", "ltd.uk", "plc.uk", "sch.uk",
+    "com.au", "net.au", "org.au", "edu.au", "gov.au", "id.au",
+    "co.nz", "net.nz", "org.nz", "govt.nz",
+    "co.za", "org.za", "net.za", "web.za",
+    "co.in", "net.in", "org.in", "firm.in", "gen.in", "ind.in",
+    "co.jp", "or.jp", "ne.jp", "ac.jp", "go.jp",
+    "com.br", "net.br", "org.br", "gov.br",
+    "com.cn", "net.cn", "org.cn", "gov.cn",
+    "co.kr", "or.kr",
+    "com.sg", "com.my", "com.hk", "com.tw", "com.mx", "com.tr", "com.ar",
+    "com.ua", "com.ph", "com.pk", "com.ng", "co.id", "co.th", "com.vn", "com.sa",
+)
+
+
+def _split_apex(domain: str) -> tuple[str, str]:
+    """Split an apex domain into (registrable_name, public_suffix).
+
+    ``example.com`` → ``("example", "com")``; ``example.co.uk`` →
+    ``("example", "co.uk")``. A leading ``www.`` is stripped.
+
+    Multi-label public suffixes (ccTLD second-level registries) are recognised
+    from ``_MULTI_LABEL_SUFFIXES`` so char-mutation and TLD-swap operate on the
+    registrable label, not a partial suffix.
+    """
+    d = (domain or "").strip().lower().rstrip(".")
+    if d.startswith("www."):
+        d = d[4:]
+
+    suffixes = getattr(settings, "TLDSQUATTING_MULTI_LABEL_SUFFIXES", _MULTI_LABEL_SUFFIXES)
+    for suffix in suffixes:
+        if d.endswith("." + suffix):
+            head = d[: -(len(suffix) + 1)]      # everything before ".<suffix>"
+            name = head.rsplit(".", 1)[-1]       # registrable label (drop sub-labels)
+            return (name, suffix) if name else (d, "")
+
+    name, _, tld = d.rpartition(".")
+    if not name:  # no dot at all — treat whole thing as the name, no tld
+        return d, ""
+    return name, tld
+
+
+def _char_variants(name: str) -> set[str]:
+    """Apply the single-string mutation techniques to a domain name label."""
+    out: set[str] = set()
+    n = len(name)
+
+    # Omission — drop one character.
+    for i in range(n):
+        out.add(name[:i] + name[i + 1:])
+
+    # Repetition — double one character.
+    for i in range(n):
+        out.add(name[:i] + name[i] + name[i] + name[i + 1:])
+
+    # Transposition — swap two adjacent characters.
+    for i in range(n - 1):
+        out.add(name[:i] + name[i + 1] + name[i] + name[i + 2:])
+
+    # Hyphenation — insert a hyphen between two characters.
+    for i in range(1, n):
+        out.add(name[:i] + "-" + name[i:])
+
+    # Adjacent-key substitution (fat-finger typo).
+    for i, ch in enumerate(name):
+        for repl in _KEYBOARD.get(ch, ""):
+            out.add(name[:i] + repl + name[i + 1:])
+
+    # Adjacent-key insertion — insert a neighbouring key next to each character.
+    for i, ch in enumerate(name):
+        for extra in _KEYBOARD.get(ch, ""):
+            out.add(name[:i + 1] + extra + name[i + 1:])
+
+    # Homoglyph substitution — visually similar characters.
+    for i, ch in enumerate(name):
+        for repl in _HOMOGLYPHS.get(ch, []):
+            out.add(name[:i] + repl + name[i + 1:])
+
+    # Drop the identity and any empties.
+    out.discard(name)
+    out.discard("")
+    return out
+
+
+def generate_candidates(domain: str) -> list[dict]:
+    """Generate deduped lookalike candidates for an apex domain.
+
+    Returns a list of ``{"candidate": fqdn, "technique": str}`` dicts, capped at
+    ``MAX_CANDIDATES`` (truncation logged). TLD-swap candidates are emitted FIRST
+    so the high-value "your exact name on another TLD" signal survives the cap.
+    The original domain is never included.
+    """
+    name, tld = _split_apex(domain)
+    if not name:
+        return []
+
+    original = f"{name}.{tld}" if tld else name
+    # Preserve first-seen technique per candidate; dict keeps insertion order.
+    seen: dict[str, str] = {}
+
+    def _add(candidate: str, technique: str):
+        candidate = candidate.strip(".")
+        if candidate and candidate != original and candidate not in seen:
+            seen[candidate] = technique
+
+    # TLD swap FIRST — same name label, a different registrable TLD. This is the
+    # highest-precision signal (your exact name elsewhere) and is prioritised
+    # ahead of the noisier char mutations so it is never truncated by the cap.
+    for alt in _TLDS:
+        if alt != tld:
+            _add(f"{name}.{alt}", "tld_swap")
+
+    # Character-level mutations (homoglyph/adjacent-key/omission/insertion/…) are
+    # OFF by default. They are the noisy half — many unrelated registrations
+    # (ammic/aminc/amic/…) that dilute the report — whereas TLD-swap is the
+    # high-precision "your exact name on another TLD" signal. Brand Threat focuses
+    # on TLD cybersquatting; set TLDSQUATTING_INCLUDE_TYPOS=True to re-enable the
+    # character-mutation candidates.
+    if getattr(settings, "TLDSQUATTING_INCLUDE_TYPOS", False):
+        for variant in sorted(_char_variants(name)):
+            suffix = f".{tld}" if tld else ""
+            _add(f"{variant}{suffix}", "typo")
+
+    candidates = [{"candidate": c, "technique": t} for c, t in seen.items()]
+    if len(candidates) > MAX_CANDIDATES:
+        logger.info(
+            "tldsquatting: generated %d candidates for %s — truncating to %d "
+            "(MAX_CANDIDATES)", len(candidates), original, MAX_CANDIDATES,
+        )
+        candidates = candidates[:MAX_CANDIDATES]
+    return candidates
+
+
+def _resolver() -> dns.resolver.Resolver:
+    r = dns.resolver.Resolver()
+    r.timeout = _DNS_TIMEOUT
+    r.lifetime = _DNS_TIMEOUT
+    return r
+
+
+# One resolver per worker thread — dnspython Resolver isn't documented
+# thread-safe, and a thread-local avoids re-reading resolv.conf per candidate.
+_thread_local = threading.local()
+
+
+def _thread_resolver() -> dns.resolver.Resolver:
+    r = getattr(_thread_local, "resolver", None)
+    if r is None:
+        r = _thread_local.resolver = _resolver()
+    return r
+
+
+def _resolve(resolver, name: str, rdtype: str) -> list[str]:
+    """Resolve ``name``/``rdtype``. Returns record strings, or [] on any failure
+    (NXDOMAIN, no answer, timeout, resolver error). Never raises."""
+    try:
+        answers = resolver.resolve(name, rdtype)
+    except Exception:  # noqa: BLE001 — any resolver failure = "not present"
+        return []
+    return [str(rdata) for rdata in answers]
+
+
+def _check_candidate(resolver, candidate: str) -> dict | None:
+    """Passive DNS registration check + full posture profile for one candidate.
+
+    Cheap first: resolve A + MX (and NS only when neither is present) to decide
+    whether the candidate is even registered. NXDOMAIN / no records → None (the
+    common case, kept to two lookups). Only once a candidate is *registered* do
+    we pay for the deeper posture lookups the scoring model needs (AAAA, CNAME,
+    TXT/SPF, DMARC, CAA, DNSSEC, NS targets) — so the extra DNS load lands on the
+    handful of registered lookalikes, never on the ~1000 NXDOMAIN candidates.
+
+    Every lookup is fail-graceful (``_resolve`` swallows all errors → []); this
+    function never raises.
+    """
+    a_records = _resolve(resolver, candidate, "A")
+    mx_records = _resolve(resolver, candidate, "MX")
+
+    has_a = bool(a_records)
+    has_mx = bool(mx_records)
+    ns_records: list[str] = []
+    has_ns = False
+    if not has_a and not has_mx:
+        # Only pay for the NS lookup when there's no A/MX — catches parked /
+        # registered-but-dark lookalikes without a lookup on every candidate.
+        ns_records = _resolve(resolver, candidate, "NS")
+        has_ns = bool(ns_records)
+
+    if not (has_a or has_mx or has_ns):
+        return None  # NXDOMAIN / unregistered — nothing to report.
+
+    # Registered — gather the full passive posture for risk/threat scoring. NS is
+    # (re-)fetched here so we always have the targets for tier classification,
+    # even for A/MX-bearing records that skipped the NS lookup above.
+    if not ns_records:
+        ns_records = _resolve(resolver, candidate, "NS")
+        has_ns = bool(ns_records)
+    aaaa_records = _resolve(resolver, candidate, "AAAA")
+    cname_records = _resolve(resolver, candidate, "CNAME")
+    txt_records = _resolve(resolver, candidate, "TXT")
+    caa_records = _resolve(resolver, candidate, "CAA")
+    dmarc_records = _resolve(resolver, f"_dmarc.{candidate}", "TXT")
+    # DNSSEC = a signed zone: DS at the parent or DNSKEY at the apex.
+    has_dnssec = bool(
+        _resolve(resolver, candidate, "DS") or _resolve(resolver, candidate, "DNSKEY")
+    )
+
+    has_spf = any("v=spf1" in t.lower() for t in txt_records)
+    has_dmarc = any("v=dmarc1" in t.lower() for t in dmarc_records)
+
+    return {
+        "candidate": candidate,
+        "has_a": has_a,
+        "has_aaaa": bool(aaaa_records),
+        "has_mx": has_mx,
+        "has_ns": has_ns,
+        "has_cname": bool(cname_records),
+        "has_txt": bool(txt_records),
+        "has_spf": has_spf,
+        "has_dmarc": has_dmarc,
+        "has_caa": bool(caa_records),
+        "has_dnssec": has_dnssec,
+        "resolved_ips": a_records,
+        "ns_targets": ns_records,
+    }
+
+
+def _redirects_to(final_url: str, target_domain: str) -> bool:
+    """True if ``final_url`` (the URL a lookalike's homepage landed on after
+    redirects) is on the TARGET's own domain — the target apex or a subdomain of
+    it. A lookalike that redirects to your own site is a defensive registration
+    you (or an affiliate) own, not an impersonator."""
+    from urllib.parse import urlparse
+    tdom = (target_domain or "").strip().lower().strip(".")
+    if not tdom:
+        return False
+    host = (urlparse(final_url).hostname or "").lower().strip(".")
+    return host == tdom or host.endswith("." + tdom)
+
+
+def _content_signals(candidate: str, brand: str, target_domain: str = "") -> dict:
+    """Fetch a registered lookalike's homepage and look for weaponization signals:
+    a login form (credential-phishing) and mentions of the brand (impersonation);
+    also whether it redirects to the target's own site (→ defensive registration).
+
+    Contacts only the lookalike domain, never the target. Never raises — any
+    fetch failure leaves content_checked=False and no signals.
+    """
+    out = {"content_checked": True, "login_form": False,
+           "brand_mentioned": False, "brand_mention_count": 0,
+           "redirects_to_target": False,
+           "https_enabled": False, "ssl_valid": False}
+    try:
+        ua = getattr(settings, "OPENEASD_USER_AGENT", "OpenEASD")
+        resp = requests.get(
+            f"https://{candidate}/", timeout=CONTENT_TIMEOUT,
+            headers={"User-Agent": ua}, allow_redirects=True,
+        )
+        # A successful HTTPS fetch (requests verifies the cert by default, raising
+        # on an invalid one) means the lookalike serves HTTPS with a valid cert —
+        # both signals the risk model rewards.
+        out["https_enabled"] = True
+        out["ssl_valid"] = True
+        out["redirects_to_target"] = _redirects_to(resp.url or "", target_domain)
+        html = resp.text or ""
+        out["login_form"] = bool(_LOGIN_FORM_RE.search(html))
+        if _PARKED_CONTENT_RE.search(html):
+            out["parked"] = True
+        b = (brand or "").lower()
+        if b:
+            count = html.lower().count(b)
+            out["brand_mention_count"] = count
+            # A mention on the page, OR a redirect landing on the real brand, is
+            # an impersonation signal — but only a SIGNAL. A short brand string
+            # legitimately appears in unrelated organizations' own names, so the
+            # analyzer never escalates on mentions alone.
+            out["brand_mentioned"] = count > 0 or b in (resp.url or "").lower()
+    except Exception:  # noqa: BLE001 — never let a lookalike fetch fail the scan
+        out["content_checked"] = False
+    return out
+
+
+def _rdap_entity_name(entity: dict) -> str | None:
+    """Extract a human-readable name for an RDAP ``entities`` object: the vCard
+    ``fn`` (formatted name) when present, else the entity ``handle``.
+
+    Returns ``None`` when neither is present. Never raises on malformed shapes —
+    callers wrap this in the same broad ``_rdap_info`` try/except.
+    """
+    vcard = entity.get("vcardArray")
+    if isinstance(vcard, list) and len(vcard) > 1 and isinstance(vcard[1], list):
+        for item in vcard[1]:
+            if isinstance(item, (list, tuple)) and len(item) >= 4 and item[0] == "fn":
+                return item[3]
+    handle = entity.get("handle")
+    return str(handle) if handle else None
+
+
+def _rdap_info(domain: str, timeout: int = 8) -> dict:
+    """Look up a domain's RDAP registration date, registrant, and registrar via
+    the RDAP bootstrap.
+
+    Returns ``{"created": <iso-date|None>, "registrant": <str|None>,
+    "registrar": <str|None>}``. ``registrant``/``registrar`` are parsed from the
+    RDAP ``entities`` array (role ``"registrant"``/``"registrar"`` → vCard ``fn``,
+    falling back to the entity ``handle``); ``registrar`` also honours a
+    top-level ``"registrar"`` field when present. Never raises — all-None on any
+    failure. Passive: RDAP is third-party registry data (rdap.org redirects to
+    the authoritative registry) — the target's own systems are never contacted.
+    """
+    info = {"created": None, "registrant": None, "registrar": None}
+    try:
+        ua = getattr(settings, "OPENEASD_USER_AGENT", "OpenEASD")
+        resp = requests.get(
+            f"https://rdap.org/domain/{domain}",
+            timeout=timeout,
+            headers={"User-Agent": ua, "Accept": "application/rdap+json"},
+            allow_redirects=True,
+        )
+        if resp.status_code != 200:
+            return info
+        data = resp.json()
+        for ev in data.get("events", []) or []:
+            if ev.get("eventAction") == "registration" and ev.get("eventDate"):
+                info["created"] = str(ev["eventDate"])[:10]
+                break
+
+        registrar = data.get("registrar")
+        registrant = None
+        for ent in data.get("entities", []) or []:
+            roles = ent.get("roles") or []
+            if registrant is None and "registrant" in roles:
+                registrant = _rdap_entity_name(ent)
+            if not registrar and "registrar" in roles:
+                registrar = _rdap_entity_name(ent)
+        info["registrant"] = registrant
+        info["registrar"] = str(registrar) if registrar else None
+    except Exception:  # noqa: BLE001 — never let an RDAP lookup fail the scan
+        return {"created": None, "registrant": None, "registrar": None}
+    return info
+
+
+def _rdap_created(domain: str, timeout: int = 8) -> str | None:
+    """Look up a domain's registration (creation) date via the RDAP bootstrap.
+
+    Thin wrapper over ``_rdap_info`` — kept for existing callers that only need
+    the registration date. Returns an ISO date string ``YYYY-MM-DD`` or ``None``
+    on any failure. Never raises.
+    """
+    return _rdap_info(domain, timeout)["created"]
+
+
+def _resolve_target_ns(apex: str, timeout: int | None = None) -> list[str]:
+    """Resolve the target apex's authoritative NS hosts, normalized
+    (``.rstrip(".").lower()``).
+
+    Part of the target OWNERSHIP BASELINE: a lookalike sharing the target's own
+    nameservers is far more likely to be the target's own registration (a
+    defensive/brand registration) than a threat. Passive — queries only the
+    public resolver about the apex's own published NS records, never the
+    target's own systems. Never raises → ``[]`` on any failure.
+    """
+    try:
+        resolver = _thread_resolver()
+        if timeout is not None:
+            resolver.timeout = timeout
+            resolver.lifetime = timeout
+        answers = resolver.resolve(apex, "NS")
+        return sorted({str(a.to_text()).rstrip(".").lower() for a in answers})
+    except Exception:  # noqa: BLE001 — any resolver failure = no data
+        return []
+
+
+def _enrich_registration_age(session, apex: str, results: list[dict]) -> None:
+    """Annotate each registered lookalike with its RDAP creation date vs the
+    target's, plus the target's OWNERSHIP BASELINE — RDAP registrant/registrar
+    and authoritative NS hosts — so a later classifier can tell "owned by the
+    target" apart from a real threat (register item / brand-threat accuracy).
+
+    A lookalike registered BEFORE the target cannot be impersonating it — it
+    existed first, so it's almost always a legitimate / unrelated registrant. We
+    look up the target's RDAP info + NS once, then each registered lookalike's
+    RDAP info (concurrent, capped, fail-graceful), and set ``predates_target`` so
+    the analyzer downgrades those to info. The target baseline (``target_ns`` /
+    ``target_registrant`` / ``target_registrar``) is stamped on EVERY result —
+    not only the RDAP-capped subset — so classification works regardless of the
+    cap; only the per-candidate RDAP lookup (``created``/``registrant``) is
+    cap-bounded. No-op when disabled or results empty.
+    """
+    if not getattr(settings, "TLDSQUATTING_RDAP_AGE", True) or not results:
+        return
+    timeout = getattr(settings, "TLDSQUATTING_RDAP_TIMEOUT", 8)
+    cap = getattr(settings, "TLDSQUATTING_RDAP_MAX_LOOKUPS", 60)
+
+    target_info = _rdap_info(apex, timeout)
+    target_created = target_info["created"]
+    target_ns = _resolve_target_ns(apex, timeout)
+
+    # Ownership baseline applies to every candidate, even past the RDAP cap —
+    # classification needs it regardless of how many lookalikes got a
+    # per-candidate RDAP lookup.
+    for record in results:
+        record["target_created"] = target_created
+        record["target_registrant"] = target_info["registrant"]
+        record["target_registrar"] = target_info["registrar"]
+        record["target_ns"] = target_ns
+
+    to_age = results[:cap]
+
+    def _age(record):
+        info = _rdap_info(record["candidate"], timeout)
+        record["created"] = info["created"]
+        record["registrant"] = info["registrant"]
+        record["predates_target"] = bool(
+            record["created"] and target_created and record["created"] < target_created
+        )
+
+    workers = max(1, min(_DNS_CONCURRENCY, len(to_age)))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        list(executor.map(_age, to_age))
+    predating = sum(1 for r in to_age if r.get("predates_target"))
+    logger.info(
+        "[tldsquatting:%s] RDAP age: %d/%d registered lookalike(s) predate %s "
+        "(downgraded to info)", session.id, predating, len(to_age), apex,
+    )
+
+
+def _fetch_priority(record) -> tuple:
+    """Sort key (higher sorts first) for spending the capped content-fetch budget
+    on the most suspicious A-bearing lookalikes.
+
+    Priority, in order: a configured mail-auth stack (MX + SPF/DMARC — the
+    deliberate phishing-staging shape), recent registration (<= 365 days), then
+    partial mail signals. A lookalike that PREDATES the target is pre-existing /
+    benign and sorts last so it never consumes a fetch slot. Pure; no I/O.
+    ``sorted(..., reverse=True)`` is stable, so equal-priority candidates keep
+    their original generation order (TLD swaps ahead of char mutations).
+    """
+    if record.get("predates_target"):
+        return (-1, 0, 0, 0)
+    has_mx = bool(record.get("has_mx"))
+    has_auth = bool(record.get("has_spf") or record.get("has_dmarc"))
+    email_capable = has_mx and has_auth
+    age = _age_days(record.get("created"))
+    recent = age is not None and age <= 365
+    return (
+        1 if email_capable else 0,
+        1 if recent else 0,
+        1 if has_mx else 0,
+        1 if has_auth else 0,
+    )
+
+
+def collect(session) -> list[dict]:
+    """Generate lookalike candidates for the session's apex domain and return the
+    subset that is registered / weaponizable (via passive public DNS), enriched
+    with weaponization signals (login form / brand impersonation) for the
+    web-serving ones and RDAP registration-age context (predates-target).
+
+    Always returns a list; never raises.
+    """
+    apex = getattr(session, "domain", "") or ""
+    candidates = generate_candidates(apex)
+    if not candidates:
+        logger.info("[tldsquatting:%s] no candidates generated for %r", session.id, apex)
+        return []
+
+    # Registration check — resolve candidates concurrently (I/O-bound). map()
+    # preserves input order, so results stay deterministic.
+    def _check(cand):
+        record = _check_candidate(_thread_resolver(), cand["candidate"])
+        if record:
+            record["technique"] = cand["technique"]
+        return record
+
+    dns_workers = max(1, min(_DNS_CONCURRENCY, len(candidates)))
+    with ThreadPoolExecutor(max_workers=dns_workers) as executor:
+        results = [r for r in executor.map(_check, candidates) if r]
+
+    # Parking detection by IP works even when the homepage fetch fails (parked
+    # domains frequently have no HTTPS), so it runs on every A-bearing record.
+    for r in results:
+        if r.get("has_a") and _parked_by_ip(r.get("resolved_ips") or []):
+            r["parked"] = True
+
+    # RDAP registration-age enrichment (fail-graceful, bounded) — mark lookalikes
+    # that predate the target so the analyzer deprioritises them. Runs BEFORE the
+    # content fetch so `created`/`predates_target` are available to rank the
+    # capped fetch budget by recency (and skip pre-existing/benign domains).
+    _enrich_registration_age(session, apex, results)
+
+    # Weaponization pass: for registered lookalikes that serve web (have an A
+    # record), fetch the homepage to spot active phishing / impersonation. Capped,
+    # and probed concurrently — each _content_signals mutates its record in place.
+    # The budget is spent on the MOST suspicious candidates first (configured
+    # mail-auth stack / recent registration) rather than candidate-generation
+    # order, so a staged mail-configured lookalike past the cap still gets
+    # inspected instead of an alphabetically-first inert TLD swap.
+    brand, _ = _split_apex(apex)
+    to_fetch = sorted(
+        (r for r in results if r.get("has_a")),
+        key=_fetch_priority, reverse=True,
+    )[:CONTENT_MAX_FETCHES]
+    if to_fetch:
+        def _probe(record):
+            record.update(_content_signals(record["candidate"], brand, apex))
+
+        fetch_workers = max(1, min(_FETCH_CONCURRENCY, len(to_fetch)))
+        with ThreadPoolExecutor(max_workers=fetch_workers) as executor:
+            list(executor.map(_probe, to_fetch))
+    fetched = len(to_fetch)
+
+    logger.info(
+        "[tldsquatting:%s] checked %d lookalike candidate(s) for %s — %d registered, "
+        "%d homepage(s) probed",
+        session.id, len(candidates), apex, len(results), fetched,
+    )
+    return results

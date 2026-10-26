@@ -1,0 +1,60 @@
+{% extends "mvp/base.html" %}
+{% block title %}Issues · OpenEASD{% endblock %}
+{% block content %}
+<h1>Issues</h1>
+<p class="muted">{{ total }} issue{{ total|pluralize }} in the persistent register. Triage here persists across scans.</p>
+<div class="box">
+  <form method="get" class="row-actions">
+    <div class="select"><select name="status">
+      <option value="">any status</option>
+      {% for val, label in status_choices %}<option value="{{ val }}"{% if val == status_filter %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></div>
+    <div class="select"><select name="severity">
+      <option value="">any severity</option>
+      {% for s in severity_order %}<option value="{{ s }}"{% if s == severity_filter %} selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select></div>
+    <div class="select"><select name="source">
+      <option value="">any source</option>
+      {% for src in sources %}<option value="{{ src }}"{% if src == source_filter %} selected{% endif %}>{{ src }}</option>{% endfor %}
+    </select></div>
+    <input class="input" type="text" name="domain" value="{{ domain_filter }}" placeholder="domain contains">
+    <input class="input" type="text" name="q" value="{{ q_filter }}" placeholder="title contains">
+    <button class="button is-link" type="submit">Filter</button>
+  </form>
+</div>
+<div class="box">
+  <table class="table is-fullwidth is-hoverable">
+    <thead><tr><th>Severity</th><th>Issue</th><th>Status</th><th>Assignee</th><th>First / last seen</th><th>Verified</th><th>Triage</th></tr></thead>
+    <tbody>
+    {% for i in page %}
+    <tr>
+      <td><span class="pill sev-{{ i.severity }}">{{ i.severity }}</span></td>
+      <td>{{ i.title }}<div class="muted">{{ i.domain.name }} &middot; {{ i.target }} &middot; {{ i.source }}</div></td>
+      <td><span class="st-{{ i.status }}">{{ i.get_status_display }}</span></td>
+      <td class="muted">{{ i.assigned_to|default:"-" }}</td>
+      <td class="muted">{{ i.first_seen|date:"Y-m-d" }} / {{ i.last_seen|date:"Y-m-d" }}</td>
+      <td><span class="vd-{{ i.verification_status }}">{{ i.verification_status }}</span></td>
+      <td>
+        <form method="post" action="{% url 'mvp:issue-update' i.id %}" class="row-actions">{% csrf_token %}
+          <input type="hidden" name="return_qs" value="{{ return_qs }}">
+          <div class="select is-small"><select name="status">
+            {% for val, label in status_choices %}<option value="{{ val }}"{% if val == i.status %} selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select></div>
+          <input class="input is-small" type="text" name="assigned_to" value="{{ i.assigned_to }}" placeholder="assignee" maxlength="150">
+          <input class="input is-small" type="text" name="resolution_note" value="{{ i.resolution_note }}" placeholder="note">
+          <button class="button is-small is-link" type="submit">Save</button>
+        </form>
+      </td>
+    </tr>
+    {% empty %}<tr><td colspan="7" class="muted">No issues match.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if page.has_other_pages %}
+  <div class="row-actions">
+    {% if page.has_previous %}<a href="?{% if return_qs %}{{ return_qs }}&amp;{% endif %}page={{ page.previous_page_number }}">&laquo; prev</a>{% endif %}
+    <span class="muted">page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}<a href="?{% if return_qs %}{{ return_qs }}&amp;{% endif %}page={{ page.next_page_number }}">next &raquo;</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -12,13 +12,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def enqueue_triage(session_id: int) -> None:
-    """Manual (re-)run of triage + summaries for a finished scan."""
-    from apps.core.engine.durable.workflows import enqueue_ai_triage
-
-    enqueue_ai_triage(session_id)
-
-
 def enqueue_agent_step(root_session_id: int) -> None:
     """Queue one orchestration step as a durable workflow."""
     from apps.core.engine.durable.workflows import enqueue_agent_step as _enqueue

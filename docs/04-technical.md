@@ -1,0 +1,54 @@
+# OpenEASD — Technical Design
+
+The **technical-design** layer of the doc flow (`01-prd` → `02-domain` →
+`03-system` → **`04-technical`** → `05-api` → `06-coding`). Where
+[`03-system.md`](03-system.md) describes the architecture as a whole, this layer
+is where a *specific* feature or change is designed in detail before it is coded.
+
+Detailed per-feature designs live in [`specs/`](specs/) — one spec per feature,
+carrying the problem, the options considered, the chosen mechanism, and the
+migration/rollout. Add a new spec here before building anything non-trivial; a
+spec that drifts from the shipped behaviour is corrected like a failing test.
+
+## Current specs
+
+- [WAF/Block Detection & Honest Coverage Contract](specs/2026-08-16-waf-coverage-honest-scope.md)
+  — classify each probe as reached/blocked/challenged/rate-limited and surface
+  honest scan coverage rather than a false "clean".
+- [Asset-Centric Inventory](specs/2026-09-06-asset-centric-inventory.md) — the
+  persistent, deduplicated per-domain `Asset` inventory and its finalize rollup.
+- [Issue Register](specs/2026-09-15-issue-register.md) — the persistent,
+  cross-scan `Issue` register (Aggregate B): `check_id`/`issue_key` identity, the
+  finalize rollup with triage carry-forward + auto-resolve, and the canonical
+  triage write path. Sibling of the asset inventory.
+- [Producer → Queue → Consumer Hardening](specs/2026-09-07-producer-queue-consumer-hardening.md)
+  — the H1–H10 durability/observability plan for the scan pipeline.
+- [Credential Management — UI-managed BYOK keys](specs/2026-09-09-credential-management.md)
+  — the encrypted `ToolCredentials` store + `get_credential()` DB-wins-over-env
+  resolver.
+- [Finding-Centric UI, Grounded on Asset-Centric](specs/2026-09-12-finding-centric-ui-direction.md)
+  — the direction for the finding/issue register views over the domain-centric
+  backend *(written for the former SPA/API; the served UI is now `apps/mvp` — see
+  Plain-Django UI)*.
+- [Finding Verification](specs/2026-09-15-finding-verification.md) *(shipped)* —
+  re-probe a finding's own check to label it verified / inconclusive / unverified
+  (deterministic baseline + optional AI adjudication); the verdict persists on the
+  `Issue`. Builds on the Issue Register.
+- [tldsquatting False-Positive Reduction](specs/2026-09-30-tldsquatting-fp-reduction.md)
+  — classify lookalikes (owned/parked/unrelated/pre_existing/threat) and collapse
+  benign classes into info rollups.
+- [Quick-Recon Passive Tier](specs/2026-10-01-quick-recon-passive-tier.md)
+  — the `quick_recon` tool flag and the "Passive Scan Light" no-auth first-look
+  workflow (light vs deep passive).
+- [Scan Modes 2×2](specs/2026-10-01-scan-modes-2x2.md) — light/deep ×
+  passive/active scan modes (Passive Light/Deep, Active Light, Full) and the
+  authorization boundary along the passive/active axis.
+- [tldsquatting Email-Capable Severity + Fetch Prioritization](specs/2026-10-07-tldsquatting-email-capable-severity.md)
+  — a lookalike with a configured mail-auth stack (MX + SPF/DMARC) escapes the
+  no-weaponization severity cap, and the capped content-fetch budget is spent on
+  the most suspicious (mail-configured / recent) candidates first.
+- [Plain-Django UI](specs/2026-10-14-plain-django-ui.md) — replaced the React
+  SPA with a server-rendered `apps/mvp` UI (vendored Bulma + HTMX, Django session
+  auth); the Ninja REST API + JWT and the React SPA (`frontend/`) are removed; PDF
+  reports dropped (CSV kept); single-image deploy added.
+  Plan: [plain-django-ui-plan](specs/2026-10-14-plain-django-ui-plan.md).

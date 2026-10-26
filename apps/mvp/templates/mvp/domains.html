@@ -1,0 +1,26 @@
+{% extends "mvp/base.html" %}
+{% block title %}Domains · OpenEASD{% endblock %}
+{% block content %}
+<h1>Domains</h1>
+<div class="box">
+  <form action="{% url 'mvp:domain-create' %}" method="post" class="row-actions">{% csrf_token %}
+    <input class="input" type="text" name="name" placeholder="example.com (apex domain)" required>
+    <button class="button is-link" type="submit">Add domain</button>
+  </form>
+</div>
+<div class="box">
+  <table class="table is-fullwidth is-hoverable">
+    <thead><tr><th>Domain</th><th>Authorized</th><th>Monitoring</th><th>Last scan</th></tr></thead>
+    <tbody>
+    {% for d in domains %}
+    <tr>
+      <td><a href="{% url 'mvp:domain-detail' d.name %}">{{ d.name }}</a></td>
+      <td>{% if d.authorized %}<span class="pill sev-low">authorized</span>{% else %}<span class="pill sev-high">not authorized</span>{% endif %}</td>
+      <td class="muted">{% if d.monitoring_interval_hours %}every {{ d.monitoring_interval_hours }}h{% else %}off{% endif %}</td>
+      <td class="muted">{% if d.last_scan %}{{ d.last_scan.get_status_display }} · {{ d.last_scan.start_time|date:"Y-m-d H:i" }}{% else %}never{% endif %}</td>
+    </tr>
+    {% empty %}<tr><td colspan="4" class="muted">No domains yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "mvp/base.html" %}
+{% block title %}Findings · OpenEASD{% endblock %}
+{% block content %}
+<h1>Findings</h1>
+<p class="muted">{{ total }} finding{{ total|pluralize }} across all scans (read-only).</p>
+<div class="box">
+  <form method="get" class="row-actions">
+    <div class="select"><select name="severity">
+      <option value="">any severity</option>
+      {% for s in severity_order %}<option value="{{ s }}"{% if s == severity_filter %} selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select></div>
+    <div class="select"><select name="status">
+      <option value="">any status</option>
+      {% for val, label in status_choices %}<option value="{{ val }}"{% if val == status_filter %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></div>
+    <div class="select"><select name="source">
+      <option value="">any source</option>
+      {% for src in sources %}<option value="{{ src }}"{% if src == source_filter %} selected{% endif %}>{{ src }}</option>{% endfor %}
+    </select></div>
+    <input class="input" type="text" name="domain" value="{{ domain_filter }}" placeholder="domain contains">
+    <button class="button is-link" type="submit">Filter</button>
+  </form>
+</div>
+<div class="box">
+  <table class="table is-fullwidth is-hoverable">
+    <thead><tr><th>Severity</th><th>Title</th><th>Source</th><th>Target</th><th>Status</th><th>Scan</th><th>Discovered</th></tr></thead>
+    <tbody>
+    {% for f in page %}
+    <tr>
+      <td><span class="pill sev-{{ f.severity }}">{{ f.severity }}</span></td>
+      <td>{{ f.title }}</td>
+      <td class="muted">{{ f.source }}</td>
+      <td class="muted">{{ f.target }}</td>
+      <td><span class="st-{{ f.status }}">{{ f.get_status_display }}</span></td>
+      <td><a href="{% url 'mvp:scan-detail' f.session.uuid %}">{{ f.session.domain }}</a></td>
+      <td class="muted">{{ f.discovered_at|date:"Y-m-d H:i" }}</td>
+    </tr>
+    {% empty %}<tr><td colspan="7" class="muted">No findings match.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if page.has_other_pages %}
+  {% with q="&severity="|add:severity_filter|add:"&status="|add:status_filter|add:"&source="|add:source_filter|add:"&domain="|add:domain_filter %}
+  <div class="row-actions">
+    {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}{{ q|urlencode:"&=" }}">&laquo; prev</a>{% endif %}
+    <span class="muted">page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}<a href="?page={{ page.next_page_number }}{{ q|urlencode:"&=" }}">next &raquo;</a>{% endif %}
+  </div>
+  {% endwith %}
+  {% endif %}
+</div>
+{% endblock %}

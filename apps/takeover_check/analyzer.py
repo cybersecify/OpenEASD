@@ -128,7 +128,7 @@ def analyze(session, records: list[dict]) -> list[Finding]:
             session=session,
             source="takeover_check",
             check_type="subdomain_takeover",
-            severity="high",
+            severity="medium" if unidentified else "high",
             title=f"Subdomain takeover possible: {subdomain_name} ({service_label})",
             description=(
                 f"{subdomain_name} appears to point at an unclaimed {service_label} "

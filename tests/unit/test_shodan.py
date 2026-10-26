@@ -172,7 +172,8 @@ class TestShodanAnalyzer:
         assert len(cve) == 1
         # cve_intel enriches via extra["cve_ids"] — this MUST be present.
         assert cve[0].extra["cve_ids"] == ["CVE-2021-1", "CVE-2021-2"]
-        assert cve[0].severity == "medium"
+        # Version-approximate/unconfirmed banner match — low, not medium.
+        assert cve[0].severity == "low"
 
     def test_no_finding_when_no_ports_and_no_vulns(self):
         sess = _session()
@@ -193,8 +194,86 @@ class TestShodanAnalyzer:
         results = ["junk", {"tier": "internetdb", "ports": [80]}]  # no ip
         assert analyze(sess, results) == []
 
+    def test_cdn_edge_ip_skips_exposure_finding(self):
+        # A Cloudflare edge IP (104.16.0.0/13) — ports 80/443 there are the CDN's,
+        # not the target's; no "exposed services" finding should be emitted.
+        sess = _session()
+        results = [{"ip": "104.21.55.55", "tier": "internetdb", "ports": [80, 443],
+                    "services": [], "vulns": [], "hostnames": [], "tags": []}]
+        exp = [f for f in analyze(sess, results) if f.check_type == "shodan_exposure"]
+        assert exp == []
+
+    def test_cdn_edge_ipv6_skips_exposure_finding(self):
+        sess = _session()
+        results = [{"ip": "2606:4700:3037::6815:3737", "tier": "internetdb",
+                    "ports": [80, 443], "services": [], "vulns": [], "hostnames": [], "tags": []}]
+        exp = [f for f in analyze(sess, results) if f.check_type == "shodan_exposure"]
+        assert exp == []
+
+    def test_cdn_edge_ip_still_reports_cve(self):
+        # Exposure is skipped on a CDN edge, but a CVE is high-signal — keep it.
+        sess = _session()
+        results = [{"ip": "104.21.55.55", "tier": "internetdb", "ports": [443],
+                    "services": [], "vulns": ["CVE-2021-1"], "hostnames": [], "tags": []}]
+        findings = analyze(sess, results)
+        assert [f for f in findings if f.check_type == "shodan_exposure"] == []
+        assert [f for f in findings if f.check_type == "cve"] != []
+
+    def test_non_web_port_gets_individual_exposure(self):
+        # A non-web port (e.g. 3306 MySQL) is the actionable signal — individual.
+        sess = _session()
+        results = [{"ip": "1.2.3.4", "tier": "internetdb", "ports": [443, 3306],
+                    "services": [], "vulns": [], "hostnames": [], "tags": []}]
+        exp = [f for f in analyze(sess, results) if f.check_type == "shodan_exposure"]
+        assert len(exp) == 1
+        assert exp[0].target == "1.2.3.4"
+
+    def test_web_only_host_is_collapsed_into_rollup(self):
+        # 80/443 only on a non-CDN IP is just a web endpoint — no individual
+        # "exposed services" finding; it lands in one web-exposure rollup instead.
+        sess = _session()
+        results = [{"ip": "1.2.3.4", "tier": "internetdb", "ports": [80, 443],
+                    "services": [], "vulns": [], "hostnames": [], "tags": []}]
+        out = analyze(sess, results)
+        assert [f for f in out if f.check_type == "shodan_exposure"] == []
+        roll = [f for f in out if f.check_type == "shodan_web_exposure"]
+        assert len(roll) == 1
+        assert roll[0].severity == "info"
+        assert roll[0].extra["host_count"] == 1
+        assert roll[0].extra["hosts"][0]["ip"] == "1.2.3.4"
+
+    def test_cloudflare_alt_ports_are_web_only(self):
+        # The cPanel-looking ports 2082/2083/8880 are Cloudflare's alt-HTTP ports.
+        sess = _session()
+        results = [{"ip": "1.2.3.4", "tier": "internetdb", "ports": [2082, 2083, 8880],
+                    "services": [], "vulns": [], "hostnames": [], "tags": []}]
+        out = analyze(sess, results)
+        assert [f for f in out if f.check_type == "shodan_exposure"] == []
+        assert len([f for f in out if f.check_type == "shodan_web_exposure"]) == 1
+
+    def test_web_only_rollup_collapses_many_into_one(self):
+        sess = _session()
+        results = [{"ip": f"1.2.3.{i}", "tier": "internetdb", "ports": [443],
+                    "services": [], "vulns": [], "hostnames": [], "tags": []} for i in range(1, 6)]
+        roll = [f for f in analyze(sess, results) if f.check_type == "shodan_web_exposure"]
+        assert len(roll) == 1 and roll[0].extra["host_count"] == 5
+
+
     def test_empty_results(self):
         assert analyze(_session(), []) == []
+
+
+class TestIsCdnIp:
+    def test_cloudflare_ipv4_and_ipv6(self):
+        from apps.shodan.cdn import is_cdn_ip
+        assert is_cdn_ip("104.21.55.55") == "Cloudflare"
+        assert is_cdn_ip("2606:4700:3037::6815:3737") == "Cloudflare"
+
+    def test_non_cdn_and_bad_input_return_none(self):
+        from apps.shodan.cdn import is_cdn_ip
+        assert is_cdn_ip("1.2.3.4") is None
+        assert is_cdn_ip("8.8.8.8") is None
+        assert is_cdn_ip("not-an-ip") is None
 
 
 # ---------------------------------------------------------------------------

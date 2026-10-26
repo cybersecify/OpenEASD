@@ -10,7 +10,7 @@ class AsnDiscoveryConfig(AppConfig):
         "label": "ASN / IP-range Discovery (amass intel)",
         "runner": "apps.asn_discovery.scanner.run_asn_discovery",
         "phase": 3,
-        "phase_group": "Surface Enumeration",
+        "phase_group": "Asset Discovery",
         "requires": [],
         "produces_findings": True,
         "active": False,

@@ -2,6 +2,7 @@ from django.apps import AppConfig
 
 
 class TlsCheckerConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
     name = "apps.tls_checker"
     label = "tls_checker"
     verbose_name = "TLS Checker"
@@ -13,4 +14,5 @@ class TlsCheckerConfig(AppConfig):
         "requires": ["naabu", "service_detection"],
         "produces_findings": True,
         "active": True,
+        "verifier": "apps.tls_checker.verify.verify_finding",
     }

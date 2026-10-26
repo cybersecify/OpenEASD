@@ -436,26 +436,26 @@ class TestTlsAnalyzerCertificates:
         f = next((f for f in findings if f.check_type == "cert_expired"), None)
         assert f is not None and f.severity == "critical"
 
-    def test_expiring_in_10_days_critical(self):
+    def test_expiring_in_10_days_high(self):
         sess, port_fk = self._make_port()
         results = [_make_result(port_fk, cert_expiry_days=10)]
         findings = analyze(sess, results)
         f = next((f for f in findings if f.check_type == "cert_expiring_critical"), None)
-        assert f is not None and f.severity == "critical"
+        assert f is not None and f.severity == "high"
 
-    def test_expiring_in_30_days_high(self):
+    def test_expiring_in_30_days_medium(self):
         sess, port_fk = self._make_port()
         results = [_make_result(port_fk, cert_expiry_days=25)]
         findings = analyze(sess, results)
         f = next((f for f in findings if f.check_type == "cert_expiring_soon"), None)
-        assert f is not None and f.severity == "high"
+        assert f is not None and f.severity == "medium"
 
-    def test_expiring_in_60_days_medium(self):
+    def test_expiring_in_60_days_low(self):
         sess, port_fk = self._make_port()
         results = [_make_result(port_fk, cert_expiry_days=60)]
         findings = analyze(sess, results)
         f = next((f for f in findings if f.check_type == "cert_expiring"), None)
-        assert f is not None and f.severity == "medium"
+        assert f is not None and f.severity == "low"
 
     def test_valid_cert_no_expiry_finding(self):
         sess, port_fk = self._make_port()

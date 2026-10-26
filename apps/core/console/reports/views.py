@@ -1,21 +1,13 @@
-"""Report export views — CSV and PDF."""
+"""Report export views — CSV."""
 
-import base64
 import csv
 import functools
 import logging
-from pathlib import Path
 
 from django.conf import settings
-from django.contrib.auth.models import User
-from django.db.models import Count
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
-from django.template.loader import get_template
-from django.utils import timezone
 
-from apps.core.data.assets.models import Subdomain, IPAddress, Port
-from apps.core.data.web_assets.models import URL
 from apps.core.data.findings.models import Finding
 from apps.core.engine.scans.models import ScanSession
 
@@ -24,130 +16,13 @@ logger = logging.getLogger(__name__)
 _SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
 _ALLOWED_SEVERITIES = frozenset(_SEVERITY_ORDER)
 
-# Representative CVSS v3.1 base score per severity band, used when a finding has
-# no measured CVSS (only CVE findings carry a real score in extra["cvss_score"]).
-_SEVERITY_CVSS = {"critical": 9.1, "high": 7.5, "medium": 5.3, "low": 3.1}
-
-# scope: coarse category shown next to each finding. check_type wins over source.
-_SCOPE_BY_SOURCE = {
-    "tls_checker": "TLS / HTTPS",
-    "ssh_checker": "Network / SSH",
-    "nmap": "Network",
-    "nuclei_network": "Network",
-    "domain_security": "Email / DNS",
-    "domain_probe": "Email / DNS",
-    "web_checker": "Web",
-    "nuclei": "Web",
-    "httpx": "Web",
-    "takeover_check": "Attack Surface",
-    "cloud_assets": "Cloud Storage",
-}
-_SCOPE_BY_CHECK = {
-    "rdap": "Domain", "dns": "DNS", "caa": "DNS", "dnssec": "DNS",
-    "open_relay": "Email / DNS", "lookalike_cluster": "Attack Surface",
-}
-
-# CWE mapping per check_type. Unmapped check types render "—".
-_CWE_BY_CHECK = {
-    "unencrypted_service": "CWE-319: Cleartext Transmission of Sensitive Information",
-    "missing_hsts": "CWE-319: Cleartext Transmission of Sensitive Information",
-    "san_mismatch": "CWE-295: Improper Certificate Validation",
-    "self_signed_cert": "CWE-295: Improper Certificate Validation",
-    "untrusted_ca": "CWE-295: Improper Certificate Validation",
-    "cert_expiring": "CWE-324: Use of a Key Past its Expiration Date",
-    "missing_csp": "CWE-1021: Improper Restriction of Rendered UI Layers",
-    "missing_xfo": "CWE-1021: Improper Restriction of Rendered UI Layers",
-    "missing_xcto": "CWE-693: Protection Mechanism Failure",
-    "cors": "CWE-942: Permissive Cross-domain Policy with Untrusted Domains",
-    "cve": "CWE-1395: Dependency on Vulnerable Third-Party Component",
-    # breach_check — breached credentials/accounts exposed in third-party breaches
-    "breach_exposure": "CWE-359: Exposure of Private Personal Information to an Unauthorized Actor",
-    "weak_ssh_kex": "CWE-326: Inadequate Encryption Strength",
-    "weak_ssh_mac": "CWE-326: Inadequate Encryption Strength",
-    "weak_cipher": "CWE-326: Inadequate Encryption Strength",
-    "email": "CWE-358: Improperly Implemented Security Check for Standard",
-    "dmarc": "CWE-358: Improperly Implemented Security Check for Standard",
-    "spf": "CWE-358: Improperly Implemented Security Check for Standard",
-    "dkim": "CWE-358: Improperly Implemented Security Check for Standard",
-    "dnssec": "CWE-346: Origin Validation Error",
-    "dns": "CWE-693: Protection Mechanism Failure",
-    "open_relay": "CWE-284: Improper Access Control",
-    "rdap": "CWE-284: Improper Access Control",
-    "sshv1_supported": "CWE-327: Use of a Broken or Risky Cryptographic Algorithm",
-    "weak_ssh_host_key": "CWE-326: Inadequate Encryption Strength",
-    "weak_ssh_cipher": "CWE-326: Inadequate Encryption Strength",
-    "ssh_password_auth": "CWE-287: Improper Authentication",
-    "ssh_root_login": "CWE-269: Improper Privilege Management",
-    # TLS checker
-    "cert_expired": "CWE-324: Use of a Key Past its Expiration Date",
-    "cert_expiring_critical": "CWE-324: Use of a Key Past its Expiration Date",
-    "cert_expiring_soon": "CWE-324: Use of a Key Past its Expiration Date",
-    "no_forward_secrecy": "CWE-326: Inadequate Encryption Strength",
-    "tls10_supported": "CWE-327: Use of a Broken or Risky Cryptographic Algorithm",
-    "tls11_supported": "CWE-327: Use of a Broken or Risky Cryptographic Algorithm",
-    "tls13_not_supported": "CWE-326: Inadequate Encryption Strength",
-    "weak_rsa_key": "CWE-326: Inadequate Encryption Strength",
-    "weak_ec_key": "CWE-326: Inadequate Encryption Strength",
-    "dsa_key": "CWE-327: Use of a Broken or Risky Cryptographic Algorithm",
-    "sha1_cert_signature": "CWE-327: Use of a Broken or Risky Cryptographic Algorithm",
-    "no_sct": "CWE-295: Improper Certificate Validation",
-    # Web checker
-    "missing_permissions_policy": "CWE-693: Protection Mechanism Failure",
-    "missing_referrer_policy": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
-    "weak_hsts": "CWE-319: Cleartext Transmission of Sensitive Information",
-    "cookie_missing_secure": "CWE-614: Sensitive Cookie in HTTPS Session Without 'Secure' Attribute",
-    "cookie_missing_httponly": "CWE-1004: Sensitive Cookie Without 'HttpOnly' Flag",
-    "cookie_missing_samesite": "CWE-1275: Sensitive Cookie with Improper SameSite Attribute",
-    "cors_wildcard_credentials": "CWE-942: Permissive Cross-domain Policy with Untrusted Domains",
-    "cors_origin_reflection": "CWE-942: Permissive Cross-domain Policy with Untrusted Domains",
-    "cors_wildcard": "CWE-942: Permissive Cross-domain Policy with Untrusted Domains",
-    "server_version_disclosure": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
-    "server_poweredby_disclosure": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
-    "directory_listing": "CWE-548: Exposure of Information Through Directory Listing",
-    # Responsible disclosure — no/lapsed machine-readable way to report a vuln.
-    # CWE-1059 captures the missing security-facing documentation/process.
-    "missing_security_txt": "CWE-1059: Insufficient Technical Documentation",
-    "expired_security_txt": "CWE-1059: Insufficient Technical Documentation",
-    # Attack surface / cloud / secrets / intel
-    "subdomain_takeover": "CWE-284: Improper Access Control",
-    "open_cloud_bucket": "CWE-732: Incorrect Permission Assignment for Critical Resource",
-    "exposed_secret": "CWE-540: Inclusion of Sensitive Information in Source Code",
-    "infostealer_exposure": "CWE-522: Insufficiently Protected Credentials",
-    "asn": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
-    # dns_history — historical A/AAAA/MX records reveal past hosting/mail infra
-    "dns_history": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
-    "coverage_regression": "CWE-693: Protection Mechanism Failure",
-    "shodan_exposure": "CWE-668: Exposure of Resource to Wrong Sphere",
-    # A registered lookalike domain is infrastructure built to be visually
-    # confused with the org's real domain — the essence of CWE-451.
-    "lookalike_domain": "CWE-451: User Interface (UI) Misrepresentation of Critical Information",
-    # asn_cluster — lookalikes sharing one ASN = coordinated impersonation infra.
-    "lookalike_cluster": "CWE-451: User Interface (UI) Misrepresentation of Critical Information",
-    # github_recon — infra references (internal hostnames/subdomains, cloud-bucket
-    # URLs, API endpoints) and the public-repo surface leaked in the org's PUBLIC
-    # GitHub source. CWE-200 (Exposure of Sensitive Information to an Unauthorized
-    # Actor) is the exact category: the data is not itself a vuln, but exposing it
-    # hands an attacker recon they should have had to work for.
-    "github_infra_exposure": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
-    "github_public_repos": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
-}
 
 
-def _finding_scope(source, check_type):
-    return _SCOPE_BY_CHECK.get(check_type) or _SCOPE_BY_SOURCE.get(source) or "General"
 
 
-def _risk_rating(vuln_counts):
-    """Overall posture rating computed from severity counts (no analysis)."""
-    if vuln_counts.get("critical"):
-        return "CRITICAL"
-    if vuln_counts.get("high"):
-        return "HIGH"
-    if vuln_counts.get("medium"):
-        return "MEDIUM"
-    if vuln_counts.get("low"):
-        return "LOW"
-    return "INFORMATIONAL"
+
+
+
 
 
 # Human labels for fingerprinted WAF/edge vendors.
@@ -163,23 +38,6 @@ _WAF_VENDOR_LABEL = {
 }
 
 
-def _collect_technologies(session):
-    """Distinct technologies fingerprinted across a session's web assets.
-
-    Aggregates the per-URL ``technologies`` lists (httpx -tech-detect),
-    de-duplicates case-insensitively (first spelling wins), and returns them
-    sorted case-insensitively. Informational only — no version/EOL/CVE
-    inference. Returns [] when nothing was fingerprinted.
-    """
-    seen = {}
-    for row in URL.objects.filter(session=session).values_list("technologies", flat=True):
-        for tech in (row or []):
-            if not isinstance(tech, str):
-                continue
-            tech = tech.strip()
-            if tech:
-                seen.setdefault(tech.lower(), tech)
-    return sorted(seen.values(), key=str.lower)
 
 
 def _coverage_context(session):
@@ -228,22 +86,8 @@ def _coverage_context(session):
         ),
     }
 
-# Cybersecify report logos, embedded as base64 data-URIs. "white" is used on the
-# dark (#0d1117) cover; "brand" (green) is used in the running header on white
-# body pages, where the white logo would be invisible.
-_BRAND_DIR = Path(__file__).resolve().parent / "brand"
 
 
-@functools.lru_cache(maxsize=4)
-def _logo_data_uri(variant: str = "white") -> str:
-    """Return a report logo as a `data:image/png;base64,...` URI, or "" if missing."""
-    path = _BRAND_DIR / f"cybersecify-{variant}-horizontal.png"
-    try:
-        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-        return f"data:image/png;base64,{encoded}"
-    except OSError:
-        logger.warning("[reports] logo asset missing at %s", path)
-        return ""
 
 
 def _parse_min_severity(request):
@@ -259,39 +103,25 @@ def _parse_min_severity(request):
 
 
 def _report_auth_required(view_func):
-    """Accept auth in this order:
+    """Require a Django session (the server-rendered mvp UI is session-authed).
 
-    1. Django session (request.user already authenticated)
-    2. ``Authorization: Bearer <token>`` header — preferred; React SPA uses
-       this via fetch + Blob for downloads
-    3. ``?token=<token>`` query param — DEPRECATED, retained for backward
-       compatibility only and slated for removal in a future release
-
-    The ``?token=`` path leaks JWTs into browser history, ``Referer`` headers,
-    server access logs, and proxy caches. The frontend no longer generates
-    such URLs; only manually constructed links exercise this path.
+    A user still on the forced-change flag (e.g. default admin/admin) must not
+    reach report data — reports is a direct view, so enforce that explicitly
+    here rather than relying only on the mvp middleware.
     """
+    def _password_change_pending(user) -> bool:
+        profile = getattr(user, "profile", None)
+        return bool(profile is not None and profile.must_change_password)
+
     @functools.wraps(view_func)
     def wrapper(request, *args, **kwargs):
+        from django.conf import settings
+        from django.urls import reverse
         if request.user.is_authenticated:
+            if _password_change_pending(request.user):
+                return HttpResponseRedirect(reverse("mvp:change-password"))
             return view_func(request, *args, **kwargs)
-
-        auth_header = request.headers.get('Authorization', '')
-        if auth_header.startswith('Bearer '):
-            token = auth_header[7:]
-        else:
-            token = request.GET.get('token', '')
-
-        if token:
-            try:
-                from ninja_jwt.tokens import AccessToken
-                token_obj = AccessToken(token)
-                user_id = token_obj["user_id"]
-                request.user = User.objects.get(id=user_id, is_active=True)
-                return view_func(request, *args, **kwargs)
-            except Exception as exc:
-                logger.debug(f"Report token auth failed: {exc}")
-        return HttpResponseRedirect('/login')
+        return HttpResponseRedirect(settings.LOGIN_URL)
     return wrapper
 
 
@@ -357,357 +187,18 @@ def export_findings_csv(request, session_uuid):
     return response
 
 
-def _group_findings_by_issue(findings):
-    """Collapse findings that share an identical write-up into one issue group.
-
-    Many tools raise the same issue (identical severity/source/check_type/
-    description/remediation) once per affected target — e.g. 20 "Unencrypted
-    HTTPS" findings differing only by IP:port. Grouping renders the description
-    and remediation once, with a compact table of every affected target beneath,
-    instead of repeating the full block per instance. No information is lost:
-    every target is still listed.
-
-    Returns a list of dicts ordered by severity, then by instance count (desc):
-        {severity, source, check_type, title, description, remediation, instances}
-    where `instances` is the list of Finding objects sharing that write-up.
-    The group title strips a trailing " on <target>" so the heading reads as the
-    issue ("Unencrypted HTTPS") rather than one instance's target.
-    """
-    groups = {}
-    order = []
-    for f in findings:
-        # Normalise the title by stripping a trailing " on <target>" so the same
-        # issue across targets shares one heading ("Unencrypted HTTPS").
-        title = f.title or ""
-        suffix = " on " + (f.target or "")
-        if f.target and title.endswith(suffix):
-            title = title[: -len(suffix)]
-        # Group on the issue identity (severity + source + check_type + heading),
-        # NOT on the full description — real findings embed per-target text in the
-        # description, which would otherwise split one issue into many groups.
-        key = (f.severity, f.source, f.check_type, title)
-        g = groups.get(key)
-        if g is None:
-            g = groups[key] = {
-                "severity": f.severity,
-                "source": f.source,
-                "check_type": f.check_type,
-                # Sub-type for findings that share a coarse check_type (email
-                # controls all use check_type="email"); lets the report attach
-                # the right per-control copy.
-                "control": (f.extra or {}).get("control") if isinstance(f.extra, dict) else None,
-                "title": title,
-                "description": f.description,
-                "remediation": f.remediation,
-                "instances": [],
-            }
-            order.append(key)
-        g["instances"].append(f)
-
-    result = [groups[k] for k in order]
-    result.sort(
-        key=lambda grp: (
-            _SEVERITY_ORDER.index(grp["severity"]) if grp["severity"] in _SEVERITY_ORDER else 99,
-            -len(grp["instances"]),
-            grp["title"].lower(),
-        )
-    )
-
-    # Enrich each group: stable ID, scope, CWE, CVSS, and de-duplicated CVE list.
-    year = timezone.now().year
-    for i, grp in enumerate(result, start=1):
-        grp["fid"] = f"OE-{year}-{i:03d}"
-        grp["scope"] = _finding_scope(grp["source"], grp["check_type"])
-        grp["cwe"] = _CWE_BY_CHECK.get(grp["check_type"], "")
-        # Real CVSS from CVE findings if present, else the severity-band default.
-        scores = [
-            f.extra.get("cvss_score")
-            for f in grp["instances"]
-            if isinstance(f.extra, dict) and f.extra.get("cvss_score")
-        ]
-        grp["cvss"] = max(scores) if scores else _SEVERITY_CVSS.get(grp["severity"])
-        cves = []
-        for f in grp["instances"]:
-            if not isinstance(f.extra, dict):
-                continue
-            one = f.extra.get("cve")
-            many = f.extra.get("cve_ids") or []
-            for c in ([one] if one else []) + list(many):
-                if c and c not in cves:
-                    cves.append(c)
-        grp["cves"] = cves
-        # Threat intel rollup from cve_intel (extra: cisa_kev / epss_score /
-        # epss_percentile). KEV = at least one CVE is on CISA's actively-exploited
-        # list; EPSS percentile is the highest across the group's CVEs.
-        dict_extras = [f.extra for f in grp["instances"] if isinstance(f.extra, dict)]
-        grp["cisa_kev"] = any(e.get("cisa_kev") for e in dict_extras)
-        pctls = [e.get("epss_percentile") for e in dict_extras if e.get("epss_percentile") is not None]
-        grp["epss_percentile"] = max(pctls) if pctls else None
-        # Plain-language business impact for a decision-maker. Resolve via the
-        # effective key — the control for findings that share a coarse check_type
-        # (email), else the check_type. Specific per-control/check copy renders at
-        # ANY severity (many email-auth gaps are medium but still worth explaining);
-        # the generic severity fallback stays limited to critical/high.
-        effective_key = grp.get("control") or grp["check_type"]
-        specific = _BUSINESS_IMPACT.get(effective_key)
-        if specific:
-            grp["business_impact"] = specific
-        elif grp["severity"] in ("critical", "high"):
-            grp["business_impact"] = _BUSINESS_IMPACT_BY_SEV.get(grp["severity"], "")
-        else:
-            grp["business_impact"] = ""
-        # Concrete remediation checklist (rendered on hosted reports only).
-        grp["next_steps"] = _NEXT_STEPS_BY_CHECK.get(effective_key, [])
-        # Affected endpoints as a pill grid (3 per row). Capped at 50 per group
-        # to prevent OOM when a single finding fires on thousands of URLs.
-        endpoints = [(f.url.url if f.url else f.target) for f in grp["instances"]]
-        cap = 50
-        shown = endpoints[:cap]
-        grp["endpoint_rows"] = [shown[i:i + 3] for i in range(0, len(shown), 3)]
-        grp["endpoint_overflow"] = max(0, len(endpoints) - cap)
-    return result
 
 
-# Plain-language business risk for the headline "Fix First" block — spoken to a
-# decision-maker, not an engineer. Keyed by check_type; severity fallback below.
-_BUSINESS_IMPACT = {
-    "unencrypted_service": "Data to this service crosses the internet in plaintext — anyone on the network path can read it.",
-    "subdomain_takeover": "An attacker can claim this dangling subdomain and serve content under your name — phishing, malware, or session-cookie theft.",
-    "missing_csp": "A single injected script would run in your users' browsers (cross-site scripting).",
-    "cve": "A publicly known vulnerability with a documented exploit is reachable from the internet.",
-    "dnssec": "DNS answers for your domain can be forged, silently redirecting users to attacker servers.",
-    # Email controls — keyed by extra["control"] (all email findings share
-    # check_type="email"), resolved via the effective key below.
-    "spf": "Without a strict SPF policy, anyone can send email that appears to come from your domain.",
-    "dmarc": "Anyone can send email that appears to come from your domain — brand and phishing risk.",
-    "dkim": "Recipients can't cryptographically verify your mail, so spoofed email is harder to reject.",
-    "mta_sts": "Email to your mail servers can be forced down to plaintext and intercepted in transit.",
-    # NOTE: no "rdap" entry — that check_type is shared by expiry AND the
-    # transfer/delete/update lock findings, so an expiry line here mis-renders on
-    # lock findings. Expiry findings carry their own dated description.
-}
-_BUSINESS_IMPACT_BY_SEV = {
-    "critical": "Directly exploitable from the internet and high-impact — treat as urgent.",
-    "high": "A serious weakness an external attacker can leverage.",
-}
-_SEV_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
 
 
-# Concrete, ordered "do this" steps per finding type — a remediation checklist,
-# not a paragraph. Keyed by effective key (the email `control` where findings
-# share the coarse check_type="email", else the check_type). Rendered in the
-# report's finding detail ONLY on hosted reports (REPORT_CTA configured) —
-# self-hosters still get the per-finding Remediation prose. Unmapped types render
-# nothing, so the block never shows an empty list.
-_NEXT_STEPS_BY_CHECK = {
-    # --- Web security headers (web_checker) ---
-    "missing_csp": [
-        "Ship a report-only policy first: `Content-Security-Policy-Report-Only: default-src 'self'; report-uri /csp-report`.",
-        "Review the reported violations for a week and fold legitimate origins into the policy.",
-        "Switch the header to enforcing (`Content-Security-Policy`) once violations are clean.",
-    ],
-    "missing_xfo": [
-        "Add `X-Frame-Options: DENY` (or `SAMEORIGIN` if the page is framed by your own origin).",
-        "Add a matching CSP directive for modern browsers: `Content-Security-Policy: frame-ancestors 'none'`.",
-        "Re-scan to confirm both headers are present on every page.",
-    ],
-    "missing_xcto": [
-        "Add `X-Content-Type-Options: nosniff` to all responses.",
-        "Confirm every response sets a correct `Content-Type` so nosniff doesn't break assets.",
-    ],
-    "missing_hsts": [
-        "Confirm the site is fully reachable over HTTPS.",
-        "Add `Strict-Transport-Security: max-age=31536000; includeSubDomains`.",
-        "Once stable across all subdomains, add `preload` and submit at hstspreload.org.",
-    ],
-    "weak_hsts": [
-        "Raise the HSTS `max-age` to at least 31536000 (one year).",
-        "Add `includeSubDomains` if every subdomain is HTTPS-only.",
-    ],
-    # --- Cookies (web_checker) ---
-    "cookie_missing_secure": [
-        "Set the `Secure` attribute on every cookie served over HTTPS.",
-        "For session cookies, combine with `HttpOnly` and `SameSite`.",
-    ],
-    "cookie_missing_httponly": [
-        "Set `HttpOnly` on any cookie that JavaScript does not need to read (session/auth cookies first).",
-    ],
-    "cookie_missing_samesite": [
-        "Set `SameSite=Lax` on cookies by default, or `Strict` for sensitive session cookies.",
-        "If a cookie must cross sites, use `SameSite=None; Secure` deliberately.",
-    ],
-    # --- CORS (web_checker) ---
-    "cors_wildcard_credentials": [
-        "Stop returning `Access-Control-Allow-Origin: *` together with `Access-Control-Allow-Credentials: true` — this combination is exploitable.",
-        "Echo back only origins from a server-side allowlist of trusted sites.",
-        "Re-test with an untrusted `Origin` header to confirm it is rejected.",
-    ],
-    "cors_origin_reflection": [
-        "Validate the `Origin` header against an allowlist instead of reflecting it.",
-        "Return no CORS headers for untrusted origins.",
-        "Re-test with a spoofed `Origin` to confirm it is not reflected.",
-    ],
-    "cors_wildcard": [
-        "Replace `Access-Control-Allow-Origin: *` with an explicit allowlist of trusted origins.",
-        "Scope the wildcard to only genuinely public, non-credentialed endpoints if it must stay.",
-    ],
-    # --- Disclosure / listing (web_checker) ---
-    "server_version_disclosure": [
-        "Suppress the version in the `Server` header (nginx: `server_tokens off;`, Apache: `ServerTokens Prod`).",
-        "Reload the web server and re-scan to confirm the version is gone.",
-    ],
-    "server_poweredby_disclosure": [
-        "Remove the `X-Powered-By` header (e.g. PHP `expose_php = Off`, Express `app.disable('x-powered-by')`).",
-    ],
-    "directory_listing": [
-        "Disable auto-indexing (nginx: `autoindex off;`, Apache: `Options -Indexes`).",
-        "Add an index file or return 403 for the exposed directories.",
-        "Review the listed files for anything sensitive that should be removed.",
-    ],
-    # --- Responsible disclosure (web_checker) ---
-    "missing_security_txt": [
-        "Create `/.well-known/security.txt` with at least `Contact:` (a monitored security email or reporting URL) and `Expires:`.",
-        "Serve it as `text/plain` over HTTPS.",
-        "Set a calendar reminder to refresh `Expires:` before it lapses.",
-    ],
-    "expired_security_txt": [
-        "Update the `Expires:` field to a future date.",
-        "Confirm the `Contact:` address/URL is still monitored.",
-    ],
-    # --- Email authentication (domain_security; keyed by control) ---
-    "spf": [
-        "Publish a single SPF TXT record listing every legitimate sender, ending in `-all` (hard fail).",
-        "Keep it to ≤10 DNS lookups; flatten include chains if needed.",
-    ],
-    "dmarc": [
-        "Publish `_dmarc` TXT starting at `v=DMARC1; p=none` with an `rua=` aggregate-report address.",
-        "Review the reports, then raise the policy to `p=quarantine` and finally `p=reject`.",
-    ],
-    "dkim": [
-        "Enable DKIM signing at your mail provider and publish the selector's public key in DNS.",
-        "Send a test message and confirm the signature verifies (`dkim=pass`).",
-    ],
-    # --- TLS (tls_checker) ---
-    "weak_cipher": [
-        "Disable the weak cipher suites and prefer AEAD suites (AES-GCM, ChaCha20-Poly1305).",
-        "Re-test with an SSL/TLS scanner to confirm only strong suites remain.",
-    ],
-    "no_forward_secrecy": [
-        "Enable ECDHE key-exchange cipher suites and prefer them in server order.",
-        "Disable static-RSA key exchange.",
-    ],
-    "cert_expired": [
-        "Reissue and install a current certificate immediately.",
-        "Automate renewal (ACME/Let's Encrypt or your CA's API) so it can't lapse again.",
-    ],
-    # --- SSH (ssh_checker) ---
-    "ssh_password_auth": [
-        "Deploy SSH keys for all operators, then set `PasswordAuthentication no` in sshd_config.",
-        "Reload sshd and confirm password login is refused.",
-    ],
-    "ssh_root_login": [
-        "Set `PermitRootLogin no` and use a sudo-capable named account instead.",
-        "Reload sshd and verify direct root login is rejected.",
-    ],
-    # --- Attack surface ---
-    "subdomain_takeover": [
-        "Remove the dangling DNS record, or reclaim the referenced resource at the provider.",
-        "Re-scan to confirm the subdomain no longer resolves to an unclaimed endpoint.",
-    ],
-    "open_cloud_bucket": [
-        "Remove public/anonymous access on the bucket and enable the provider's public-access block.",
-        "Audit the objects that were exposed for anything sensitive.",
-        "Set an alert for future public-access changes.",
-    ],
-    "exposed_secret": [
-        "Treat the secret as compromised: rotate/revoke it now.",
-        "Remove it from the code and load it from a secret manager or environment variable.",
-        "Purge it from git history if it was committed.",
-    ],
-    "lookalike_cluster": [
-        "Treat the clustered domains as one campaign — file takedowns together.",
-        "Report the shared network (the named ASN) to its hosting provider / registrar.",
-        "Add the ASN and domains to your monitoring/blocklists and watch for new lookalikes on it.",
-    ],
-}
 
 
-def _priority_score(grp) -> float:
-    """Rank findings for the 'Fix First' block: severity first, then measured
-    CVSS, with a dominant boost for actively-exploited (CISA KEV) issues and a
-    nudge for high EPSS (exploit-probability)."""
-    score = _SEV_RANK.get(grp["severity"], 0) * 100
-    score += (grp.get("cvss") or 0) * 5
-    if grp.get("cisa_kev"):
-        score += 500  # actively exploited in the wild dominates the ranking
-    if grp.get("epss_percentile"):
-        score += grp["epss_percentile"] * 50
-    return score
 
 
-def _top_risks(groups, limit=5):
-    """The decision-maker's shortlist: critical/high (or actively-exploited)
-    issues, ranked by priority, each with a plain-language impact line."""
-    candidates = [
-        g for g in groups
-        if g["severity"] in ("critical", "high") or g.get("cisa_kev")
-    ]
-    ranked = sorted(candidates, key=_priority_score, reverse=True)[:limit]
-    for g in ranked:
-        # Reuse the per-group business_impact; fall back for KEV-only mediums.
-        g["impact"] = g.get("business_impact") or \
-            _BUSINESS_IMPACT.get(g["check_type"]) or \
-            _BUSINESS_IMPACT_BY_SEV.get(g["severity"], "")
-    return ranked
 
 
-def _ai_context(session) -> dict:
-    """Optional AI analyst-summary context (apps/core/ai). Returns {} whenever
-    no completed triage exists, so an AI-off deployment renders a byte-identical
-    report — the template gates the whole block on `ai_summary` (report_cta
-    precedent). Never raises: the report must render even if the AI tables are
-    in a weird state."""
-    try:
-        from apps.core.console.ai.models import AISummary, AITriage
-
-        triage = AITriage.objects.filter(session=session, status="completed").first()
-        summary = AISummary.objects.filter(session=session, kind="report").first()
-        text = (summary.text if summary else "") or (triage.overview if triage else "")
-        if not text:
-            return {}
-        top = []
-        if triage:
-            for item in triage.items.select_related("finding").all()[:5]:
-                finding = item.finding
-                top.append({
-                    "rank": item.rank,
-                    "title": finding.title if finding else item.finding_key.split(":", 2)[-1],
-                    "severity": finding.severity if finding else "",
-                    "rationale": item.rationale,
-                })
-        model = (summary.model if summary else "") or (triage.model if triage else "")
-        generated_at = summary.created_at if summary else triage.created_at
-        return {
-            "ai_summary": text,
-            "ai_triage_top": top,
-            "ai_model_name": model,
-            "ai_generated_at": generated_at,
-        }
-    except Exception:  # noqa: BLE001 — AI must never break report rendering
-        logger.exception("[reports] AI context lookup failed — rendering without it")
-        return {}
 
 
-def _render_pdf(html: str) -> bytes:
-    """Render report HTML to PDF bytes via WeasyPrint.
-
-    WeasyPrint needs the pango / cairo / gdk-pixbuf system libraries. This is
-    isolated in one function so tests can patch it without importing WeasyPrint
-    or requiring those libraries.
-    """
-    from weasyprint import HTML
-
-    return HTML(string=html).write_pdf()
 
 
 # Findings hidden from the buyer-facing report (PDF + CSV) — still stored and
@@ -720,61 +211,10 @@ _REPORT_HIDDEN_TITLES = frozenset({
     "RDAP lookup failed",
 })
 
-# Passive tools that no-op without a data source / key — hidden from the report's
-# scope & methodology when unconfigured so the report doesn't imply they assessed
-# anything. Keyed by the credential that activates each.
-_REPORT_TOOL_REQUIRES = {
-    "github_secrets": "GITHUB_TOKEN",
-    "dns_history": "DNS_HISTORY_API_URL",
-}
 
 
-# The five questions a decision-maker actually asks, mapped to the findings that
-# answer them. `tools` = the scanners that assess this question, so we can say
-# "not checked" (tool didn't run) instead of a misleading "no issues found".
-_CEO_QUESTIONS = [
-    # Email-auth controls live in domain_security (SPF/DMARC/DKIM/TLS-RPT/BIMI);
-    # MTA-STS (check_type="email") is an active probe in domain_probe — match both.
-    ("Can someone spoof our email?", {"domain_security"},
-     lambda g: g["source"] in ("domain_security", "domain_probe") and g["check_type"] == "email"),
-    ("Can we lose our domain?", {"domain_security"},
-     lambda g: g["source"] == "domain_security" and g["check_type"] in ("rdap", "dnssec")),
-    ("Are staff logins stolen?", {"hudson_rock", "breach_check"},
-     lambda g: g["source"] in ("hudson_rock", "breach_check")),
-    ("Is anyone impersonating us?", {"typosquat", "asn_cluster"},
-     lambda g: g["source"] in ("typosquat", "asn_cluster")),
-    ("Did we leak keys?", {"js_secrets", "github_secrets"},
-     lambda g: g["source"] in ("js_secrets", "github_secrets") or g["check_type"] == "exposed_secret"),
-]
 
 
-def _ceo_questions(issue_groups, active_tools):
-    """Answer each executive question from the findings, so the report opens with
-    the business picture before the technical detail.
-
-    Status per question: at_risk (a critical/high finding), attention (only
-    medium/low/info), clear (the tool ran and found nothing), or not_checked
-    (the assessing tool wasn't in this scan) — the last avoids a false all-clear.
-    """
-    active = set(active_tools)
-    out = []
-    for question, tools, match in _CEO_QUESTIONS:
-        matched = [g for g in issue_groups if match(g)]
-        if matched:
-            has_high = any(g["severity"] in ("critical", "high") for g in matched)
-            status = "at_risk" if has_high else "attention"
-        elif tools & active:
-            status = "clear"
-        else:
-            status = "not_checked"
-        out.append({
-            "question": question,
-            "status": status,
-            "issue_count": len(matched),
-            "instance_count": sum(len(g["instances"]) for g in matched),
-            "issues": matched,
-        })
-    return out
 
 
 def _previous_baseline(session):
@@ -794,268 +234,9 @@ def _previous_baseline(session):
     )
 
 
-def _since_last_scan(session, severities):
-    """What changed vs the previous scan of this domain — new / resolved findings.
-
-    Diffs findings against the previous baseline by the same identity key as
-    ScanDelta (``source:check_type:title``). Carries severity + title so the
-    report can list what appeared and what cleared, and counts what persisted.
-    Scoped to the report's own ``min_severity`` filter and hidden-title
-    suppression so it never references findings the rest of the report hides.
-
-    Returns ``None`` on the first scan (no baseline) so the template block is
-    skipped entirely.
-    """
-    previous = _previous_baseline(session)
-    if previous is None:
-        return None
-
-    def _rows(s):
-        rows = {}
-        qs = (
-            Finding.objects.filter(session=s, severity__in=severities)
-            .exclude(title__in=_REPORT_HIDDEN_TITLES)
-            .values("source", "check_type", "title", "severity")
-        )
-        for f in qs:
-            key = f"{f['source']}:{f['check_type']}:{f['title']}"
-            rank = _SEVERITY_ORDER.index(f["severity"]) if f["severity"] in _SEVERITY_ORDER else 99
-            cur = rows.get(key)
-            # Keep the highest-severity representative when a key recurs.
-            if cur is None or rank < cur["_rank"]:
-                rows[key] = {"title": f["title"], "severity": f["severity"],
-                             "source": f["source"], "_rank": rank}
-        return rows
-
-    cur = _rows(session)
-    prev = _rows(previous)
-    cur_keys, prev_keys = set(cur), set(prev)
-
-    def _ranked(items):
-        rows = sorted(items, key=lambda d: d["_rank"])
-        for r in rows:
-            r.pop("_rank", None)
-        return rows
-
-    new = _ranked([cur[k] for k in cur_keys - prev_keys])
-    resolved = _ranked([prev[k] for k in prev_keys - cur_keys])
-    return {
-        "previous_date": previous.end_time or previous.start_time,
-        "new": new,
-        "resolved": resolved,
-        "new_count": len(new),
-        "resolved_count": len(resolved),
-        "still_open": len(cur_keys & prev_keys),
-    }
 
 
-@_report_auth_required
-def export_scan_pdf(request, session_uuid):
-    """Export a scan report as PDF, optionally filtered by ?min_severity=."""
-    session = get_object_or_404(ScanSession, uuid=session_uuid)
-    severities, err = _parse_min_severity(request)
-    if err:
-        return err
-    findings = Finding.objects.filter(session=session, severity__in=severities).select_related("port", "url").order_by(
-        "severity", "-discovered_at"
-    )
-    # RDAP failure is surfaced as a coverage caveat, not a finding — capture it
-    # before suppressing the hidden titles from the buyer report.
-    rdap_unavailable = findings.filter(title="RDAP lookup failed").exists()
-    findings = findings.exclude(title__in=_REPORT_HIDDEN_TITLES)
 
-    # Severity counts. Reset the queryset ordering with .order_by() first: the
-    # `findings` queryset is ordered by (severity, -discovered_at), and that
-    # trailing sort field would otherwise leak into the GROUP BY, collapsing
-    # every severity bucket to a count of 1 (one group per distinct timestamp).
-    vuln_counts = {sev: 0 for sev in _SEVERITY_ORDER}
-    for row in findings.order_by().values("severity").annotate(total=Count("id")):
-        if row["severity"] in vuln_counts:
-            vuln_counts[row["severity"]] = row["total"]
 
-    # Findings collapsed into issue groups (identical write-up → one block with
-    # a table of affected targets) for both the overview and the detail section.
-    issue_groups = _group_findings_by_issue(findings)
-    top_risks = _top_risks(issue_groups)
-    groups_by_severity = [
-        (sev, [g for g in issue_groups if g["severity"] == sev])
-        for sev in _SEVERITY_ORDER
-    ]
-    groups_by_severity = [(sev, gs) for sev, gs in groups_by_severity if gs]
-    # Consolidated (unique-issue) severity counts drive the headline tiles and the
-    # risk rating, so they match the findings table. The raw per-detection counts
-    # (vuln_counts) are surfaced only as the "N raw detections" note.
-    unique_counts = {sev: 0 for sev in _SEVERITY_ORDER}
-    for g in issue_groups:
-        if g["severity"] in unique_counts:
-            unique_counts[g["severity"]] += 1
-    raw_total = sum(vuln_counts.values())
-    risk_rating = _risk_rating(unique_counts)
 
-    # Exposure Score — one 0-100 executive number (higher = worse) + letter grade,
-    # derived from the raw per-detection severity counts so it matches the score
-    # stored per scan by the insights builder. Trend vs the same domain's previous
-    # scan is pulled from stored ScanSummary rows (Python-side; SQLite JSON quirk).
-    from apps.core.console.insights.scoring import compute_exposure_score, grade_for_score
-    from apps.core.console.insights.models import ScanSummary
 
-    exposure_score = compute_exposure_score(
-        critical=vuln_counts["critical"], high=vuln_counts["high"],
-        medium=vuln_counts["medium"], low=vuln_counts["low"],
-    )
-    exposure_grade = grade_for_score(exposure_score)
-    prev_summary = (
-        ScanSummary.objects.filter(domain=session.domain)
-        .exclude(session=session)
-        .order_by("-scan_date")
-        .first()
-    )
-    exposure_trend = None
-    if prev_summary is not None:
-        delta = exposure_score - prev_summary.exposure_score
-        exposure_trend = {
-            "previous_score": prev_summary.exposure_score,
-            "change": delta,
-            "direction": "up" if delta > 0 else ("down" if delta < 0 else "flat"),
-        }
-
-    # Asset counts
-    asset_counts = {
-        "subdomains": Subdomain.objects.filter(session=session, is_active=True).count(),
-        "ips": IPAddress.objects.filter(session=session).count(),
-        "ports": Port.objects.filter(session=session).count(),
-        "urls": URL.objects.filter(session=session).count(),
-    }
-
-    # Technology stack — the distinct technologies fingerprinted across all web
-    # assets (httpx -tech-detect). Informational only: no version/EOL/CVE
-    # inference. Sorted case-insensitively, deduped.
-    technologies = _collect_technologies(session)
-
-    # Scope & methodology — tools that ran in this scan's workflow, grouped by
-    # phase group, with findings each group raised.
-    from apps.core.engine.workflows.registry import get_registry
-    registry = get_registry()
-    # Workflow's chosen tools + always-on core tools (e.g. service_detection)
-    workflow_tools = (
-        set(session.workflow.enabled_tools()) if session.workflow_id
-        else {n for n, i in registry.items() if not i.get("core")}
-    )
-    core_tools = {n for n, i in registry.items() if i.get("core")}
-    active_tools = workflow_tools | core_tools
-
-    # Drop passive tools that were in the workflow but couldn't do anything for
-    # lack of a key/data source — they didn't actually assess the target, so the
-    # buyer report shouldn't list them as coverage (also keeps the CEO "Did we
-    # leak keys?" honest).
-    from apps.core.console.credentials.resolver import get_credential
-    active_tools = {
-        t for t in active_tools
-        if t not in _REPORT_TOOL_REQUIRES or get_credential(_REPORT_TOOL_REQUIRES[t])
-    }
-
-    # Executive framing: the five questions a decision-maker asks, answered from
-    # the findings (rendered as the report's opening summary).
-    ceo_questions = _ceo_questions(issue_groups, active_tools)
-    src_counts = {}
-    for row in findings.order_by().values("source").annotate(n=Count("id")):
-        src_counts[row["source"]] = row["n"]
-    _pg = {}
-    for name, info in registry.items():
-        if name not in active_tools:
-            continue
-        group = info.get("phase_group") or "Other"
-        d = _pg.setdefault(group, {"phase": info["phase"], "tools": [], "findings": 0, "produces": False})
-        d["phase"] = min(d["phase"], info["phase"])
-        d["tools"].append(info["label"])
-        d["findings"] += src_counts.get(name, 0)
-        d["produces"] = d["produces"] or info.get("produces_findings", False)
-    methodology = sorted(
-        ({"vector": g, "tools": v["tools"], "findings": v["findings"],
-          "produces": v["produces"], "phase": v["phase"]} for g, v in _pg.items()),
-        key=lambda r: r["phase"],
-    )
-    tool_count = len(active_tools)
-
-    # Workflow step diagnostics — only populated for partial scans
-    workflow_steps = []
-    if session.status == "partial":
-        from apps.core.engine.workflows.models import WorkflowRun, WorkflowStepResult
-        run = WorkflowRun.objects.filter(session=session).first()
-        if run:
-            for step in WorkflowStepResult.objects.filter(run=run).order_by("order"):
-                dur = None
-                if step.started_at and step.finished_at:
-                    dur = int((step.finished_at - step.started_at).total_seconds())
-                workflow_steps.append({
-                    "tool": step.tool,
-                    "status": step.status,
-                    "duration": dur,
-                    "error": step.error or "",
-                })
-
-    # Scan duration
-    scan_duration = None
-    if session.end_time and session.start_time:
-        delta = session.end_time - session.start_time
-        total_seconds = int(delta.total_seconds())
-        hours, remainder = divmod(total_seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        if hours:
-            scan_duration = f"{hours}h {minutes}m {seconds}s"
-        elif minutes:
-            scan_duration = f"{minutes}m {seconds}s"
-        else:
-            scan_duration = f"{seconds}s"
-
-    template = get_template("reports/scan_report.html")
-    html = template.render({
-        "session": session,
-        "issue_groups": issue_groups,
-        "groups_by_severity": groups_by_severity,
-        "unique_issue_count": len(issue_groups),
-        "vuln_counts": unique_counts,          # tiles/risk reflect consolidated issues
-        "total_findings": len(issue_groups),   # headline = unique issue count
-        "raw_total": raw_total,                # raw detections, shown only in the note
-        "risk_rating": risk_rating,
-        "ceo_questions": ceo_questions,
-        "exposure_score": exposure_score,
-        "exposure_grade": exposure_grade,
-        "exposure_trend": exposure_trend,
-        "since_last_scan": _since_last_scan(session, severities),
-        "top_risks": top_risks,
-        "headline_risk": top_risks[0] if top_risks else None,
-        "coverage": _coverage_context(session),
-        "rdap_unavailable": rdap_unavailable,
-        "asset_counts": asset_counts,
-        "technologies": technologies,
-        "methodology": methodology,
-        "tool_count": tool_count,
-        "vector_count": len(methodology),
-        "scan_duration": scan_duration,
-        "workflow_steps": workflow_steps,
-        "generated_at": timezone.now(),
-        "logo_data_uri": _logo_data_uri("white"),          # dark cover
-        "header_logo_data_uri": _logo_data_uri("brand"),   # light-page running header
-        # Optional CTA — template renders the block only when both are truthy.
-        "report_cta_url": getattr(settings, "REPORT_CTA_URL", "") or "",
-        "report_cta_text": getattr(settings, "REPORT_CTA_TEXT", "") or "",
-        # Per-finding remediation checklists are a hosted-report extra — gated on
-        # the same REPORT_CTA_URL flag that marks a hosted deployment (self-hosters
-        # still get the per-finding Remediation prose).
-        "show_next_steps": bool(getattr(settings, "REPORT_CTA_URL", "") or ""),
-        # Optional AI analyst summary — {} when absent, so the block never renders.
-        **_ai_context(session),
-    })
-
-    try:
-        pdf_bytes = _render_pdf(html)
-    except Exception:
-        logger.exception("[reports] PDF generation failed")
-        return HttpResponse("PDF generation failed", status=500)
-
-    response = HttpResponse(pdf_bytes, content_type="application/pdf")
-    response["Content-Disposition"] = (
-        f'attachment; filename="scan_report_{session.domain}_{session.id}.pdf"'
-    )
-    return response

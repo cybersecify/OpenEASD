@@ -1,5 +1,5 @@
 # OpenEASD — split images: web (slim, no scanner tools) + worker (Ubuntu, all tools).
-#   web    = python:3.12-slim — UI/API + PDF reports (WeasyPrint). No scanners.
+#   web    = python:3.12-slim — server-rendered UI + CSV reports. No scanners.
 #   worker = ubuntu:24.04     — DBOS worker + the full, validated scanner matrix
 #                               (nmap NSE, naabu, amass, PD tools, nuclei templates).
 # Worker stays Ubuntu because that is the base the tool matrix was validated on
@@ -12,17 +12,7 @@
 #   docker buildx build --target worker -t openeasd-worker .
 
 # ---------------------------------------------------------------------------
-# Stage 1: frontend build → static bundle (build-time only; no Node at runtime)
-# ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM node:20-slim AS frontend-builder
-WORKDIR /build/frontend
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --prefer-offline
-COPY frontend/ ./
-RUN npm run build
-
-# ---------------------------------------------------------------------------
-# Stage 2: download pre-built security tool binaries (static Go)
+# Stage: download pre-built security tool binaries (static Go)
 # ---------------------------------------------------------------------------
 FROM debian:13-slim AS tools-builder
 
@@ -85,7 +75,7 @@ RUN go install github.com/lc/gau/v2/cmd/gau@${GAU_VERSION} \
     && (mv /go/bin/${TARGETOS}_${TARGETARCH}/gau /history-tools/ 2>/dev/null || mv /go/bin/gau /history-tools/)
 
 # ===========================================================================
-# WEB runtime — python:3.12-slim. UI/API + PDF reports. NO scanner tools.
+# WEB runtime — python:3.12-slim. Server-rendered UI (gunicorn). NO scanner tools.
 # ===========================================================================
 FROM python:3.12-slim AS web
 
@@ -93,11 +83,11 @@ ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 
     VIRTUAL_ENV=/app/.venv PATH="/app/.venv/bin:/root/.local/bin:${PATH}" \
     OPENEASD_ROLE=web
 
-# Build deps (for any source-built wheels) + WeasyPrint runtime libs.
+# Build deps (for any source-built wheels) + lxml runtime libs. (WeasyPrint/PDF
+# was removed, so the cairo/pango/gdk-pixbuf font-rendering libs are gone.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libffi-dev libssl-dev git curl ca-certificates \
-    libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 \
-    libxml2 libxslt1.1 fonts-dejavu-core \
+    libxml2 libxslt1.1 \
     && rm -rf /var/lib/apt/lists/*
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
@@ -108,12 +98,16 @@ COPY apps/ apps/
 COPY openeasd/ openeasd/
 RUN uv pip install -e ".[prod]" && uv pip install git+https://github.com/initstring/cloud_enum.git
 COPY manage.py ./
-COPY templates/ templates/
 COPY config/ config/
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
-COPY --from=frontend-builder /build/frontend/dist/ frontend/dist/
-RUN SECRET_KEY=build-time-placeholder python manage.py collectstatic --noinput
+# Build-time placeholders for the production fail-fast guards (settings/base.py):
+# collectstatic imports settings but never touches the DB or signs tokens, so
+# these never leave this RUN layer. SECRET_KEY clears the SECRET_KEY guard;
+# DB_PASSWORD clears the default-password guard. Real values are supplied at
+# runtime by compose / k8s.
+RUN SECRET_KEY=build-time-placeholder DB_PASSWORD=build-time-placeholder \
+    python manage.py collectstatic --noinput
 
 ARG OPENEASD_VERSION=dev
 ARG OPENEASD_GIT_SHA=unknown
@@ -158,7 +152,6 @@ COPY apps/ apps/
 COPY openeasd/ openeasd/
 RUN uv pip install -e ".[prod]" && uv pip install git+https://github.com/initstring/cloud_enum.git
 COPY manage.py ./
-COPY templates/ templates/
 COPY config/ config/
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
@@ -174,3 +167,36 @@ ENV OPENEASD_VERSION=$OPENEASD_VERSION OPENEASD_GIT_SHA=$OPENEASD_GIT_SHA OPENEA
 VOLUME ["/app/logs"]
 ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["python", "manage.py", "dbos_worker"]
+
+# ===========================================================================
+# SINGLE-IMAGE runtime — one container: embedded PostgreSQL + web + worker.
+# Inherits the worker matrix (Ubuntu + full scanner tools + venv + app), adds a
+# local PostgreSQL and honcho, and supervises gunicorn (web) + dbos_worker
+# (worker) behind one embedded DB. The "one artifact, no external DB" deploy for
+# a single-admin, self-hosted box. The 3-tier web/worker + external Postgres path
+# (compose/k8s) still ships for privilege separation / horizontal scale.
+#
+#   docker buildx build --target singleimage -t openeasd .
+#   docker run -p 8000:8000 -v openeasd-data:/data \
+#     -e SECRET_KEY=... -e DB_PASSWORD=... -e ALLOWED_HOSTS=localhost openeasd
+#
+# pgdata lives on the /data volume — MANDATORY, or scan history is lost on
+# container replacement.
+# ===========================================================================
+FROM worker AS singleimage
+
+ENV OPENEASD_ROLE=web PGDATA=/data/pgdata
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+# honcho supervises the web + worker processes in one container.
+RUN uv pip install honcho
+
+COPY docker/ docker/
+RUN chmod +x docker/entrypoint-singleimage.sh
+
+VOLUME ["/data", "/app/logs"]
+EXPOSE 8000
+ENTRYPOINT ["docker/entrypoint-singleimage.sh"]
+CMD []

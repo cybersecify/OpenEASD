@@ -20,21 +20,20 @@ from apps.core.engine.workflows.proc import run_capped
 
 logger = logging.getLogger(__name__)
 
-# Wall-clock cap for the whole nuclei run. Raised from 30m to 2h: on real
-# web-bearing targets nuclei is the single highest-value tool (tens of findings
-# each) but the old 30m wall SIGKILL'd it at ~4% done, reporting a false 0.
-# Time is not the constraint here — value and not
-# missing findings are — and this stays under the 4h worker/watchdog budget
-# even with nuclei_network (1h) also in the Full Scan. If a very large target
-# still exceeds it, the collector DELIVERS the partial findings nuclei already
-# wrote (run_capped carries them on TimeoutExpired.output) rather than discarding
-# them — a time-boxed run is a worthwhile result, and its findings are saved.
+# Wall-clock cap for the whole nuclei run (fallback; settings.NUCLEI_TIMEOUT
+# overrides). On real web-bearing targets nuclei is the single highest-value tool
+# (tens of findings each), so the cap is generous: a too-tight wall SIGKILL'd it
+# early and reported a false 0. Value, not time, is the constraint. If a very
+# large target still exceeds the cap, the collector DELIVERS the partial findings
+# nuclei already wrote (run_capped carries them on TimeoutExpired.output) rather
+# than discarding them — a time-boxed run is a worthwhile result, and its findings
+# are saved.
 TIMEOUT = 21600       # fallback wall-clock cap (6h); settings.NUCLEI_TIMEOUT overrides
 REQUEST_TIMEOUT = 5   # seconds per HTTP request (nuclei -timeout)
 # Lowered 150 -> 100 to be gentler on targets. Observed hosts already self-
 # throttle to ~85-95 rps so this rarely binds, but it caps load on hosts that
 # could absorb more. 100 rps still completes the full template set on a
-# large-target worst case (~330k requests) well within the 2h cap.
+# large-target worst case (~330k requests) well within the wall-clock cap.
 RATE_LIMIT = 100      # fallback -rate-limit; the resource profile overrides it
 CONCURRENCY = 25      # fallback -c; the resource profile overrides it
 # Actual values come from settings.NUCLEI_CONCURRENCY / NUCLEI_RATE_LIMIT, which

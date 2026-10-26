@@ -76,6 +76,8 @@ def _build_finding(session, rec: dict) -> Finding:
         session=session,
         source="github_secrets",
         check_type="exposed_secret",
+        # Per-gitleaks-rule identity, not the shared "exposed_secret" bucket.
+        check_id=f"github_secrets:{rule_id}",
         severity="high",
         title=title,
         description=description,

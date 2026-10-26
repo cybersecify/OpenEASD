@@ -64,13 +64,18 @@ spec:
               command: ["pg_isready", "-U", "openeasd", "-d", "openeasd"]
             initialDelaySeconds: 5
             periodSeconds: 10
+          # Concurrent Passive·Deep scans spike Postgres memory (DBOS checkpoint
+          # writes + heavy querying) past 1Gi; the kernel then OOM-killed it
+          # (exit 137) mid-scan. Each kill drops every worker DB connection, so
+          # a single OOM cascades into failed scans until the worker reconnects.
+          # 4Gi gives the headroom to survive a batch of concurrent scans.
           resources:
             requests:
               cpu: "250m"
-              memory: "256Mi"
+              memory: "1Gi"
             limits:
               cpu: "1000m"
-              memory: "1Gi"
+              memory: "4Gi"
   volumeClaimTemplates:
     - metadata:
         name: pgdata

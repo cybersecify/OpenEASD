@@ -155,28 +155,43 @@ to one and patronizing the other.
 
 ---
 
-## D-007 — Canonical 11 attack vectors (customer-facing)
-**Status:** locked · **Decided:** 2026-05-20
+## D-007 — Canonical attack vectors (customer-facing)
+**Status:** locked · **Decided:** 2026-05-20 · **Revised:** 2026-09-15 (11 → 16)
 
 **Decision.** When listing what OpenEASD does in customer copy, use these
-11 vectors (in this order):
+16 vectors (in this order). Customer copy names the **vector only** — no tool
+names, protocols, or template counts (that technical detail lives in
+`03-system.md` / `04-technical.md` / CLAUDE.md, not the product view):
 
 1. Subdomain Discovery
-2. Open Ports
-3. DNS Security (DNSSEC / CAA / AXFR / wildcard / lame-delegation)
-4. Email Security (MTA-STS / TLS-RPT / BIMI)
-5. TLS/SSL
-6. SSH Configuration Audit
-7. CVE Detection (Nmap NSE + 319 Nuclei templates)
-8. Domain Registration Health (RDAP)
-9. Web Probing & URL Discovery (httpx)
-10. Web Vulnerability Scanning (Nuclei community)
-11. HTTP Security Headers / Cookies / CORS (Web Checker)
+2. Open Ports & Services
+3. DNS Security
+4. Email Security
+5. TLS / SSL
+6. SSH Configuration
+7. CVE Detection
+8. Domain Registration Health
+9. Web Probing & URL Discovery
+10. Web Vulnerability Scanning
+11. HTTP Security Headers, Cookies & CORS
+12. Brand Threat
+13. Credential & Breach Exposure
+14. Leaked Secrets
+15. Cloud & Takeover Exposure
+16. External Asset Intelligence
 
-**Note on 11 vs 12.** The internal pipeline has 12 phases. Internal phases
-like `service_detection` aren't customer-facing vectors — they're
-classification steps that feed other tools. Don't reconcile 11 and 12;
-they're different abstractions.
+**History.** Originally 11 vectors (2026-05-20). Revised to 16 on 2026-09-15
+to fold in the capability categories shipped since — Brand Threat (tldsquatting
++ asn_cluster), Credential & Breach Exposure (breach_check + hudson_rock),
+Leaked Secrets (github_secrets + js_secrets), Cloud & Takeover Exposure
+(cloud_assets + takeover_check), and External Asset Intelligence (asn_discovery
++ github_recon).
+
+**Note on vectors vs phases.** Customer-facing vectors are a different, coarser
+abstraction than the internal 13-phase pipeline. Internal steps like
+`service_detection`, `dnsx`, and `cve_intel` aren't standalone vectors —
+they're classification/enrichment steps that feed other tools. Don't try to
+reconcile the vector count with the phase count; they're different abstractions.
 
 ---
 
@@ -365,6 +380,87 @@ Calling these out so contributors don't add them back without a discussion:
 
 ---
 
+## D-017 — Architecture north star: domain-centric, API-driven, UI-agnostic
+**Status:** locked · **Decided:** 2026-09-13
+> The domain model this decision produced is described in DDD terms in
+> [`02-domain.md`](02-domain.md); its structural realization is in [`03-system.md`](03-system.md).
+
+**Decision.** OpenEASD is a **domain-centric, API-driven EASM backend with
+DBOS-based durable orchestration, a configurable security pipeline, normalized
+tool outputs, and a UI-agnostic data model.** The governing rule: **the backend
+stores facts, relationships, execution state, and normalized results; the UI
+decides how those facts are presented.**
+
+**Entities are independent, related by a graph — not nested.** Model the domain as
+first-class entities (Asset, Scan, Finding, Issue, Tool) joined by relationships —
+`Scan discovers Asset`, `Scan generates Finding`, `Finding affects Asset`,
+`Tool produces Finding`, `Finding promoted to Issue` — NOT a fixed hierarchy
+(`Scan → Finding → Asset`, nor `Asset → Finding → Scan`). A fixed nesting bakes one
+UI perspective into the schema; the relationship graph lets scan-/asset-/finding-/
+issue-centric views all sit over the same backend and change freely.
+
+**Two layers, kept distinct.** (a) A **raw, scan-scoped layer** — `ScanSession`,
+per-scan `Subdomain/IPAddress/Port/URL`, per-scan `Finding` — is execution state +
+provenance ("what this run saw"): scoped `(session, …)`, prunable
+([D-016] retention / H3), idempotent (H5). (b) A **persistent, domain-centric fact
+layer** — `asset_inventory.Asset` + `Issue` — is the canonical cross-scan truth and
+the relationship graph ("the current state of the domain"), with first/last-seen and
+triage that survives scans. Raw rows feed the persistent layer at finalize (rollup).
+Do **not** flatten raw findings into pure domain-owned entities — that loses per-scan
+provenance and the pruning story.
+
+**Execution is structured separately from the domain:** `API ↕ DBOS workflow →
+pipeline → tools → normalized data`. Tools never import each other; they write
+normalized rows to the shared models (the empty-`models.py` rule).
+
+**Development order going forward.** (1) core entities + relationships; (2) pipeline
+capabilities; (3) API + DBOS workflow together; (4) normalize tool outputs into the
+domain model; (5) implement feature-by-feature as **vertical slices**; (6) decide UI
+perspective last.
+
+**Why.** It's largely where the codebase already is (Django Ninja + Postgres + DBOS +
+the 13-phase pipeline + tool normalization), and it was validated by the
+finding-centric-grounded-on-asset-centric work — **one backend already serves
+scan-, asset-, and finding-centric UIs** without schema change. Codifying it keeps
+future features from re-baking a single UI perspective into the data model, and keeps
+the UI free to evolve its product perspective.
+
+**Follow-up trigger.** If a future feature needs a relationship the graph doesn't yet
+make first-class (e.g. explicit `Scan discovers Asset` provenance links, or a `Tool`
+entity with its own rows rather than the registry), add it as an entity/edge rather
+than nesting it under an existing owner.
+
+---
+
+## D-018 — v3.0.0: plain-Django UI + single-image deploy; REST API / JWT / SPA / PDF removed
+**Status:** locked · **Decided:** 2026-10-14 · amends [D-017](#d-017--architecture-north-star-domain-centric-api-driven-ui-agnostic), [D-015](#d-015--v20-shipped-scope-triage--adaptive-orchestration--summaries)
+
+**Decision.** The served UI is a **plain-Django, server-rendered app** (`apps/mvp` —
+vendored Bulma + HTMX, Django **session** auth) that calls the engine **service layer
+directly**, in-process. The **Django-Ninja REST API + JWT** (and the token-blacklist /
+purge cron), the **React SPA** (`frontend/`), and **PDF reports** (WeasyPrint) are
+**removed**; **CSV export is kept**. The **primary deploy artifact is a single Docker
+image** (embedded PostgreSQL + gunicorn + DBOS worker in one container, `/data`
+volume); the **3-tier** (db + web + worker) compose/k8s topology **remains** as the
+privilege-separated / scalable alternative.
+
+**Why.** The product is single-admin, single-org, self-hosted ([D-001](#d-001--audience-security-literate-users-not-non-technical-end-users), [D-003](#d-003--distribution-docker-only)). The REST API + SPA were a
+second consumer plus a JWT / Node toolchain the product never needed; a
+server-rendered UI on session auth is a far smaller, simpler surface, and one image is
+the simplest trusted single-user run.
+
+**What this amends.** [D-017](#d-017--architecture-north-star-domain-centric-api-driven-ui-agnostic) called the backend "API-driven" with Django Ninja. v3.0.0
+keeps the domain-centric, UI-agnostic data model and the DBOS orchestration but
+**drops the REST API layer** — the UI consumes the service layer in-process rather
+than over HTTP. The north-star rule ("backend stores facts, the UI decides
+presentation") is unchanged; only the transport between them is. [D-015](#d-015--v20-shipped-scope-triage--adaptive-orchestration--summaries)'s AI "PDF
+report" summary surface is now the CSV export + on-screen report + Slack/Teams alerts.
+
+**Engine unchanged.** DBOS durable workflows on PostgreSQL ([D-016](#d-016--v2x-execution-re-platform-postgresql--dbos)), the 13-phase
+pipeline, and the 30-tool registry are untouched.
+
+---
+
 ## Index
 
 | ID | Decision | Status | Decided |
@@ -375,7 +471,7 @@ Calling these out so contributors don't add them back without a discussion:
 | D-004 | Product boundary: OpenEASD vs Brand Protection | superseded | 2026-05-22 |
 | D-005 | Verification discipline (claims-trace) | locked | 2026-05-20 |
 | D-006 | Wording conventions per surface | locked | 2026-05-22 |
-| D-007 | Canonical 11 attack vectors | locked | 2026-05-20 |
+| D-007 | Canonical 16 attack vectors | locked | 2026-05-20 (rev 2026-09-15) |
 | D-008 | Anti-features (deliberate omissions) | locked | 2026-05-21 |
 | D-009 | v2.0 direction: Agentic AI / LLM-triage | locked (amended by D-015) | 2026-05-31 |
 | D-010 | LLM-triage privacy stance: hybrid local + cloud opt-in | superseded | 2026-05-31 |
@@ -385,6 +481,8 @@ Calling these out so contributors don't add them back without a discussion:
 | D-014 | v2.0 AI backend: Cloudflare Workers AI only (BYOK) | locked | 2026-09-05 |
 | D-015 | v2.0 shipped scope: triage + orchestration + summaries | locked | 2026-09-05 |
 | D-016 | v2.x execution re-platform: PostgreSQL + DBOS | locked | 2026-09-05 |
+| D-017 | Architecture north star: domain-centric, API-driven, UI-agnostic | locked (amended by D-018) | 2026-09-13 |
+| D-018 | v3.0.0: plain-Django UI + single image; REST/JWT/SPA/PDF removed | locked | 2026-10-14 |
 
 ---
 

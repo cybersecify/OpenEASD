@@ -84,6 +84,8 @@ def analyze(session, records: list[dict]) -> list[Finding]:
             session=session,
             source="nuclei_network",
             check_type=check_type,
+            # Per-rule identity is the template/CVE, not the coarse check_type.
+            check_id=f"nuclei_network:{cve_ids[0] if cve_ids else template_id}",
             severity=severity,
             title=title,
             description=info.get("description", ""),

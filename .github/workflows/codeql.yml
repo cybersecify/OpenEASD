@@ -1,7 +1,7 @@
 name: CodeQL
 
-# CodeQL scans Python (Django backend) and JavaScript/TypeScript (React
-# frontend) for security anti-patterns: SQL injection, XSS, hardcoded secrets,
+# CodeQL scans Python (the Django app) for security anti-patterns: SQL
+# injection, XSS, hardcoded secrets,
 # unsafe deserialisation, dataflow vulnerabilities. Findings appear in the
 # Security tab. Complements bandit (already in ci.yml) — bandit does pattern
 # matching, CodeQL does semantic dataflow analysis.
@@ -31,6 +31,9 @@ jobs:
         include:
           - language: python
             build-mode: none
+          # Kept to match main's CodeQL config (a required status check compares the
+          # two); there is no JS/TS left after the React SPA removal, so this scans an
+          # empty set. Drop it only together with the branch-protection requirement.
           - language: javascript-typescript
             build-mode: none
 
