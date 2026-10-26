@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cvrfdoc xmlns="http://www.icasi.org/CVRF/schema/cvrf/1.1" xmlns:cvrf="http://www.icasi.org/CVRF/schema/cvrf/1.1">
+  <DocumentTitle xml:lang="en">Security update for python-sqlparse</DocumentTitle>
+  <DocumentType>SUSE Patch</DocumentType>
+  <DocumentPublisher Type="Vendor">
+    <ContactDetails>security@suse.de</ContactDetails>
+    <IssuingAuthority>SUSE Security Team</IssuingAuthority>
+  </DocumentPublisher>
+  <DocumentTracking>
+    <Identification>
+      <ID>SUSE-SU-2026:4109-1</ID>
+    </Identification>
+    <Status>Final</Status>
+    <Version>1</Version>
+    <RevisionHistory>
+      <Revision>
+        <Number>1</Number>
+        <Date>2026-09-09T13:26:02Z</Date>
+        <Description>current</Description>
+      </Revision>
+    </RevisionHistory>
+    <InitialReleaseDate>2026-09-09T13:26:02Z</InitialReleaseDate>
+    <CurrentReleaseDate>2026-09-09T13:26:02Z</CurrentReleaseDate>
+    <Generator>
+      <Engine>cve-database/bin/generate-cvrf.pl</Engine>
+      <Date>2017-02-24T01:00:00Z</Date>
+    </Generator>
+  </DocumentTracking>
+  <DocumentNotes>
+    <Note Title="Topic" Type="Summary" Ordinal="1" xml:lang="en">Security update for python-sqlparse</Note>
+    <Note Title="Details" Type="General" Ordinal="2" xml:lang="en">This update for python-sqlparse fixes the following issue:
+
+- CVE-2026-84305: Reindentation of tuple lists causes near-cap quadratic CPU consumption (bsc#1278097).
+</Note>
+    <Note Title="Terms of Use" Type="Legal Disclaimer" Ordinal="3" xml:lang="en">The CVRF data is provided by SUSE under the Creative Commons License 4.0 with Attribution (CC-BY-4.0).</Note>
+    <Note Title="Patchnames" Type="Details" Ordinal="4" xml:lang="en">SUSE-2026-4109,SUSE-SLE-Module-Public-Cloud-15-SP4-2026-4109,SUSE-SLE-Module-Public-Cloud-15-SP5-2026-4109</Note>
+  </DocumentNotes>
+  <DocumentDistribution xml:lang="en">Copyright SUSE LLC under the Creative Commons License 4.0 with Attribution (CC-BY-4.0)</DocumentDistribution>
+  <DocumentReferences>
+    <Reference Type="Self">
+      <URL>https://www.suse.com/support/update/announcement/2026/suse-su-20264109-1/</URL>
+      <Description>Link for SUSE-SU-2026:4109-1</Description>
+    </Reference>
+    <Reference Type="Self">
+      <URL>https://lists.suse.com/pipermail/sle-security-updates/2026-September/028984.html</URL>
+      <Description>E-Mail link for SUSE-SU-2026:4109-1</Description>
+    </Reference>
+    <Reference Type="Self">
+      <URL>https://www.suse.com/support/security/rating/</URL>
+      <Description>SUSE Security Ratings</Description>
+    </Reference>
+    <Reference Type="Self">
+      <URL>https://bugzilla.suse.com/1278097</URL>
+      <Description>SUSE Bug 1278097</Description>
+    </Reference>
+    <Reference Type="Self">
+      <URL>https://www.suse.com/security/cve/CVE-2026-84305/</URL>
+      <Description>SUSE CVE CVE-2026-84305 page</Description>
+    </Reference>
+  </DocumentReferences>
+  <ProductTree xmlns="http://www.icasi.org/CVRF/schema/prod/1.1">
+    <Branch Type="Product Family" Name="SUSE Linux Enterprise Module for Public Cloud 15 SP4">
+      <Branch Type="Product Name" Name="SUSE Linux Enterprise Module for Public Cloud 15 SP4">
+        <FullProductName ProductID="SUSE Linux Enterprise Module for Public Cloud 15 SP4" CPE="cpe:/o:suse:sle-module-public-cloud:15:sp4">SUSE Linux Enterprise Module for Public Cloud 15 SP4</FullProductName>
+      </Branch>
+    </Branch>
+    <Branch Type="Product Family" Name="SUSE Linux Enterprise Module for Public Cloud 15 SP5">
+      <Branch Type="Product Name" Name="SUSE Linux Enterprise Module for Public Cloud 15 SP5">
+        <FullProductName ProductID="SUSE Linux Enterprise Module for Public Cloud 15 SP5" CPE="cpe:/o:suse:sle-module-public-cloud:15:sp5">SUSE Linux Enterprise Module for Public Cloud 15 SP5</FullProductName>
+      </Branch>
+    </Branch>
+    <Branch Type="Product Version" Name="python311-sqlparse-0.4.4-150400.6.19.1">
+      <FullProductName ProductID="python311-sqlparse-0.4.4-150400.6.19.1">python311-sqlparse-0.4.4-150400.6.19.1</FullProductName>
+    </Branch>
+    <Relationship ProductReference="python311-sqlparse-0.4.4-150400.6.19.1" RelationType="Default Component Of" RelatesToProductReference="SUSE Linux Enterprise Module for Public Cloud 15 SP4">
+      <FullProductName ProductID="SUSE Linux Enterprise Module for Public Cloud 15 SP4:python311-sqlparse-0.4.4-150400.6.19.1">python311-sqlparse-0.4.4-150400.6.19.1 as a component of SUSE Linux Enterprise Module for Public Cloud 15 SP4</FullProductName>
+    </Relationship>
+    <Relationship ProductReference="python311-sqlparse-0.4.4-150400.6.19.1" RelationType="Default Component Of" RelatesToProductReference="SUSE Linux Enterprise Module for Public Cloud 15 SP5">
+      <FullProductName ProductID="SUSE Linux Enterprise Module for Public Cloud 15 SP5:python311-sqlparse-0.4.4-150400.6.19.1">python311-sqlparse-0.4.4-150400.6.19.1 as a component of SUSE Linux Enterprise Module for Public Cloud 15 SP5</FullProductName>
+    </Relationship>
+  </ProductTree>
+  <Vulnerability xmlns="http://www.icasi.org/CVRF/schema/vuln/1.1" Ordinal="1">
+    <Notes>
+      <Note Title="Vulnerability Description" Type="General" Ordinal="1" xml:lang="en">sqlparse is a non-validating SQL parser module for Python. Prior to 0.6.0, sqlparse.format(sql, reindent=True) and sqlformat --reindent route attacker-controlled parenthesized tuple lists through ReindentFilter._get_offset() in sqlparse/filters/reindent.py, where _flatten_up_to_token() repeatedly rebuilds and joins the statement prefix. Thousands of offset calculations walk an expanding token tree, producing quadratic CPU consumption for inputs that remain below MAX_GROUPING_TOKENS and causing request delays, reduced throughput, or worker starvation. This issue is fixed in version 0.6.0.</Note>
+    </Notes>
+    <CVE>CVE-2026-84305</CVE>
+    <ProductStatuses>
+      <Status Type="Fixed">
+        <ProductID>SUSE Linux Enterprise Module for Public Cloud 15 SP4:python311-sqlparse-0.4.4-150400.6.19.1</ProductID>
+        <ProductID>SUSE Linux Enterprise Module for Public Cloud 15 SP5:python311-sqlparse-0.4.4-150400.6.19.1</ProductID>
+      </Status>
+    </ProductStatuses>
+    <Threats>
+      <Threat Type="Impact">
+        <Description>moderate</Description>
+      </Threat>
+    </Threats>
+    <Remediations>
+      <Remediation Type="Vendor Fix">
+        <Description xml:lang="en">To install this SUSE Security Update use the SUSE recommended installation methods like YaST online_update or "zypper patch".
+</Description>
+        <URL>https://www.suse.com/support/update/announcement/2026/suse-su-20264109-1/</URL>
+      </Remediation>
+    </Remediations>
+    <References>
+      <Reference>
+        <URL>https://www.suse.com/security/cve/CVE-2026-84305.html</URL>
+        <Description>CVE-2026-84305</Description>
+      </Reference>
+      <Reference>
+        <URL>https://bugzilla.suse.com/1278097</URL>
+        <Description>SUSE Bug 1278097</Description>
+      </Reference>
+    </References>
+  </Vulnerability>
+</cvrfdoc>
