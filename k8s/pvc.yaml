@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openeasd-data
+  namespace: default
+  labels:
+    app: openeasd
+spec:
+  # Single-writer embedded PostgreSQL cluster (mounted at /data, PGDATA is
+  # /data/pgdata). ReadWriteOnce + the Deployment's Recreate strategy keep it to
+  # one pod at a time. Bump the size for a long scan history.
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi

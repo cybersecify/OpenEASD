@@ -561,14 +561,16 @@ web/init role migrates + collectstatic + admin-setup, the worker role waits for
 
 ### Kubernetes
 
-Separate Deployments per tier (`kubectl apply -k k8s/`): **`openeasd-web`**
-(init migrates → gunicorn; `tier: web`; no `NET_RAW`; the Service targets
-`tier: web`), **`openeasd-worker`** (`dbos_worker`; `tier: worker`; `NET_RAW`; no
-Service; scale with `kubectl scale deploy/openeasd-worker --replicas=N` on the
-same DBOS queue), and a **PostgreSQL StatefulSet**. A default deploy is 3 pods. `k8s/` expects `openeasd-web`/`openeasd-worker`
-images built locally (or pushed by you) from the Dockerfile `web`/`worker` targets.
-Logs go to stdout (no PVC). Readiness/liveness: `GET /health/` (unauthenticated) —
-the probe `Host` header must be an entry in `openeasd-secret`'s `ALLOWED_HOSTS`.
+The `k8s/` manifests deploy the **single image as one pod** (`kubectl apply -k
+k8s/`): a Deployment **`openeasd`** running `ghcr.io/cybersecify/openeasd`
+(embedded PostgreSQL + gunicorn + DBOS worker; `NET_RAW`), a 20Gi
+`ReadWriteOnce` PVC **`openeasd-data`** mounted at `/data` for the Postgres
+cluster, and a NodePort Service. Because the volume is single-writer the
+Deployment is pinned to `replicas: 1` with `strategy: Recreate` (short downtime
+per update). The 3-tier (db + web + worker) topology is a docker-compose path
+only — there are no 3-tier k8s manifests. Startup/readiness/liveness: `GET
+/health/` (unauthenticated) — the probe `Host` header must be an entry in
+`openeasd-secret`'s `ALLOWED_HOSTS`; the secret also carries `DB_PASSWORD`.
 
 ---
 

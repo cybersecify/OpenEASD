@@ -18,10 +18,11 @@ data:
   ALLOWED_HOSTS: "openeasd.example.com,openeasd.local,localhost"
   CSRF_TRUSTED_ORIGINS: "https://openeasd.example.com,http://openeasd.local"
   DEBUG: "False"
-  # PostgreSQL — the app + DBOS system tables live here (DBOS uses a `dbos`
-  # schema in the same database). DB_PASSWORD is in openeasd-secret and must
-  # match the Postgres StatefulSet's POSTGRES_PASSWORD.
-  DB_HOST: "openeasd-postgres"
+  # Embedded PostgreSQL — the single image runs its own Postgres (cluster at
+  # /data/pgdata) and forces DB_HOST=127.0.0.1 internally. The app + DBOS system
+  # tables (a `dbos` schema in the same database) live there. DB_PASSWORD is in
+  # openeasd-secret (the image refuses to boot without it).
+  DB_HOST: "127.0.0.1"
   DB_PORT: "5432"
   DB_NAME: "openeasd"
   DB_USER: "openeasd"

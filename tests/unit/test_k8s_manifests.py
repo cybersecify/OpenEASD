@@ -4,15 +4,21 @@ Validates K8s manifests in k8s/ without a live cluster.
 Checks structural correctness: required fields, cross-file name
 consistency, security settings, and health probe configuration.
 
-Topology: web and worker are SEPARATE Deployments (web-deployment.yaml,
-worker-deployment.yaml) so they scale/roll/resource independently; Postgres is
-a StatefulSet; logs go to stdout (no PVC).
+Topology (single-image, v3.1): ONE Deployment (`app-deployment.yaml`) runs the
+published single image — embedded PostgreSQL + gunicorn + the DBOS worker in one
+container — with its Postgres cluster on a ReadWriteOnce PVC (`pvc.yaml`). The
+PVC is single-writer, so the Deployment is pinned to one replica with the
+Recreate strategy. The former 3-tier web/worker/postgres manifests are gone;
+that path lives in docker-compose.yml with locally-built images.
 """
 
 from pathlib import Path
 import yaml
 
 K8S_DIR = Path(__file__).resolve().parents[2] / "k8s"
+
+IMAGE = "ghcr.io/cybersecify/openeasd"
+PROBE_HOST = "openeasd.local"
 
 
 def load(filename: str) -> list[dict]:
@@ -36,6 +42,14 @@ def find_container(containers: list[dict], name: str) -> dict:
     raise AssertionError(f"Container '{name}' not found in {[c['name'] for c in containers]}")
 
 
+def mem_to_mib(val: str) -> int:
+    if val.endswith("Gi"):
+        return int(val[:-2]) * 1024
+    if val.endswith("Mi"):
+        return int(val[:-2])
+    raise AssertionError(f"unexpected memory unit: {val}")
+
+
 def assert_secret_after_configmap(container: dict) -> None:
     # "last source wins": the secret's real ALLOWED_HOSTS must override the
     # configmap placeholder, so secretRef MUST come AFTER configMapRef in
@@ -47,6 +61,15 @@ def assert_secret_after_configmap(container: dict) -> None:
         f"{container['name']}: secretRef (idx {sec_idx}) must come AFTER "
         f"configMapRef (idx {cfg_idx}) so the secret overrides the placeholder"
     )
+
+
+def assert_health_probe(probe: dict) -> None:
+    assert probe["httpGet"]["path"] == "/health/"
+    assert probe["httpGet"]["port"] == 8000
+    # kubelet sends the pod IP as Host by default and Django 400s it; the probe
+    # must send a Host that is in ALLOWED_HOSTS.
+    hosts = [h["value"] for h in probe["httpGet"]["httpHeaders"] if h["name"] == "Host"]
+    assert PROBE_HOST in hosts
 
 
 # ---------------------------------------------------------------------------
@@ -75,9 +98,17 @@ class TestConfigMap:
     def test_debug_is_false(self):
         assert self.data["DEBUG"] == "False"
 
-    def test_db_points_at_postgres(self):
-        assert self.data["DB_HOST"] == "openeasd-postgres"
+    def test_db_points_at_embedded_postgres(self):
+        # The single image runs its own Postgres and forces DB_HOST=127.0.0.1
+        # internally (docker/entrypoint-singleimage.sh); the configmap must agree
+        # so nothing points at a Postgres Service that no longer exists.
+        assert self.data["DB_HOST"] == "127.0.0.1"
+        assert self.data["DB_PORT"] == "5432"
         assert self.data["DB_NAME"] == "openeasd"
+
+    def test_db_password_not_in_configmap(self):
+        # The DB password is a secret — it belongs in openeasd-secret only.
+        assert "DB_PASSWORD" not in self.data
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +118,7 @@ class TestConfigMap:
 class TestSecret:
     def setup_method(self):
         self.doc = single("secret.yaml")
+        self.data = self.doc["stringData"]
 
     def test_kind(self):
         assert self.doc["kind"] == "Secret"
@@ -98,29 +130,36 @@ class TestSecret:
         assert self.doc["metadata"]["name"] == "openeasd-secret"
 
     def test_has_secret_key_field(self):
-        assert "SECRET_KEY" in self.doc["stringData"]
+        assert "SECRET_KEY" in self.data
 
     def test_secret_key_is_placeholder(self):
         # Ensure no real key was accidentally committed
-        val = self.doc["stringData"]["SECRET_KEY"]
-        assert "REPLACE" in val, "SECRET_KEY should be a placeholder, not a real value"
+        assert "REPLACE" in self.data["SECRET_KEY"], "SECRET_KEY should be a placeholder"
+
+    def test_has_db_password_placeholder(self):
+        # The single image refuses to boot without DB_PASSWORD (entrypoint FATAL)
+        # and the production settings guard rejects the default — so the template
+        # must carry it, and must not carry a real value.
+        assert "DB_PASSWORD" in self.data
+        assert "REPLACE" in self.data["DB_PASSWORD"], "DB_PASSWORD should be a placeholder"
 
     def test_allowed_hosts_keeps_probe_host(self):
         # The kubelet probes send Host: openeasd.local and the secret's
         # ALLOWED_HOSTS overrides the configmap's — dropping openeasd.local here
         # makes the probes 400 and the pod never goes Ready (v2.1.1 fix).
-        assert "openeasd.local" in self.doc["stringData"]["ALLOWED_HOSTS"]
+        assert PROBE_HOST in self.data["ALLOWED_HOSTS"]
 
 
 # ---------------------------------------------------------------------------
-# Web Deployment
+# App Deployment (single image)
 # ---------------------------------------------------------------------------
 
-class TestWebDeployment:
+class TestAppDeployment:
     def setup_method(self):
-        self.doc = single("web-deployment.yaml")
+        self.doc = single("app-deployment.yaml")
         self.spec = self.doc["spec"]
         self.pod_spec = self.spec["template"]["spec"]
+        self.app = find_container(self.pod_spec["containers"], "openeasd")
 
     def test_kind(self):
         assert self.doc["kind"] == "Deployment"
@@ -129,221 +168,141 @@ class TestWebDeployment:
         assert self.doc["metadata"]["namespace"] == "default"
 
     def test_name(self):
-        assert self.doc["metadata"]["name"] == "openeasd-web"
-
-    def test_tier_label(self):
-        assert self.doc["metadata"]["labels"]["tier"] == "web"
-
-    def test_replicas_is_one(self):
-        assert self.spec["replicas"] == 1
+        assert self.doc["metadata"]["name"] == "openeasd"
 
     def test_selector_matches_template_labels(self):
         selector = self.spec["selector"]["matchLabels"]
         labels = self.spec["template"]["metadata"]["labels"]
         for key, val in selector.items():
             assert labels.get(key) == val
-        assert selector.get("tier") == "web"
+        assert selector.get("app") == "openeasd"
 
-    # Init container — only the web tier runs migrations.
-    def test_has_init_container(self):
-        assert len(self.pod_spec["initContainers"]) >= 1
-
-    def test_init_container_uses_web_image(self):
-        init = self.pod_spec["initContainers"][0]
-        assert "ghcr.io/cybersecify/openeasd-web" in init["image"]
-
-    def test_init_container_runs_entrypoint(self):
-        init = self.pod_spec["initContainers"][0]
-        assert "docker-entrypoint.sh" in init["command"][0]
-
-    # Web container
-    def test_has_web_container(self):
-        find_container(self.pod_spec["containers"], "web")
-
-    def test_web_command_is_gunicorn(self):
-        web = find_container(self.pod_spec["containers"], "web")
-        assert web["command"][0] == "gunicorn"
-
-    def test_web_exposes_port_8000(self):
-        web = find_container(self.pod_spec["containers"], "web")
-        ports = [p["containerPort"] for p in web.get("ports", [])]
-        assert 8000 in ports
-
-    def test_web_has_readiness_probe(self):
-        web = find_container(self.pod_spec["containers"], "web")
-        probe = web["readinessProbe"]
-        assert probe["httpGet"]["path"] == "/health/"
-        assert probe["httpGet"]["port"] == 8000
-
-    def test_web_has_liveness_probe(self):
-        web = find_container(self.pod_spec["containers"], "web")
-        probe = web["livenessProbe"]
-        assert probe["httpGet"]["path"] == "/health/"
-        assert probe["httpGet"]["port"] == 8000
-
-    def test_web_probe_sends_allowed_host(self):
-        web = find_container(self.pod_spec["containers"], "web")
-        headers = web["readinessProbe"]["httpGet"]["httpHeaders"]
-        hosts = [h["value"] for h in headers if h["name"] == "Host"]
-        assert "openeasd.local" in hosts
-
-    def test_web_loads_configmap(self):
-        web = find_container(self.pod_spec["containers"], "web")
-        sources = [e["configMapRef"]["name"] for e in web.get("envFrom", []) if "configMapRef" in e]
-        assert "openeasd-config" in sources
-
-    def test_web_loads_secret(self):
-        web = find_container(self.pod_spec["containers"], "web")
-        sources = [e["secretRef"]["name"] for e in web.get("envFrom", []) if "secretRef" in e]
-        assert "openeasd-secret" in sources
-
-    def test_web_secret_overrides_configmap_order(self):
-        assert_secret_after_configmap(find_container(self.pod_spec["containers"], "web"))
-
-    def test_web_has_resource_limits(self):
-        web = find_container(self.pod_spec["containers"], "web")
-        assert "limits" in web["resources"]
-        assert "requests" in web["resources"]
-
-    def test_web_has_no_net_raw(self):
-        # The internet-facing tier must not carry raw-socket capability.
-        web = find_container(self.pod_spec["containers"], "web")
-        caps = web.get("securityContext", {}).get("capabilities", {}).get("add", [])
-        assert "NET_RAW" not in caps
-
-    def test_web_has_no_volumes(self):
-        # Logs go to stdout — no PVC.
-        assert not self.pod_spec.get("volumes")
-
-
-# ---------------------------------------------------------------------------
-# Worker Deployment
-# ---------------------------------------------------------------------------
-
-class TestWorkerDeployment:
-    def setup_method(self):
-        self.doc = single("worker-deployment.yaml")
-        self.spec = self.doc["spec"]
-        self.pod_spec = self.spec["template"]["spec"]
-
-    def test_kind(self):
-        assert self.doc["kind"] == "Deployment"
-
-    def test_namespace(self):
-        assert self.doc["metadata"]["namespace"] == "default"
-
-    def test_name(self):
-        assert self.doc["metadata"]["name"] == "openeasd-worker"
-
-    def test_tier_label(self):
-        assert self.doc["metadata"]["labels"]["tier"] == "worker"
-
+    # --- single-writer invariants -------------------------------------------
     def test_replicas_is_one(self):
+        # Embedded Postgres on a RWO PVC: two pods must never share the cluster.
         assert self.spec["replicas"] == 1
 
-    def test_selector_matches_template_labels(self):
-        selector = self.spec["selector"]["matchLabels"]
-        labels = self.spec["template"]["metadata"]["labels"]
-        for key, val in selector.items():
-            assert labels.get(key) == val
-        assert selector.get("tier") == "worker"
+    def test_strategy_is_recreate(self):
+        # RollingUpdate would start the new pod while the old one still holds
+        # the RWO volume / Postgres data dir. Recreate stops the old pod first.
+        assert self.spec["strategy"]["type"] == "Recreate"
 
-    def test_has_worker_container(self):
-        find_container(self.pod_spec["containers"], "worker")
+    def test_exactly_one_container(self):
+        # Postgres + gunicorn + worker all run inside the one image (honcho);
+        # no sidecars, no separate tiers.
+        assert len(self.pod_spec["containers"]) == 1
 
-    def test_worker_uses_worker_image(self):
-        worker = find_container(self.pod_spec["containers"], "worker")
-        assert "ghcr.io/cybersecify/openeasd-worker" in worker["image"]
-
-    def test_worker_command_runs_dbos_worker(self):
-        worker = find_container(self.pod_spec["containers"], "worker")
-        assert "dbos_worker" in worker["command"]
-
-    def test_worker_waits_for_migrations_via_entrypoint(self):
-        # No shared initContainer anymore — the worker goes through the
-        # role-aware entrypoint (OPENEASD_ROLE=worker), which waits for
-        # `migrate --check` before launching, so there's no DDL race.
-        worker = find_container(self.pod_spec["containers"], "worker")
-        assert "docker-entrypoint.sh" in worker["command"][0]
-        role = {e["name"]: e["value"] for e in worker.get("env", [])}
-        assert role.get("OPENEASD_ROLE") == "worker"
-
-    def test_worker_has_no_init_container(self):
+    def test_no_init_container(self):
+        # The single-image entrypoint does initdb/migrate/collectstatic/admin
+        # itself; a separate init container would race it on the same PGDATA.
         assert not self.pod_spec.get("initContainers")
 
-    def test_worker_has_net_raw_capability(self):
-        worker = find_container(self.pod_spec["containers"], "worker")
-        caps = worker["securityContext"]["capabilities"]["add"]
+    # --- image --------------------------------------------------------------
+    def test_uses_single_image_bare_name(self):
+        # Bare name: the tag is set ONLY by kustomization.yaml images[].newTag.
+        assert self.app["image"] == IMAGE
+
+    def test_image_pull_policy_if_not_present(self):
+        assert self.app["imagePullPolicy"] == "IfNotPresent"
+
+    # --- network / capabilities --------------------------------------------
+    def test_exposes_port_8000(self):
+        ports = [p["containerPort"] for p in self.app.get("ports", [])]
+        assert 8000 in ports
+
+    def test_has_net_raw_capability(self):
+        # nmap/naabu raw-socket scanning — the scanner tools share this pod.
+        caps = self.app["securityContext"]["capabilities"]["add"]
         assert "NET_RAW" in caps
 
-    def test_worker_does_not_expose_ports(self):
-        worker = find_container(self.pod_spec["containers"], "worker")
-        assert not worker.get("ports"), "Worker should not expose ports"
+    # --- env ----------------------------------------------------------------
+    def test_loads_configmap(self):
+        sources = [e["configMapRef"]["name"] for e in self.app["envFrom"] if "configMapRef" in e]
+        assert "openeasd-config" in sources
 
-    def test_worker_loads_configmap_and_secret(self):
-        worker = find_container(self.pod_spec["containers"], "worker")
-        cfg = [e["configMapRef"]["name"] for e in worker.get("envFrom", []) if "configMapRef" in e]
-        sec = [e["secretRef"]["name"] for e in worker.get("envFrom", []) if "secretRef" in e]
-        assert "openeasd-config" in cfg
-        assert "openeasd-secret" in sec
+    def test_loads_secret(self):
+        sources = [e["secretRef"]["name"] for e in self.app["envFrom"] if "secretRef" in e]
+        assert "openeasd-secret" in sources
 
-    def test_worker_secret_overrides_configmap_order(self):
-        assert_secret_after_configmap(find_container(self.pod_spec["containers"], "worker"))
+    def test_secret_overrides_configmap_order(self):
+        assert_secret_after_configmap(self.app)
 
-    def test_worker_has_resource_limits(self):
-        worker = find_container(self.pod_spec["containers"], "worker")
-        assert "limits" in worker["resources"]
-        assert "requests" in worker["resources"]
+    # --- probes -------------------------------------------------------------
+    def test_has_startup_probe(self):
+        assert_health_probe(self.app["startupProbe"])
 
-    def test_worker_has_db_liveness_probe(self):
-        # The worker takes no inbound traffic (no Service/HTTP), so liveness is an
-        # exec DB round-trip: if Postgres is unreachable the pod restarts and
-        # re-establishes fresh connections (self-heal for the OOM/restart case).
-        worker = find_container(self.pod_spec["containers"], "worker")
-        probe = worker["livenessProbe"]
-        cmd = probe["exec"]["command"]
-        assert "psycopg" in " ".join(cmd)
-        assert "SELECT 1" in " ".join(cmd)
-        # sustained unreachability (not a brief blip) before restart
-        assert probe["failureThreshold"] >= 3
-        assert probe["periodSeconds"] >= 15
+    def test_startup_probe_allows_slow_first_boot(self):
+        # First boot on a fresh PVC does initdb + migrate + collectstatic + admin
+        # before serving. Give it at least 5 minutes before liveness can kill it.
+        probe = self.app["startupProbe"]
+        budget = probe["periodSeconds"] * probe["failureThreshold"]
+        assert budget >= 300, f"startupProbe budget {budget}s < 300s"
 
-    def test_worker_has_no_volumes(self):
-        assert not self.pod_spec.get("volumes")
+    def test_has_readiness_probe(self):
+        assert_health_probe(self.app["readinessProbe"])
 
+    def test_has_liveness_probe(self):
+        assert_health_probe(self.app["livenessProbe"])
 
-# ---------------------------------------------------------------------------
-# Postgres StatefulSet
-# ---------------------------------------------------------------------------
+    # --- storage ------------------------------------------------------------
+    def test_mounts_data_volume(self):
+        # /data is mandatory: PGDATA is /data/pgdata — without a persistent
+        # mount every pod replacement wipes the scan history.
+        mounts = {m["mountPath"]: m["name"] for m in self.app["volumeMounts"]}
+        assert "/data" in mounts
+        vol = next(v for v in self.pod_spec["volumes"] if v["name"] == mounts["/data"])
+        assert vol["persistentVolumeClaim"]["claimName"] == "openeasd-data"
 
-class TestPostgres:
-    def setup_method(self):
-        docs = load("postgres.yaml")
-        self.doc = next(d for d in docs if d["kind"] == "StatefulSet")
-        self.container = find_container(
-            self.doc["spec"]["template"]["spec"]["containers"], "postgres"
-        )
+    def test_data_pvc_name_matches_pvc_manifest(self):
+        pvc = single("pvc.yaml")
+        mounts = {m["mountPath"]: m["name"] for m in self.app["volumeMounts"]}
+        vol = next(v for v in self.pod_spec["volumes"] if v["name"] == mounts["/data"])
+        assert vol["persistentVolumeClaim"]["claimName"] == pvc["metadata"]["name"]
 
-    def test_kind(self):
-        assert self.doc["kind"] == "StatefulSet"
-
-    def _mem_to_mib(self, val: str) -> int:
-        if val.endswith("Gi"):
-            return int(val[:-2]) * 1024
-        if val.endswith("Mi"):
-            return int(val[:-2])
-        raise AssertionError(f"unexpected memory unit: {val}")
+    # --- resources ----------------------------------------------------------
+    def test_has_resource_limits(self):
+        assert "limits" in self.app["resources"]
+        assert "requests" in self.app["resources"]
 
     def test_memory_limit_survives_concurrent_scans(self):
-        # 1Gi OOM-killed Postgres under concurrent Passive·Deep load (exit 137),
-        # cascading into failed scans. The limit must be >= 4Gi so a batch of
-        # concurrent scans doesn't OOM the DB.
-        limit = self.container["resources"]["limits"]["memory"]
-        assert self._mem_to_mib(limit) >= 4096, f"postgres memory limit too low: {limit}"
+        # The one pod runs Postgres + the scanner tools. A 1Gi Postgres was
+        # OOM-killed under concurrent Passive·Deep load (exit 137) in the old
+        # 3-tier layout; nuclei/amass add their own templates/brute to the same
+        # limit here. Keep >= 4Gi.
+        limit = self.app["resources"]["limits"]["memory"]
+        assert mem_to_mib(limit) >= 4096, f"memory limit too low: {limit}"
 
     def test_memory_request_raised(self):
-        request = self.container["resources"]["requests"]["memory"]
-        assert self._mem_to_mib(request) >= 1024, f"postgres memory request too low: {request}"
+        request = self.app["resources"]["requests"]["memory"]
+        assert mem_to_mib(request) >= 1024, f"memory request too low: {request}"
+
+
+# ---------------------------------------------------------------------------
+# PVC
+# ---------------------------------------------------------------------------
+
+class TestPVC:
+    def setup_method(self):
+        self.doc = single("pvc.yaml")
+
+    def test_kind(self):
+        assert self.doc["kind"] == "PersistentVolumeClaim"
+
+    def test_namespace(self):
+        assert self.doc["metadata"]["namespace"] == "default"
+
+    def test_name(self):
+        assert self.doc["metadata"]["name"] == "openeasd-data"
+
+    def test_read_write_once(self):
+        # Single-writer Postgres cluster — RWO (with Recreate on the Deployment)
+        # keeps it to one pod at a time.
+        assert self.doc["spec"]["accessModes"] == ["ReadWriteOnce"]
+
+    def test_storage_size_floor(self):
+        # OPERATIONS.md: start /data at 10 GB; it grows with scan history.
+        size = self.doc["spec"]["resources"]["requests"]["storage"]
+        assert mem_to_mib(size) >= 10 * 1024, f"PVC too small: {size}"
 
 
 # ---------------------------------------------------------------------------
@@ -360,11 +319,18 @@ class TestService:
     def test_namespace(self):
         assert self.doc["metadata"]["namespace"] == "default"
 
-    def test_selector_targets_web_tier_only(self):
-        # Must pin tier: web — the worker shares app: openeasd but has no :8000.
+    def test_name(self):
+        assert self.doc["metadata"]["name"] == "openeasd"
+
+    def test_selector_matches_app_pod(self):
+        # One pod labelled app: openeasd serves :8000. A leftover `tier: web`
+        # selector would match nothing and the Service would have no endpoints.
         selector = self.doc["spec"]["selector"]
-        assert selector["app"] == "openeasd"
-        assert selector["tier"] == "web"
+        assert selector == {"app": "openeasd"}
+        deployment = single("app-deployment.yaml")
+        labels = deployment["spec"]["template"]["metadata"]["labels"]
+        for key, val in selector.items():
+            assert labels.get(key) == val
 
     def test_port_80_targets_8000(self):
         port = self.doc["spec"]["ports"][0]
@@ -380,7 +346,7 @@ class TestService:
 
 
 # ---------------------------------------------------------------------------
-# Ingress
+# Ingress (optional — not in the kustomize base)
 # ---------------------------------------------------------------------------
 
 class TestIngress:
@@ -423,18 +389,17 @@ class TestKustomization:
 
     def test_all_manifest_files_listed(self):
         # secret.yaml and ingress.yaml are intentionally omitted from kustomize:
-        # secret is applied imperatively with a real SECRET_KEY,
+        # secret is applied imperatively with real values,
         # ingress is replaced by a host-level reverse proxy (e.g. Caddy → NodePort).
         resources = self.doc["resources"]
-        expected = [
-            "configmap.yaml",
-            "postgres.yaml",
-            "web-deployment.yaml",
-            "worker-deployment.yaml",
-            "service.yaml",
-        ]
+        expected = ["configmap.yaml", "pvc.yaml", "app-deployment.yaml", "service.yaml"]
         for f in expected:
             assert f in resources, f"{f} missing from kustomization resources"
+
+    def test_secret_not_in_base(self):
+        # Keeping the secret out of the base means `kubectl apply -k k8s/` can
+        # never clobber the real ALLOWED_HOSTS / DB_PASSWORD.
+        assert "secret.yaml" not in self.doc["resources"]
 
     def test_no_missing_files_on_disk(self):
         for resource in self.doc["resources"]:
@@ -442,6 +407,38 @@ class TestKustomization:
             assert path.exists(), f"kustomization references {resource} but file does not exist"
 
     def test_images_pinned_to_release_tag(self):
+        # Never pin prod to :latest — newTag is the single source of truth for
+        # which version runs; rollback = set it back and re-apply.
         images = {img["name"]: img["newTag"] for img in self.doc["images"]}
-        assert images["ghcr.io/cybersecify/openeasd-web"].startswith("v")
-        assert images["ghcr.io/cybersecify/openeasd-worker"].startswith("v")
+        assert images[IMAGE].startswith("v"), f"newTag must be a vX.Y.Z release tag: {images[IMAGE]}"
+
+    def test_only_single_image_pinned(self):
+        # The 3-tier web/worker images are no longer published or referenced.
+        names = {img["name"] for img in self.doc["images"]}
+        assert names == {IMAGE}
+
+
+# ---------------------------------------------------------------------------
+# Directory drift guard
+# ---------------------------------------------------------------------------
+
+class TestK8sDirectory:
+    def test_three_tier_manifests_removed(self):
+        # The 3-tier k8s layout is gone (docker-compose.yml is the 3-tier path).
+        # A stray old manifest here would be applied by someone running
+        # `kubectl apply -f k8s/` and point at a Postgres Service that no longer exists.
+        for stale in ("postgres.yaml", "web-deployment.yaml", "worker-deployment.yaml"):
+            assert not (K8S_DIR / stale).exists(), f"stale 3-tier manifest still present: {stale}"
+
+    def test_no_unexpected_manifests(self):
+        expected = {
+            "app-deployment.yaml",
+            "configmap.yaml",
+            "ingress.yaml",
+            "kustomization.yaml",
+            "pvc.yaml",
+            "secret.yaml",
+            "service.yaml",
+        }
+        actual = {p.name for p in K8S_DIR.iterdir() if p.suffix in (".yaml", ".yml")}
+        assert actual == expected, f"unexpected k8s files: {actual ^ expected}"

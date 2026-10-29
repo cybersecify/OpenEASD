@@ -441,8 +441,9 @@ directly**, in-process. The **Django-Ninja REST API + JWT** (and the token-black
 purge cron), the **React SPA** (`frontend/`), and **PDF reports** (WeasyPrint) are
 **removed**; **CSV export is kept**. The **primary deploy artifact is a single Docker
 image** (embedded PostgreSQL + gunicorn + DBOS worker in one container, `/data`
-volume); the **3-tier** (db + web + worker) compose/k8s topology **remains** as the
-privilege-separated / scalable alternative.
+volume); the **3-tier** (db + web + worker) compose topology **remains** as the
+privilege-separated / scalable alternative. (v3.1.0: the `k8s/` manifests moved
+to the single image too — one pod + PVC; the 3-tier k8s manifests were removed.)
 
 **Why.** The product is single-admin, single-org, self-hosted ([D-001](#d-001--audience-security-literate-users-not-non-technical-end-users), [D-003](#d-003--distribution-docker-only)). The REST API + SPA were a
 second consumer plus a JWT / Node toolchain the product never needed; a
