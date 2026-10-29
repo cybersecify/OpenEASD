@@ -181,7 +181,7 @@ docker run -d --name openeasd -p 8000:8000 -v openeasd-data:/data \
 
 For a privilege-separated / scalable setup, use the 3-tier path (PostgreSQL + web + worker via `docker compose up -d --build`); see [Deployment](#deployment).
 
-Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced to set a new password) → add a domain → run a scan. Full env-var reference, update path, and Kubernetes manifests are under [Deployment](#deployment).
+Open http://localhost:8000 → log in with `admin` / `admin` (you'll be forced to set a new password) → add a domain → run a scan. Full env-var reference, update path, and the single-pod Kubernetes manifests are under [Deployment](#deployment).
 
 ## Features
 
@@ -388,45 +388,60 @@ docker compose up -d --build   # the db volume persists all data
 
 ### Kubernetes
 
-Manifests are in `k8s/`. Requires a cluster with an nginx Ingress controller.
+Manifests are in `k8s/`. They deploy the **single image** as **one pod**
+(embedded PostgreSQL + gunicorn + DBOS worker) with a PersistentVolumeClaim for
+`/data`. The 3-tier (db + web + worker) topology is a docker-compose path only.
 
-**1. Set your secret**
-
-Edit `k8s/secret.yaml` and replace `REPLACE_WITH_OPENSSL_RAND_HEX_32` with a real key:
+**1. Create the secret (out-of-band — it is not part of the kustomize base)**
 
 ```bash
-openssl rand -hex 32
+kubectl create secret generic openeasd-secret -n default \
+  --from-literal=SECRET_KEY="$(openssl rand -hex 32)" \
+  --from-literal=DB_PASSWORD="$(openssl rand -hex 24)" \
+  --from-literal=ALLOWED_HOSTS="your.host,openeasd.local,localhost" \
+  --from-literal=CSRF_TRUSTED_ORIGINS="https://your.host"
 ```
 
-**2. Set your domain**
+Keep `openeasd.local` in `ALLOWED_HOSTS` — the kubelet health probes send it as
+the `Host` header. `DB_PASSWORD` is mandatory; the image refuses to boot without it.
 
-Edit `k8s/configmap.yaml` (`ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`) and `k8s/ingress.yaml` (`host`) to match your domain.
-
-**3. Deploy**
+**2. Deploy**
 
 ```bash
 kubectl apply -k k8s/
 ```
 
-**4. Update to latest image**
+Put a TLS-terminating reverse proxy in front of the NodePort (30808) — see the
+HTTPS note above. `k8s/ingress.yaml` is provided but not in the kustomize base;
+add it if you run an in-cluster Ingress controller instead.
+
+**3. Update to a new release**
 
 ```bash
-kubectl rollout restart deployment/openeasd-web deployment/openeasd-worker -n default
+# edit k8s/kustomization.yaml → images[].newTag: vX.Y.Z, then
+kubectl apply -k k8s/
 ```
+
+The Deployment uses `strategy: Recreate`, so an update is a short downtime while
+the pod is replaced; the `/data` PVC persists everything.
 
 #### Architecture
 
-Three tiers, each its own workload — a default deploy is **3 pods** (logs → stdout, no PVC):
+One workload — a default deploy is **1 pod**:
 
-| Workload | Command | Resources |
+| Resource | What | Notes |
 |---|---|---|
-| `openeasd-web` Deployment | init (migrations/admin) → `gunicorn` (2 workers) | 256Mi–512Mi, no `NET_RAW`, Service → :8000 |
-| `openeasd-worker` Deployment | `manage.py dbos_worker` | 512Mi–4Gi, `NET_RAW` for nmap/naabu, no Service |
-| `openeasd-postgres` StatefulSet | PostgreSQL 17 | 10Gi PVC |
+| `openeasd` Deployment | `ghcr.io/cybersecify/openeasd` — embedded Postgres + gunicorn + DBOS worker | `replicas: 1`, `Recreate`, `NET_RAW`, 1Gi–4Gi |
+| `openeasd-data` PVC | 20Gi `ReadWriteOnce` at `/data` (`PGDATA=/data/pgdata`) | grows with scan history |
+| `openeasd` Service | NodePort 30808 → 8000 | selector `app: openeasd` |
 
-Only the `openeasd-web` Deployment runs migrations (its initContainer); the `openeasd-worker` Deployment waits for them via the role-aware entrypoint (`OPENEASD_ROLE=worker` → `migrate --check`), so there's no DDL race.
-
-> **Scaling:** each Deployment is `replicas: 1` by default. Postgres removes the old single-writer limit, so `openeasd-worker` scales independently — `kubectl scale deploy/openeasd-worker --replicas=N` adds workers all draining the same DBOS queue, without touching the web tier.
+> **Single-writer:** the embedded Postgres lives on a ReadWriteOnce volume, so
+> `replicas: 1` + `Recreate` are invariants — never scale this Deployment. The
+> first boot on a fresh PVC runs initdb + migrate + collectstatic + admin setup;
+> the `startupProbe` allows ~5 minutes for that. Back up the PVC (volume snapshot
+> or `kubectl exec deploy/openeasd -- pg_dump …`) — it is the only copy of your data.
+> Need independent web/worker scaling or `NET_RAW` off the web tier? Use the
+> 3-tier docker-compose path instead.
 
 #### Health check
 

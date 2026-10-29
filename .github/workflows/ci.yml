@@ -201,7 +201,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=singleimage
           # Supply-chain transparency: SBOM + SLSA provenance baked into the
           # image manifest. Retrieve with:
-          #   docker buildx imagetools inspect ghcr.io/cybersecify/openeasd-web:vX.Y --format '{{ json . }}'
+          #   docker buildx imagetools inspect ghcr.io/cybersecify/openeasd:vX.Y --format '{{ json . }}'
           # SBOM lists every package in the image; provenance attests the build.
           sbom: true
           provenance: mode=max

@@ -5,6 +5,42 @@ All notable changes to OpenEASD are recorded here. Format loosely follows
 **Why** note on non-obvious changes so reviewers don't have to dig through
 commits to recover the reasoning.
 
+## [Unreleased]
+
+### Changed
+- **Kubernetes deploys the single image as one pod.** `k8s/` now holds a single
+  `app-deployment.yaml` (embedded PostgreSQL + gunicorn + DBOS worker in one
+  container, `NET_RAW`, startup/readiness/liveness probes) plus `pvc.yaml` (20Gi
+  `ReadWriteOnce` at `/data` for the Postgres cluster). The Deployment is pinned
+  to `replicas: 1` with `strategy: Recreate`, `configmap.yaml` points
+  `DB_HOST` at `127.0.0.1`, `secret.yaml` gains the mandatory `DB_PASSWORD`,
+  and `kustomization.yaml` pins `ghcr.io/cybersecify/openeasd` (`newTag`).
+  **Why:** the single image is the only artifact published to GHCR and the
+  primary MVP deploy (D-018); the k8s manifests still described the 3-tier
+  layout with images that are no longer published, so `kubectl apply -k k8s/`
+  could not pull anything. One pod + a PVC is the k8s shape of the same
+  trade-off the single Docker image already accepts (no privilege separation,
+  no independent scaling). Two pods must never mount the same RWO volume / PG
+  cluster, hence Recreate.
+
+### Removed
+- **3-tier k8s manifests** (`postgres.yaml`, `web-deployment.yaml`,
+  `worker-deployment.yaml`); the Service selector drops `tier: web`. The 3-tier
+  topology remains available via `docker-compose.yml` with locally-built
+  `web`/`worker` images.
+
+### Tests
+- `tests/unit/test_k8s_manifests.py` rewritten for the single-image layout
+  (64 tests): one container / no init container, `Recreate` + one replica, RWO
+  PVC mounted at `/data` and name-matched, `NET_RAW`, probe Host header on all
+  three probes, ≥5 min startup budget, envFrom order, `DB_PASSWORD` placeholder
+  in the Secret, Service selector matches the pod labels, image pinned to a
+  `vX…` tag, and a directory drift guard that fails if a 3-tier manifest returns.
+
+### Docs
+- `README.md`, `CLAUDE.md`, `docs/OPERATIONS.md`, `docs/03-system.md`,
+  `docs/DECISIONS.md` (D-018 note) updated for the one-pod k8s layout.
+
 ## [v3.0.1] — 2026-10-14
 
 Maintenance release — documentation reconciled with the v3.0.0 code, plus

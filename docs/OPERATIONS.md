@@ -131,7 +131,7 @@ just ci           # green here = green in GitHub CI. Don't proceed on red.
 CHANGELOG `[Unreleased]` and cut **one** tagged release for the batch:
 
 ```bash
-git tag vX.Y.Z && git push origin vX.Y.Z    # GHCR builds :vX.Y.Z (web + worker)
+git tag vX.Y.Z && git push origin vX.Y.Z    # GHCR builds the single image :vX.Y.Z
 ```
 
 **3 — Smoke-test the REAL image (closes the "native ≠ image" gap).** Before
@@ -140,43 +140,40 @@ image-only issues (a missing binary in the worker image, entrypoint/env,
 migrations under the real image) that native dev can't:
 
 ```bash
-OPENEASD_TAG=vX.Y.Z just deploy-dev     # pulls & runs ghcr.io/…:vX.Y.Z
-# → http://localhost:8000 : login, run one scan, check the feature. Then `just down`.
+# docker-compose.singleimage.yml builds locally by default; point it at the published tag:
+docker run --rm -p 8000:8000 -v openeasd-smoke:/data \
+  -e SECRET_KEY=$(openssl rand -hex 32) -e DB_PASSWORD=smoke -e DEBUG=False \
+  -e ALLOWED_HOSTS=localhost ghcr.io/cybersecify/openeasd:vX.Y.Z
+# → http://localhost:8000 : login, run one scan, check the feature. Then stop + `docker volume rm openeasd-smoke`.
 ```
 
 **4 — Promote.** Bump the **single source of truth** — `newTag` in
 `k8s/kustomization.yaml` — to the version you just smoke-tested, then apply:
 
 ```bash
-# edit k8s/kustomization.yaml:  newTag: vX.Y.Z   (both web + worker)
-kubectl apply -k k8s/
-kubectl rollout restart deployment/openeasd-web deployment/openeasd-worker
+# edit k8s/kustomization.yaml:  newTag: vX.Y.Z
+kubectl apply -k k8s/          # Recreate strategy → the pod is replaced (short downtime)
 ```
 
 **Rollback** is the same move in reverse: set `newTag` back to the previous
 version and re-apply. Because tags are immutable, this is deterministic — the
-`imagePullPolicy: IfNotPresent` deployments pull the new tag and cache it.
+`imagePullPolicy: IfNotPresent` deployment pulls the new tag and caches it.
 
-> The k8s Deployments use **bare image names**; the tag is set *only* by
+> The k8s Deployment uses the **bare image name**; the tag is set *only* by
 > `kustomization.yaml` (`images[].newTag`). Bump it in one place to promote.
+> `kubectl set image` works too (one container, no init container — the
+> single-image entrypoint runs `migrate` itself on every start), but `apply -k`
+> keeps git as the source of truth for what prod runs. After any deploy that
+> includes a migration, verify it applied:
+> `kubectl exec deploy/openeasd -- python manage.py showmigrations`.
 
-> ⚠️ **Migration-safe deploys: bump `newTag` + `apply -k` — do NOT `kubectl set
-> image ...web=…`.** The web Deployment has **two** containers on the web image:
-> an **`init` container that runs `migrate`** and the `web` container that runs
-> gunicorn. `kubectl set image deploy/openeasd-web web=…:vX.Y.Z` updates *only*
-> the `web` container — the `init` container keeps the **old** image, so on a
-> release that adds a migration, `migrate` runs with the **old code** and the new
-> migration is **silently skipped** (the app boots on the new version against a
-> schema missing the new table/column). `kustomize` `newTag` rewrites the image
-> for *every* container (init + web + worker) at once, so `apply -k` always
-> migrates with the new code. If you must hot-patch with `set image` (a
-> migration-less patch only), set the init container too:
-> `kubectl set image deploy/openeasd-web init=…:vX.Y.Z web=…:vX.Y.Z`. After any
-> deploy that includes a migration, verify it applied:
-> `kubectl exec deploy/openeasd-web -c web -- python manage.py showmigrations`.
+> **Single pod, single writer.** The embedded Postgres lives on a ReadWriteOnce
+> PVC, so the Deployment is pinned to `replicas: 1` with `strategy: Recreate` —
+> never scale it, and expect a short downtime per update. Back up the PVC
+> (volume snapshot or `kubectl exec deploy/openeasd -- pg_dump -U openeasd openeasd`).
 
-> ⚠️ **Drain scans before rolling the worker, or the queue can jam.** A worker
-> rollout that lands **while scans are running** orphans the in-flight `run_scan`
+> ⚠️ **Drain scans before rolling the pod, or the queue can jam.** A rollout
+> that lands **while scans are running** orphans the in-flight `run_scan`
 > DBOS workflows: the new worker's code hash differs from the old one's, so it
 > **cannot recover** them, and — because the `scans` queue is `concurrency=2` —
 > a couple of stranded `PENDING` workflows **occupy both slots permanently** →
@@ -184,9 +181,9 @@ version and re-apply. Because tags are immutable, this is deterministic — the
 > producer→queue→consumer hardening plan, **H8**). Safe rollout:
 > 1. Quiesce new enqueues during the window: `SCHEDULED_SCANS_ENABLED=false`.
 > 2. Wait for in-flight scans to finish (the Scans page, or check for
->    `running`/`pending` sessions) before rolling the worker.
+>    `running`/`pending` sessions) before rolling the pod.
 > 3. After the rollout, clear any phantom slot-holders immediately:
->    `kubectl exec deploy/openeasd-web -c web -- python manage.py reap_orphan_scans`
+>    `kubectl exec deploy/openeasd -- python manage.py reap_orphan_scans`
 >    (add `--dry-run` to preview). It cancels only `run_scan` workflows whose
 >    `ScanSession` is already terminal, so it can never kill a live scan. The
 >    `scheduled_watchdog` cron also runs this reaper automatically every cycle, so
@@ -196,9 +193,10 @@ version and re-apply. Because tags are immutable, this is deterministic — the
 ## Single-image deployment (one container)
 
 One image (`target: singleimage`) runs embedded PostgreSQL + gunicorn + the DBOS
-worker under honcho and serves the UI at `/` on port 8000. The privilege-separated
-3-tier compose / k8s path (external Postgres, separate web + worker) remains the
-option for multi-host or scaled deployments.
+worker under honcho and serves the UI at `/` on port 8000. This is also what the
+`k8s/` manifests deploy (one pod + a `/data` PVC). The privilege-separated 3-tier
+compose path (external Postgres, separate web + worker) remains the option for
+multi-host or scaled deployments.
 
 ```bash
 docker buildx build --target singleimage -t openeasd:singleimage .
@@ -257,7 +255,7 @@ var if auto-detection is wrong. **Add swap on a 1 GB box.**
 
 Notes specific to the **single image** (embedded Postgres + web + worker):
 - The embedded PostgreSQL adds roughly **150–300 MB RAM** on top of the engine floor;
-  the k8s Postgres is sized to a **4 Gi** limit after an OOM incident under concurrent
+  the k8s pod is sized to a **4 Gi** limit after an OOM incident under concurrent
   Passive·Deep load — mirror that if you cap the container (`docker run --memory=4g`).
 - The image is **~2 GB on disk** (full scanner matrix + baked nuclei templates).
 - The **`/data` volume is mandatory** and grows with scan history — start at **10 GB**.

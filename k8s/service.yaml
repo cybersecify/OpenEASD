@@ -6,11 +6,9 @@ metadata:
   labels:
     app: openeasd
 spec:
-  # Target the web tier only — the worker Deployment shares app: openeasd but
-  # has no :8000 listener, so the selector must pin tier: web.
+  # Single-image deploy: one pod labelled app: openeasd serves :8000.
   selector:
     app: openeasd
-    tier: web
   ports:
     - name: http
       port: 80

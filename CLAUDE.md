@@ -15,6 +15,12 @@ web vulnerabilities using a dynamic workflow engine with auto-registered tools.
   The legacy SPA / JWT / PDF sections have been removed or corrected below; any
   remaining mention is historical.
 
+- **v3.1.0 (k8s single image):** the `k8s/` manifests now deploy the **single
+  image** as **one pod** (`app-deployment.yaml` + a 20Gi RWO `pvc.yaml` for the
+  embedded Postgres; `replicas: 1` + `Recreate`). The 3-tier
+  web/worker/postgres k8s manifests are removed — the 3-tier path is
+  docker-compose only. `test_k8s_manifests.py` rewritten (64 tests).
+
 - **v3.0.1 (maintenance):** docs reconciled with the v3.0.0 code (full layer
   chain + README/CONTRIBUTING/OPERATIONS; new ADR **D-018**); removed dead code
   (orphaned `LoginThrottle` model + drop-migration), unused deps
@@ -266,67 +272,78 @@ docker compose up -d --build
   are already on by default when `DEBUG=False`.
 
 ### Kubernetes
+
 Manifests in `k8s/`. Deploy with `kubectl apply -k k8s/`.
 
-**Layout — 3 tiers, each its own workload (matches the docker-compose 3-tier):**
+**Layout — single image, ONE pod (matches the primary single-image deploy):**
 ```
-Deployment openeasd-web     → initContainer init (migrate + collectstatic + admin, docker-entrypoint.sh),
-                              then gunicorn openeasd.wsgi:application --bind 0.0.0.0:8000 --workers 2
-                              (no NET_RAW; logs to stdout; the Service targets tier: web)
-Deployment openeasd-worker  → ./docker-entrypoint.sh python manage.py dbos_worker with OPENEASD_ROLE=worker
-                              (waits for `migrate --check`, then runs scan/AI/@scheduled workflows; NET_RAW)
-StatefulSet openeasd-postgres → PostgreSQL (see k8s/postgres.yaml)
+Deployment openeasd      → ghcr.io/cybersecify/openeasd (embedded PostgreSQL + gunicorn +
+                            DBOS worker under honcho; docker/entrypoint-singleimage.sh does
+                            initdb/migrate/collectstatic/admin itself — no initContainer)
+                            replicas: 1, strategy: Recreate, NET_RAW, /data PVC
+PVC openeasd-data        → 20Gi ReadWriteOnce, mounted at /data (PGDATA = /data/pgdata)
+Service openeasd         → NodePort 30808 → 8000, selector app: openeasd
 ```
-So a default deploy is **3 pods** (web, worker, postgres). web and worker are
-separate Deployments so they scale, roll, and get resources independently; only
-the worker needs `NET_RAW`, and the internet-facing web tier carries no
-raw-socket capability. Migrations run only in the web Deployment's initContainer;
-the worker waits for them via the role-aware entrypoint (no DDL race).
+So a default deploy is **1 pod**. The pod is pinned to one replica with the
+`Recreate` strategy because the embedded Postgres cluster lives on a
+ReadWriteOnce PVC — two pods must never mount the same volume / PG cluster, and
+a RollingUpdate would try to. Updates therefore mean a short downtime. For
+independent web/worker scaling and privilege separation (`NET_RAW` off the
+internet-facing tier) use the 3-tier docker-compose path with locally-built
+`web`/`worker` images — the 3-tier k8s manifests were removed (v3.1.0).
 
 **Files:**
 ```
 k8s/
-  configmap.yaml         — non-secret env vars; ALLOWED_HOSTS/CSRF are PLACEHOLDERS only
-  secret.yaml            — template for SECRET_KEY + real ALLOWED_HOSTS/CSRF (apply out-of-band)
-  postgres.yaml          — PostgreSQL StatefulSet + headless Service + 10Gi PVC
-  web-deployment.yaml    — openeasd-web: init + web (tier: web, no NET_RAW, stdout logs)
-  worker-deployment.yaml — openeasd-worker: DBOS worker (tier: worker, NET_RAW, no Service)
-  service.yaml           — NodePort 30808 → 8000, selector tier: web ONLY
-  ingress.yaml           — nginx Ingress; TLS annotations ready to uncomment
-  kustomization.yaml     — kubectl apply -k k8s/ (does NOT include secret.yaml);
+  configmap.yaml         — non-secret env vars; DB_HOST=127.0.0.1 (embedded PG);
+                           ALLOWED_HOSTS/CSRF are PLACEHOLDERS only
+  secret.yaml            — template for SECRET_KEY + DB_PASSWORD + real ALLOWED_HOSTS/CSRF
+                           (apply out-of-band; the image refuses to boot without DB_PASSWORD)
+  pvc.yaml               — openeasd-data, 20Gi RWO — the Postgres cluster + scan history
+  app-deployment.yaml    — openeasd: the one single-image container (NET_RAW, probes,
+                           startupProbe ≈5 min for first-boot initdb/migrate)
+  service.yaml           — NodePort 30808 → 8000, selector app: openeasd
+  ingress.yaml           — optional nginx Ingress; NOT in the kustomize base (host Caddy → NodePort)
+  kustomization.yaml     — kubectl apply -k k8s/ (does NOT include secret.yaml or ingress.yaml);
                            pins the image tag via images[].newTag — the SINGLE
                            source of truth for which version prod runs
 ```
 
-**Image pinning (deterministic promote + rollback):** the Deployments carry
-**bare image names** (`ghcr.io/cybersecify/openeasd-{web,worker}`, no tag); the
-version is set only by `kustomization.yaml` `images[].newTag`. To promote a
-release, smoke-test the published `:vX.Y.Z` image first (`OPENEASD_TAG=vX.Y.Z
-just deploy-dev`), then bump `newTag` to that version and `kubectl apply -k k8s/`.
-Rollback = set `newTag` back and re-apply. `imagePullPolicy: IfNotPresent` +
-immutable tags make this reproducible. Never pin prod to `:latest`. Enforced by
+**Image pinning (deterministic promote + rollback):** the Deployment carries the
+**bare image name** (`ghcr.io/cybersecify/openeasd`, no tag); the version is set
+only by `kustomization.yaml` `images[].newTag`. To promote a release, smoke-test
+the published `:vX.Y.Z` image first (`docker compose -f docker-compose.singleimage.yml`
+with that tag), then bump `newTag` and `kubectl apply -k k8s/`. Rollback = set
+`newTag` back and re-apply. `imagePullPolicy: IfNotPresent` + immutable tags make
+this reproducible. Never pin prod to `:latest`. Enforced by
 `test_k8s_manifests.py::test_images_pinned_to_release_tag` (newTag must be `vX…`).
 See the full flow in `docs/OPERATIONS.md` (Ship it — verify, then promote).
 
 **Key constraints:**
-- `replicas: 1` on each Deployment by default. Postgres removes the SQLite single-writer limit, so `openeasd-worker` can scale to multiple replicas pulling the same DBOS queue (`kubectl scale deploy/openeasd-worker --replicas=N`) independently of `openeasd-web`
-- Only `openeasd-worker` gets `NET_RAW`; `openeasd-web` does not need it
-- Logs go to **stdout** (`kubectl logs`) — no logs PVC (so nothing blocks a rolling update)
-- The Service selector is `app: openeasd, tier: web` — it must NOT match the worker (which shares `app: openeasd` but has no :8000 listener)
-- `GET /health/` — unauthenticated endpoint used by K8s readiness/liveness probes; JSON body is `{status, version, git_sha (short 8), build_date}` (build provenance)
-- **Real `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` live in `openeasd-secret`, never in
-  the committed configmap.** `configmap.yaml` carries only placeholders; the real
+- `replicas: 1` + `strategy: Recreate` are **invariants**, not defaults — the RWO PVC and
+  the embedded single-writer Postgres forbid a second pod. Do not `kubectl scale` it.
+- The one container carries `NET_RAW` (nmap/naabu) — tools and raw sockets share the
+  pod with the web process (same trade-off as the single Docker image)
+- First boot on a fresh PVC runs initdb + migrate + collectstatic + admin before serving;
+  the `startupProbe` (30 × 10s) gives it ~5 min before liveness takes over
+- `GET /health/` — unauthenticated endpoint used by the startup/readiness/liveness probes; JSON body is `{status, version, git_sha (short 8), build_date}` (build provenance)
+- **Real `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` and `DB_PASSWORD` live in `openeasd-secret`,
+  never in the committed configmap.** `configmap.yaml` carries only placeholders; the real
   hostname is set in the secret, which is applied out-of-band and is intentionally
-  omitted from the kustomize base. Because each deployment's `envFrom` lists
+  omitted from the kustomize base. Because the deployment's `envFrom` lists
   `secretRef` after `configMapRef` (last source wins), the secret's values override
   the configmap placeholders at runtime. This is deliberate: it keeps the real host
   out of the public repo AND makes `kubectl apply -k k8s/` safe — a re-apply can
   never clobber `ALLOWED_HOSTS` back to the placeholder and 400 the live host.
   Set them when creating the secret (see `k8s/secret.yaml` and `kustomization.yaml`).
+- Postgres lives on the PVC — back it up (volume snapshot, or `kubectl exec deploy/openeasd -- pg_dump …`)
+- Tests: `tests/unit/test_k8s_manifests.py` (64) lock the single-image shape — one container,
+  Recreate, RWO PVC, probe Host, envFrom order, pinned tag, and that no 3-tier manifest returns
 
 **Update running deployment:**
 ```bash
-kubectl rollout restart deployment/openeasd-web deployment/openeasd-worker -n default
+# bump newTag in k8s/kustomization.yaml, then
+kubectl apply -k k8s/          # Recreate: short downtime while the pod is replaced
 ```
 
 ### docker-entrypoint.sh
@@ -348,7 +365,7 @@ If the host IP changes, microk8s certs and kubeconfigs reference the old IP and 
 5. Backups from `microk8s refresh-certs` land in `/var/snap/microk8s/<rev>/certs-backup/`; manual kubelet regen leaves `kubelet.crt.bak.<epoch>` next to the new cert.
 
 ### microk8s + host Caddy
-Don't enable the `ingress` addon if the host already runs Caddy on :80/:443 — the nginx-ingress DaemonSet uses `hostPort` 80/443, and CNI portmap iptables intercept all traffic in PREROUTING before it reaches Caddy, silently breaking every Caddy site. Instead: expose the service as `NodePort` (e.g. 30808) and have Caddy `reverse_proxy localhost:<nodeport>`. The probe still needs `httpHeaders: [{name: Host, value: <ALLOWED_HOSTS-entry>}]` because kubelet sends the pod IP as Host by default and Django rejects it with 400. **That probe Host (`openeasd.local` in `web-deployment.yaml`) must be present in `openeasd-secret`'s `ALLOWED_HOSTS`, not just the configmap** — the secret's `ALLOWED_HOSTS` overrides the configmap's (`secretRef` is last in `envFrom`), so a secret listing only the real host drops `openeasd.local` and the probes 400 → the pod never goes Ready. Keep it in the secret (see `k8s/secret.yaml`).
+Don't enable the `ingress` addon if the host already runs Caddy on :80/:443 — the nginx-ingress DaemonSet uses `hostPort` 80/443, and CNI portmap iptables intercept all traffic in PREROUTING before it reaches Caddy, silently breaking every Caddy site. Instead: expose the service as `NodePort` (e.g. 30808) and have Caddy `reverse_proxy localhost:<nodeport>`. The probe still needs `httpHeaders: [{name: Host, value: <ALLOWED_HOSTS-entry>}]` because kubelet sends the pod IP as Host by default and Django rejects it with 400. **That probe Host (`openeasd.local` in `app-deployment.yaml`) must be present in `openeasd-secret`'s `ALLOWED_HOSTS`, not just the configmap** — the secret's `ALLOWED_HOSTS` overrides the configmap's (`secretRef` is last in `envFrom`), so a secret listing only the real host drops `openeasd.local` and the probes 400 → the pod never goes Ready. Keep it in the secret (see `k8s/secret.yaml`).
 
 ### Scheduler
 - Daily scan runs at `SCAN_DAILY_HOUR:SCAN_DAILY_MINUTE` (uses `TIME_ZONE` in settings, default 02:00)
@@ -899,7 +916,7 @@ No `/api/` routes exist. The only HTTP data export is `GET /reports/<uuid>/csv/`
 | `tests/unit/test_js_secrets.py` | 26 | `.js` URL filter + cap, fetch-error handling, gitleaks JSON parser, analyzer Findings + dedup + secret redaction (full secret never stored), scanner, binary-missing/timeout |
 | `tests/unit/test_github_recon.py` | 39 | GitHub Org Recon — org resolution (override / apex-label derivation), org/user account confirmation, repo listing (fork-skip, cap, pagination), well-known-file fetch (base64 decode, size/count caps), request-budget guard, rate-limit backoff (403/429 + Retry-After), collector fail-graceful (network/non-200/bad-JSON never raise), `extract_infra_refs` (hostname/api_endpoint/cloud_bucket, apex-excluded), analyzer Findings (`github_public_repos` info + `github_infra_exposure` low, dedup, cap), scanner |
 | `tests/unit/test_github_secrets.py` | 32 | no-token skip (BYOK gate), org resolution (override high-confidence / apex-label low-confidence), org-scoped query building + global-search opt-in, rate-limit helpers (429/403-zero-remaining/secondary + capped backoff), collector fail-graceful (network/500/429-exhausted/bad-JSON never raise) + 429-then-success backoff, search→fetch→gitleaks happy path, gitleaks binary-missing/timeout raise, redaction (full secret never persisted — asserted at DB level), analyzer Finding shape + dedup, scanner |
-| `tests/unit/test_k8s_manifests.py` | 66 | k8s manifest structure — split web/worker Deployments, tier labels, Service→web-only selector, envFrom order, probes + probe-host, worker NET_RAW/role/entrypoint, no-PVC, kustomization |
+| `tests/unit/test_k8s_manifests.py` | 64 | k8s manifest structure (single-image) — one Deployment/one container, `replicas: 1` + `Recreate`, RWO PVC mounted at `/data` + name match, NET_RAW, startup/readiness/liveness probes + probe-host, envFrom order, Secret carries `DB_PASSWORD` placeholder, Service selector matches the pod, kustomization pins `ghcr.io/cybersecify/openeasd` to `vX…`, no stale 3-tier manifests |
 | `tests/unit/test_katana.py` | 19 | JSONL parser, Port/Subdomain FK links, scanner orchestrator, honest UA |
 | `tests/unit/test_management_commands.py` | 11 | `verify_tools` + other management commands |
 | `tests/unit/test_render_pipeline_diagram.py` | 12 | `render_pipeline_diagram` — build_structure covers every registry tool (drift guard), counts consistent, groups min-phase ordered, active flags match registry, html/text/json renderers + `-o` file write |

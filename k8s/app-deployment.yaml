@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openeasd
+  namespace: default
+  labels:
+    app: openeasd
+spec:
+  # Single-image deploy: ONE container runs embedded PostgreSQL + gunicorn + the
+  # DBOS worker (supervised by honcho; see docker/entrypoint-singleimage.sh).
+  # State lives on the /data PVC (the Postgres cluster at /data/pgdata), which is
+  # ReadWriteOnce + single-writer — so this is pinned to ONE replica with the
+  # Recreate strategy: two pods must never mount the same RWO volume / PG cluster
+  # at once, and a RollingUpdate would try to. For independent scaling and
+  # privilege separation (NET_RAW off the web tier), use the 3-tier
+  # docker-compose path with locally-built web/worker images instead.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: openeasd
+  template:
+    metadata:
+      labels:
+        app: openeasd
+    spec:
+      containers:
+        - name: openeasd
+          image: ghcr.io/cybersecify/openeasd
+          # Pinned by kustomization.yaml images[].newTag. IfNotPresent + an
+          # immutable :vX.Y.Z tag makes rollouts reproducible.
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: openeasd-config
+            - secretRef:
+                name: openeasd-secret   # last source wins — overrides configmap placeholders
+          securityContext:
+            capabilities:
+              add:
+                - NET_RAW   # nmap/naabu raw-socket scanning (tools share this pod)
+          volumeMounts:
+            - name: data
+              mountPath: /data          # PostgreSQL cluster (/data/pgdata) — mandatory
+            - name: logs
+              mountPath: /app/logs
+          # First boot does a lot before serving: initdb the embedded cluster,
+          # migrate, collectstatic, create the admin user. The startupProbe gives
+          # that up to ~5 min (30 × 10s) before liveness/readiness take over, so a
+          # slow cold start on a fresh PVC does not get killed as "unhealthy".
+          startupProbe:
+            httpGet:
+              path: /health/
+              port: 8000
+              # kubelet sends the pod IP as Host by default; Django 400s it. This
+              # value MUST be in openeasd-secret's ALLOWED_HOSTS (the secret
+              # overrides the configmap) or every probe fails and the pod never
+              # goes Ready.
+              httpHeaders:
+                - name: Host
+                  value: openeasd.local
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health/
+              port: 8000
+              httpHeaders:
+                - name: Host
+                  value: openeasd.local
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health/
+              port: 8000
+              httpHeaders:
+                - name: Host
+                  value: openeasd.local
+            periodSeconds: 30
+            failureThreshold: 3
+          # One pod runs Postgres + gunicorn + the DBOS worker + the scanner
+          # tools. nuclei/amass are memory-hungry (templates/brute loaded into
+          # RAM) and share this limit with Postgres, so give it real headroom.
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: openeasd-data
+        - name: logs
+          emptyDir: {}
